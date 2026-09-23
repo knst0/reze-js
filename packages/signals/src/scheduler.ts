@@ -40,6 +40,34 @@ export function flush(): void {
   }
 }
 
+let flushScheduled = false;
+
+/**
+ * Defers {@link flush} to a microtask, coalescing every write in this task into one
+ * propagation. The scheduled flush is a no-op if an explicit `batch()` (or `flushSync`)
+ * already drained the queue. Signal values still update synchronously on write; only
+ * subscriber runs are deferred.
+ */
+export function scheduleFlush(): void {
+  if (!flushScheduled) {
+    flushScheduled = true;
+    queueMicrotask(() => {
+      flushScheduled = false;
+      flush();
+    });
+  }
+}
+
+/**
+ * Runs pending effects now, unless inside `batch()` — an open batch owns the flush and
+ * drains at its end. A scheduled microtask flush left over from before is a no-op.
+ */
+export function flushSync(): void {
+  if (!batchDepth) {
+    flush();
+  }
+}
+
 /** Queues a watching node and its watching owners, outermost first. */
 export function scheduleNode(node: ReactiveNode): void {
   let insertIndex = queuedLength;

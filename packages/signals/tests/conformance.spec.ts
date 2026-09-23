@@ -6,7 +6,7 @@ import {
 } from "reactive-framework-test-suite";
 import { describe, expect, test } from "vitest";
 
-import { signal, computed, effect, effectScope } from "../src";
+import { flushSync, signal, computed, effect, effectScope } from "../src";
 import { setActiveSub } from "../src/context";
 import { endBatch, startBatch } from "../src/scheduler";
 
@@ -17,6 +17,7 @@ const framework: ReactiveFramework = {
       read,
       write: (v) => {
         write(() => v);
+        flushSync();
       },
     };
   },

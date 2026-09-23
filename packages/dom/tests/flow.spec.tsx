@@ -1,4 +1,4 @@
-import { onCleanup, signal } from "@rezejs/signals";
+import { flushSync, onCleanup, signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 import { render } from "../src";
@@ -30,12 +30,15 @@ test("Show keeps its branch while `when` stays truthy and passes the value as a 
   ));
   const b = el.firstChild;
   setUser({ name: "b" });
+  flushSync();
   expect(el.innerHTML).toBe("<b>b</b>");
   expect(el.firstChild).toBe(b);
   expect(builds).toBe(1);
   setUser(null);
+  flushSync();
   expect(el.innerHTML).toBe("<i>none</i>");
   setUser({ name: "c" });
+  flushSync();
   expect(el.innerHTML).toBe("<b>c</b>");
   expect(builds).toBe(2);
 });
@@ -53,6 +56,7 @@ test("Show disposes the branch it switches away from", () => {
     </Show>
   ));
   setOn(false);
+  flushSync();
   expect(log).toEqual(["child"]);
 });
 
@@ -74,10 +78,13 @@ test("Switch renders the first truthy Match and rebuilds only when the choice ch
   ));
   expect(el.innerHTML).toBe("<b>small</b>");
   setN(2);
+  flushSync();
   expect(builds).toBe(1);
   setN(20);
+  flushSync();
   expect(el.innerHTML).toBe("<b>big</b>");
   setN(0);
+  flushSync();
   expect(el.innerHTML).toBe("<i>zero</i>");
 });
 
@@ -88,8 +95,10 @@ test("Dynamic renders a tag name or a component with the remaining props", () =>
   const el = mount(() => <Dynamic component={c()} title={title()} />);
   expect(el.innerHTML).toBe('<section title="t"></section>');
   setTitle("u");
+  flushSync();
   expect(el.innerHTML).toBe('<section title="u"></section>');
   setC(() => Comp);
+  flushSync();
   expect(el.innerHTML).toBe("<em>u</em>");
 });
 
@@ -110,7 +119,9 @@ test("Portal renders into mount and is removed with its owner", () => {
   expect(el.innerHTML).toBe("<div></div>");
   expect(target.innerHTML).toBe("<p>a</p>");
   setText("b");
+  flushSync();
   expect(target.innerHTML).toBe("<p>b</p>");
   setOn(false);
+  flushSync();
   expect(target.innerHTML).toBe("");
 });

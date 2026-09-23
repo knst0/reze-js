@@ -1,4 +1,4 @@
-import { effect, onCleanup, signal } from "@rezejs/signals";
+import { effect, flushSync, onCleanup, signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 import { type ClassValue, classList, className, mergeProps, render } from "../src";
@@ -21,6 +21,7 @@ test("text and attribute bindings update in place", () => {
   const p = el.firstChild as HTMLElement;
   const text = p.childNodes[1];
   setName("b");
+  flushSync();
   // `<!---->` is the compiler's insertion marker.
   expect(el.innerHTML).toBe('<p title="b">hi b<!---->!</p>');
   expect(el.firstChild).toBe(p);
@@ -33,9 +34,12 @@ test("null, undefined and false remove the attribute", () => {
   const i = el.firstChild as HTMLElement;
   expect(i.getAttribute("data-v")).toBe("x");
   setV(false);
+  flushSync();
   expect(i.hasAttribute("data-v")).toBe(false);
   setV("y");
+  flushSync();
   setV(null);
+  flushSync();
   expect(i.hasAttribute("data-v")).toBe(false);
 });
 
@@ -46,8 +50,10 @@ test("class accepts a string or a toggle object", () => {
   const i = el.firstChild as HTMLElement;
   expect(i.className).toBe("a b on");
   setOn(false);
+  flushSync();
   expect(i.className).toBe("a b");
   setCls({ "x y": true, z: false });
+  flushSync();
   expect([...i.classList].sort()).toEqual(["a", "b", "x", "y"]);
 });
 
@@ -60,11 +66,12 @@ test("style objects set, update and drop properties", () => {
   const i = el.firstChild as HTMLElement;
   expect(i.style.color).toBe("red");
   setS({ color: "blue" });
+  flushSync();
   expect(i.style.color).toBe("blue");
   expect(i.style.marginTop).toBe("");
 });
 
-test("delegated handlers run in a batch and see the declaring element as currentTarget", () => {
+test("delegated handlers coalesce writes and see the declaring element as currentTarget", () => {
   const [a, setA] = signal(0);
   const [b, setB] = signal(0);
   const runs: number[] = [];
@@ -92,6 +99,7 @@ test("delegated handlers run in a batch and see the declaring element as current
   const div = el.firstChild as HTMLElement;
   const button = div.firstChild as HTMLElement;
   (button.firstChild as HTMLElement).click();
+  flushSync();
   expect(runs).toEqual([0, 2]);
   expect(targets).toEqual([button, div]);
 });
@@ -133,7 +141,9 @@ test("components run once; props read lazily keep reactivity", () => {
   const [t, setT] = signal("a");
   const el = mount(() => <Label text={t()} />);
   setT("b");
+  flushSync();
   setT("c");
+  flushSync();
   expect(el.innerHTML).toBe("<b>c</b>");
   expect(calls).toBe(1);
 });
@@ -148,6 +158,7 @@ test("a conditional branch is disposed when it switches out", () => {
   const el = mount(() => <div>{on() ? <Child name="a" /> : <Child name="b" />}</div>);
   expect(el.innerHTML).toBe("<div><em>a</em></div>");
   setOn(false);
+  flushSync();
   expect(el.innerHTML).toBe("<div><em>b</em></div>");
   expect(log).toEqual(["cleanup a"]);
   dispose!();
@@ -170,10 +181,13 @@ test("arrays, fragments and nested getters render in order between static siblin
   const text = () => [...el.querySelectorAll("li")].map((li) => li.textContent);
   expect(text()).toEqual(["first", "x", "y", "last"]);
   setItems(["z"]);
+  flushSync();
   expect(text()).toEqual(["first", "z", "last"]);
   setItems([]);
+  flushSync();
   expect(text()).toEqual(["first", "last"]);
   setItems(["p", "q"]);
+  flushSync();
   expect(text()).toEqual(["first", "p", "q", "last"]);
 });
 
@@ -196,15 +210,29 @@ test("spread applies reactive props, including ones from a function source", () 
   expect(i.getAttribute("title")).toBe("a");
   expect(i.getAttribute("data-x")).toBe("1");
   setTitle("b");
+  flushSync();
   expect(i.getAttribute("title")).toBe("b");
   setExtra({ "data-y": "2" });
+  flushSync();
   expect(i.hasAttribute("data-x")).toBe(false);
   expect(i.getAttribute("data-y")).toBe("2");
 });
 
 test("class accepts arrays mixing strings, objects and nested arrays", () => {
   const el = mount(() => (
-    <i class={["a", false, "b", { c: true, d: false }, ["e", ["f", { g: true }]], null, undefined, "", 0]} />
+    <i
+      class={[
+        "a",
+        false,
+        "b",
+        { c: true, d: false },
+        ["e", ["f", { g: true }]],
+        null,
+        undefined,
+        "",
+        0,
+      ]}
+    />
   ));
   const i = el.firstChild as HTMLElement;
   expect([...i.classList].sort()).toEqual(["0", "a", "b", "c", "e", "f", "g"]);
@@ -216,10 +244,13 @@ test("reactive class arrays and objects drop stale classes", () => {
   const i = el.firstChild as HTMLElement;
   expect([...i.classList].sort()).toEqual(["a", "b"]);
   setCls(["b", "c"]);
+  flushSync();
   expect([...i.classList].sort()).toEqual(["b", "c"]);
   setCls({ d: true });
+  flushSync();
   expect([...i.classList].sort()).toEqual(["d"]);
   setCls(null);
+  flushSync();
   expect(i.hasAttribute("class")).toBe(false);
 });
 

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { effect, effectScope, signal } from "../src";
+import { effect, effectScope, flushSync, signal } from "../src";
 
 test("scope dispose runs child effect cleanup", () => {
   const log: string[] = [];
@@ -65,5 +65,6 @@ test("scope as intermediate parent: cleanup order respects nesting", () => {
   log.length = 0;
 
   setA(1);
+  flushSync();
   expect(log).toEqual(["inner:cleanup", "outer:cleanup", "outer:run", "inner:run"]);
 });

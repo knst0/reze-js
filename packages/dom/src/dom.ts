@@ -1,4 +1,4 @@
-import { batch, root, untrack } from "@rezejs/signals";
+import { root, untrack } from "@rezejs/signals";
 import { renderEffect as bind } from "@rezejs/signals/render";
 
 import type { JSX } from "./jsx";
@@ -138,7 +138,12 @@ export function className(node: Element, value: unknown, prev?: unknown): void {
     node.removeAttribute("class");
     (node as Any).$$class = undefined;
   }
-  applyClassTokens(node, "$$class", value as Record<string, unknown> & ClassValue[], prev as Record<string, unknown> | undefined);
+  applyClassTokens(
+    node,
+    "$$class",
+    value as Record<string, unknown> & ClassValue[],
+    prev as Record<string, unknown> | undefined,
+  );
 }
 
 /** `classList` toggles each key; keys present in `prev` but gone from `value` are removed. Arrays flatten like `class`. */
@@ -258,24 +263,24 @@ function eventHandler(e: Event): void {
   let node: Any = e.composedPath()[0] ?? e.target;
   // Each handler sees the element it was declared on, as with a direct listener.
   Object.defineProperty(e, "currentTarget", { configurable: true, get: () => node ?? document });
-  batch(() => {
-    while (node) {
-      const handler = node[key];
-      if (handler && !node.disabled) {
-        const data = node[key + "Data"];
-        if (data !== undefined) handler.call(node, data, e);
-        else handler.call(node, e);
-        if (e.cancelBubble) return;
-      }
-      node = node.parentNode ?? node.host;
+  // No `batch()`: writes schedule one microtask flush, so multiple handlers in this
+  // dispatch — and separate dispatches in the same task — coalesce into one propagation.
+  while (node) {
+    const handler = node[key];
+    if (handler && !node.disabled) {
+      const data = node[key + "Data"];
+      if (data !== undefined) handler.call(node, data, e);
+      else handler.call(node, e);
+      if (e.cancelBubble) return;
     }
-  });
+    node = node.parentNode ?? node.host;
+  }
 }
 
 /**
  * `delegate`: store the handler as `$$<name>` (an array is `[handler, data]`).
  * Otherwise a direct listener; an array is `[handler, options]` (`on:click={[fn, { passive: true }]}`).
- * Handlers run inside `batch`.
+ * Handler writes schedule one microtask flush and coalesce; use `flushSync` to read the DOM now.
  */
 export function addEventListener(
   node: Element,
@@ -292,7 +297,7 @@ export function addEventListener(
     }
   } else {
     const [fn, options] = Array.isArray(handler) ? handler : [handler];
-    if (fn) node.addEventListener(name, (e) => batch(() => fn.call(node, e)), options);
+    if (fn) node.addEventListener(name, (e) => fn.call(node, e), options);
   }
 }
 
@@ -335,7 +340,7 @@ function assignProp(node: Any, name: string, value: Any, prev: Any, isSVG?: bool
     } else {
       const key = "$l" + type;
       if (node[key]) node.removeEventListener(type, node[key]);
-      node[key] = value && ((e: Event) => batch(() => value.call(node, e)));
+      node[key] = value && ((e: Event) => value.call(node, e));
       if (value) node.addEventListener(type, node[key]);
     }
   } else if (name.startsWith("prop:")) {

@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import {
   batch,
   effect,
+  flushSync,
   getOwner,
   onCleanup,
   root,
@@ -40,8 +41,10 @@ test("untrack hides reads from the effect but keeps what it creates owned by it"
   });
 
   setB(1);
+  flushSync();
   expect(log).toEqual([]);
   setA(1);
+  flushSync();
   expect(log).toEqual(["inner cleanup"]);
 });
 
