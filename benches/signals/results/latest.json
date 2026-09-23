@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-09-23T22:31:28.244Z",
+  "results": {
+    "counter path / click-like writes": {
+      "hz": 444.7600368512707,
+      "meanMs": 2.318371988425936,
+      "p50Ms": 2.203410500000018
+    },
+    "counter path / batched writes": {
+      "hz": 1723.6254556200258,
+      "meanMs": 0.6186036116264693,
+      "p50Ms": 0.5723560000001271
+    },
+    "fanout / 1 write -> 100 effects": {
+      "hz": 471.67867825972894,
+      "meanMs": 2.1571767758620655,
+      "p50Ms": 2.0706270000000586
+    },
+    "raw signal / write+read, no subscribers": {
+      "hz": 9582.59067012987,
+      "meanMs": 0.1126905226504395,
+      "p50Ms": 0.09157600000003185
+    }
+  }
+}

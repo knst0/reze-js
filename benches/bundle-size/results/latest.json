@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-09-23T22:33:57.612Z",
+  "results": {
+    "@rezejs/example-counter js": {
+      "raw": 10661,
+      "gzip": 4148
+    },
+    "@rezejs/example-counter-solid js": {
+      "raw": 11948,
+      "gzip": 4759
+    },
+    "@rezejs/example-counter-solid-textcontent js": {
+      "raw": 11996,
+      "gzip": 4782
+    },
+    "@rezejs/example-counter-solid-v2 js": {
+      "raw": 36264,
+      "gzip": 14031
+    },
+    "@rezejs/example-counter-solid-v2-textcontent js": {
+      "raw": 36308,
+      "gzip": 14051
+    }
+  }
+}

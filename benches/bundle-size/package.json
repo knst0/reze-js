@@ -1,0 +1,9 @@
+{
+  "name": "@rezejs/bench-bundle-size",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "log": "node ./log.mjs"
+  }
+}

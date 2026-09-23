@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "bench": "pnpm --filter @rezejs/bench-signals bench && pnpm --filter @rezejs/bench-bundle-size log",
     "build": "pnpm -r build",
     "fmt": "oxfmt",
     "lint": "oxlint --type-aware --type-check"

@@ -2,5 +2,6 @@ node_modules
 /target
 *.node
 dist
+benches/signals/results/history.jsonl
 
 /.idea
