@@ -1,0 +1,15 @@
+[package]
+name = "reze-compiler"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+oxc_allocator = "0.151.0"
+oxc_ast = "0.151.0"
+oxc_ast_visit = "0.151.0"
+oxc_parser = "0.151.0"
+oxc_semantic = "0.151.0"
+oxc_span = "0.151.0"
+oxc_syntax = "0.151.0"
+oxc_sourcemap = "8.1.2"

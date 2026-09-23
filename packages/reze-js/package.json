@@ -1,0 +1,14 @@
+{
+  "name": "reze-js",
+  "version": "0.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./jsx-runtime": "./src/jsx-runtime.ts"
+  },
+  "dependencies": {
+    "@rezejs/dom": "workspace:*",
+    "@rezejs/signals": "workspace:*"
+  }
+}

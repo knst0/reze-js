@@ -1,0 +1,21 @@
+{
+  "name": "@rezejs/signals",
+  "version": "0.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./context": "./src/context.ts",
+    "./flags": "./src/flags.ts",
+    "./graph": "./src/graph.ts",
+    "./render": "./src/render.ts",
+    "./scheduler": "./src/scheduler.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "reactive-framework-test-suite": "0.0.2"
+  }
+}

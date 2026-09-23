@@ -1,0 +1,27 @@
+{
+  "name": "@rezejs/workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "fmt": "oxfmt",
+    "lint": "oxlint --type-aware --type-check"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "oxfmt": "^0.70.0",
+    "oxlint": "^1.85.0",
+    "oxlint-tsgolint": "^7.0.2002",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.6.0",
+      "onFail": "download"
+    }
+  },
+  "packageManager": "pnpm@12.6.0"
+}

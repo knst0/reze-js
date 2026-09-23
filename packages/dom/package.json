@@ -1,0 +1,23 @@
+{
+  "name": "@rezejs/dom",
+  "version": "0.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./flow": "./src/flow.ts",
+    "./jsx-runtime": "./src/jsx.ts",
+    "./list": "./src/list.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@rezejs/signals": "workspace:*"
+  },
+  "devDependencies": {
+    "@rezejs/vite-plugin": "workspace:*",
+    "esbuild": "^0.28.2",
+    "happy-dom": "^20.14.5"
+  }
+}

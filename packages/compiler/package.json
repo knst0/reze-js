@@ -1,0 +1,23 @@
+{
+  "name": "@rezejs/compiler",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "scripts": {
+    "build": "napi build --platform --release --esm --manifest-path ../../crates/reze_napi/Cargo.toml --output-dir .",
+    "build:debug": "napi build --platform --esm --manifest-path ../../crates/reze_napi/Cargo.toml --output-dir ."
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.10.5"
+  },
+  "napi": {
+    "binaryName": "reze-compiler"
+  }
+}

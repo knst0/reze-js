@@ -1,0 +1,16 @@
+[package]
+name = "reze-napi"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = "3"
+napi-derive = "3"
+reze-compiler = { path = "../reze_compiler" }
+
+[build-dependencies]
+napi-build = "2"
