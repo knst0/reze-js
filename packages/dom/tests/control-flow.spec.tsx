@@ -95,7 +95,7 @@ test("For keyed={fn} is key={fn}", () => {
   const [items, setItems] = signal([{ id: 1, label: "one" }]);
   const { el } = mount(
     () => (
-      <For each={items()} keyed={(row) => row.id}>
+      <For each={items()} keyed={(row: { id: number; label: string }) => row.id}>
         {(row) => <li>{row().label}</li>}
       </For>
     ),

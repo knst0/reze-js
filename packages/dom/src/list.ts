@@ -10,23 +10,25 @@ import {
 
 import type { JSX } from "./jsx";
 
-export type ForProps<T> =
-  | {
-      each: readonly T[] | null | undefined | false;
-      /** Row identity; defaults to the item itself. Read once. `keyed={fn}` is the same. */
-      key?: (item: T) => unknown;
-      keyed?: true | ((item: T) => unknown);
-      fallback?: JSX.Element;
-      /** Read once. Declaring `index` costs one signal per row; omitting it costs none. */
-      children: (item: Getter<T>, index: Getter<number>) => JSX.Element;
-    }
-  | {
-      each: readonly T[] | null | undefined | false;
-      /** Rows by position: row `i` keeps its DOM while the item at `i` changes. */
-      keyed: false;
-      fallback?: JSX.Element;
-      children: (item: Getter<T>, index: number) => JSX.Element;
-    };
+export interface KeyedForProps<T> {
+  each: readonly T[] | null | undefined | false;
+  /** Row identity; defaults to the item itself. Read once. `keyed={fn}` is the same. */
+  key?: (item: T) => unknown;
+  keyed?: true | ((item: T) => unknown);
+  fallback?: JSX.Element;
+  /** Read once. Declaring `index` costs one signal per row; omitting it costs none. */
+  children: (item: Getter<T>, index: Getter<number>) => JSX.Element;
+}
+
+export interface IndexedForProps<T> {
+  each: readonly T[] | null | undefined | false;
+  /** Rows by position: row `i` keeps its DOM while the item at `i` changes. */
+  keyed: false;
+  fallback?: JSX.Element;
+  children: (item: Getter<T>, index: number) => JSX.Element;
+}
+
+export type ForProps<T> = KeyedForProps<T> | IndexedForProps<T>;
 
 interface IndexRow<T> {
   value: JSX.Element;
@@ -35,7 +37,7 @@ interface IndexRow<T> {
 }
 
 /** `<For keyed={false}>`: one row per position, reading its item through a getter. */
-function ForByIndex<T>(props: Extract<ForProps<T>, { keyed: false }>): JSX.Element {
+function ForByIndex<T>(props: IndexedForProps<T>): JSX.Element {
   const mapFn = props.children;
   let rows: IndexRow<T>[] = [];
   let fallback: { value: JSX.Element; dispose: () => void } | undefined;
@@ -106,6 +108,8 @@ class Row<T> {
  * update in place. Each row owns its own root, disposed when the row leaves the list. `each`, its
  * `length` and every item are read tracked, so an array mutated in place (a store array) updates too.
  */
+export function For<T>(props: KeyedForProps<T>): JSX.Element;
+export function For<T>(props: IndexedForProps<T>): JSX.Element;
 export function For<T>(props: ForProps<T>): JSX.Element {
   if (props.keyed === false) return ForByIndex(props);
   const key = typeof props.keyed === "function" ? props.keyed : props.key;

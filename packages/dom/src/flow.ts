@@ -64,8 +64,9 @@ export function Show<T>(props: ShowProps<T>): JSX.Element {
   const shown = computed(() => !!props.when);
   let when: Getter<T | Falsy> | undefined;
   const value = (): T => (when ??= computed(() => props.when))() as T;
-  const children = props.children as Branch<T>;
-  return computed(() => (shown() ? renderBranch(children, value) : untrack(() => props.fallback)));
+  return computed(() =>
+    shown() ? renderBranch(props.children as Branch<T>, value) : untrack(() => props.fallback),
+  );
 }
 
 export interface ErroredProps {
