@@ -13,6 +13,7 @@ export {
   insert,
   memo,
   mergeProps,
+  omit,
   render,
   setAttribute,
   setAttributeNS,
@@ -58,6 +59,8 @@ export {
   useContext,
 } from "@rezejs/signals";
 export { createContext } from "./context";
+export { createUniqueId, lazy } from "./lazy";
+export type { LazyComponent } from "./lazy";
 export type { Context } from "./context";
 export { Errored } from "./flow";
 export type { ErroredProps } from "./flow";

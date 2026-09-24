@@ -1,5 +1,12 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
-import { endTracking, getOwner, setActiveSub, startTracking, track } from "./context";
+import {
+  endTracking,
+  getOwner,
+  isErrorHandled,
+  setActiveSub,
+  startTracking,
+  track,
+} from "./context";
 import {
   FlagDirty,
   FlagHasChildEffect,
@@ -40,6 +47,9 @@ class ComputedNode<T = unknown> implements ReactiveNode {
     try {
       const oldValue = this.value;
       return oldValue !== (this.value = this.getter(oldValue));
+    } catch (error) {
+      if (!isErrorHandled(this, error)) throw error;
+      return false;
     } finally {
       endTracking(this, prevSub);
     }
@@ -85,6 +95,8 @@ function computedOper<T>(this: ComputedNode<T>): T {
     const prevSub = setActiveSub(this);
     try {
       this.value = this.getter();
+    } catch (error) {
+      if (!isErrorHandled(this, error)) throw error;
     } finally {
       setActiveSub(prevSub);
       this.flags &= ~FlagRecursedCheck;
