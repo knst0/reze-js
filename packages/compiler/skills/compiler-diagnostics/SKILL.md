@@ -329,6 +329,21 @@ Example:
 <For each={rows()}>{(row) => <tr class={selected() === row().id ? "on" : ""} />}</For>
 ```
 
+## PROP_FOLDED
+
+**Prop folded to the literal every call site passes** · severity `info`
+
+In the whole-program build every JSX use of the component passes this prop as the same string or integer literal, without spreads, and the component is not used any other way. The compiler replaced its reads (`props.k`, or a destructured `k`) with that literal, so it folds into templates like a constant (§15.16). `related` lists the call sites; `data.prop` is the key.
+
+**Repair:** Nothing to repair. Pass a different value at one call site, or use the component other than as a JSX tag, and the prop is read at runtime again.
+
+Example:
+
+```tsx
+<Counter step={1} />
+function Counter(props) { return <b>+{props.step}</b>; }
+```
+
 ## PROPS_REWRITTEN
 
 **Destructured props rewritten to lazy reads** · severity `info`

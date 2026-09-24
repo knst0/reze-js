@@ -313,12 +313,30 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        if let Some(value) = self.lowerer.facts.folded_prop_ref(it) {
+            let source = self.lowerer.str(&value.source);
+            let kind = HoleKind::FoldedProp { source, shorthand_key: None };
+            self.holes.push(Hole { span: it.span, kind });
+            return;
+        }
         if let Some(hole) = self.lowerer.props_read(it, it.span, false) {
             self.holes.push(hole);
         }
     }
 
     fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
+        if it.shorthand
+            && let Expression::Identifier(id) = &it.value
+            && let Some(value) = self.lowerer.facts.folded_prop_ref(id)
+        {
+            let source = self.lowerer.str(&value.source);
+            let key = Some(id.name.as_str());
+            self.holes.push(Hole {
+                span: it.span,
+                kind: HoleKind::FoldedProp { source, shorthand_key: key },
+            });
+            return;
+        }
         if it.shorthand
             && let Expression::Identifier(id) = &it.value
             && let Some(hole) = self.lowerer.props_read(id, it.span, true)
@@ -405,6 +423,12 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
         walk::walk_call_expression(self, it);
     }
     fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
+        if let Some(value) = self.lowerer.facts.folded_prop_member(it.span.start) {
+            let source = self.lowerer.str(&value.source);
+            let kind = HoleKind::FoldedProp { source, shorthand_key: None };
+            self.holes.push(Hole { span: it.span, kind });
+            return;
+        }
         if let Some(hole) = self.lowerer.store_read(it.span) {
             self.holes.push(hole);
             return;

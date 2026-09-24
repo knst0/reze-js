@@ -79,6 +79,11 @@ pub enum HoleKind<'a> {
     },
     /// Source dropped without replacement: the declaration of an inlined computed (O4).
     Remove,
+    /// A read of a folded prop → `(literal)`, `key: (literal)` for a shorthand property (§15.16).
+    FoldedProp {
+        source: &'a str,
+        shorthand_key: Option<&'a str>,
+    },
     /// `S() === key` in a `<For>` row → `selector(key)`, `!==` → `!selector(key)` (O6).
     /// The server keeps `original`.
     SelectorRead {

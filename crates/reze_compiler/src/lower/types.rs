@@ -39,7 +39,9 @@ pub fn static_kind<'a>(
             (consequent == alternate).then_some(consequent)
         }
         Expression::CallExpression(call) => call_kind(call, facts, scoping, nodes),
-        _ => None,
+        inner => facts
+            .folded_prop(inner)
+            .map(|value| if value.is_numeric { StaticKind::Numeric } else { StaticKind::String }),
     }
 }
 

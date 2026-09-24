@@ -417,6 +417,15 @@ impl<'a, 's> Emitter<'a, 's> {
                     out.push(")");
                 }
                 HoleKind::Remove => {}
+                HoleKind::FoldedProp { source, shorthand_key } => {
+                    if let Some(key) = shorthand_key {
+                        out.push(key);
+                        out.push(": ");
+                    }
+                    out.push("(");
+                    out.push(source);
+                    out.push(")");
+                }
                 HoleKind::SelectorRead { selector, key, original, is_negated } => {
                     if self.target == Target::Server {
                         self.embed(out, original);

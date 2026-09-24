@@ -1,9 +1,9 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
-assertion_line: 254
+assertion_line: 259
 expression: render(&dir)
 ---
-closed: ["/data.ts"]
+closed: ["/components.tsx", "/data.ts"]
 features: {"suspense": false}
 
 // ==== /components.tsx [client] ====
@@ -12,9 +12,9 @@ import { Widget } from "ui-kit";
 
 import { brand, counter, links, year } from "./data";
 import { template as _$template, insert as _$insert, bind as _$bind, setAttribute as _$setAttribute, createComponent as _$createComponent, use as _$use, spread as _$spread, delegateEvents as _$delegateEvents } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<header><b>Reze</b><nav></nav></header>"),
+const _tmpl$ = /*#__PURE__*/ _$template("<header title=\"Docs\"><b>Reze</b><nav></nav></header>"),
   _tmpl$2 = /*#__PURE__*/ _$template("<a></a>"),
-  _tmpl$3 = /*#__PURE__*/ _$template("<footer> © </footer>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<footer>Built © </footer>"),
   _tmpl$4 = /*#__PURE__*/ _$template("<ul></ul>"),
   _tmpl$5 = /*#__PURE__*/ _$template("<button>click</button>"),
   _tmpl$6 = /*#__PURE__*/ _$template("<div></div>"),
@@ -37,7 +37,6 @@ export function Header(props) {
   return _el$3;
 })()
         )));
-  _$bind(() => _$setAttribute(_el$, "title", props.title));
   return _el$;
 })()
   );
@@ -45,9 +44,7 @@ export function Header(props) {
 
 export const Footer = (_props$) => (
   (() => {
-  var _el$4 = _tmpl$3(),
-    _el$5 = _el$4.firstChild;
-  _$insert(_el$4, () => _props$.note, _el$5);
+  var _el$4 = _tmpl$3();
   _$insert(_el$4, year, null);
   return _el$4;
 })()
@@ -56,37 +53,37 @@ export const Footer = (_props$) => (
 export function Tree(props) {
   const depth = props.depth;
   return (() => {
-  var _el$6 = _tmpl$4();
-  _$insert(_el$6, depth > 0 ? _$createComponent(Tree, { depth: depth - 1 }) : null);
-  return _el$6;
+  var _el$5 = _tmpl$4();
+  _$insert(_el$5, depth > 0 ? _$createComponent(Tree, { depth: depth - 1 }) : null);
+  return _el$5;
 })();
 }
 
 export const Clicker = () => (() => {
-  var _el$7 = _tmpl$5();
-  _el$7.$$click = () => alert(1);
-  return _el$7;
+  var _el$6 = _tmpl$5();
+  _el$6.$$click = () => alert(1);
+  return _el$6;
 })();
 export const WithRef = () => (() => {
-  var _el$8 = _tmpl$6();
-  _$use((el) => el.focus(), _el$8);
-  return _el$8;
+  var _el$7 = _tmpl$6();
+  _$use((el) => el.focus(), _el$7);
+  return _el$7;
 })();
 export const WithSpread = (props) => (() => {
-  var _el$9 = _tmpl$6();
-  _$spread(_el$9, props, false, false);
-  return _el$9;
+  var _el$8 = _tmpl$6();
+  _$spread(_el$8, props, false, false);
+  return _el$8;
 })();
 export const WithProp = () => (() => {
-  var _el$10 = _tmpl$7();
-  _el$10.indeterminate = true;
-  return _el$10;
+  var _el$9 = _tmpl$7();
+  _el$9.indeterminate = true;
+  return _el$9;
 })();
 export const Select = () => (
   (() => {
-  var _el$11 = _tmpl$8();
-  _el$11.value = "b";
-  return _el$11;
+  var _el$10 = _tmpl$8();
+  _el$10.value = "b";
+  return _el$10;
 })()
 );
 export async function Async() {
@@ -94,18 +91,18 @@ export async function Async() {
 }
 export const TwoParams = (a, b) => (
   (() => {
-  var _el$12 = _tmpl$9();
-  _$insert(_el$12, a, null);
-  _$insert(_el$12, b, null);
-  return _el$12;
+  var _el$11 = _tmpl$9();
+  _$insert(_el$11, a, null);
+  _$insert(_el$11, b, null);
+  return _el$11;
 })()
 );
 export const Local = () => {
   let x = 1;
   return (() => {
-  var _el$13 = _tmpl$9();
-  _$insert(_el$13, x);
-  return _el$13;
+  var _el$12 = _tmpl$9();
+  _$insert(_el$12, x);
+  return _el$12;
 })();
 };
 export const RuntimeChild = () => (
@@ -113,24 +110,24 @@ export const RuntimeChild = () => (
 );
 export const OutsideChild = () => _$createComponent(Widget, {});
 export const Deep = (props) => (() => {
-  var _el$14 = _tmpl$9();
-  _$insert(_el$14, () => props.a.b);
-  return _el$14;
+  var _el$13 = _tmpl$9();
+  _$insert(_el$13, () => props.a.b);
+  return _el$13;
 })();
 export const Reactive = () => {
   const n = 0;
   return _tmpl$10();
 };
 export const Mutated = () => (() => {
-  var _el$15 = _tmpl$9();
-  _$insert(_el$15, () => counter.value);
-  return _el$15;
+  var _el$14 = _tmpl$9();
+  _$insert(_el$14, () => counter.value);
+  return _el$14;
 })();
 export const ClientChild = () => (
   (() => {
-  var _el$16 = _tmpl$11();
-  _$insert(_el$16, _$createComponent(Clicker, {}));
-  return _el$16;
+  var _el$15 = _tmpl$11();
+  _$insert(_el$15, _$createComponent(Clicker, {}));
+  return _el$15;
 })()
 );
 
@@ -143,6 +140,14 @@ _$delegateEvents(["click"]);
 > 6 | export function Header(props) {
     |                 ^^^^^^
   7 |   return (
+// info
+[PROP_FOLDED] Every call site passes `title="Docs"`, so reads of `title` compiled to that literal.
+  at /components.tsx:8:20
+  7 |   return (
+> 8 |     <header title={props.title}>
+    |                    ^^^^^^^^^^^
+  9 |       <b>{brand()}</b>
+  related: passed here (/main.tsx:121)
 // info
 [STATIC_COMPONENT] `Footer` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
   at /components.tsx:19:14
@@ -158,6 +163,14 @@ _$delegateEvents(["click"]);
 > 19 | export const Footer = ({ note }) => (
      |                        ^^^^^^^^
   20 |   <footer>
+// info
+[PROP_FOLDED] Every call site passes `note="Built"`, so reads of `note` compiled to that literal.
+  at /components.tsx:21:6
+  20 |   <footer>
+> 21 |     {note} © {year}
+     |      ^^^^
+  22 |   </footer>
+  related: passed here (/main.tsx:176)
 // info
 [STATIC_COMPONENT] `Tree` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
   at /components.tsx:25:17
@@ -290,10 +303,10 @@ import { Show, signal } from "reze-js";
 import { Widget } from "ui-kit";
 
 import { brand, counter, links, year } from "./data";
-import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute, ssrChild as _$ssrChild, createComponent as _$createComponent, ssrSpread as _$ssrSpread } from "reze-js";
-const _tmpl$ = ["<header", "", "><b>Reze</b><nav>", "</nav></header>"],
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, ssrAttribute as _$ssrAttribute, createComponent as _$createComponent, ssrSpread as _$ssrSpread } from "reze-js";
+const _tmpl$ = ["<header title=\"Docs\"", "><b>Reze</b><nav>", "</nav></header>"],
   _tmpl$2 = ["<a", "", ">", "</a>"],
-  _tmpl$3 = ["<footer", "><!--[-->", "<!--]--> © <!--[-->", "<!--]--></footer>"],
+  _tmpl$3 = ["<footer", ">Built © <!--[-->", "<!--]--></footer>"],
   _tmpl$4 = ["<ul", ">", "</ul>"],
   _tmpl$5 = ["<button", ">click</button>"],
   _tmpl$6 = ["<div", "></div>"],
@@ -308,14 +321,14 @@ const _tmpl$ = ["<header", "", "><b>Reze</b><nav>", "</nav></header>"],
 
 export function Header(props) {
   return (
-    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("title", props.title), _$ssrChild(links.map((link) => (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(links.map((link) => (
           _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrAttribute("href", link.href), _$ssrChild(link.label))
         ))))
   );
 }
 
 export const Footer = (_props$) => (
-  _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_props$.note), _$ssrChild(year))
+  _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(year))
 );
 
 export function Tree(props) {
@@ -363,9 +376,9 @@ import { Widget } from "ui-kit";
 
 import { brand, counter, links, year } from "./data";
 import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, bind as _$bind, setAttribute as _$setAttribute, createComponent as _$createComponent, use as _$use, spread as _$spread, delegateEvents as _$delegateEvents } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<header><b>Reze</b><nav></nav></header>"),
+const _tmpl$ = /*#__PURE__*/ _$template("<header title=\"Docs\"><b>Reze</b><nav></nav></header>"),
   _tmpl$2 = /*#__PURE__*/ _$template("<a></a>"),
-  _tmpl$3 = /*#__PURE__*/ _$template("<footer> © </footer>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<footer>Built © </footer>"),
   _tmpl$4 = /*#__PURE__*/ _$template("<ul></ul>"),
   _tmpl$5 = /*#__PURE__*/ _$template("<button>click</button>"),
   _tmpl$6 = /*#__PURE__*/ _$template("<div></div>"),
@@ -388,7 +401,6 @@ export function Header(props) {
   return _el$3;
 })()
         )));
-  _$bind(() => _$setAttribute(_el$, "title", props.title));
   return _el$;
 })()
   );
@@ -396,9 +408,7 @@ export function Header(props) {
 
 export const Footer = (_props$) => (
   (() => {
-  var _el$4 = _$claim(_tmpl$3, "footer"),
-    _el$5 = _$claimChild(_el$4, 0);
-  _$claimInsert(_el$4, () => _props$.note, _el$5);
+  var _el$4 = _$claim(_tmpl$3, "footer");
   _$claimInsert(_el$4, year, null);
   return _el$4;
 })()
@@ -407,37 +417,37 @@ export const Footer = (_props$) => (
 export function Tree(props) {
   const depth = props.depth;
   return (() => {
-  var _el$6 = _$claim(_tmpl$4, "ul");
-  _$claimInsert(_el$6, depth > 0 ? _$createComponent(Tree, { depth: depth - 1 }) : null);
-  return _el$6;
+  var _el$5 = _$claim(_tmpl$4, "ul");
+  _$claimInsert(_el$5, depth > 0 ? _$createComponent(Tree, { depth: depth - 1 }) : null);
+  return _el$5;
 })();
 }
 
 export const Clicker = () => (() => {
-  var _el$7 = _$claim(_tmpl$5, "button");
-  _el$7.$$click = () => alert(1);
-  return _el$7;
+  var _el$6 = _$claim(_tmpl$5, "button");
+  _el$6.$$click = () => alert(1);
+  return _el$6;
 })();
 export const WithRef = () => (() => {
-  var _el$8 = _$claim(_tmpl$6, "div");
-  _$use((el) => el.focus(), _el$8);
-  return _el$8;
+  var _el$7 = _$claim(_tmpl$6, "div");
+  _$use((el) => el.focus(), _el$7);
+  return _el$7;
 })();
 export const WithSpread = (props) => (() => {
-  var _el$9 = _$claim(_tmpl$6, "div");
-  _$spread(_el$9, props, false, false);
-  return _el$9;
+  var _el$8 = _$claim(_tmpl$6, "div");
+  _$spread(_el$8, props, false, false);
+  return _el$8;
 })();
 export const WithProp = () => (() => {
-  var _el$10 = _$claim(_tmpl$7, "input");
-  _el$10.indeterminate = true;
-  return _el$10;
+  var _el$9 = _$claim(_tmpl$7, "input");
+  _el$9.indeterminate = true;
+  return _el$9;
 })();
 export const Select = () => (
   (() => {
-  var _el$11 = _$claim(_tmpl$8, "select");
-  _el$11.value = "b";
-  return _el$11;
+  var _el$10 = _$claim(_tmpl$8, "select");
+  _el$10.value = "b";
+  return _el$10;
 })()
 );
 export async function Async() {
@@ -445,18 +455,18 @@ export async function Async() {
 }
 export const TwoParams = (a, b) => (
   (() => {
-  var _el$12 = _$claim(_tmpl$9, "p");
-  _$claimInsert(_el$12, a, null, 1);
-  _$claimInsert(_el$12, b, null);
-  return _el$12;
+  var _el$11 = _$claim(_tmpl$9, "p");
+  _$claimInsert(_el$11, a, null, 1);
+  _$claimInsert(_el$11, b, null);
+  return _el$11;
 })()
 );
 export const Local = () => {
   let x = 1;
   return (() => {
-  var _el$13 = _$claim(_tmpl$9, "p");
-  _$claimInsert(_el$13, x);
-  return _el$13;
+  var _el$12 = _$claim(_tmpl$9, "p");
+  _$claimInsert(_el$12, x);
+  return _el$12;
 })();
 };
 export const RuntimeChild = () => (
@@ -464,24 +474,24 @@ export const RuntimeChild = () => (
 );
 export const OutsideChild = () => _$createComponent(Widget, {});
 export const Deep = (props) => (() => {
-  var _el$14 = _$claim(_tmpl$9, "p");
-  _$claimInsert(_el$14, () => props.a.b);
-  return _el$14;
+  var _el$13 = _$claim(_tmpl$9, "p");
+  _$claimInsert(_el$13, () => props.a.b);
+  return _el$13;
 })();
 export const Reactive = () => {
   const n = 0;
   return _$claim(_tmpl$10, "p");
 };
 export const Mutated = () => (() => {
-  var _el$15 = _$claim(_tmpl$9, "p");
-  _$claimInsert(_el$15, () => counter.value);
-  return _el$15;
+  var _el$14 = _$claim(_tmpl$9, "p");
+  _$claimInsert(_el$14, () => counter.value);
+  return _el$14;
 })();
 export const ClientChild = () => (
   (() => {
-  var _el$16 = _$claim(_tmpl$11, "section");
-  _$claimInsert(_el$16, _$createComponent(Clicker, {}));
-  return _el$16;
+  var _el$15 = _$claim(_tmpl$11, "section");
+  _$claimInsert(_el$15, _$createComponent(Clicker, {}));
+  return _el$15;
 })()
 );
 

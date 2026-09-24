@@ -7,15 +7,16 @@ use oxc_span::Span;
 
 use crate::diagnostic::{Code, Related};
 use crate::facts::{
-    self, BodyExport, ComponentFact, ComputedRead, FoldedImport, FoldedSignal, ImportRef,
-    InlinedComputed, IslandFact, IslandMode, LeafNames, ModuleFacts, Primitive, PrimitiveImport,
-    Reason, RootFact, RootIsland, StoreExport, StoreImport, StoreRole,
+    self, BodyExport, ComponentFact, ComputedRead, FoldedImport, FoldedProp, FoldedSignal,
+    ImportRef, InlinedComputed, IslandFact, IslandMode, LeafNames, ModuleFacts, Primitive,
+    PrimitiveImport, Reason, RootFact, RootIsland, StoreExport, StoreImport, StoreRole,
 };
 use crate::features::{self, Features};
 use crate::lower::store::ARRAY_METHODS;
 use crate::summary::{
     ArraySite, ArrayTail, ArrayUse, BodyReference, Boundary, ComputedSummary, DeclarationKind, Dep,
-    DepKind, DraftUse, Export, ImportName, LeafShape, ModuleSummary, Ref, UseClass, Violation,
+    DepKind, DraftUse, Export, ImportName, LeafShape, ModuleSummary, Ref, TagProps, UseClass,
+    Violation,
 };
 
 pub struct ModuleInput {
@@ -173,6 +174,7 @@ impl<'m, 'o> Linker<'m, 'o> {
             self.signals();
             self.stores();
             self.computeds();
+            self.props();
         }
         self.module_folds();
         self.classify_components();
@@ -608,6 +610,62 @@ impl<'m, 'o> Linker<'m, 'o> {
                             .push(FoldedImport { import, literal: literal.clone() });
                     }
                 }
+            }
+        }
+    }
+
+    fn tag_props_of(&self, used: usize) -> Option<&'m TagProps> {
+        let used = &self.uses[used];
+        if used.via_namespace {
+            return None;
+        }
+        let summary = self.summary(used.module);
+        let start = summary.uses[used.index].start;
+        let index = summary.tag_props.binary_search_by_key(&start, |t| t.start).ok()?;
+        Some(&summary.tag_props[index])
+    }
+
+    /// Folds `props.k` of a component whose every use is a JSX element of the program passing
+    /// `k` as the same literal, without spreads (§15.16).
+    fn props(&mut self) {
+        for module in 0..self.program.modules.len() {
+            for component in &self.summary(module).components {
+                let binding = component.binding;
+                if self.escaping.contains(&(module, binding)) {
+                    continue;
+                }
+                let uses = self.uses_of(module, binding).to_vec();
+                let Some(sites) =
+                    uses.iter().map(|&u| self.tag_props_of(u)).collect::<Option<Vec<_>>>()
+                else {
+                    continue;
+                };
+                if sites.is_empty() || sites.iter().any(|site| site.has_spread) {
+                    continue;
+                }
+                let mut folded: Vec<FoldedProp> = Vec::new();
+                for attribute in &sites[0].attributes {
+                    let Some(literal) = &attribute.literal else { continue };
+                    let is_everywhere = sites.iter().all(|site| {
+                        let mut matching =
+                            site.attributes.iter().filter(|a| a.key == attribute.key);
+                        matching.next().is_some_and(|a| a.literal.as_ref() == Some(literal))
+                            && matching.next().is_none()
+                    });
+                    if is_everywhere && !folded.iter().any(|f| f.key == attribute.key) {
+                        folded.push(FoldedProp {
+                            component: binding,
+                            key: attribute.key.clone(),
+                            literal: literal.clone(),
+                            related: self.related(&uses, module, "passed here"),
+                        });
+                    }
+                }
+                if folded.is_empty() {
+                    continue;
+                }
+                self.closed.extend(self.exporters(module, binding));
+                self.facts[module].folded_props.extend(folded);
             }
         }
     }

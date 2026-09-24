@@ -36,6 +36,20 @@ pub struct ModuleFacts {
     pub islands_enabled: bool,
     pub islands: Vec<IslandFact>,
     pub roots: Vec<RootFact>,
+    /// Props of this module's components that every program call site passes as the same
+    /// literal (§15.16).
+    #[serde(default)]
+    pub folded_props: Vec<FoldedProp>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FoldedProp {
+    /// Start of the component's binding identifier.
+    pub component: u32,
+    pub key: String,
+    pub literal: crate::summary::PropLiteral,
+    /// The call sites passing it.
+    pub related: Vec<Related>,
 }
 
 /// An import binding, by the start of its local identifier, or `member` of a namespace import.

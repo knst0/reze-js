@@ -1,9 +1,9 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
-assertion_line: 254
+assertion_line: 259
 expression: render(&dir)
 ---
-closed: []
+closed: ["/User.tsx"]
 features: {"suspense": false}
 
 // ==== /User.tsx [client] ====
@@ -23,7 +23,7 @@ _$trackPending(() => !_settled$2() && _err$() === undefined);
 _$effect(() => {
 _setErr$(undefined);
 _setSettled$(false);
-const _p$ = Promise.resolve(fetchUser(props.id));
+const _p$ = Promise.resolve(fetchUser((1)));
 const _my$ = ++_epoch$;
 _$trackAsync(_owner$, _p$, () => _my$ === _epoch$, (_v) => { _setVal$(_v); _setSettled$(true); }, _setErr$);
 });
@@ -71,6 +71,14 @@ declare function fetchPosts(id: number): Promise<{ title: string }[]>;
     |                       ^^^^
   2 |   const user = await fetchUser(props.id);
   note: first client-only part (/User.tsx:1:27)
+// info
+[PROP_FOLDED] Every call site passes `id=1`, so reads of `id` compiled to that literal.
+  at /User.tsx:2:32
+  1 | export async function User(props: { id: number }) {
+> 2 |   const user = await fetchUser(props.id);
+    |                                ^^^^^^^^
+  3 |   const posts = await fetchPosts(user.id);
+  related: passed here (/server.tsx:117)
 // ==== /User.tsx [server] ====
 import { getOwner as _$getOwner, streamBoundary as _$streamBoundary, ssrAwait as _$ssrAwait, streamOutput as _$streamOutput, signal as _$signal, onCleanup as _$onCleanup, trackPending as _$trackPending, effect as _$effect, trackAsync as _$trackAsync, memo as _$memo, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
 const _tmpl$ = ["<ul", ">", "</ul>"],
@@ -89,7 +97,7 @@ _$trackPending(() => !_settled$2() && _err$() === undefined);
 _$effect(() => {
 _setErr$(undefined);
 _setSettled$(false);
-const _p$ = Promise.resolve(_$ssrAwait(_boundary$, 0, () => fetchUser(props.id)));
+const _p$ = Promise.resolve(_$ssrAwait(_boundary$, 0, () => fetchUser((1))));
 const _my$ = ++_epoch$;
 _$trackAsync(_owner$, _p$, () => _my$ === _epoch$, (_v) => { _setVal$(_v); _setSettled$(true); }, _setErr$);
 });
@@ -140,7 +148,7 @@ _$trackPending(() => !_settled$2() && _err$() === undefined);
 _$effect(() => {
 _setErr$(undefined);
 _setSettled$(false);
-const _p$ = _$streamValue(_boundary$, 0, () => fetchUser(props.id));
+const _p$ = _$streamValue(_boundary$, 0, () => fetchUser((1)));
 const _my$ = ++_epoch$;
 _$trackAsync(_owner$, _p$, () => _my$ === _epoch$, (_v) => { _setVal$(_v); _setSettled$(true); }, _setErr$);
 });

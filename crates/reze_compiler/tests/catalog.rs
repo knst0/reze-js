@@ -73,7 +73,9 @@ fn trigger(code: Code) -> Trigger {
             return Trigger::Program { file: "/page.tsx" };
         }
         Code::IslandDirectiveIgnored => return Trigger::Program { file: "/counter.tsx" },
-        Code::ClientComponent => return Trigger::Program { file: "/counter.tsx" },
+        Code::ClientComponent | Code::PropFolded => {
+            return Trigger::Program { file: "/counter.tsx" };
+        }
         Code::FactsStale => return Trigger::StaleFacts,
         Code::ProgramOpenImport => return Trigger::Outside { closed: true, suspense: true },
         Code::FeatureFlagMismatch => return Trigger::Outside { closed: false, suspense: false },
