@@ -1,5 +1,5 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
-import { endTracking, setActiveSub, startTracking, track } from "./context";
+import { endTracking, getOwner, setActiveSub, startTracking, track } from "./context";
 import {
   FlagDirty,
   FlagHasChildEffect,
@@ -25,9 +25,11 @@ class ComputedNode<T = unknown> implements ReactiveNode {
   depsTail: Link | undefined = undefined;
   flags: number = FlagNone;
   getter: (previousValue?: T) => T;
+  parent: ReactiveNode | undefined;
 
-  constructor(getter: (previousValue?: T) => T) {
+  constructor(getter: (previousValue?: T) => T, parent: ReactiveNode | undefined) {
     this.getter = getter;
+    this.parent = parent;
   }
 
   update(): boolean {
@@ -52,7 +54,7 @@ class ComputedNode<T = unknown> implements ReactiveNode {
 }
 
 export function computed<T>(getter: (previousValue?: T) => T): () => T {
-  return (computedOper<T>).bind(new ComputedNode(getter));
+  return (computedOper<T>).bind(new ComputedNode(getter, getOwner()));
 }
 
 export function isComputed(fn: () => void): boolean {

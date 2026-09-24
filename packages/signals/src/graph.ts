@@ -58,6 +58,8 @@ export interface ReactiveNode {
   unwatched?(): void;
   /** Marks owned nodes (effects, scopes): disposed before their owner re-runs. */
   dispose?(): void;
+  /** The owner a root or computed was created under; it does not dispose the node. */
+  parent?: ReactiveNode | undefined;
 }
 
 export interface Link {

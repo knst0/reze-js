@@ -55,7 +55,10 @@ export {
   store,
   trackAsync,
   untrack,
+  useContext,
 } from "@rezejs/signals";
+export { createContext } from "./context";
+export type { Context } from "./context";
 export { Suspense, trackPending } from "./flow";
 export type { SuspenseProps } from "./flow";
 export { applyStreamChunks, streamBoundary, streamOutput, streamValue } from "./stream";

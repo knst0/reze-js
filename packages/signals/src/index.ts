@@ -4,6 +4,7 @@ export { getOwner } from "./context";
 export { effect, isEffect } from "./effect";
 export { effectScope, isEffectScope } from "./effectScope";
 export { batch, onCleanup, root, runWithOwner, untrack, type Owner } from "./owner";
+export { provideContext, useContext, type ContextKey } from "./provide";
 export { flushSync } from "./scheduler";
 export { selector } from "./selector";
 export {
