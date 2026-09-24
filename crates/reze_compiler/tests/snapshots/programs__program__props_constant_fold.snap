@@ -1,0 +1,372 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+expression: render(&dir)
+---
+closed: ["/Counter.tsx"]
+features: {"suspense": false}
+
+// ==== /Counter.tsx [client] ====
+import { signal } from "reze-js";
+import { template as _$template, insert as _$insert, createComponent as _$createComponent, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<section title=\"Count\"><button>−1</button><output></output><button>+1</button></section>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<small>: </small>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<i title=\"hi\">hi!</i>"),
+  _tmpl$4 = /*#__PURE__*/ _$template("<p>a</p>"),
+  _tmpl$5 = /*#__PURE__*/ _$template("<p></p>");
+
+export function Counter(props) {
+  const [count, setCount] = signal(0);
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild,
+    _el$3 = _el$2.nextSibling,
+    _el$4 = _el$3.nextSibling;
+  _el$2.$$click = () => setCount((n) => n - (1));
+  _$insert(_el$3, count);
+  _el$4.$$click = () => setCount((n) => n + (1));
+  _$insert(_el$, _$createComponent(Hint, { step: (1) }), null);
+  _$insert(_el$, _$createComponent(Label, { text: "hi" }), null);
+  _$insert(_el$, _$createComponent(Label, { text: "hi" }), null);
+  return _el$;
+})()
+  );
+}
+
+function Hint(_props$) {
+  return (
+    (() => {
+  var _el$5 = _tmpl$2(),
+    _el$6 = _el$5.firstChild;
+  _$insert(_el$5, () => (_props$.label === undefined ? "step" : _props$.label), _el$6);
+  _$insert(_el$5, () => _props$.step, null);
+  return _el$5;
+})()
+  );
+}
+
+function Label(_props$2) {
+  return _tmpl$3();
+}
+
+export function Varied(props) {
+  return (
+    (() => {
+  var _el$7 = _tmpl$4(),
+    _el$8 = _el$7.firstChild;
+  _$insert(_el$7, () => props.size, _el$8);
+  return _el$7;
+})()
+  );
+}
+
+export function Spread(props) {
+  return (() => {
+  var _el$9 = _tmpl$5();
+  _$insert(_el$9, () => props.size);
+  return _el$9;
+})();
+}
+
+export function Escaped(props) {
+  return (() => {
+  var _el$10 = _tmpl$5();
+  _$insert(_el$10, () => props.size);
+  return _el$10;
+})();
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `Counter` runs on the client: `[count, setCount] = signal(0)` destructures a value.
+  at /Counter.tsx:3:17
+  2 | 
+> 3 | export function Counter(props) {
+    |                 ^^^^^^^
+  4 |   const [count, setCount] = signal(0);
+  note: first client-only part (/Counter.tsx:4:9)
+// info
+[PROP_FOLDED] Every call site passes `title="Count"`, so reads of `title` compiled to that literal.
+  at /Counter.tsx:6:21
+  5 |   return (
+> 6 |     <section title={props.title}>
+    |                     ^^^^^^^^^^^
+  7 |       <button onClick={() => setCount((n) => n - props.step)}>&minus;{props.step}</button>
+  related: passed here (/main.tsx:201)
+  related: passed here (/main.tsx:252)
+// info
+[PROP_FOLDED] Every call site passes `step=1`, so reads of `step` compiled to that literal.
+  at /Counter.tsx:7:50
+  6 |     <section title={props.title}>
+> 7 |       <button onClick={() => setCount((n) => n - props.step)}>&minus;{props.step}</button>
+    |                                                  ^^^^^^^^^^
+  8 |       <output>{count()}</output>
+  related: passed here (/main.tsx:201)
+  related: passed here (/main.tsx:252)
+// info
+[PROP_FOLDED] Every call site passes `zero=0`, so reads of `zero` compiled to that literal.
+  at /Counter.tsx:10:8
+   9 |       <button onClick={() => setCount((n) => n + props.step)}>+{props.step}</button>
+> 10 |       {props.zero && <b>never</b>}
+     |        ^^^^^^^^^^
+  11 |       <Hint step={props.step} />
+  related: passed here (/main.tsx:201)
+  related: passed here (/main.tsx:252)
+// info
+[DEAD_BRANCH_REMOVED] The condition is a literal, so this branch can never render; it was removed.
+  in <Counter> › section
+  at /Counter.tsx:10:8
+   9 |       <button onClick={() => setCount((n) => n + props.step)}>+{props.step}</button>
+> 10 |       {props.zero && <b>never</b>}
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  11 |       <Hint step={props.step} />
+  note: never rendered (/Counter.tsx:10:22)
+// info
+[STATIC_COMPONENT] `Hint` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Counter.tsx:18:10
+  17 | 
+> 18 | function Hint({ step, label = "step" }) {
+     |          ^^^^
+  19 |   return (
+// info
+[PROPS_REWRITTEN] `Hint` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Hint>
+  at /Counter.tsx:18:15
+  17 | 
+> 18 | function Hint({ step, label = "step" }) {
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^
+  19 |   return (
+// info
+[STATIC_COMPONENT] `Label` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Counter.tsx:26:10
+  25 | 
+> 26 | function Label({ text }) {
+     |          ^^^^^
+  27 |   return <i title={text}>{text}!</i>;
+// info
+[PROPS_REWRITTEN] `Label` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Label>
+  at /Counter.tsx:26:16
+  25 | 
+> 26 | function Label({ text }) {
+     |                ^^^^^^^^
+  27 |   return <i title={text}>{text}!</i>;
+// info
+[PROP_FOLDED] Every call site passes `text="hi"`, so reads of `text` compiled to that literal.
+  at /Counter.tsx:27:20
+  26 | function Label({ text }) {
+> 27 |   return <i title={text}>{text}!</i>;
+     |                    ^^^^
+  28 | }
+// info
+[STATIC_COMPONENT] `Varied` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Counter.tsx:30:17
+  29 | 
+> 30 | export function Varied(props) {
+     |                 ^^^^^^
+  31 |   return (
+// info
+[PROP_FOLDED] Every call site passes `name="a"`, so reads of `name` compiled to that literal.
+  at /Counter.tsx:34:8
+  33 |       {props.size}
+> 34 |       {props.name}
+     |        ^^^^^^^^^^
+  35 |     </p>
+  related: passed here (/main.tsx:303)
+  related: passed here (/main.tsx:339)
+// info
+[STATIC_COMPONENT] `Spread` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Counter.tsx:39:17
+  38 | 
+> 39 | export function Spread(props) {
+     |                 ^^^^^^
+  40 |   return <p>{props.size}</p>;
+// info
+[STATIC_COMPONENT] `Escaped` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Counter.tsx:43:17
+  42 | 
+> 43 | export function Escaped(props) {
+     |                 ^^^^^^^
+  44 |   return <p>{props.size}</p>;
+// ==== /Counter.tsx [server] ====
+import { signal } from "reze-js";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = ["<section title=\"Count\"", "><button>−1</button><output>", "</output><button>+1</button><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></section>"],
+  _tmpl$2 = ["<small", "><!--[-->", "<!--]-->: <!--[-->", "<!--]--></small>"],
+  _tmpl$3 = ["<i title=\"hi\"", ">hi!</i>"],
+  _tmpl$4 = ["<p", "><!--[-->", "<!--]-->a</p>"],
+  _tmpl$5 = ["<p", ">", "</p>"];
+
+export function Counter(props) {
+  const [count, setCount] = signal(0);
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(count()), _$ssrChild(_$createComponent(Hint, { step: (1) })), _$ssrChild(_$createComponent(Label, { text: "hi" })), _$ssrChild(_$createComponent(Label, { text: "hi" })))
+  );
+}
+
+function Hint(_props$) {
+  return (
+    _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild((_props$.label === undefined ? "step" : _props$.label)), _$ssrChild(_props$.step))
+  );
+}
+
+function Label(_props$2) {
+  return _$ssr(_tmpl$3, _$ssrHydrationKey());
+}
+
+export function Varied(props) {
+  return (
+    _$ssr(_tmpl$4, _$ssrHydrationKey(), _$ssrChild(props.size))
+  );
+}
+
+export function Spread(props) {
+  return _$ssr(_tmpl$5, _$ssrHydrationKey(), _$ssrChild(props.size));
+}
+
+export function Escaped(props) {
+  return _$ssr(_tmpl$5, _$ssrHydrationKey(), _$ssrChild(props.size));
+}
+
+// ==== /Counter.tsx [hydrate] ====
+import { signal } from "reze-js";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimSibling as _$claimSibling, claimInsert as _$claimInsert, createComponent as _$createComponent, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<section title=\"Count\"><button>−1</button><output></output><button>+1</button></section>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<small>: </small>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<i title=\"hi\">hi!</i>"),
+  _tmpl$4 = /*#__PURE__*/ _$template("<p>a</p>"),
+  _tmpl$5 = /*#__PURE__*/ _$template("<p></p>");
+
+export function Counter(props) {
+  const [count, setCount] = signal(0);
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "section"),
+    _el$2 = _$claimChild(_el$, 0),
+    _el$3 = _$claimSibling(_el$2, 1),
+    _el$4 = _$claimSibling(_el$3, 1);
+  _el$2.$$click = () => setCount((n) => n - (1));
+  _$claimInsert(_el$3, count);
+  _el$4.$$click = () => setCount((n) => n + (1));
+  _$claimInsert(_el$, _$createComponent(Hint, { step: (1) }), null, 2);
+  _$claimInsert(_el$, _$createComponent(Label, { text: "hi" }), null, 1);
+  _$claimInsert(_el$, _$createComponent(Label, { text: "hi" }), null);
+  return _el$;
+})()
+  );
+}
+
+function Hint(_props$) {
+  return (
+    (() => {
+  var _el$5 = _$claim(_tmpl$2, "small"),
+    _el$6 = _$claimChild(_el$5, 0);
+  _$claimInsert(_el$5, () => (_props$.label === undefined ? "step" : _props$.label), _el$6);
+  _$claimInsert(_el$5, () => _props$.step, null);
+  return _el$5;
+})()
+  );
+}
+
+function Label(_props$2) {
+  return _$claim(_tmpl$3, "i");
+}
+
+export function Varied(props) {
+  return (
+    (() => {
+  var _el$7 = _$claim(_tmpl$4, "p"),
+    _el$8 = _$claimChild(_el$7, 0);
+  _$claimInsert(_el$7, () => props.size, _el$8);
+  return _el$7;
+})()
+  );
+}
+
+export function Spread(props) {
+  return (() => {
+  var _el$9 = _$claim(_tmpl$5, "p");
+  _$claimInsert(_el$9, () => props.size);
+  return _el$9;
+})();
+}
+
+export function Escaped(props) {
+  return (() => {
+  var _el$10 = _$claim(_tmpl$5, "p");
+  _$claimInsert(_el$10, () => props.size);
+  return _el$10;
+})();
+}
+
+_$delegateEvents(["click"]);
+
+// ==== /main.tsx [client] ====
+import { render } from "reze-js";
+
+import { Counter, Escaped, Spread, Varied } from "./Counter";
+import { template as _$template, insert as _$insert, createComponent as _$createComponent, mergeProps as _$mergeProps } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main></main>");
+
+const extra = { size: 2 };
+export const used = Escaped;
+
+render(
+  () => (
+    (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, _$createComponent(Counter, { step: 1, title: "Count", zero: 0 }), null);
+  _$insert(_el$, _$createComponent(Counter, { step: 1, title: "Count", zero: 0 }), null);
+  _$insert(_el$, _$createComponent(Varied, { size: 1, name: "a" }), null);
+  _$insert(_el$, _$createComponent(Varied, { size: 2, name: "a" }), null);
+  _$insert(_el$, _$createComponent(Spread, _$mergeProps({ size: 1 }, extra)), null);
+  _$insert(_el$, _$createComponent(Escaped, { size: 1 }), null);
+  return _el$;
+})()
+  ),
+  document.getElementById("app")!,
+);
+
+// ==== /main.tsx [server] ====
+import { render } from "reze-js";
+
+import { Counter, Escaped, Spread, Varied } from "./Counter";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, createComponent as _$createComponent, mergeProps as _$mergeProps } from "reze-js";
+const _tmpl$ = ["<main", "><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></main>"];
+
+const extra = { size: 2 };
+export const used = Escaped;
+
+render(
+  () => (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Counter, { step: 1, title: "Count", zero: 0 })), _$ssrChild(_$createComponent(Counter, { step: 1, title: "Count", zero: 0 })), _$ssrChild(_$createComponent(Varied, { size: 1, name: "a" })), _$ssrChild(_$createComponent(Varied, { size: 2, name: "a" })), _$ssrChild(_$createComponent(Spread, _$mergeProps({ size: 1 }, extra))), _$ssrChild(_$createComponent(Escaped, { size: 1 })))
+  ),
+  document.getElementById("app")!,
+);
+
+// ==== /main.tsx [hydrate] ====
+import { render } from "reze-js";
+
+import { Counter, Escaped, Spread, Varied } from "./Counter";
+import { template as _$template, claim as _$claim, claimInsert as _$claimInsert, createComponent as _$createComponent, mergeProps as _$mergeProps } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main></main>");
+
+const extra = { size: 2 };
+export const used = Escaped;
+
+render(
+  () => (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "main");
+  _$claimInsert(_el$, _$createComponent(Counter, { step: 1, title: "Count", zero: 0 }), null, 5);
+  _$claimInsert(_el$, _$createComponent(Counter, { step: 1, title: "Count", zero: 0 }), null, 4);
+  _$claimInsert(_el$, _$createComponent(Varied, { size: 1, name: "a" }), null, 3);
+  _$claimInsert(_el$, _$createComponent(Varied, { size: 2, name: "a" }), null, 2);
+  _$claimInsert(_el$, _$createComponent(Spread, _$mergeProps({ size: 1 }, extra)), null, 1);
+  _$claimInsert(_el$, _$createComponent(Escaped, { size: 1 }), null);
+  return _el$;
+})()
+  ),
+  document.getElementById("app")!,
+);

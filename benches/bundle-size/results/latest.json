@@ -1,22 +1,22 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-24T22:06:14.663Z",
+  "recordedAt": "2026-09-24T22:47:18.336Z",
   "results": {
     "@rezejs/example-async js": {
-      "raw": 11874,
-      "gzip": 4556
+      "raw": 11864,
+      "gzip": 4562
     },
     "@rezejs/example-counter js": {
-      "raw": 9856,
-      "gzip": 3803
+      "raw": 8926,
+      "gzip": 3483
     },
     "@rezejs/example-islands js": {
-      "raw": 12616,
-      "gzip": 4854
+      "raw": 12610,
+      "gzip": 4856
     },
     "@rezejs/example-islands-lazy js": {
-      "raw": 14549,
-      "gzip": 5798
+      "raw": 14543,
+      "gzip": 5804
     }
   }
 }

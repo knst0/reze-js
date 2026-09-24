@@ -39,26 +39,6 @@ After:
 const a = <div />;
 ```
 
-## CLASS_ALIAS
-
-**`className` / `classList` instead of `class`** · severity `warn`
-
-A native element uses `className` or `classList`. Reze has one class attribute, `class`, which accepts a string, a toggle object, or a (nested) array of both. The compiler compiled the alias as `class` and merged it with any other class sources on the element.
-
-**Repair:** Apply the fix: rename the attribute to `class`. When the element has several class sources, merge them into one array: `class={["btn", { active: on() }]}`.
-
-Before:
-
-```tsx
-<button className="btn" classList={{ active: on() }} />
-```
-
-After:
-
-```tsx
-<button class={["btn", { active: on() }]} />
-```
-
 ## CHILDREN_PROP_IGNORED
 
 **`children` attribute next to nested children** · severity `warn`
@@ -327,6 +307,35 @@ Example:
 
 ```tsx
 <For each={rows()}>{(row) => <tr class={selected() === row().id ? "on" : ""} />}</For>
+```
+
+## SHOW_INLINED
+
+**`<Show>` compiled to a conditional** · severity `info`
+
+A runtime `<Show>` inside a native element has a `when`, an optional `fallback`, and one child that is not a function. The compiler compiled it like `{when ? child : fallback}`: one memo of the condition's truthiness and an insert, instead of a component with its own computeds (optimization O7). The branch is still rebuilt only when the truthiness flips.
+
+**Repair:** Nothing to repair. A function child, other attributes or several children keep the `<Show>` component.
+
+Example:
+
+```tsx
+<div><Show when={open()} fallback={<i>closed</i>}><b>open</b></Show></div>
+```
+
+## PROP_FOLDED
+
+**Prop folded to the literal every call site passes** · severity `info`
+
+In the whole-program build every JSX use of the component passes this prop as the same string or integer literal, without spreads, and the component is not used any other way. The compiler replaced its reads (`props.k`, or a destructured `k`) with that literal, so it folds into templates like a constant (§15.16). `related` lists the call sites; `data.prop` is the key.
+
+**Repair:** Nothing to repair. Pass a different value at one call site, or use the component other than as a JSX tag, and the prop is read at runtime again.
+
+Example:
+
+```tsx
+<Counter step={1} />
+function Counter(props) { return <b>+{props.step}</b>; }
 ```
 
 ## PROPS_REWRITTEN

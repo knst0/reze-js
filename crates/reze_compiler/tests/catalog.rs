@@ -40,7 +40,6 @@ const COUNTER: &str = "export function Counter(props) { return <button island:lo
 fn trigger(code: Code) -> Trigger {
     let source = match code {
         Code::ParseError => "const a = <div>;",
-        Code::ClassAlias => "const a = <div className=\"x\" />;",
         Code::ChildrenPropIgnored => "const a = <div children={x()}><b /></div>;",
         Code::KeyOnElement => "const a = <li key={id} />;",
         Code::DuplicateAttribute => "const a = <a href=\"/a\" href={u()} />;",
@@ -66,6 +65,9 @@ fn trigger(code: Code) -> Trigger {
         Code::AutoSelector => {
             "import { For, signal } from \"reze-js\";\nconst [sel, setSel] = signal(0); setSel(1);\nconst a = <For each={rows()}>{(row) => <i class={sel() === row().id ? \"on\" : \"\"} />}</For>;"
         }
+        Code::ShowInlined => {
+            "import { Show } from \"reze-js\";\nconst a = <div><Show when={on()}><b /></Show></div>;"
+        }
         Code::StoreUnproxied => {
             "import { store } from \"reze-js\";\nconst [s] = store({ a: 1 });\nconst a = <p>{s.a}</p>;"
         }
@@ -73,7 +75,9 @@ fn trigger(code: Code) -> Trigger {
             return Trigger::Program { file: "/page.tsx" };
         }
         Code::IslandDirectiveIgnored => return Trigger::Program { file: "/counter.tsx" },
-        Code::ClientComponent => return Trigger::Program { file: "/counter.tsx" },
+        Code::ClientComponent | Code::PropFolded => {
+            return Trigger::Program { file: "/counter.tsx" };
+        }
         Code::FactsStale => return Trigger::StaleFacts,
         Code::ProgramOpenImport => return Trigger::Outside { closed: true, suspense: true },
         Code::FeatureFlagMismatch => return Trigger::Outside { closed: false, suspense: false },

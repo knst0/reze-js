@@ -71,7 +71,7 @@ impl<'a> Emitter<'a, '_> {
         out.push(";\n");
 
         let mut memos: std::vec::Vec<&'a str> = vec![""; template.memo_count as usize];
-        for op in &template.ops {
+        for op in template.ops.iter().filter(|op| !matches!(op, Op::ServerClass { .. })) {
             out.push("  ");
             self.op(out, op, &names, &mut memos);
             out.push(";\n");
@@ -94,6 +94,7 @@ impl<'a> Emitter<'a, '_> {
             Op::Event { node, event, handler } => {
                 self.event(out, names[node.index()], event, handler);
             }
+            Op::ServerClass { .. } => {}
             Op::Ref { node, target } => self.element_ref(out, names[node.index()], target),
             Op::Spread { node, props, is_svg, has_children } => {
                 let spread = self.helper(Helper::Spread);
@@ -276,10 +277,15 @@ impl<'a> Emitter<'a, '_> {
 
     fn set_open(&mut self, out: &mut Code, element: &str, target: BindTarget<'a>) {
         let helper = match target {
+            BindTarget::Text { .. } => {
+                let _ = write!(out, "{element}.data = ");
+                return;
+            }
             BindTarget::Attr(_) => Helper::SetAttribute,
             BindTarget::AttrNs(..) => Helper::SetAttributeNs,
             BindTarget::Bool(_) => Helper::SetBoolAttribute,
             BindTarget::Class => Helper::ClassName,
+            BindTarget::ClassToggle(_) => Helper::ToggleClass,
             BindTarget::Style => Helper::Style,
             BindTarget::Prop { name, .. } => {
                 push_member(&mut out.text, element, name);
@@ -290,7 +296,7 @@ impl<'a> Emitter<'a, '_> {
         let helper = self.helper(helper);
         let _ = write!(out, "{helper}({element}, ");
         match target {
-            BindTarget::Attr(name) | BindTarget::Bool(name) => {
+            BindTarget::Attr(name) | BindTarget::Bool(name) | BindTarget::ClassToggle(name) => {
                 push_js_string(&mut out.text, name);
                 out.push(", ");
             }
@@ -300,12 +306,15 @@ impl<'a> Emitter<'a, '_> {
                 push_js_string(&mut out.text, name);
                 out.push(", ");
             }
-            BindTarget::Class | BindTarget::Style | BindTarget::Prop { .. } => {}
+            BindTarget::Class
+            | BindTarget::Style
+            | BindTarget::Prop { .. }
+            | BindTarget::Text { .. } => {}
         }
     }
 
     fn set_close(&mut self, out: &mut Code, target: BindTarget<'a>, previous: Option<&str>) {
-        if matches!(target, BindTarget::Prop { .. }) {
+        if matches!(target, BindTarget::Prop { .. } | BindTarget::Text { .. }) {
             return;
         }
         if let Some(previous) = previous {

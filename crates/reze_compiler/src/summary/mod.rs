@@ -65,6 +65,30 @@ pub struct ModuleSummary {
     pub components: Vec<ComponentSummary>,
     pub constants: Vec<ConstantSummary>,
     pub roots: Vec<RootSummary>,
+    /// Each JSX element named by a binding of this module, by the start of its tag (§15.16).
+    #[serde(default)]
+    pub tag_props: Vec<TagProps>,
+}
+
+/// The props one JSX element passes: literal attributes are candidates for folding (§15.16).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TagProps {
+    pub start: u32,
+    pub attributes: Vec<TagAttribute>,
+    pub has_spread: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TagAttribute {
+    pub key: String,
+    pub literal: Option<PropLiteral>,
+}
+
+/// A string or integer literal prop: the text it renders as and its JS source.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PropLiteral {
+    pub text: String,
+    pub source: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -307,6 +331,7 @@ pub fn summarize(
         nodes: &nodes,
         specifier_index: HashMap::new(),
         summary: ModuleSummary {
+            tag_props: Vec::new(),
             version: facts::VERSION.to_string(),
             source_hash: facts::source_hash(source),
             specifiers: Vec::new(),
@@ -764,6 +789,16 @@ impl<'a> Builder<'_, 'a> {
                 {
                     self.summary.reactive_reads.push(start);
                 }
+                if access.context == Context::Tag
+                    && member.is_none()
+                    && let AstKind::JSXOpeningElement(opening) = self.nodes.parent_kind(access.node)
+                {
+                    let element_has_children = matches!(
+                        self.nodes.parent_kind(self.nodes.parent_id(access.node)),
+                        AstKind::JSXElement(element) if element.children.iter().any(has_content)
+                    );
+                    self.summary.tag_props.push(tag_props(start, opening, element_has_children));
+                }
                 uses.push(Use {
                     target: Ref { binding, member },
                     class,
@@ -780,6 +815,7 @@ impl<'a> Builder<'_, 'a> {
             }
         }
         uses.sort_by_key(|u| (u.start, u.end));
+        self.summary.tag_props.sort_by_key(|t| t.start);
         self.summary.reactive_reads.sort_unstable();
         self.summary.uses = uses;
     }
@@ -790,6 +826,7 @@ impl<'a> Builder<'_, 'a> {
             Context::Call { argument_count: 0 } if keys.is_empty() && access.tail.is_empty() => {
                 UseClass::Call0
             }
+            Context::Tag if keys.is_empty() && access.tail.is_empty() => UseClass::Tag,
             Context::Call { argument_count: 1 } if keys.is_empty() && access.tail.is_empty() => {
                 let AstKind::CallExpression(call) = self.nodes.parent_kind(access.node) else {
                     return UseClass::Other;
@@ -1168,4 +1205,59 @@ fn jsx_member_name(member: &JSXMemberExpression<'_>) -> String {
         JSXMemberExpressionObject::ThisExpression(_) => "this".to_string(),
     };
     format!("{object}.{}", member.property.name)
+}
+
+fn has_content(child: &JSXChild<'_>) -> bool {
+    match child {
+        JSXChild::Text(text) => {
+            !crate::html::clean_jsx_text(&crate::html::decode_entities(text.value.as_str()))
+                .is_empty()
+        }
+        _ => true,
+    }
+}
+
+fn tag_props(start: u32, opening: &JSXOpeningElement<'_>, has_children: bool) -> TagProps {
+    let mut attributes = Vec::new();
+    let mut has_spread = false;
+    for item in &opening.attributes {
+        let JSXAttributeItem::Attribute(attribute) = item else {
+            has_spread = true;
+            continue;
+        };
+        let key = match &attribute.name {
+            JSXAttributeName::Identifier(id) => id.name.to_string(),
+            JSXAttributeName::NamespacedName(name) => {
+                format!("{}:{}", name.namespace.name, name.name.name)
+            }
+        };
+        attributes.push(TagAttribute { key, literal: prop_literal(attribute.value.as_ref()) });
+    }
+    if has_children {
+        attributes.push(TagAttribute { key: "children".to_string(), literal: None });
+    }
+    TagProps { start, attributes, has_spread }
+}
+
+fn prop_literal(value: Option<&JSXAttributeValue<'_>>) -> Option<PropLiteral> {
+    let string = |text: String| {
+        let source = serde_json::to_string(&text).ok()?;
+        Some(PropLiteral { text, source })
+    };
+    match value? {
+        JSXAttributeValue::StringLiteral(s) => {
+            string(crate::html::decode_entities(s.value.as_str()).into_owned())
+        }
+        JSXAttributeValue::ExpressionContainer(container) => {
+            match container.expression.as_expression()?.without_parentheses() {
+                Expression::StringLiteral(s) => string(s.value.to_string()),
+                Expression::NumericLiteral(n) => {
+                    let text = lower::constant::format_integer(n.value)?;
+                    Some(PropLiteral { source: text.clone(), text })
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }

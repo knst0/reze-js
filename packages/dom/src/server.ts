@@ -224,6 +224,16 @@ export function ssrClass(value: unknown): string {
   return tokens.length ? ssrAttribute("class", tokens.join(" ")) : "";
 }
 
+/** ` token` for each truthy entry: the toggled tokens after a template's static `class` value. */
+export function ssrClassTokens(toggles: Record<string, unknown>): string {
+  let tokens = "";
+  for (const token in toggles) {
+    if (toggles[token])
+      tokens += " " + token.replace(/[&"]/g, (c) => (c === "&" ? "&amp;" : "&quot;"));
+  }
+  return tokens;
+}
+
 /** `style` from a string or a property object; `null` and `undefined` values are skipped. */
 export function ssrStyle(value: unknown): string {
   if (value == null) return "";

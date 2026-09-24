@@ -172,7 +172,7 @@ fn assert_imports_resolve(outputs: &BTreeMap<String, String>, label: &str) {
     }
 }
 
-fn render(dir: &Path) -> String {
+fn link_program(dir: &Path) -> (Config, BTreeMap<String, String>, reze_compiler::Linked) {
     let config = config(dir);
     let ids = sources(dir);
     let modules: Vec<ModuleInput> = ids
@@ -191,6 +191,11 @@ fn render(dir: &Path) -> String {
         &modules,
         &LinkOptions { optimize: config.optimize, islands: config.islands, root: "/".to_string() },
     );
+    (config, ids, linked)
+}
+
+fn render(dir: &Path) -> String {
+    let (config, ids, linked) = link_program(dir);
     let mut out = format!("closed: {:?}\nfeatures: {:?}\n", linked.closed, linked.features);
     let mut outputs: BTreeMap<&str, BTreeMap<String, String>> = BTreeMap::new();
     for (id, source) in &ids {
@@ -253,4 +258,15 @@ fn program_snapshots() {
         let name = dir.file_name().unwrap().to_string_lossy().to_string();
         insta::assert_snapshot!(format!("program__{name}"), render(&dir));
     }
+}
+
+#[test]
+fn an_island_needs_the_features_of_the_components_it_renders() {
+    let dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/programs/island_child_features");
+    let (_, _, linked) = link_program(&dir);
+    let [island] = linked.facts["/Page.tsx"].islands.as_slice() else {
+        panic!("Page renders one island: {:?}", linked.facts["/Page.tsx"].islands);
+    };
+    assert!(island.features.iter().any(|f| f == "Suspense"), "{:?}", island.features);
 }

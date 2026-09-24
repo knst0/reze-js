@@ -6,8 +6,11 @@ use oxc_ast::ast::*;
 use oxc_span::GetSpan;
 
 use super::component::PropsBuilder;
-use super::constant::{ClassKeys, Literal, is_dynamic, literal, static_style};
+use super::constant::{
+    ClassKeys, Literal, is_dynamic, literal, literal_truthy, static_property, static_style,
+};
 use super::element::TemplateBuilder;
+use super::types::{StaticKind, static_kind};
 use super::{Lowerer, attribute_name, is_function};
 use crate::diagnostic::{Code, Edit, Report};
 use crate::html::{
@@ -17,6 +20,92 @@ use crate::html::{
 use crate::ir::{
     AssignTarget, Bind, BindTarget, Handler, MemberKey, NodeId, Op, PropHtml, RefTarget, Value,
 };
+
+enum ClassPiece<'b, 'a> {
+    Static(&'a str),
+    Off(&'a str),
+    Toggle(&'a str, &'b Expression<'a>),
+}
+
+struct ClassToggles<'b, 'a> {
+    static_tokens: std::vec::Vec<&'a str>,
+    toggles: std::vec::Vec<(&'a str, &'b Expression<'a>)>,
+}
+
+fn class_pieces<'b, 'a>(
+    e: &'b Expression<'a>,
+    facts: &crate::analyze::Facts,
+    pieces: &mut std::vec::Vec<ClassPiece<'b, 'a>>,
+) -> Option<()> {
+    match e.without_parentheses() {
+        Expression::StringLiteral(s) => pieces.push(ClassPiece::Static(s.value.as_str())),
+        Expression::ObjectExpression(object) => {
+            for property in &object.properties {
+                let (key, value) = static_property(property)?;
+                pieces.push(match literal_truthy(value, facts) {
+                    Some(true) => ClassPiece::Static(key),
+                    Some(false) => ClassPiece::Off(key),
+                    None if key.split_whitespace().count() == 1 && key.trim() == key => {
+                        ClassPiece::Toggle(key, value)
+                    }
+                    None => return None,
+                });
+            }
+        }
+        Expression::ArrayExpression(array) => {
+            for element in &array.elements {
+                class_pieces(element.as_expression()?, facts, pieces)?;
+            }
+        }
+        _ => return None,
+    }
+    Some(())
+}
+
+/// Splits class sources into static tokens and single-token toggles (SPEC §7.3); `None` when a
+/// source is not a string, an object with static keys or an array of those, or when a token is
+/// both static and toggled, toggled twice, or switched off by a literal.
+fn class_toggles<'b, 'a>(
+    values: &[AttrValue<'b, 'a>],
+    facts: &crate::analyze::Facts,
+) -> Option<ClassToggles<'b, 'a>> {
+    let mut pieces = std::vec::Vec::new();
+    for value in values {
+        match value {
+            AttrValue::Str(s) => pieces.push(ClassPiece::Static(s)),
+            AttrValue::Expr(e) => class_pieces(e, facts, &mut pieces)?,
+            AttrValue::Bare | AttrValue::Jsx(_) => {}
+        }
+    }
+    let mut static_tokens: std::vec::Vec<&'a str> = std::vec::Vec::new();
+    let mut off_tokens: std::vec::Vec<&'a str> = std::vec::Vec::new();
+    let mut toggles: std::vec::Vec<(&'a str, &'b Expression<'a>)> = std::vec::Vec::new();
+    for piece in pieces {
+        match piece {
+            ClassPiece::Static(key) => {
+                for token in key.split_whitespace() {
+                    if !static_tokens.contains(&token) {
+                        static_tokens.push(token);
+                    }
+                }
+            }
+            ClassPiece::Off(key) => off_tokens.extend(key.split_whitespace()),
+            ClassPiece::Toggle(token, value) => {
+                if toggles.iter().any(|(t, _)| *t == token) {
+                    return None;
+                }
+                toggles.push((token, value));
+            }
+        }
+    }
+    let is_toggled = |token: &str| toggles.iter().any(|(t, _)| *t == token);
+    let has_conflict = static_tokens.iter().any(|t| off_tokens.contains(t) || is_toggled(t))
+        || off_tokens.iter().any(|t| is_toggled(t));
+    if toggles.is_empty() || has_conflict {
+        return None;
+    }
+    Some(ClassToggles { static_tokens, toggles })
+}
 
 enum AttrValue<'b, 'a> {
     Bare,
@@ -36,10 +125,6 @@ enum Kind<'a> {
     /// A property set after the element's children exist (`<select value>`, `<textarea value>`).
     LateProp(&'a str, PropHtml),
     Style,
-}
-
-fn is_class_like(name: &str) -> bool {
-    matches!(name, "class" | "className" | "classList")
 }
 
 impl<'a> Lowerer<'a, '_> {
@@ -65,22 +150,16 @@ impl<'a> Lowerer<'a, '_> {
             .iter()
             .zip(&names)
             .enumerate()
-            .filter(|&(i, (_, name))| !is_overridden[i] && is_class_like(name))
+            .filter(|&(i, (_, name))| !is_overridden[i] && *name == "class")
             .map(|(_, (a, _))| *a)
             .collect();
-        for (a, name) in attrs.iter().zip(&names) {
-            if *name == "className" || *name == "classList" {
-                self.class_alias(a, name);
-            }
-        }
-
         let mut deferred = std::vec::Vec::new();
         let mut is_class_done = false;
         for (i, (a, name)) in attrs.iter().zip(&names).enumerate() {
             if is_overridden[i] {
                 continue;
             }
-            if is_class_like(name) {
+            if *name == "class" {
                 if !is_class_done {
                     self.class(builder, node, &class_sources);
                     is_class_done = true;
@@ -120,25 +199,6 @@ impl<'a> Lowerer<'a, '_> {
             }
         }
         is_overridden
-    }
-
-    fn class_alias(&mut self, a: &JSXAttribute<'a>, name: &str) {
-        let name_span = a.name.span();
-        self.report(
-            Report::new(
-                Code::ClassAlias,
-                name_span,
-                format!(
-                    "`{name}` is a legacy alias: Reze has one `class` attribute that takes strings, \
-                     objects and arrays. Rename it to `class`; it was compiled as `class`."
-                ),
-            )
-            .fix(
-                format!("rename `{name}` to `class`"),
-                vec![Edit { start: name_span.start, end: name_span.end, text: "class".into() }],
-            )
-            .data("attribute", name),
-        );
     }
 
     /// All class sources of one element as a single `class` (SPEC §7.3).
@@ -181,11 +241,20 @@ impl<'a> Lowerer<'a, '_> {
             }
             return;
         }
+        if let Some(classes) = class_toggles(&values, self.facts) {
+            self.class_toggle_ops(builder, node, classes);
+            return;
+        }
 
         let is_reactive = values.iter().any(|value| match value {
             AttrValue::Expr(e) => is_dynamic(e, false, self.facts),
             _ => false,
         });
+        let is_string = matches!(
+            values.as_slice(),
+            [AttrValue::Expr(only)]
+                if static_kind(only, self.facts, self.scoping, self.nodes) == Some(StaticKind::String)
+        );
         let mut parts = self.vec();
         for value in values {
             parts.push(match value {
@@ -194,6 +263,7 @@ impl<'a> Lowerer<'a, '_> {
                 AttrValue::Bare | AttrValue::Jsx(_) => continue,
             });
         }
+        let target = if is_string { BindTarget::Attr("class") } else { BindTarget::Class };
         let value = if parts.len() == 1 {
             parts.pop().expect("one part")
         } else {
@@ -201,10 +271,42 @@ impl<'a> Lowerer<'a, '_> {
         };
         builder.reference(node);
         if is_reactive {
-            builder.binds.push(Bind { node, target: BindTarget::Class, value });
+            builder.binds.push(Bind { node, target, value });
         } else {
-            builder.ops.push(Op::Set { node, target: BindTarget::Class, value });
+            builder.ops.push(Op::Set { node, target, value });
         }
+    }
+
+    fn class_toggle_ops(
+        &mut self,
+        builder: &mut TemplateBuilder<'a>,
+        node: NodeId,
+        classes: ClassToggles<'_, 'a>,
+    ) {
+        let inside = (!classes.static_tokens.is_empty()).then(|| {
+            builder.html.push_str(" class=\"");
+            escape_attribute(&mut builder.html, &classes.static_tokens.join(" "));
+            let at = builder.html.len() as u32;
+            builder.html.push('"');
+            at
+        });
+        builder.reference(node);
+        let reported = self.reports.len();
+        let mut server = self.vec();
+        for (token, value) in &classes.toggles {
+            server.push((*token, self.expr(value)));
+        }
+        self.reports.truncate(reported);
+        for (token, value) in classes.toggles {
+            let target = BindTarget::ClassToggle(token);
+            let toggle = Value::Truthy(self.expr(value));
+            if is_dynamic(value, false, self.facts) {
+                builder.binds.push(Bind { node, target, value: toggle });
+            } else {
+                builder.ops.push(Op::Set { node, target, value: toggle });
+            }
+        }
+        builder.ops.push(Op::ServerClass { node, toggles: Value::ClassToggles(server), inside });
     }
 
     fn attr_value<'b>(&mut self, a: &'b JSXAttribute<'a>) -> Option<AttrValue<'b, 'a>> {
@@ -572,13 +674,7 @@ impl<'a> Lowerer<'a, '_> {
                     if name == "children" && has_children {
                         continue;
                     }
-                    let key = if name == "className" || name == "classList" {
-                        self.class_alias(a, name);
-                        "class"
-                    } else {
-                        name
-                    };
-                    if let Some(prop) = self.prop(key, a, false) {
+                    if let Some(prop) = self.prop(name, a, false) {
                         props.push(prop);
                     }
                 }

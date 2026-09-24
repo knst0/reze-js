@@ -614,6 +614,12 @@ function flattenClassValue(list: unknown[], result: Record<string, unknown>): vo
   }
 }
 
+/** Adds or removes one class token when `isOn` differs from `wasOn` (never set counts as off); returns `isOn`. */
+export function toggleClass(node: Element, token: string, isOn: boolean, wasOn?: boolean): boolean {
+  if (isOn !== !!wasOn) node.classList.toggle(token, isOn);
+  return isOn;
+}
+
 /** `style={string | Record<string, string | number>}` with kebab-case keys; returns the new `prev`. */
 export function style(node: HTMLElement, value: unknown, prev?: unknown): unknown {
   const s = node.style;

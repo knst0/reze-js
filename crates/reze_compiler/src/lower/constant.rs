@@ -25,7 +25,7 @@ pub fn static_text(e: &Expression<'_>, facts: &Facts) -> Option<String> {
         Expression::CallExpression(call) => {
             facts.folded_callee(call).and_then(|(_, text)| text).map(str::to_string)
         }
-        _ => None,
+        inner => facts.folded_prop(inner).map(|value| value.text.clone()),
     }
 }
 
@@ -44,7 +44,7 @@ fn string_value(e: &Expression<'_>) -> Option<String> {
 }
 
 /// `String(n)` for integers; other numbers are left to the runtime.
-fn format_integer(n: f64) -> Option<String> {
+pub fn format_integer(n: f64) -> Option<String> {
     (n.is_finite() && n.fract() == 0.0 && n.abs() < 1e15).then(|| format!("{}", n as i64))
 }
 
@@ -73,6 +73,9 @@ pub fn literal_truthy(e: &Expression<'_>, facts: &Facts) -> Option<bool> {
         Expression::NullLiteral(_) => Some(false),
         Expression::Identifier(id) if id.name.as_str() == "undefined" => Some(false),
         Expression::NumericLiteral(n) => Some(n.value != 0.0 && !n.value.is_nan()),
+        inner if facts.folded_prop(inner).is_some() => {
+            facts.folded_prop(inner).map(|v| v.is_truthy())
+        }
         _ => static_text(e, facts).map(|s| !s.is_empty()),
     }
 }
@@ -97,7 +100,7 @@ pub fn static_style(e: &Expression<'_>, facts: &Facts) -> Option<String> {
     Some(out)
 }
 
-fn static_property<'b, 'a>(
+pub fn static_property<'b, 'a>(
     property: &'b ObjectPropertyKind<'a>,
 ) -> Option<(&'a str, &'b Expression<'a>)> {
     let ObjectPropertyKind::ObjectProperty(p) = property else { return None };
@@ -199,8 +202,8 @@ impl<'a> Visit<'a> for DynamicCheck<'_> {
         self.found = true;
     }
 
-    fn visit_static_member_expression(&mut self, _: &StaticMemberExpression<'a>) {
-        self.found = true;
+    fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
+        self.found |= self.facts.folded_prop_member(it.span.start).is_none();
     }
 
     fn visit_computed_member_expression(&mut self, _: &ComputedMemberExpression<'a>) {
@@ -212,7 +215,7 @@ impl<'a> Visit<'a> for DynamicCheck<'_> {
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
-        self.found |= self.facts.props.is_read(it);
+        self.found |= self.facts.props.is_read(it) && self.facts.folded_prop_ref(it).is_none();
     }
 
     fn visit_jsx_element(&mut self, _: &JSXElement<'a>) {

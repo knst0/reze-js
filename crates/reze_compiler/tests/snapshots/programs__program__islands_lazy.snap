@@ -1,9 +1,9 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
-assertion_line: 254
+assertion_line: 259
 expression: render(&dir)
 ---
-closed: []
+closed: ["/Page.tsx"]
 features: {"suspense": false}
 
 // ==== /Counter.tsx [client] ====
@@ -71,14 +71,12 @@ _$delegateEvents(["click"]);
 // ==== /Page.tsx [client] ====
 import { Counter } from "./Counter";
 import { template as _$template, insert as _$insert, createComponent as _$createComponent } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<main><h1></h1></main>");
+const _tmpl$ = /*#__PURE__*/ _$template("<main><h1>Docs</h1></main>");
 
 export function Page(props) {
   return (
     (() => {
-  var _el$ = _tmpl$(),
-    _el$2 = _el$.firstChild;
-  _$insert(_el$2, () => props.title);
+  var _el$ = _tmpl$();
   _$insert(_el$, _$createComponent(Counter, { start: 1, label: "eager" }), null);
   _$insert(_el$, _$createComponent(Counter, { start: 2, label: "idle" }), null);
   _$insert(_el$, _$createComponent(Counter, { start: 3, label: "visible" }), null);
@@ -96,6 +94,15 @@ export function Page(props) {
 > 3 | export function Page(props) {
     |                 ^^^^
   4 |   return (
+// info
+[PROP_FOLDED] Every call site passes `title="Docs"`, so reads of `title` compiled to that literal.
+  at /Page.tsx:6:12
+  5 |     <main>
+> 6 |       <h1>{props.title}</h1>
+    |            ^^^^^^^^^^^
+  7 |       <Counter start={1} label="eager" />
+  related: passed here (/client.tsx:83)
+  related: passed here (/server.tsx:117)
 // info
 [ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
   in <Page> › main
@@ -172,25 +179,23 @@ export function Page(props) {
 // ==== /Page.tsx [server] ====
 import { Counter } from "./Counter";
 import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, ssrIsland as _$ssrIsland } from "reze-js";
-const _tmpl$ = ["<main", "><h1>", "</h1><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></main>"];
+const _tmpl$ = ["<main", "><h1>Docs</h1><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></main>"];
 
 export function Page(props) {
   return (
-    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(props.title), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 1, label: "eager" })), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 2, label: "idle" }, null, "idle")), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 3, label: "visible" }, null, "visible")), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 4, label: "click" }, null, "interaction")), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 5, label: "soon", "island:load": "soon" })))
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 1, label: "eager" })), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 2, label: "idle" }, null, "idle")), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 3, label: "visible" }, null, "visible")), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 4, label: "click" }, null, "interaction")), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 5, label: "soon", "island:load": "soon" })))
   );
 }
 
 // ==== /Page.tsx [hydrate] ====
 import { Counter } from "./Counter";
-import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, createComponent as _$createComponent } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<main><h1></h1></main>");
+import { template as _$template, claim as _$claim, claimInsert as _$claimInsert, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main><h1>Docs</h1></main>");
 
 export function Page(props) {
   return (
     (() => {
-  var _el$ = _$claim(_tmpl$, "main"),
-    _el$2 = _$claimChild(_el$, 0);
-  _$claimInsert(_el$2, () => props.title);
+  var _el$ = _$claim(_tmpl$, "main");
   _$claimInsert(_el$, _$createComponent(Counter, { start: 1, label: "eager" }), null, 4);
   _$claimInsert(_el$, _$createComponent(Counter, { start: 2, label: "idle" }), null, 3);
   _$claimInsert(_el$, _$createComponent(Counter, { start: 3, label: "visible" }), null, 2);

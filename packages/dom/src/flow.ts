@@ -27,12 +27,16 @@ export interface ShowProps<T> {
   children: Branch<T>;
 }
 
-/** Renders `children` while `when` is truthy. The branch is rebuilt only when truthiness flips. */
+/**
+ * Renders `children` while `when` is truthy. The branch is rebuilt only when truthiness flips.
+ * The value getter a function child receives is a memo created on its first read.
+ */
 export function Show<T>(props: ShowProps<T>): JSX.Element {
-  const when = computed(() => props.when);
-  const shown = computed(() => !!when());
+  const shown = computed(() => !!props.when);
+  let when: Getter<T | Falsy> | undefined;
+  const value = (): T => (when ??= computed(() => props.when))() as T;
   return computed(() =>
-    shown() ? renderBranch(props.children, when as Getter<T>) : untrack(() => props.fallback),
+    shown() ? renderBranch(props.children, value) : untrack(() => props.fallback),
   );
 }
 

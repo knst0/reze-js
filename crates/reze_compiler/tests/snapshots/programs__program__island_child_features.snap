@@ -1,0 +1,203 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+assertion_line: 259
+expression: render(&dir)
+---
+closed: []
+features: {"suspense": true}
+
+// ==== /Loader.tsx [client] ====
+import { Suspense } from "reze-js";
+import { createComponent as _$createComponent, template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p>loading</p>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<p></p>");
+
+export function Loader(props) {
+  return (
+    _$createComponent(Suspense, { get fallback() { return _tmpl$(); }, get children() { return (() => {
+  var _el$ = _tmpl$2();
+  _$insert(_el$, () => props.label);
+  return _el$;
+})(); } })
+  );
+}
+
+// info
+[CLIENT_COMPONENT] `Loader` runs on the client: `<Suspense>` is a runtime component, which runs on the client.
+  at /Loader.tsx:3:17
+  2 | 
+> 3 | export function Loader(props) {
+    |                 ^^^^^^
+  4 |   return (
+  note: first client-only part (/Loader.tsx:5:6)
+// ==== /Loader.tsx [server] ====
+import { Suspense } from "reze-js";
+import { createComponent as _$createComponent, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<p", ">loading</p>"],
+  _tmpl$2 = ["<p", ">", "</p>"];
+
+export function Loader(props) {
+  return (
+    _$createComponent(Suspense, { get fallback() { return _$ssr(_tmpl$, _$ssrHydrationKey()); }, get children() { return _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(props.label)); } })
+  );
+}
+
+// ==== /Loader.tsx [hydrate] ====
+import { Suspense } from "reze-js";
+import { createComponent as _$createComponent, template as _$template, claim as _$claim, claimInsert as _$claimInsert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p>loading</p>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<p></p>");
+
+export function Loader(props) {
+  return (
+    _$createComponent(Suspense, { get fallback() { return _$claim(_tmpl$, "p"); }, get children() { return (() => {
+  var _el$ = _$claim(_tmpl$2, "p");
+  _$claimInsert(_el$, () => props.label);
+  return _el$;
+})(); } })
+  );
+}
+
+// ==== /Page.tsx [client] ====
+import { Widget } from "./Widget";
+import { template as _$template, insert as _$insert, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main><h1>Docs</h1></main>");
+
+export function Page() {
+  return (
+    (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, _$createComponent(Widget, {}), null);
+  return _el$;
+})()
+  );
+}
+
+// info
+[STATIC_COMPONENT] `Page` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Page.tsx:3:17
+  2 | 
+> 3 | export function Page() {
+    |                 ^^^^
+  4 |   return (
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features Suspense,claim,claimInsert,createComponent,delegateEvents,signal,template.
+  in <Page> › main
+  at /Page.tsx:7:8
+  6 |       <h1>Docs</h1>
+> 7 |       <Widget />
+    |        ^^^^^^
+  8 |     </main>
+// ==== /Page.tsx [server] ====
+import { Widget } from "./Widget";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, ssrIsland as _$ssrIsland } from "reze-js";
+const _tmpl$ = ["<main", "><h1>Docs</h1><!--[-->", "<!--]--></main>"];
+
+export function Page() {
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$ssrIsland("15u810xdl5l9x", Widget, {  })))
+  );
+}
+
+// ==== /Page.tsx [hydrate] ====
+import { Widget } from "./Widget";
+import { template as _$template, claim as _$claim, claimInsert as _$claimInsert, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main><h1>Docs</h1></main>");
+
+export function Page() {
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "main");
+  _$claimInsert(_el$, _$createComponent(Widget, {}), null);
+  return _el$;
+})()
+  );
+}
+
+// ==== /Widget.tsx [client] ====
+import { signal } from "reze-js";
+
+import { Loader } from "./Loader";
+import { template as _$template, insert as _$insert, createComponent as _$createComponent, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<section></section>");
+
+export function Widget() {
+  const [open, setOpen] = signal(false);
+  return (
+    (() => {
+  var _el$ = _tmpl$();
+  _el$.$$click = () => setOpen(!open());
+  _$insert(_el$, _$createComponent(Loader, { get label() { return open() ? "open" : "closed"; } }));
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `Widget` runs on the client: `[open, setOpen] = signal(false)` destructures a value.
+  at /Widget.tsx:5:17
+  4 | 
+> 5 | export function Widget() {
+    |                 ^^^^^^
+  6 |   const [open, setOpen] = signal(false);
+  note: first client-only part (/Widget.tsx:6:9)
+// ==== /Widget.tsx [server] ====
+import { signal } from "reze-js";
+
+import { Loader } from "./Loader";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = ["<section", ">", "</section>"];
+
+export function Widget() {
+  const [open, setOpen] = signal(false);
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Loader, { get label() { return open() ? "open" : "closed"; } })))
+  );
+}
+
+// ==== /Widget.tsx [hydrate] ====
+import { signal } from "reze-js";
+
+import { Loader } from "./Loader";
+import { template as _$template, claim as _$claim, claimInsert as _$claimInsert, createComponent as _$createComponent, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<section></section>");
+
+export function Widget() {
+  const [open, setOpen] = signal(false);
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "section");
+  _el$.$$click = () => setOpen(!open());
+  _$claimInsert(_el$, _$createComponent(Loader, { get label() { return open() ? "open" : "closed"; } }));
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// ==== /server.tsx [client] ====
+import { renderToString } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+export const html = renderToString(() => _$createComponent(Page, {}));
+
+// ==== /server.tsx [server] ====
+import { renderToString } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+export const html = renderToString(() => _$createComponent(Page, {}), true);
+
+// ==== /server.tsx [hydrate] ====
+import { renderToString } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+export const html = renderToString(() => _$createComponent(Page, {}));

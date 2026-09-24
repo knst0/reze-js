@@ -166,7 +166,12 @@ fn literal_style_and_class_values_fold_into_the_template() {
     let code = run(r#"const a = <i class={["a", { a: false }, "b"]} />;"#);
     assert_eq!(templates(&code), [r#"<i class="b"></i>"#]);
     let code = run("const a = <div style={{color: c}} class={{on: on()}} />;");
-    assert!(code.contains("_$style") && code.contains("_$className"), "{code}");
+    assert!(
+        code.contains("_$style") && code.contains(r#"_$toggleClass(_el$, "on", !!(on()), _p$)"#),
+        "{code}"
+    );
+    let code = run("const a = <div class={cls()} />;");
+    assert!(code.contains("_$className"), "{code}");
 }
 
 #[test]
@@ -218,12 +223,11 @@ fn textarea_and_select_values_are_properties_set_after_their_children() {
 }
 
 #[test]
-fn class_sources_merge_and_duplicates_keep_the_last() {
-    let out =
-        output("const a = <i class=\"a\" classList={{ on: on() }} title=\"x\" title={t()} />;");
-    assert!(out.code.contains(r#"["a", { on: on() }]"#), "{}", out.code);
+fn duplicate_attributes_keep_the_last() {
+    let out = output("const a = <i class=\"a\" class={cls()} title=\"x\" title={t()} />;");
+    assert!(out.code.contains("var _v$ = cls(),"), "{}", out.code);
     assert!(!out.code.contains("title=\\\"x"), "{}", out.code);
-    assert_eq!(codes(&out.diagnostics), [Code::ClassAlias, Code::DuplicateAttribute]);
+    assert_eq!(codes(&out.diagnostics), [Code::DuplicateAttribute, Code::DuplicateAttribute]);
 }
 
 #[test]
@@ -348,7 +352,7 @@ fn a_computed_read_once_in_reactive_jsx_is_inlined() {
     for inlined in ["(count() * 2)", "(`n${count()}`)", "(count() > 9)"] {
         assert_eq!(out.code.matches(inlined).count(), 1, "{inlined}\n{}", out.code);
     }
-    assert!(out.code.contains("() => (count() * 2)"), "{}", out.code);
+    assert!(out.code.contains(r#""" + ((count() * 2))"#), "{}", out.code);
     let inlined: Vec<_> =
         out.diagnostics.iter().filter(|d| d.code == Code::ComputedInlined).collect();
     assert_eq!(inlined.len(), 3);
@@ -409,7 +413,7 @@ fn literal_conditions_drop_dead_branches() {
 #[test]
 fn each_warning_fix_removes_its_warning() {
     let cases = [
-        (Code::ClassAlias, "const a = <div className=\"x\" />;"),
+        (Code::UnknownAttribute, "const a = <div className=\"x\" />;"),
         (Code::ChildrenPropIgnored, "const a = <div children={x()}><b /></div>;"),
         (Code::KeyOnElement, "const a = <li key={id} />;"),
         (Code::DuplicateAttribute, "const a = <a href=\"/a\" href={u()} />;"),
@@ -527,15 +531,24 @@ fn pure_props_defaults_run_once_at_the_start_and_reads_stay_lazy() {
 }
 
 #[test]
+fn class_aliases_are_unknown_attributes() {
+    for alias in ["className", "classList"] {
+        let out = output(&format!("const a = <i {alias}=\"x\" />;"));
+        assert_eq!(codes(&out.diagnostics), [Code::UnknownAttribute], "{alias}");
+        assert_eq!(templates(&out.code), [format!("<i {alias}=\"x\"></i>")], "{alias}");
+    }
+}
+
+#[test]
 fn rendered_diagnostics_carry_code_path_frame_and_fix() {
     let out = output("function App() {\n  return <ul><li classList={{ on: true }} /></ul>;\n}");
     let rendered = &out.diagnostics[0].rendered;
-    assert!(rendered.starts_with("[CLASS_ALIAS] "), "{rendered}");
+    assert!(rendered.starts_with("[UNKNOWN_ATTRIBUTE] "), "{rendered}");
     assert!(rendered.contains("\n  in <App> › ul › li\n"), "{rendered}");
     assert!(rendered.contains("\n  at test.tsx:2:18\n"), "{rendered}");
     assert!(rendered.contains("> 2 |"), "{rendered}");
-    assert!(rendered.contains("\n  fix: rename `classList` to `class`"), "{rendered}");
-    assert!(out.diagnostics[0].docs().ends_with("SKILL.md#class_alias"));
+    assert!(rendered.contains("\n  fix: rename to `class`"), "{rendered}");
+    assert!(out.diagnostics[0].docs().ends_with("SKILL.md#unknown_attribute"));
 }
 
 #[test]
@@ -864,4 +877,56 @@ fn row_comparison_stays_plain_for_a_for_outside_the_runtime() {
     );
     let code = run(&source);
     assert!(!code.contains("selector"), "{code}");
+}
+
+fn class_setter(expression: &str) -> &'static str {
+    let code = run(&format!(
+        "import {{ signal }} from \"reze-js\";\nconst [label] = signal(\"x\");\nconst [n] = signal(1);\nconst a = <i class={{{expression}}} />;"
+    ));
+    if code.contains("_$setAttribute(_el$, \"class\"") {
+        "setAttribute"
+    } else if code.contains("_$className") {
+        "className"
+    } else {
+        panic!("no class setter in {code}")
+    }
+}
+
+#[test]
+fn provably_string_class_values_use_set_attribute() {
+    for expression in [
+        "on() ? \"danger\" : \"\"",
+        "`row ${kind()}`",
+        "\"row-\" + kind()",
+        "kind() + \"-row\"",
+        "String(kind())",
+        "kind().toString()",
+        "price().toFixed(2)",
+        "parts().join(\" \")",
+        "on() ? `a${x()}` : \"b\"",
+    ] {
+        assert_eq!(class_setter(expression), "setAttribute", "{expression}");
+    }
+}
+
+#[test]
+fn class_values_of_unknown_kind_keep_class_name() {
+    for expression in [
+        "cls()",
+        "a() + b()",
+        "on() ? \"a\" : 1",
+        "on() && \"a\"",
+        "props.cls",
+        "on() ? \"a\" : cls()",
+        "obj?.toString()",
+        "a() === b()",
+    ] {
+        assert_eq!(class_setter(expression), "className", "{expression}");
+    }
+}
+
+#[test]
+fn a_shadowed_string_function_is_not_the_global() {
+    let code = run("function f(String) { return <i class={String(x())} />; }");
+    assert!(code.contains("_$className"), "{code}");
 }

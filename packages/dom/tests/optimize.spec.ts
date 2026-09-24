@@ -10,6 +10,7 @@ afterEach(cleanup);
 
 const scenario = `
 import { signal } from "@rezejs/dom";
+import { Show } from "@rezejs/dom/flow";
 
 const [title] = signal("Reze");
 const [label] = signal({ text: "static" });
@@ -26,6 +27,9 @@ export const App = () => (
     {true ? <i>{count() * 2}</i> : <u>never</u>}
     {DEBUG && <pre>debug</pre>}
     {count() > 2 ? <strong>big</strong> : null}
+    <Show when={count() > 0} fallback={<em>not positive</em>}>
+      <b>positive {title()}</b>
+    </Show>
   </section>
 );
 `;
@@ -67,5 +71,7 @@ test("optimized and plain output render the same DOM at every step", async () =>
   expect(optimized.code).toContain('const title = "Reze"');
   expect(optimized.code).not.toContain("never");
   expect(plain.code).toContain('signal("Reze")');
+  expect(optimized.code).not.toContain("createComponent(Show");
+  expect(plain.code).toContain("createComponent(Show");
   expect(trace(optimized.module)).toEqual(trace(plain.module));
 });

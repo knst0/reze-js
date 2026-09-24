@@ -13,11 +13,11 @@ vi.mock("@rezejs/compiler", () => ({ compile }));
 const Guide = "node_modules/@rezejs/compiler/skills/compiler-diagnostics/SKILL.md";
 
 function diagnostic(overrides: Partial<Diagnostic> = {}): Diagnostic {
-  const code = overrides.code ?? "CLASS_ALIAS";
+  const code = overrides.code ?? "UNKNOWN_ATTRIBUTE";
   return {
     code,
     severity: "warn",
-    message: `[${code}] \`classList\` is a legacy alias.`,
+    message: `[${code}] \`classList\` is not a known attribute.`,
     file: "src/Counter.tsx",
     start: { offset: 120, line: 8, column: 14 },
     end: { offset: 129, line: 8, column: 23 },
@@ -26,7 +26,7 @@ function diagnostic(overrides: Partial<Diagnostic> = {}): Diagnostic {
     fixes: [],
     data: {},
     docs: `https://github.com/knst0/reze-js/blob/main/packages/compiler/skills/compiler-diagnostics/SKILL.md#${code.toLowerCase()}`,
-    rendered: `[${code}] \`classList\` is a legacy alias.\n  in <Counter> › output\n  at src/Counter.tsx:8:15`,
+    rendered: `[${code}] \`classList\` is not a known attribute.\n  in <Counter> › output\n  at src/Counter.tsx:8:15`,
     ...overrides,
   };
 }
@@ -67,7 +67,7 @@ test("formatDiagnostic appends the repair guide only on the first occurrence of 
   const seen = new Set<string>();
   const d = diagnostic();
   expect(formatDiagnostic(d, seen)).toBe(
-    `${d.rendered}\n  repair guide: ${Guide}#class_alias\n                ${d.docs}`,
+    `${d.rendered}\n  repair guide: ${Guide}#unknown_attribute\n                ${d.docs}`,
   );
   expect(formatDiagnostic(d, seen)).toBe(d.rendered);
   const other = diagnostic({ code: "KEY_ON_ELEMENT" });
@@ -116,7 +116,7 @@ test("warnings become Vite warnings with loc; the footer appears once per code p
   run();
   expect(warnings).toHaveLength(4);
   expect(warnings[0]).toEqual({
-    message: expect.stringContaining(`repair guide: ${Guide}#class_alias`),
+    message: expect.stringContaining(`repair guide: ${Guide}#unknown_attribute`),
     id: "src/Counter.tsx",
     loc: { file: "src/Counter.tsx", line: 8, column: 14 },
   });

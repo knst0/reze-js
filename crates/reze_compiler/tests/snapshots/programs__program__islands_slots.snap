@@ -1,9 +1,9 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
-assertion_line: 254
+assertion_line: 259
 expression: render(&dir)
 ---
-closed: []
+closed: ["/Badge.tsx", "/Counter.tsx", "/Page.tsx"]
 features: {"suspense": false}
 
 // ==== /Badge.tsx [client] ====
@@ -14,7 +14,7 @@ const _tmpl$ = /*#__PURE__*/ _$template("<button> </button>"),
   _tmpl$3 = /*#__PURE__*/ _$template("<button></button>");
 
 export function Badge(props) {
-  const [count, setCount] = signal(props.start);
+  const [count, setCount] = signal((1));
   return (
     (() => {
   var _el$ = _tmpl$(),
@@ -53,6 +53,14 @@ _$delegateEvents(["click"]);
   4 |   const [count, setCount] = signal(props.start);
   note: first client-only part (/Badge.tsx:4:9)
 // info
+[PROP_FOLDED] Every call site passes `start=1`, so reads of `start` compiled to that literal.
+  at /Badge.tsx:4:36
+  3 | export function Badge(props) {
+> 4 |   const [count, setCount] = signal(props.start);
+    |                                    ^^^^^^^^^^^
+  5 |   return (
+  related: passed here (/Page.tsx:387)
+// info
 [CLIENT_COMPONENT] `Toggler` runs on the client: `[on, setOn] = signal(false)` destructures a value.
   at /Badge.tsx:12:17
   11 | 
@@ -68,7 +76,7 @@ const _tmpl$ = ["<button", "><!--[-->", "<!--]--> <!--[-->", "<!--]--></button>"
   _tmpl$3 = ["<button", ">", "</button>"];
 
 export function Badge(props) {
-  const [count, setCount] = signal(props.start);
+  const [count, setCount] = signal((1));
   return (
     _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild((props.icon) ? _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(props.icon)) : null), _$ssrChild(count()))
   );
@@ -87,7 +95,7 @@ const _tmpl$ = /*#__PURE__*/ _$template("<button> </button>"),
   _tmpl$3 = /*#__PURE__*/ _$template("<button></button>");
 
 export function Badge(props) {
-  const [count, setCount] = signal(props.start);
+  const [count, setCount] = signal((1));
   return (
     (() => {
   var _el$ = _$claim(_tmpl$, "button"),
@@ -188,16 +196,14 @@ _$delegateEvents(["click"]);
 // ==== /Counter.tsx [client] ====
 import { signal } from "reze-js";
 import { template as _$template, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<button>: </button>");
+const _tmpl$ = /*#__PURE__*/ _$template("<button>nested island: </button>");
 
 export function Counter(props) {
-  const [count, setCount] = signal(props.start);
+  const [count, setCount] = signal((1));
   return (
     (() => {
-  var _el$ = _tmpl$(),
-    _el$2 = _el$.firstChild;
+  var _el$ = _tmpl$();
   _el$.$$click = () => setCount(count() + 1);
-  _$insert(_el$, () => props.label, _el$2);
   _$insert(_el$, count, null);
   return _el$;
 })()
@@ -214,31 +220,45 @@ _$delegateEvents(["click"]);
     |                 ^^^^^^^
   4 |   const [count, setCount] = signal(props.start);
   note: first client-only part (/Counter.tsx:4:9)
+// info
+[PROP_FOLDED] Every call site passes `start=1`, so reads of `start` compiled to that literal.
+  at /Counter.tsx:4:36
+  3 | export function Counter(props) {
+> 4 |   const [count, setCount] = signal(props.start);
+    |                                    ^^^^^^^^^^^
+  5 |   return (
+  related: passed here (/Page.tsx:252)
+// info
+[PROP_FOLDED] Every call site passes `label="nested island"`, so reads of `label` compiled to that literal.
+  at /Counter.tsx:7:8
+  6 |     <button onClick={() => setCount(count() + 1)}>
+> 7 |       {props.label}: {count()}
+    |        ^^^^^^^^^^^
+  8 |     </button>
+  related: passed here (/Page.tsx:252)
 // ==== /Counter.tsx [server] ====
 import { signal } from "reze-js";
 import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
-const _tmpl$ = ["<button", "><!--[-->", "<!--]-->: <!--[-->", "<!--]--></button>"];
+const _tmpl$ = ["<button", ">nested island: <!--[-->", "<!--]--></button>"];
 
 export function Counter(props) {
-  const [count, setCount] = signal(props.start);
+  const [count, setCount] = signal((1));
   return (
-    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(props.label), _$ssrChild(count()))
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(count()))
   );
 }
 
 // ==== /Counter.tsx [hydrate] ====
 import { signal } from "reze-js";
-import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<button>: </button>");
+import { template as _$template, claim as _$claim, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<button>nested island: </button>");
 
 export function Counter(props) {
-  const [count, setCount] = signal(props.start);
+  const [count, setCount] = signal((1));
   return (
     (() => {
-  var _el$ = _$claim(_tmpl$, "button"),
-    _el$2 = _$claimChild(_el$, 0);
+  var _el$ = _$claim(_tmpl$, "button");
   _el$.$$click = () => setCount(count() + 1);
-  _$claimInsert(_el$, () => props.label, _el$2);
   _$claimInsert(_el$, count, null);
   return _el$;
 })()
@@ -263,7 +283,7 @@ export function Page(props) {
   return (
     (() => {
   var _el$ = _tmpl$();
-  _$insert(_el$, _$createComponent(Card, { get title() { return props.title; }, get footer() { return (() => {
+  _$insert(_el$, _$createComponent(Card, { title: ("Docs"), get footer() { return (() => {
   var _el$2 = _tmpl$2();
   _$insert(_el$2, NOTE);
   return _el$2;
@@ -304,6 +324,15 @@ export function Showcase() {
      |        ^^^^
   11 |         <Counter start={1} label="nested island" />
 // info
+[PROP_FOLDED] Every call site passes `title="Docs"`, so reads of `title` compiled to that literal.
+  at /Page.tsx:10:20
+   9 |     <main>
+> 10 |       <Card title={props.title} footer={<i>{NOTE}</i>}>
+     |                    ^^^^^^^^^^^
+  11 |         <Counter start={1} label="nested island" />
+  related: passed here (/client.tsx:83)
+  related: passed here (/server.tsx:117)
+// info
 [ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
   in <Page> › main › <Card>
   at /Page.tsx:11:10
@@ -335,7 +364,7 @@ const NOTE = "static";
 
 export function Page(props) {
   return (
-    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$ssrIsland("1h24kww1xpio1", Card, { get title() { return props.title; } }, { get footer() { return _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(NOTE)); }, get children() { return _$ssrIsland("qggwslvd5as5", Counter, { start: 1, label: "nested island" }); } })))
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$ssrIsland("1h24kww1xpio1", Card, { title: ("Docs") }, { get footer() { return _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(NOTE)); }, get children() { return _$ssrIsland("qggwslvd5as5", Counter, { start: 1, label: "nested island" }); } })))
   );
 }
 
@@ -361,7 +390,7 @@ export function Page(props) {
   return (
     (() => {
   var _el$ = _$claim(_tmpl$, "main");
-  _$claimInsert(_el$, _$createComponent(Card, { get title() { return props.title; }, get footer() { return (() => {
+  _$claimInsert(_el$, _$createComponent(Card, { title: ("Docs"), get footer() { return (() => {
   var _el$2 = _$claim(_tmpl$2, "i");
   _$claimInsert(_el$2, NOTE);
   return _el$2;

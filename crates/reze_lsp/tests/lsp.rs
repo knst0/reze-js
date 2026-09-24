@@ -42,14 +42,14 @@ fn warn_diagnostic_maps_to_lsp_range_and_fix() {
     let uri = "file:///app.tsx";
     let source = "const el = <div classList=\"x\" />;";
     let diagnostics = compile_single(source, uri, &config());
-    let diagnostic = find_by_code(&diagnostics, "CLASS_ALIAS").expect("class alias warns");
+    let diagnostic = find_by_code(&diagnostics, "UNKNOWN_ATTRIBUTE").expect("classList warns");
     assert_eq!(diagnostic.severity, reze_compiler::Severity::Warn);
     let lsp = diagnostic_to_lsp(uri, &diagnostic, source, &BTreeMap::new());
     assert_eq!(lsp.severity, Some(lsp_types::DiagnosticSeverity::WARNING));
-    assert_eq!(lsp.code, Some(lsp_types::NumberOrString::String("CLASS_ALIAS".to_string())));
+    assert_eq!(lsp.code, Some(lsp_types::NumberOrString::String("UNKNOWN_ATTRIBUTE".to_string())));
     assert_eq!(lsp.source.as_deref(), Some("reze"));
     assert_eq!((lsp.range.start.line, lsp.range.start.character), (0, 16));
-    assert!(lsp.code_description.unwrap().href.as_str().ends_with("#class_alias"));
+    assert!(lsp.code_description.unwrap().href.as_str().ends_with("#unknown_attribute"));
     let range = LspRange {
         start: LspPosition { line: 0, character: 0 },
         end: LspPosition { line: 0, character: 100 },
@@ -58,13 +58,13 @@ fn warn_diagnostic_maps_to_lsp_range_and_fix() {
     assert_eq!(actions.len(), 1);
     assert_eq!(actions[0].kind, Some(CodeActionKind::QUICKFIX));
     let title = actions[0].title.clone();
-    assert!(title.contains("classList") && title.contains("CLASS_ALIAS"));
+    assert!(title.contains("class") && title.contains("UNKNOWN_ATTRIBUTE"));
     let edits: Vec<(u32, u32, String)> =
         diagnostic.fixes[0].edits.iter().map(|e| (e.start, e.end, e.text.clone())).collect();
     let fixed = apply_edits(source, &edits);
     assert_eq!(fixed, "const el = <div class=\"x\" />;");
     let after = compile_single(&fixed, uri, &config());
-    assert!(find_by_code(&after, "CLASS_ALIAS").is_none());
+    assert!(find_by_code(&after, "UNKNOWN_ATTRIBUTE").is_none());
 }
 
 #[test]

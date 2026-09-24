@@ -3,7 +3,7 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "import { For, computed, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nconst [hovered, setHovered] = signal(0);\nconst active = computed(() => selected() + 1);\nexport const list = (\n  <For each={rows()}>\n    {(row, index) => {\n      const [local, setLocal] = signal(0);\n      return (\n        <tr class={selected() === row().id ? \"danger\" : \"\"} title={row().id !== selected() ? \"a\" : \"b\"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>\n          {selected() === row().id && <b>on</b>}\n          <td onInput={() => setLocal(1)} data-local={local() === row().id} data-other={selected() === other()} data-loose={selected() == row().id} />\n        </tr>\n      );\n    }}\n  </For>\n);\nexport const unrelated = <p>{selected() === 1}</p>;\nsetHovered(1);"
 ---
 import { For, computed, signal } from "reze-js";
-import { createComponent as _$createComponent, template as _$template, claim as _$claim, claimChild as _$claimChild, memo as _$memo, claimInsert as _$claimInsert, bind as _$bind, className as _$className, setAttribute as _$setAttribute, selector as _$selector, delegateEvents as _$delegateEvents } from "reze-js";
+import { createComponent as _$createComponent, template as _$template, claim as _$claim, claimChild as _$claimChild, memo as _$memo, claimInsert as _$claimInsert, bind as _$bind, setAttribute as _$setAttribute, selector as _$selector, delegateEvents as _$delegateEvents } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<tr><td></td></tr>"),
   _tmpl$2 = /*#__PURE__*/ _$template("<b>on</b>"),
   _tmpl$3 = /*#__PURE__*/ _$template("<p></p>");
@@ -29,7 +29,7 @@ export const list = (
       _v$5 = local() === row().id,
       _v$6 = selected() === other(),
       _v$7 = selected() == row().id;
-    _v$ !== _p$[0] && (_$className(_el$, _p$[0] = _v$));
+    _v$ !== _p$[0] && (_$setAttribute(_el$, "class", _p$[0] = _v$));
     _v$2 !== _p$[1] && (_$setAttribute(_el$, "title", _p$[1] = _v$2));
     _v$3 !== _p$[2] && (_$setAttribute(_el$, "data-hover", _p$[2] = _v$3));
     _v$4 !== _p$[3] && (_$setAttribute(_el$, "data-active", _p$[3] = _v$4));

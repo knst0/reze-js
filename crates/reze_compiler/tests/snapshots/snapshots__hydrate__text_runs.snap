@@ -1,0 +1,75 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <p>doubled: {n() * 2}</p>;\nconst b = <p>{n() + 1}</p>;\nconst c = <p>{`${name()}`}</p>;\nconst d = <p>a {\"<\"} b &amp; {n() - 1} items</p>;\nconst e = <div>{n() * 2}<b />{x()}total: {n() % 3}<i />{(n() | 0) + 1}{-n()}</div>;\nconst f = <p>{label()}: {n() / 2}</p>;\nconst g = <p>size {SIZE * 2}</p>;\nconst h = <p>{on() ? \"yes\" : \"no\"}</p>;\nconst i = <p>state: {on() ? \"yes\" : \"no\"}</p>;"
+---
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, bind as _$bind, claimInsert as _$claimInsert, claimSibling as _$claimSibling } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p>doubled: </p>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<p></p>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<p>a &lt; b &amp;  items</p>"),
+  _tmpl$4 = /*#__PURE__*/ _$template("<div> <b></b>total: <i></i> </div>"),
+  _tmpl$5 = /*#__PURE__*/ _$template("<p>: </p>"),
+  _tmpl$6 = /*#__PURE__*/ _$template("<p>size </p>"),
+  _tmpl$7 = /*#__PURE__*/ _$template("<p>state: </p>");
+const a = (() => {
+  var _el$ = _$claim(_tmpl$, "p"),
+    _el$2 = _$claimChild(_el$, 0);
+  _$bind(() => _el$2.data = "doubled: " + (n() * 2));
+  return _el$;
+})();
+const b = (() => {
+  var _el$3 = _$claim(_tmpl$2, "p");
+  _$claimInsert(_el$3, () => n() + 1);
+  return _el$3;
+})();
+const c = (() => {
+  var _el$4 = _$claim(_tmpl$2, "p");
+  _$claimInsert(_el$4, () => `${name()}`);
+  return _el$4;
+})();
+const d = (() => {
+  var _el$5 = _$claim(_tmpl$3, "p"),
+    _el$6 = _$claimChild(_el$5, 0);
+  _$bind(() => _el$6.data = "a < b & " + (n() - 1) + " items");
+  return _el$5;
+})();
+const e = (() => {
+  var _el$7 = _$claim(_tmpl$4, "div"),
+    _el$8 = _$claimChild(_el$7, 0),
+    _el$9 = _$claimSibling(_el$8, 2),
+    _el$10 = _$claimSibling(_el$9, 2);
+  _$claimInsert(_el$7, x, _el$9);
+  _$bind(_p$ => {
+    var _v$ = "" + (n() * 2),
+      _v$2 = "total: " + (n() % 3),
+      _v$3 = "" + ((n() | 0) + 1) + (-n());
+    _v$ !== _p$[0] && (_el$8.data = _p$[0] = _v$);
+    _v$2 !== _p$[1] && (_el$9.data = _p$[1] = _v$2);
+    _v$3 !== _p$[2] && (_el$10.data = _p$[2] = _v$3);
+    return _p$;
+  }, []);
+  return _el$7;
+})();
+const f = (() => {
+  var _el$11 = _$claim(_tmpl$5, "p"),
+    _el$12 = _$claimChild(_el$11, 0);
+  _$claimInsert(_el$11, label, _el$12);
+  _$bind(() => _el$12.data = ": " + (n() / 2));
+  return _el$11;
+})();
+const g = (() => {
+  var _el$13 = _$claim(_tmpl$6, "p"),
+    _el$14 = _$claimChild(_el$13, 0);
+  _el$14.data = "size " + (SIZE * 2);
+  return _el$13;
+})();
+const h = (() => {
+  var _el$15 = _$claim(_tmpl$2, "p");
+  _$claimInsert(_el$15, () => on() ? "yes" : "no");
+  return _el$15;
+})();
+const i = (() => {
+  var _el$16 = _$claim(_tmpl$7, "p"),
+    _el$17 = _$claimChild(_el$16, 0);
+  _$bind(() => _el$17.data = "state: " + (on() ? "yes" : "no"));
+  return _el$16;
+})();

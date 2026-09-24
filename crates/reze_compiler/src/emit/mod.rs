@@ -17,7 +17,7 @@ use oxc_allocator::Allocator;
 use crate::Target;
 use crate::code::Code;
 use crate::html::push_js_string;
-use crate::ir::{Child, Embed, ExprChild, Getter, HoleKind, Jsx, Namespace, Value};
+use crate::ir::{Child, Embed, ExprChild, Getter, HoleKind, Jsx, Namespace, TextPart, Value};
 use crate::namer::Namer;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -67,9 +67,11 @@ enum Helper {
     SsrIsland,
     HydrateIslands,
     Selector,
+    SsrClassTokens,
+    ToggleClass,
 }
 
-const HELPER_COUNT: usize = Helper::Selector as usize + 1;
+const HELPER_COUNT: usize = Helper::ToggleClass as usize + 1;
 
 impl Helper {
     fn export(self) -> &'static str {
@@ -119,6 +121,8 @@ impl Helper {
             Helper::SsrIsland => "ssrIsland",
             Helper::HydrateIslands => "hydrateIslands",
             Helper::Selector => "selector",
+            Helper::SsrClassTokens => "ssrClassTokens",
+            Helper::ToggleClass => "toggleClass",
         }
     }
 
@@ -169,6 +173,8 @@ impl Helper {
             Helper::SsrIsland => "_$ssrIsland",
             Helper::HydrateIslands => "_$hydrateIslands",
             Helper::Selector => "_$selector",
+            Helper::SsrClassTokens => "_$ssrClassTokens",
+            Helper::ToggleClass => "_$toggleClass",
         }
     }
 }
@@ -411,6 +417,15 @@ impl<'a, 's> Emitter<'a, 's> {
                     out.push(")");
                 }
                 HoleKind::Remove => {}
+                HoleKind::FoldedProp { source, shorthand_key } => {
+                    if let Some(key) = shorthand_key {
+                        out.push(key);
+                        out.push(": ");
+                    }
+                    out.push("(");
+                    out.push(source);
+                    out.push(")");
+                }
                 HoleKind::SelectorRead { selector, key, original, is_negated } => {
                     if self.target == Target::Server {
                         self.embed(out, original);
@@ -547,6 +562,42 @@ impl<'a, 's> Emitter<'a, 's> {
             Value::Str(s) => push_js_string(&mut out.text, s),
             Value::Expr(embed) => self.embed(out, embed),
             Value::Jsx(jsx) => self.jsx(out, jsx),
+            Value::Truthy(embed) => {
+                out.push("!!(");
+                self.embed(out, embed);
+                out.push(")");
+            }
+            Value::ClassToggles(toggles) => {
+                out.push("{ ");
+                for (i, (token, embed)) in toggles.iter().enumerate() {
+                    if i > 0 {
+                        out.push(", ");
+                    }
+                    push_js_string(&mut out.text, token);
+                    out.push(": ");
+                    self.embed(out, embed);
+                }
+                out.push(" }");
+            }
+            Value::Text(parts) => {
+                let starts_static = matches!(parts.first(), Some(TextPart::Static(_)));
+                if !starts_static {
+                    out.push("\"\"");
+                }
+                for (i, part) in parts.iter().enumerate() {
+                    if i > 0 || !starts_static {
+                        out.push(" + ");
+                    }
+                    match part {
+                        TextPart::Static(text) => push_js_string(&mut out.text, text),
+                        TextPart::Dynamic { value, .. } => {
+                            out.push("(");
+                            self.embed(out, value);
+                            out.push(")");
+                        }
+                    }
+                }
+            }
             Value::ClassParts(parts) => {
                 out.push("[");
                 for (i, part) in parts.iter().enumerate() {

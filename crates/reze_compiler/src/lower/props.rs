@@ -405,6 +405,10 @@ impl PropsFacts {
         self.params.get(&params.items.first()?.pattern.span().start)
     }
 
+    pub fn rewrites(&self, reference: ReferenceId) -> bool {
+        self.reads.get(&reference).is_some_and(|&(_, in_type)| !in_type)
+    }
+
     pub fn is_read(&self, id: &IdentifierReference<'_>) -> bool {
         id.reference_id.get().is_some_and(|r| self.reads.contains_key(&r))
     }

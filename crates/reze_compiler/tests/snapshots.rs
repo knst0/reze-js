@@ -17,7 +17,7 @@ const CASES: &[(&str, &str)] = &[
         "merged_binds",
         "const a = <input value={v()} checked={c()} style={{ color: color() }} class={cls()} />;",
     ),
-    ("class_sources", "const a = <i class=\"a\" className=\"b\" classList={{ on: on() }} />;"),
+    ("class_sources", "const a = <i class={[\"a\", \"b\", { on: on() }]} />;"),
     (
         "static_class_and_style",
         "const a = <i class={[\"a\", { b: true, c: false }]} style={{ color: \"red\" }} />;",
@@ -35,7 +35,7 @@ const CASES: &[(&str, &str)] = &[
         "const a = <Card title=\"t\" count={n()} static={s} {...rest} onPick={() => pick()} ref={box.el}>body {n()}</Card>;",
     ),
     ("component_dynamic_spread", "const a = <Card {...props()} a={1} />;"),
-    ("native_spread", "const a = <div {...attrs} className=\"x\" ref={el}>{kids()}</div>;"),
+    ("native_spread", "const a = <div {...attrs} class=\"x\" ref={el}>{kids()}</div>;"),
     (
         "conditionals",
         "const a = <div>{ok() ? <b>yes</b> : <i>no</i>}{open() && <p>{text()}</p>}</div>;",
@@ -154,6 +154,18 @@ const CASES: &[(&str, &str)] = &[
     (
         "auto_selector",
         "import { For, computed, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nconst [hovered, setHovered] = signal(0);\nconst active = computed(() => selected() + 1);\nexport const list = (\n  <For each={rows()}>\n    {(row, index) => {\n      const [local, setLocal] = signal(0);\n      return (\n        <tr class={selected() === row().id ? \"danger\" : \"\"} title={row().id !== selected() ? \"a\" : \"b\"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>\n          {selected() === row().id && <b>on</b>}\n          <td onInput={() => setLocal(1)} data-local={local() === row().id} data-other={selected() === other()} data-loose={selected() == row().id} />\n        </tr>\n      );\n    }}\n  </For>\n);\nexport const unrelated = <p>{selected() === 1}</p>;\nsetHovered(1);",
+    ),
+    (
+        "class_toggles",
+        "const a = <p class={{ negative: n() < 0 }} />;\nconst b = <p class={[\"box\", { on: on(), big: false, wide: true }, [\"x\", { deep: d() }]]} />;\nconst c = <p class={[\"btn\", { active: active() }]} />;\nconst d = <p class={{ once: flag }} />;\nconst e = <p class={{ \"a b\": ab() }} />;\nconst f = <p class={[\"on\", { on: on() }]} />;\nconst g = <p class={[{ on: on(), off: false }, { on: other() }]} />;\nconst h = <p class={[\"x\", { x: false, y: y() }]} />;\nconst i = <p class={[cls(), { on: on() }]} />;",
+    ),
+    (
+        "text_runs",
+        "const a = <p>doubled: {n() * 2}</p>;\nconst b = <p>{n() + 1}</p>;\nconst c = <p>{`${name()}`}</p>;\nconst d = <p>a {\"<\"} b &amp; {n() - 1} items</p>;\nconst e = <div>{n() * 2}<b />{x()}total: {n() % 3}<i />{(n() | 0) + 1}{-n()}</div>;\nconst f = <p>{label()}: {n() / 2}</p>;\nconst g = <p>size {SIZE * 2}</p>;\nconst h = <p>{on() ? \"yes\" : \"no\"}</p>;\nconst i = <p>state: {on() ? \"yes\" : \"no\"}</p>;",
+    ),
+    (
+        "show_inlined",
+        "import { Show } from \"reze-js\";\nconst a = <div><Show when={n() >= 10}><p>big</p></Show></div>;\nconst b = <div>x<Show when={user()} fallback={<i>guest</i>}><>{user().name}<b /></></Show>y</div>;\nconst c = <div><Show when={open()} fallback=\"none\">{label()}</Show></div>;\nconst d = <div><Show when={user()}>{(u) => <b>{u().name}</b>}</Show></div>;\nconst e = <div><Show when={a()} keyed><b /></Show></div>;\nconst f = <div><Show when={a()}><b /><i /></Show></div>;\nconst g = <Show when={a()}><b /></Show>;\nconst h = <div><Show when={a()}>{label()}</Show></div>;",
     ),
 ];
 

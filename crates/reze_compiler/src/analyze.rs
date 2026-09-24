@@ -4,6 +4,7 @@
 //! folds are recognized too (§15.4, §15.5).
 
 pub mod computed;
+pub mod folded_props;
 
 use std::collections::{HashMap, HashSet};
 
@@ -50,6 +51,10 @@ pub struct Facts {
     /// Unproxied stores and the uses they rewrite (SPEC §15.6).
     pub stores: Stores,
     pub program: ProgramDecisions,
+    /// `props.k` reads of folded props (§15.16), by the start of the member expression.
+    folded_prop_members: HashMap<u32, folded_props::FoldedValue>,
+    /// Destructured props reads of folded props (§15.16).
+    folded_prop_refs: HashMap<ReferenceId, folded_props::FoldedValue>,
 }
 
 /// Decisions from program facts that lowering applies at a position (SPEC §15.5, §15.9).
@@ -72,6 +77,28 @@ pub struct ProgramDecisions {
 }
 
 impl Facts {
+    /// The literal a read of a folded prop (§15.16) stands for.
+    pub fn folded_prop(&self, e: &Expression<'_>) -> Option<&folded_props::FoldedValue> {
+        match e.without_parentheses() {
+            Expression::StaticMemberExpression(member) => {
+                self.folded_prop_members.get(&member.span.start)
+            }
+            Expression::Identifier(id) => self.folded_prop_ref(id),
+            _ => None,
+        }
+    }
+
+    pub fn folded_prop_member(&self, start: u32) -> Option<&folded_props::FoldedValue> {
+        self.folded_prop_members.get(&start)
+    }
+
+    pub fn folded_prop_ref(
+        &self,
+        id: &IdentifierReference<'_>,
+    ) -> Option<&folded_props::FoldedValue> {
+        self.folded_prop_refs.get(&id.reference_id.get()?)
+    }
+
     pub fn is_getter(&self, id: &IdentifierReference<'_>) -> bool {
         id.reference_id.get().is_some_and(|r| self.getter_refs.contains(&r))
     }
@@ -383,6 +410,7 @@ fn apply_program_facts(
             })
             .collect()
     };
+    folded_props::fold(facts, program, scoping, nodes, module_facts, reports);
     for folded in &module_facts.folded_imports {
         let Some(&symbol) = import_symbols.get(&folded.import.binding) else { continue };
         match &folded.import.member {
