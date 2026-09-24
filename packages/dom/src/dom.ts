@@ -1,6 +1,7 @@
 import { root, untrack } from "@rezejs/signals";
 import { renderEffect as bind } from "@rezejs/signals/render";
 
+import { nextHydrationKey, withComponentKeys, withKeyRoot } from "./hydration";
 import type { JSX } from "./jsx";
 
 // Loosely typed on purpose: compiled output hangs `$$event` handlers and data off elements.
@@ -34,7 +35,7 @@ const DelegatedEvents: Record<string, 1> = {
 };
 
 /** DOM properties set as properties rather than attributes (SPECIFICATION §3.4). */
-const Properties: Record<string, 1> = {
+export const Properties: Record<string, 1> = {
   value: 1,
   checked: 1,
   selected: 1,
@@ -82,7 +83,7 @@ export function templateMathML(html: string): () => Node {
 
 /** Calls a component once, untracked: its reads never re-run the parent binding. */
 export function createComponent<P>(Comp: (props: P) => JSX.Element, props: P): JSX.Element {
-  return untrack(() => Comp(props));
+  return withComponentKeys(() => untrack(() => Comp(props)));
 }
 
 /** Mounts `code()` into `element`; the returned function disposes it and clears the element. */
@@ -96,6 +97,132 @@ export function render(code: () => JSX.Element, element: Element): () => void {
     dispose();
     element.textContent = "";
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Hydration: code compiled for the `hydrate` target claims the DOM `renderToString` produced.
+
+/** Server-rendered template roots by `data-hk`, while `hydrate` runs. */
+let claimable: Map<string, Element> | undefined;
+
+/**
+ * Like `render`, but adopts the server-rendered DOM in `element` instead of replacing it: each
+ * template claims its element by hydration key and each insert takes over what the server
+ * rendered in its place. What cannot be claimed is created and reconciled as usual.
+ */
+export function hydrate(code: () => JSX.Element, element: Element): () => void {
+  claimable = new Map();
+  for (const node of element.querySelectorAll("[data-hk]")) {
+    claimable.set(node.getAttribute("data-hk")!, node);
+  }
+  let dispose!: () => void;
+  try {
+    withKeyRoot(() =>
+      root((d) => {
+        dispose = d;
+        insert(element, code(), undefined, renderedContent(element));
+      }),
+    );
+  } finally {
+    claimable = undefined;
+  }
+  return () => {
+    dispose();
+    element.textContent = "";
+  };
+}
+
+/** The server-rendered root of this template, or a fresh clone when there is none to claim. */
+export function claim(template: () => Node, tag: string): Node {
+  const key = claimable && nextHydrationKey();
+  const node = key === undefined ? undefined : claimable!.get(key);
+  if (node?.localName === tag) {
+    claimable!.delete(key!);
+    return node;
+  }
+  return template();
+}
+
+const InsertOpen = "[";
+const InsertClose = "]";
+
+function isInsertMarker(node: Node | null, data: string): boolean {
+  return node?.nodeType === 8 && (node as Comment).data === data;
+}
+
+/** `node`, or the first node after the server-rendered inserts starting at `node`. */
+function skipInserts(node: Node | null): Node | null {
+  while (isInsertMarker(node, InsertOpen)) {
+    let depth = 1;
+    while (depth) {
+      node = node!.nextSibling;
+      if (isInsertMarker(node, InsertOpen)) depth++;
+      else if (isInsertMarker(node, InsertClose)) depth--;
+    }
+    node = node!.nextSibling;
+  }
+  return node;
+}
+
+/** The `index`-th template child of `parent`, stepping over server-rendered inserts. */
+export function claimChild(parent: Node, index: number): Node {
+  let node = skipInserts(parent.firstChild);
+  while (index--) node = skipInserts(node!.nextSibling);
+  return node!;
+}
+
+/** The template node `count` siblings after `node`, stepping over server-rendered inserts. */
+export function claimSibling(node: Node, count: number): Node {
+  while (count--) node = skipInserts(node.nextSibling)!;
+  return node;
+}
+
+/** The `<!--[-->` opening the insert that `close` ends. */
+function insertOpening(close: Node): Node | null {
+  let depth = 0;
+  for (let node = close.previousSibling; node; node = node.previousSibling) {
+    if (isInsertMarker(node, InsertClose)) depth++;
+    else if (isInsertMarker(node, InsertOpen) && !depth--) return node;
+  }
+  return null;
+}
+
+/**
+ * `insert` that takes over what the server rendered for it: the whole content of `parent` for
+ * a sole child (`marker === undefined`), otherwise the `<!--[-->…<!--]-->` range before
+ * `marker` (or at the end), skipping the ranges of the `insertsAfter` later inserts that share
+ * the marker. Without such a range it is a plain `insert`.
+ */
+export function claimInsert(
+  parent: Node,
+  value: Any,
+  marker?: Node | null,
+  insertsAfter = 0,
+): void {
+  if (marker === undefined) {
+    insert(parent, value, undefined, renderedContent(parent));
+    return;
+  }
+  let close = marker ? marker.previousSibling : parent.lastChild;
+  for (let i = 0; i < insertsAfter && isInsertMarker(close, InsertClose); i++) {
+    close = insertOpening(close!)?.previousSibling ?? null;
+  }
+  const open = isInsertMarker(close, InsertClose) ? insertOpening(close!) : null;
+  if (!open) {
+    insert(parent, value, marker);
+    return;
+  }
+  const current: Node[] = [];
+  for (let node = open.nextSibling!; node !== close; node = node.nextSibling!) current.push(node);
+  insert(parent, value, close, current);
+}
+
+/** What `parent` shows, as the `current` of an insert that owns all of it. */
+function renderedContent(parent: Node): Current {
+  const first = parent.firstChild;
+  if (!first) return undefined;
+  if (first.nextSibling) return [...parent.childNodes];
+  return first.nodeType === 3 ? (first as Text).data : first;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -177,7 +304,7 @@ function applyClassTokens(node: Element, value: unknown, prev?: unknown): void {
 }
 
 /** Normalizes a `class` value to one class token per `true` key. */
-function classTokens(value: unknown): Record<string, unknown> {
+export function classTokens(value: unknown): Record<string, unknown> {
   if (Array.isArray(value)) {
     const result: Record<string, unknown> = {};
     flattenClassValue(value, result);
@@ -306,7 +433,7 @@ export function spread(
   skipChildren?: boolean,
 ): void {
   const prev: Props = {};
-  if (!skipChildren) insert(node, () => props.children);
+  if (!skipChildren) insert(node, () => props.children, undefined, renderedContent(node));
   bind(() => typeof props.ref === "function" && use(props.ref, node));
   bind(() => {
     for (const key in props) {

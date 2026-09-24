@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <p>hi {name()}!</p>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<p", ">hi <!--[-->", "<!--]--><!>!</p>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(name()));

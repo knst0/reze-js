@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <input value={v()} checked={c()} style={{ color: color() }} class={cls()} />;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute, ssrBoolAttribute as _$ssrBoolAttribute, ssrStyle as _$ssrStyle, ssrClass as _$ssrClass } from "reze-js";
+const _tmpl$ = ["<input", "", "", "", "", ">"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("value", v()), _$ssrBoolAttribute("checked", c()), _$ssrStyle({ color: color() }), _$ssrClass(cls()));

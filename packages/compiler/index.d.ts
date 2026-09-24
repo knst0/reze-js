@@ -10,8 +10,9 @@
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
 /**
- * Compiles the JSX in `source` to DOM code. Returns `null` when the file has no JSX.
- * Compile errors are returned as `error` diagnostics with `code: null`, never thrown.
+ * Compiles the JSX in `source`. Returns `null` when the file has no JSX.
+ * Compile errors are returned as `error` diagnostics with `code: null`; only invalid options
+ * throw.
  */
 export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult | null
 
@@ -22,6 +23,11 @@ export interface CompileOptions {
   sourceMap?: boolean
   /** Constant signals and dead JSX branches (O3, O5). Default: `true`. */
   optimize?: boolean
+  /**
+   * `"client"` builds the DOM, `"server"` renders HTML strings for `renderToString`,
+   * `"hydrate"` claims that HTML in the browser. Default: `"client"`.
+   */
+  target?: "client" | "server" | "hydrate"
 }
 
 export interface CompileResult {

@@ -2,7 +2,7 @@ use oxc_allocator::Allocator;
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
-use reze_compiler::{Options, compile};
+use reze_compiler::{Options, Target, compile};
 
 const CASES: &[(&str, &str)] = &[
     ("static_template", "const a = <div class=\"box\"><p>hi</p><br /></div>;"),
@@ -67,14 +67,23 @@ const CASES: &[(&str, &str)] = &[
         "dead_branches",
         "const DEBUG = false;\nconst a = <div>{false && <b>never</b>}{true ? <i>y</i> : <u>n</u>}{DEBUG && <p />}</div>;",
     ),
+    ("document_order", "const a = <div>{a()}<p title={t()}>{b()}</p>{c()}{d()}<i />{e()}</div>;"),
+    (
+        "properties",
+        "const a = <div><input value={v()} checked={c()} prop:x={x()} /><p textContent={t()} /><p innerHTML={h()} /><textarea value={v()} /><select value={v()}><option /></select></div>;",
+    ),
+    ("spread_children", "const a = <div {...attrs()} />;\nconst b = <p {...rest}><b /></p>;"),
     (
         "warnings",
         "import { signal } from \"reze-js\";\nconst [n, setN] = signal(0); setN(1);\nfunction Greeting({ name }) {\n  return <p key=\"k\" clas=\"x\" title={n} title=\"y\">{name}<For each={[1, 2]}>{(i) => i}</For></p>;\n}",
     ),
 ];
 
-fn render(source: &str, optimize: bool) -> String {
-    let options = Options { source_map: false, optimize, ..Options::default() };
+const TARGETS: &[(Target, &str)] =
+    &[(Target::Client, ""), (Target::Server, "server__"), (Target::Hydrate, "hydrate__")];
+
+fn render(source: &str, optimize: bool, target: Target) -> String {
+    let options = Options { source_map: false, optimize, target, ..Options::default() };
     let out = match compile(source, "case.tsx", &options) {
         Ok(Some(out)) => out,
         Ok(None) => return "<no JSX>".to_string(),
@@ -103,14 +112,22 @@ fn assert_valid(code: &str) {
 
 #[test]
 fn output_snapshots() {
-    for (name, source) in CASES {
-        insta::assert_snapshot!(*name, render(source, true), source);
+    for (target, prefix) in TARGETS {
+        for (name, source) in CASES {
+            insta::assert_snapshot!(
+                format!("{prefix}{name}"),
+                render(source, true, *target),
+                source
+            );
+        }
     }
 }
 
 #[test]
 fn unoptimized_output_is_valid_too() {
-    for (_, source) in CASES {
-        render(source, false);
+    for (target, _) in TARGETS {
+        for (_, source) in CASES {
+            render(source, false, *target);
+        }
     }
 }

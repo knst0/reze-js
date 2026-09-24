@@ -1,0 +1,17 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div children={kids()} />;\nconst b = <div children={x()}><b /></div>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<div", ">", "</div>"],
+  _tmpl$2 = ["<div", "><b></b></div>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(kids()));
+const b = _$ssr(_tmpl$2, _$ssrHydrationKey());
+// warn
+[CHILDREN_PROP_IGNORED] `children` is set both as an attribute and as nested children; nested children win and the attribute is never rendered. Remove the attribute.
+  in div
+  at case.tsx:2:16
+  1 | const a = <div children={kids()} />;
+> 2 | const b = <div children={x()}><b /></div>;
+    |                ^^^^^^^^^^^^^^
+  fix: remove the `children` attribute

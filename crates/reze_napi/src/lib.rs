@@ -10,6 +10,10 @@ pub struct CompileOptions {
     pub source_map: Option<bool>,
     /// Constant signals and dead JSX branches (O3, O5). Default: `true`.
     pub optimize: Option<bool>,
+    /// `"client"` builds the DOM, `"server"` renders HTML strings for `renderToString`,
+    /// `"hydrate"` claims that HTML in the browser. Default: `"client"`.
+    #[napi(ts_type = "\"client\" | \"server\" | \"hydrate\"")]
+    pub target: Option<String>,
 }
 
 #[napi(object)]
@@ -75,14 +79,15 @@ pub struct CompileResult {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Compiles the JSX in `source` to DOM code. Returns `null` when the file has no JSX.
-/// Compile errors are returned as `error` diagnostics with `code: null`, never thrown.
+/// Compiles the JSX in `source`. Returns `null` when the file has no JSX.
+/// Compile errors are returned as `error` diagnostics with `code: null`; only invalid options
+/// throw.
 #[napi]
 pub fn compile(
     source: String,
     filename: String,
     options: Option<CompileOptions>,
-) -> Option<CompileResult> {
+) -> napi::Result<Option<CompileResult>> {
     let mut opts = reze_compiler::Options::default();
     if let Some(o) = options {
         if let Some(module_name) = o.module_name {
@@ -94,8 +99,20 @@ pub fn compile(
         if let Some(optimize) = o.optimize {
             opts.optimize = optimize;
         }
+        if let Some(target) = o.target {
+            opts.target = match target.as_str() {
+                "client" => reze_compiler::Target::Client,
+                "server" => reze_compiler::Target::Server,
+                "hydrate" => reze_compiler::Target::Hydrate,
+                other => {
+                    return Err(napi::Error::from_reason(format!(
+                        "unknown target `{other}`: expected \"client\", \"server\" or \"hydrate\""
+                    )));
+                }
+            };
+        }
     }
-    match reze_compiler::compile(&source, &filename, &opts) {
+    Ok(match reze_compiler::compile(&source, &filename, &opts) {
         Ok(None) => None,
         Ok(Some(out)) => Some(CompileResult {
             code: Some(out.code),
@@ -107,7 +124,7 @@ pub fn compile(
             map: None,
             diagnostics: errors.into_iter().map(diagnostic).collect(),
         }),
-    }
+    })
 }
 
 fn diagnostic(d: reze_compiler::Diagnostic) -> Diagnostic {

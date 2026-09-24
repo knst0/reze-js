@@ -18,6 +18,12 @@ export interface RezeOptions {
   sourcemap?: boolean;
   /** Enables the compiler optimizations gated behind `optimize` (constant signals, dead JSX branches). */
   optimize?: boolean;
+  /**
+   * Server-side rendering with hydration. SSR transforms always compile for the `server` target
+   * (HTML strings for `renderToString`); with `hydratable`, browser transforms compile for
+   * `hydrate` (adopting that HTML with `hydrate`) instead of `client`. Default: `false`.
+   */
+  hydratable?: boolean;
   diagnostics?: {
     /** File every diagnostic (all severities, including `info`) is appended to as one JSON line. */
     jsonl?: string;
@@ -56,7 +62,7 @@ export function formatDiagnostic(d: Diagnostic, seenCodes: Set<string>): string 
 
 /** Compiles JSX to DOM code with the Reze compiler. TypeScript is left to Vite. */
 export default function reze(options: RezeOptions = {}): Plugin {
-  const { moduleName, sourcemap, optimize } = options;
+  const { moduleName, sourcemap, optimize, hydratable } = options;
   const jsonl = options.diagnostics?.jsonl;
   const seenCodes = new Set<string>();
   let jsonlDirReady = false;
@@ -80,9 +86,10 @@ export default function reze(options: RezeOptions = {}): Plugin {
           exclude: options.exclude ?? /\/node_modules\//,
         },
       },
-      handler(code, id) {
+      handler(code, id, transformOptions) {
         const filename = id.replace(/[?#].*$/, "");
-        const out = compile(code, filename, { moduleName, sourceMap: sourcemap, optimize });
+        const target = transformOptions?.ssr ? "server" : hydratable ? "hydrate" : "client";
+        const out = compile(code, filename, { moduleName, sourceMap: sourcemap, optimize, target });
         if (out === null) return null;
         record(out.diagnostics);
         const errors: Diagnostic[] = [];

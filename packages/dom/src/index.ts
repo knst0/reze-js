@@ -1,9 +1,14 @@
 export {
   addEventListener,
   bind,
+  claim,
+  claimChild,
+  claimInsert,
+  claimSibling,
   className,
   createComponent,
   delegateEvents,
+  hydrate,
   insert,
   memo,
   mergeProps,
@@ -22,6 +27,18 @@ export {
   use,
 } from "./dom";
 export type { ClassValue } from "./dom";
+export {
+  renderToString,
+  ssr,
+  ssrAttribute,
+  ssrBoolAttribute,
+  ssrChild,
+  ssrClass,
+  ssrHydrationKey,
+  ssrRaw,
+  ssrSpread,
+  ssrStyle,
+} from "./server";
 export { effect, getOwner, onCleanup, signal, trackAsync } from "@rezejs/signals";
 export { Suspense, trackPending } from "./flow";
 export type { SuspenseProps } from "./flow";

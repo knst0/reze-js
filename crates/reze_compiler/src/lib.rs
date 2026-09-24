@@ -1,5 +1,6 @@
-//! Reze compiler: JSX → DOM code for the client, with diagnostics and module-level
-//! optimizations. The contract is `crates/reze_compiler/SPEC.md`.
+//! Reze compiler: JSX → DOM code for the client, HTML strings for the server, or DOM claiming
+//! for hydration, with diagnostics and module-level optimizations. The contract is
+//! `crates/reze_compiler/SPEC.md`.
 
 mod analyze;
 mod code;
@@ -19,17 +20,35 @@ pub use diagnostic::{Code, Diagnostic, Edit, Fix, Label, Position, Severity};
 
 use diagnostic::Report;
 
+/// What the compiled module does with JSX.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum Target {
+    /// Clones templates and builds the DOM.
+    #[default]
+    Client,
+    /// Concatenates HTML strings, with hydration keys and insert markers.
+    Server,
+    /// Claims the DOM the `Server` output rendered, cloning what it cannot claim.
+    Hydrate,
+}
+
 pub struct Options {
     /// Module the generated code imports its runtime helpers from.
     pub module_name: String,
     pub source_map: bool,
     /// Enables O3 (constant signals) and O5 (dead JSX branches); O1 and O2 always run.
     pub optimize: bool,
+    pub target: Target,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { module_name: "reze-js".to_string(), source_map: true, optimize: true }
+        Self {
+            module_name: "reze-js".to_string(),
+            source_map: true,
+            optimize: true,
+            target: Target::Client,
+        }
     }
 }
 
@@ -86,6 +105,7 @@ pub fn compile(
         source,
         &options.module_name,
         source_type.is_typescript(),
+        options.target,
         &scoping,
     );
     let code = emitter.module(&body, header_at);

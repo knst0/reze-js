@@ -24,8 +24,8 @@
 
 | Этап | Содержание | Статус |
 |---|---|---|
-| **M1** | Новая архитектура (§4), target `Client`, система диагностики (§9), помодульные оптимизации O1–O3, O5 (§8), исправление багов v0 (§11) | **это переписывание** |
-| M2 | Targets `Server` и `Hydrate` на том же IR | потом |
+| M1 | Новая архитектура (§4), target `Client`, система диагностики (§9), помодульные оптимизации O1–O3, O5 (§8), исправление багов v0 (§11) | готово |
+| **M2** | Targets `Server` и `Hydrate` на том же IR (§14) | готово |
 | M3 | Анализ программы: `ModuleSummary` → `Facts`, острова, фичи на остров, межмодульная свёртка сигналов, снятие Proxy со store, define-флаги рантайма | потом |
 | M4 | `reze_lsp`: диагностика, inlay hints, «почему остров?» по цепочкам `Reason` | потом |
 
@@ -43,6 +43,7 @@ pub struct Options {
     pub module_name: String, // "reze-js": откуда импортируется рантайм
     pub source_map: bool,    // true
     pub optimize: bool,      // true: O3, O5 (§8); O1, O2 работают всегда
+    pub target: Target,      // Client | Server | Hydrate (§14); Client
 }
 pub struct Output { pub code: String, pub map: Option<String>, pub diagnostics: Vec<Diagnostic> }
 ```
@@ -53,7 +54,8 @@ pub struct Output { pub code: String, pub map: Option<String>, pub diagnostics: 
 - Диалект (`.tsx`, `.jsx`, `.ts`, `.js`) определяется по `filename`. Неизвестное расширение парсится как TSX.
   Синтаксис TypeScript (`as any`, аннотации) генерируется только для TS-диалектов.
 - Каждый байт исходника вне заменяемых участков (§4, «дыры») копируется без изменений, TypeScript тоже.
-- `reze_napi`: `compile(source, filename, { moduleName, sourceMap, optimize }) → { code?, map?, diagnostics } | null`.
+- `reze_napi`: `compile(source, filename, { moduleName, sourceMap, optimize, target }) → { code?, map?, diagnostics } | null`,
+  `target: "client" | "server" | "hydrate"`.
   Ошибки компиляции не бросаются: при `Err` возвращается `{ diagnostics }` без `code` и `map`, где есть
   хотя бы одна `error`. Бросается только сбой самого вызова (неверные аргументы).
 
@@ -63,7 +65,7 @@ pub struct Output { pub code: String, pub map: Option<String>, pub diagnostics: 
 parse (oxc_parser) ─▶ semantic (oxc_semantic: scopes, symbols, references)
       ─▶ analyze (факты O3 + причины как info-диагностики)
       ─▶ lower (AST → IR: все решения)
-      ─▶ emit (IR → Code для client: никаких решений) ─▶ source map
+      ─▶ emit (IR → Code для target: никаких решений) ─▶ source map
 ```
 
 | Модуль | Отвечает за |
@@ -82,8 +84,9 @@ parse (oxc_parser) ─▶ semantic (oxc_semantic: scopes, symbols, references)
 | `lower/children.rs` | списки детей: правила JSX-текста, O5, вставки, условия, массивы детей |
 | `lower/constant.rs` | статическое вычисление (`static_text`, истинность), `is_dynamic` |
 | `lower/async_component.rs` | план async-компонента (§7.9) |
-| `emit/mod.rs` | `Emitter` (client), склейка дыр, `Namer`, импорты `Helper`, таблица шаблонов, шапка и хвост модуля. M2 добавит server/hydrate-эмиттеры поверх того же IR |
-| `emit/template.rs` | IIFE шаблона, обходы, операции, слитый `bind` |
+| `emit/mod.rs` | `Emitter`, склейка дыр, `Namer`, импорты `Helper`, таблица шаблонов (фабрики или строки server), шапка и хвост модуля, выбор эмиттера шаблона по target |
+| `emit/template.rs` | client и hydrate: IIFE шаблона (клон или `claim`), обходы, операции, слитый `bind` |
+| `emit/server.rs` | server: HTML шаблона, разрезанный по динамическим частям, и `ssr` (§14.1) |
 | `emit/component.rs` | `createComponent`, объекты props, `mergeProps`, дети |
 | `emit/async_component.rs` | синхронная форма async-компонентов |
 
@@ -101,14 +104,15 @@ parse (oxc_parser) ─▶ semantic (oxc_semantic: scopes, symbols, references)
 ```
 <исходник до конца: hashbang, директивы, ведущие import-объявления>
 import { <export> as <alias>, … } from "<module_name>";
-const <tmpl> = /*#__PURE__*/ <factory>("<html>"), …;
+const <tmpl> = /*#__PURE__*/ <factory>("<html>"), …;  // server: const <tmpl> = ["<html до части>", …], …;
 <остаток исходника, в котором дыры заменены>
 <alias delegateEvents>(["<event>", …]);        // только если есть делегированные события; сортировка
 ```
 
 - Импорты рантайма перечисляются в порядке первого использования. Псевдоним — `_$<export>`, с числовым
   суффиксом, если имя уже занято. Все сгенерированные имена избегают всех идентификаторов исходника.
-- Шаблоны дедуплицируются по `(html, namespace)` и объявляются в порядке первого использования.
+- Шаблоны дедуплицируются по `(html, namespace)` (server — по набору строк) и объявляются в порядке первого
+  использования.
 - Фабрики: `template(html)`; `templateSVG("<svg>" + html + "</svg>")`, если корень — чисто SVG-элемент
   (`html::is_svg_element`); `templateMathML(html)` для корня `<math>`. Корень `<svg>` использует `template`.
 
@@ -133,24 +137,32 @@ enum Jsx<'a> {
 struct Template<'a> {
     html: &'a str,
     namespace: Namespace,                    // Html | Svg | MathMl
-    node_count: u32,                         // выданные NodeId, корень = 0
+    nodes: Vec<'a, TemplateNode<'a>>,        // по NodeId, корень = 0 (элемент): где узел лежит в `html`
     walks: Vec<'a, Walk>,                    // порядок объявления == preorder
-    ops: Vec<'a, Op<'a>>,                    // выполняются один раз, по порядку
+    ops: Vec<'a, Op<'a>>,                    // выполняются один раз, в порядке документа (кроме `<select value>`)
     binds: Vec<'a, Bind<'a>>,                // сливаются в один `bind` (O2)
     memo_count: u32,
+}
+enum TemplateNode<'a> {                      // смещения в байтах `html`
+    Element { tag: &'a str, start: u32, attributes_end: u32, content_end: u32 }, // перед `>`; перед `</tag>`
+    Leaf { start: u32 },                     // текст или маркер `<!>`
 }
 struct Walk { node: NodeId, from: From, next_siblings: u32 }     // From::FirstChildOf(NodeId) | From::Node(NodeId)
 
 enum Op<'a> {
-    Set    { node: NodeId, target: Target<'a>, value: Value<'a> },
+    Set    { node: NodeId, target: BindTarget<'a>, value: Value<'a> },
     Event  { node: NodeId, event: &'a str, handler: Handler<'a> },
     Ref    { node: NodeId, target: RefTarget<'a> },
     Spread { node: NodeId, props: Props<'a>, is_svg: bool, has_children: bool },
     Memo   { id: MemoId, test: Embed<'a> },                        // поднятое условие (§7.5)
-    Insert { parent: NodeId, value: Child<'a>, anchor: Anchor },  // Only | Before(NodeId) | End
+    Insert { parent: NodeId, value: Child<'a>, anchor: Anchor, inserts_after: u32 }, // Only | Before(NodeId) | End;
+}   // inserts_after: сколько следующих вставок того же родителя делят этот якорь (§14.2)
+struct Bind<'a> { node: NodeId, target: BindTarget<'a>, value: Value<'a> }
+enum BindTarget<'a> {
+    Attr(&'a str), AttrNs(&'static str, &'a str), Bool(&'a str), Class, Style,
+    Prop { name: &'a str, html: PropHtml },  // как свойство выглядит в HTML сервера (§14.1)
 }
-struct Bind<'a> { node: NodeId, target: Target<'a>, value: Value<'a> }
-enum Target<'a> { Attr(&'a str), AttrNs(&'static str, &'a str), Bool(&'a str), Prop(&'a str), Class, Style }
+enum PropHtml { None, Attr, Bool, Text, Html }  // `prop:x`, `<select value>` | `value` | `checked`, `selected` | `textContent`, `<textarea value>` | `innerHTML`
 enum Value<'a> { True, Str(&'a str), Expr(Embed<'a>), Jsx(Jsx<'a>), ClassParts(Vec<'a, Value<'a>>) }
 // ClassParts: несколько источников class, слитых в массив в порядке исходника (§7.3)
 enum Handler<'a> {
@@ -265,6 +277,10 @@ null | undefined | Record<string, unknown> | ClassValue[]`, массивы мо�
   - за ним следует статический узел: якорь — этот узел;
   - между двумя текстами: якорь — комментарий `<!>`, добавленный в шаблон;
   - в конце: якорь `null`.
+
+  Вставки выполняются в порядке документа: вставка родителя, стоящая перед дочерним элементом, идёт до
+  операций этого элемента. Server вычисляет части в порядке HTML, и порядок создания шаблонов совпадает
+  (§14.3).
 - Условие: `test ? a : b` или `test && a`, где `test` динамический, а хотя бы одна ветка содержит JSX или
   реактивное чтение. Проверка мемоизируется как `!!test`, чтобы ветки пересоздавались только при смене
   истинности. Memo — поднятая локальная переменная шаблона (`Op::Memo`):
@@ -476,14 +492,18 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
 6. `undefined as any` генерировался в `.jsx`.
 
 ## 12. Тесты
-- `tests/snapshots.rs`: `insta`-снапшоты полного вывода, по одному на каждую возможность §5–§8, плюс §11.
+- `tests/snapshots.rs`: `insta`-снапшоты полного вывода, по одному на каждую возможность §5–§8, плюс §11;
+  каждый вход — для всех трёх target (`server__…`, `hydrate__…`).
 - `tests/compile.rs`: поведенческие утверждения. Вывод парсится как TSX/JSX без семантических ошибок;
   диагностики и их `fixes` по §9 (применение `fixes` даёт файл без этой диагностики); source maps;
   `Ok(None)` без JSX.
 - Differential: каждый снапшот-вход компилируется с `optimize: true` и `false`; оба вывода валидны.
   В `packages/dom/tests` сценарии O3 и O5 прогоняются в happy-dom в обоих режимах, DOM после каждого шага совпадает.
 - `tests/catalog.rs`: SKILL.md совпадает с каталогом; у каждого кода каталога есть тест, который его вызывает.
-- `packages/dom/tests`: сквозное поведение рантайма через Vite-плагин.
+- `packages/dom/tests`: сквозное поведение рантайма через Vite-плагин. `hydrate.spec.ts`: сценарий
+  компилируется для трёх target; `renderToString` даёт тот же видимый DOM, что client; `hydrate` оставляет
+  каждый серверный узел на месте и не меняет разметку; после каждого шага и события гидратированный DOM
+  совпадает с client.
 
 ## 13. Изменения рантайма и пакетов (M1)
 - `@rezejs/dom`: удалить экспорт `classList` и обработку `classList`/`className` в `spread`; `className`
@@ -491,3 +511,67 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
 - `@rezejs/vite-plugin`: рендер §9.3, подвал раз на код, опции `optimize` и `diagnostics.jsonl`.
 - `@rezejs/compiler`: новый тип `Diagnostic` в `index.d.ts`, `skills/` в `files`.
 - `reze_napi`: контракт §3.
+
+## 14. Server и Hydrate (M2)
+
+Три target получают один и тот же IR; различается только эмиттер шаблона. Компоненты, props, фрагменты,
+дети компонентов, async-компоненты и O3 генерируются одинаково.
+
+### 14.1 Server
+- Шаблон → `ssr(<tmpl>, …parts)`: `<tmpl>` — строки `html`, разрезанного в точках частей по `TemplateNode`;
+  `ssr` склеивает их в `RenderedHTML`, который `ssrChild` выводит без экранирования.
+- Части стоят на своём месте в HTML (при равном месте — порядок ops, затем binds):
+  - корень, `attributes_end`: `ssrHydrationKey()` → ` data-hk="…"` (§14.3);
+  - `attributes_end`: `Attr`, `AttrNs`, `Prop { html: Attr }` → `ssrAttribute(name, v)`; `Bool`,
+    `Prop { html: Bool }` → `ssrBoolAttribute(name, v)`; `Class` → `ssrClass(v)`; `Style` → `ssrStyle(v)`;
+    `Spread` → `ssrSpread(props, isSvg)`;
+  - `content_end`: `Prop { html: Text }` → `ssrChild(v)`; `Prop { html: Html }` → `ssrRaw(v)`; `Spread` без
+    вложенных детей → `ssrChild(props.children)`, `props` тогда вычисляется один раз во временную `_s$`;
+    `Insert` с якорем `Only`/`End`;
+  - `start` якоря: `Insert` с якорем `Before`.
+- `Insert` → `ssrChild(value)`, значение вычисляется на месте: `() => e` → `e`, `f` → `f()`, условие →
+  `(test) ? a : b` (`: null` без `else`) без memo. Каждая вставка, кроме единственного ребёнка,
+  обрамляется `<!--[-->…<!--]-->`.
+- `Event`, `Ref` и `Prop { html: None }` ничего не выводят, их выражения не вычисляются; `delegateEvents` нет.
+- Рантайм: `ssrAttribute` пропускает `null`/`undefined`/`false`; `ssrClass` пишет строку как есть, иначе
+  истинные токены (как `className`); `ssrStyle` пишет строку или `key:value` без `null`; `ssrSpread` — то,
+  что выставил бы `spread`, без событий, `ref`, `prop:`, `textContent`, `innerHTML` и `children`.
+  `ssrChild` читает функции, разворачивает массивы, экранирует `&` и `<` в тексте, `null`/`boolean` → `""`.
+
+### 14.2 Hydrate
+- Как client, кроме: корень — `claim(tmpl, "<tag>")`; обходы — `claimChild(parent, k)` и
+  `claimSibling(node, k)`, которые перешагивают диапазоны `<!--[-->…<!--]-->`; вставки —
+  `claimInsert(parent, value[, anchor[, inserts_after]])`.
+- `claimInsert` берёт уже отрисованное как `current` вставки: для единственного ребёнка — всё содержимое
+  родителя; иначе — диапазон прямо перед якорем (или в конце родителя), пропустив `inserts_after`
+  диапазонов следующих вставок. Закрывающий маркер становится якорем, маркеры остаются в DOM. Без
+  диапазона (шаблон склонирован) это обычный `insert`.
+- `hydrate(code, el)`: собирает `[data-hk]` внутри `el`, выполняет `code()` с ключами §14.3 и отдаёт
+  корневой вставке содержимое `el`. После возврата `claim` снова клонирует. `spread` отдаёт вставке
+  `children` уже отрисованное содержимое элемента.
+
+### 14.3 Ключи гидратации
+- Ключ шаблона — `scope.id + scope.count++`. `createComponent` открывает область
+  `parent.id + parent.count++ + "-"`. Области активны во время `renderToString` и `hydrate`.
+- Ключи совпадают, если каждый компонент создаёт шаблоны в одном порядке на сервере и на клиенте. Server
+  вычисляет части в порядке HTML, client — ops в порядке документа (§7.5), поэтому шаблоны в детях
+  создаются в одном порядке. Исключение — JSX внутри реактивного значения атрибута: client создаёт его в
+  `bind` после всех ops, server — на месте атрибута. Такой JSX бессмыслен (атрибут получает строку
+  объекта) и с гидратацией не поддерживается.
+
+### 14.4 Границы M2
+- `renderToString` синхронный: effects не выполняются, async-компоненты рендерят состояние до загрузки.
+  Стриминг и Suspense на сервере — вне M2; `Suspense`, `Portal` и `Dynamic` со строковым тегом обращаются к
+  `document` и на сервере не работают.
+- `<select value>` сервер не отражает в HTML; клиент выставляет свойство при гидратации. `value`, `checked`,
+  `selected` сервер пишет атрибутами.
+- Соседние строки массива детей сервер склеивает в один текстовый узел; гидратация приводит DOM к виду
+  client реконсиляцией (результат тот же, узлы пересоздаются).
+
+### 14.5 Изменения рантайма и пакетов (M2)
+- `@rezejs/dom`: `hydrate`, `claim`, `claimChild`, `claimSibling`, `claimInsert`, `renderToString`, `ssr`,
+  `ssrChild`, `ssrHydrationKey`, `ssrAttribute`, `ssrBoolAttribute`, `ssrClass`, `ssrStyle`, `ssrSpread`,
+  `ssrRaw`; области ключей в `createComponent`.
+- `@rezejs/vite-plugin`: SSR-трансформы компилируются для `server`; опция `hydratable` переключает
+  браузерные трансформы на `hydrate`.
+- `reze_napi`: опция `target` (§3).

@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <i class={[\"a\", { b: true, c: false }]} style={{ color: \"red\" }} />;"
+---
+import { template as _$template, claim as _$claim } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<i class=\"a b\" style=\"color:red\"></i>");
+const a = _$claim(_tmpl$, "i");

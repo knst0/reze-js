@@ -1,0 +1,9 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <select value={v()}>{options()}</select>;\nconst b = <textarea value=\"hi\" />;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<select", ">", "</select>"],
+  _tmpl$2 = ["<textarea", ">", "</textarea>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(options()));
+const b = _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild("hi"));

@@ -1,0 +1,20 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div {...attrs} className=\"x\" ref={el}>{kids()}</div>;"
+---
+import { template as _$template, claim as _$claim, use as _$use, spread as _$spread, mergeProps as _$mergeProps, claimInsert as _$claimInsert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<div></div>");
+const a = (() => {
+  var _el$ = _$claim(_tmpl$, "div");
+  typeof el === "function" ? _$use(el, _el$) : el = _el$;
+  _$spread(_el$, _$mergeProps(attrs, { class: "x" }), false, true);
+  _$claimInsert(_el$, kids);
+  return _el$;
+})();
+// warn
+[CLASS_ALIAS] `className` is a legacy alias: Reze has one `class` attribute that takes strings, objects and arrays. Rename it to `class`; it was compiled as `class`.
+  in div
+  at case.tsx:1:27
+> 1 | const a = <div {...attrs} className="x" ref={el}>{kids()}</div>;
+    |                           ^^^^^^^^^
+  fix: rename `className` to `class`

@@ -1,0 +1,12 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div {...attrs()} />;\nconst b = <p {...rest}><b /></p>;"
+---
+import { mergeProps as _$mergeProps, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrSpread as _$ssrSpread, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<div", "", ">", "</div>"],
+  _tmpl$2 = ["<p", "", "><b></b></p>"];
+const a = (() => {
+  var _s$ = _$mergeProps(() => (attrs()));
+  return _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrSpread(_s$, false), _$ssrChild(_s$.children));
+})();
+const b = _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrSpread(rest, false));

@@ -1,0 +1,18 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div>{a()}<p title={t()}>{b()}</p>{c()}{d()}<i />{e()}</div>;"
+---
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimSibling as _$claimSibling, claimInsert as _$claimInsert, bind as _$bind, setAttribute as _$setAttribute } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<div><p></p><i></i></div>");
+const a = (() => {
+  var _el$ = _$claim(_tmpl$, "div"),
+    _el$2 = _$claimChild(_el$, 0),
+    _el$3 = _$claimSibling(_el$2, 1);
+  _$claimInsert(_el$, a, _el$2);
+  _$claimInsert(_el$2, b);
+  _$claimInsert(_el$, c, _el$3, 1);
+  _$claimInsert(_el$, d, _el$3);
+  _$claimInsert(_el$, e, null);
+  _$bind(() => _$setAttribute(_el$2, "title", t()));
+  return _el$;
+})();

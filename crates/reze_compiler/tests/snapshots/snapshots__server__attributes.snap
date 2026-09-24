@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <a href={url()} title=\"t\" data-id={id} aria-label={label()} bool:hidden={h()} attr:x=\"1\" prop:foo={v} xlink:href=\"#i\" />;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute, ssrBoolAttribute as _$ssrBoolAttribute } from "reze-js";
+const _tmpl$ = ["<a title=\"t\" x=\"1\" xlink:href=\"#i\"", "", "", "", "", "></a>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("data-id", id), _$ssrAttribute("href", url()), _$ssrAttribute("aria-label", label()), _$ssrBoolAttribute("hidden", h()));

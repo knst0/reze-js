@@ -14,7 +14,9 @@ use crate::html::{
     attribute_namespace, decode_entities, escape_attribute, event_name, is_delegated_event,
     is_property, suggest_attribute,
 };
-use crate::ir::{AssignTarget, Bind, Handler, MemberKey, NodeId, Op, RefTarget, Target, Value};
+use crate::ir::{
+    AssignTarget, Bind, BindTarget, Handler, MemberKey, NodeId, Op, PropHtml, RefTarget, Value,
+};
 
 enum AttrValue<'b, 'a> {
     Bare,
@@ -28,11 +30,11 @@ enum Kind<'a> {
     Attr(&'a str),
     AttrNs(&'static str, &'a str),
     Bool(&'a str),
-    Prop(&'a str),
+    Prop(&'a str, PropHtml),
     /// A property whose literal initial value is written as a template attribute.
-    InlineProp(&'a str),
-    /// A property set after the element's children exist (`<select value>`).
-    LateProp(&'a str),
+    InlineProp(&'a str, PropHtml),
+    /// A property set after the element's children exist (`<select value>`, `<textarea value>`).
+    LateProp(&'a str, PropHtml),
     Style,
 }
 
@@ -199,9 +201,9 @@ impl<'a> Lowerer<'a, '_> {
         };
         builder.reference(node);
         if is_reactive {
-            builder.binds.push(Bind { node, target: Target::Class, value });
+            builder.binds.push(Bind { node, target: BindTarget::Class, value });
         } else {
-            builder.ops.push(Op::Set { node, target: Target::Class, value });
+            builder.ops.push(Op::Set { node, target: BindTarget::Class, value });
         }
     }
 
@@ -300,11 +302,13 @@ impl<'a> Lowerer<'a, '_> {
         }
 
         let target = match kind {
-            Kind::Attr(n) => Target::Attr(n),
-            Kind::AttrNs(ns, n) => Target::AttrNs(ns, n),
-            Kind::Bool(n) => Target::Bool(n),
-            Kind::Prop(n) | Kind::InlineProp(n) | Kind::LateProp(n) => Target::Prop(n),
-            Kind::Style => Target::Style,
+            Kind::Attr(n) => BindTarget::Attr(n),
+            Kind::AttrNs(ns, n) => BindTarget::AttrNs(ns, n),
+            Kind::Bool(n) => BindTarget::Bool(n),
+            Kind::Prop(name, html) | Kind::InlineProp(name, html) | Kind::LateProp(name, html) => {
+                BindTarget::Prop { name, html }
+            }
+            Kind::Style => BindTarget::Style,
         };
         builder.reference(node);
         if let AttrValue::Expr(e) = value
@@ -321,7 +325,7 @@ impl<'a> Lowerer<'a, '_> {
             AttrValue::Jsx(jsx) => Value::Jsx(jsx),
         };
         let op = Op::Set { node, target, value };
-        if matches!(kind, Kind::LateProp(_)) { deferred.push(op) } else { builder.ops.push(op) }
+        if matches!(kind, Kind::LateProp(..)) { deferred.push(op) } else { builder.ops.push(op) }
     }
 
     fn kind(&mut self, a: &JSXAttribute<'a>, name: &'a str, tag: &str, is_svg: bool) -> Kind<'a> {
@@ -329,7 +333,7 @@ impl<'a> Lowerer<'a, '_> {
             return Kind::Style;
         }
         if let Some(n) = name.strip_prefix("prop:") {
-            return Kind::Prop(n);
+            return Kind::Prop(n, PropHtml::None);
         }
         if let Some(n) = name.strip_prefix("attr:") {
             return Kind::Attr(n);
@@ -342,9 +346,12 @@ impl<'a> Lowerer<'a, '_> {
         }
         if !is_svg && is_property(name) {
             return match name {
-                "value" if matches!(tag, "textarea" | "select") => Kind::LateProp(name),
-                "value" | "checked" | "selected" => Kind::InlineProp(name),
-                _ => Kind::Prop(name),
+                "value" if tag == "textarea" => Kind::LateProp(name, PropHtml::Text),
+                "value" if tag == "select" => Kind::LateProp(name, PropHtml::None),
+                "value" => Kind::InlineProp(name, PropHtml::Attr),
+                "checked" | "selected" => Kind::InlineProp(name, PropHtml::Bool),
+                "innerHTML" => Kind::Prop(name, PropHtml::Html),
+                _ => Kind::Prop(name, PropHtml::Text),
             };
         }
         if name == "key" {
@@ -394,9 +401,9 @@ impl<'a> Lowerer<'a, '_> {
         value: &AttrValue<'_, 'a>,
     ) -> bool {
         let html_name = match kind {
-            Kind::Attr(n) | Kind::AttrNs(_, n) | Kind::InlineProp(n) | Kind::Bool(n) => n,
+            Kind::Attr(n) | Kind::AttrNs(_, n) | Kind::InlineProp(n, _) | Kind::Bool(n) => n,
             Kind::Style => "style",
-            Kind::Prop(_) | Kind::LateProp(_) => return false,
+            Kind::Prop(..) | Kind::LateProp(..) => return false,
         };
         let literal = match value {
             AttrValue::Bare => Literal::Bool(true),
@@ -412,7 +419,7 @@ impl<'a> Lowerer<'a, '_> {
         let html = &mut builder.html;
         match literal {
             Literal::Bool(true)
-                if is_bare_value || is_bool || matches!(kind, Kind::InlineProp(_)) =>
+                if is_bare_value || is_bool || matches!(kind, Kind::InlineProp(..)) =>
             {
                 html.push(' ');
                 html.push_str(html_name);

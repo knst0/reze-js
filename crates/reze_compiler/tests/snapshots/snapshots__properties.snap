@@ -1,0 +1,32 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div><input value={v()} checked={c()} prop:x={x()} /><p textContent={t()} /><p innerHTML={h()} /><textarea value={v()} /><select value={v()}><option /></select></div>;"
+---
+import { template as _$template, bind as _$bind } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<div><input><p></p><p></p><textarea></textarea><select><option></option></select></div>");
+const a = (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild,
+    _el$3 = _el$2.nextSibling,
+    _el$4 = _el$3.nextSibling,
+    _el$5 = _el$4.nextSibling,
+    _el$6 = _el$5.nextSibling;
+  _$bind(_p$ => {
+    var _v$ = v(),
+      _v$2 = c(),
+      _v$3 = x(),
+      _v$4 = t(),
+      _v$5 = h(),
+      _v$6 = v(),
+      _v$7 = v();
+    _v$ !== _p$[0] && (_el$2.value = _p$[0] = _v$);
+    _v$2 !== _p$[1] && (_el$2.checked = _p$[1] = _v$2);
+    _v$3 !== _p$[2] && (_el$2.x = _p$[2] = _v$3);
+    _v$4 !== _p$[3] && (_el$3.textContent = _p$[3] = _v$4);
+    _v$5 !== _p$[4] && (_el$4.innerHTML = _p$[4] = _v$5);
+    _v$6 !== _p$[5] && (_el$5.value = _p$[5] = _v$6);
+    _v$7 !== _p$[6] && (_el$6.value = _p$[6] = _v$7);
+    return _p$;
+  }, []);
+  return _el$;
+})();

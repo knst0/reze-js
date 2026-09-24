@@ -1,0 +1,21 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <a href={url()} title=\"t\" data-id={id} aria-label={label()} bool:hidden={h()} attr:x=\"1\" prop:foo={v} xlink:href=\"#i\" />;"
+---
+import { template as _$template, claim as _$claim, setAttribute as _$setAttribute, bind as _$bind, setBoolAttribute as _$setBoolAttribute } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<a title=\"t\" x=\"1\" xlink:href=\"#i\"></a>");
+const a = (() => {
+  var _el$ = _$claim(_tmpl$, "a");
+  _$setAttribute(_el$, "data-id", id);
+  _el$.foo = v;
+  _$bind(_p$ => {
+    var _v$ = url(),
+      _v$2 = label(),
+      _v$3 = h();
+    _v$ !== _p$[0] && (_$setAttribute(_el$, "href", _p$[0] = _v$));
+    _v$2 !== _p$[1] && (_$setAttribute(_el$, "aria-label", _p$[1] = _v$2));
+    _v$3 !== _p$[2] && (_$setBoolAttribute(_el$, "hidden", _p$[2] = _v$3));
+    return _p$;
+  }, []);
+  return _el$;
+})();

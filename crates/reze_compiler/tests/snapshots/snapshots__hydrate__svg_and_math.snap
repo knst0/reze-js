@@ -1,0 +1,16 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <svg viewBox=\"0 0 1 1\"><circle r={r()} /><foreignObject><p>x</p></foreignObject></svg>;\nconst b = <g><path d=\"M0\" /></g>;\nconst c = <math><mi>x</mi></math>;"
+---
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, bind as _$bind, setAttribute as _$setAttribute, templateSVG as _$templateSVG, templateMathML as _$templateMathML } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<svg viewBox=\"0 0 1 1\"><circle></circle><foreignObject><p>x</p></foreignObject></svg>"),
+  _tmpl$2 = /*#__PURE__*/ _$templateSVG("<svg><g><path d=\"M0\"></path></g></svg>"),
+  _tmpl$3 = /*#__PURE__*/ _$templateMathML("<math><mi>x</mi></math>");
+const a = (() => {
+  var _el$ = _$claim(_tmpl$, "svg"),
+    _el$2 = _$claimChild(_el$, 0);
+  _$bind(() => _$setAttribute(_el$2, "r", r()));
+  return _el$;
+})();
+const b = _$claim(_tmpl$2, "g");
+const c = _$claim(_tmpl$3, "math");

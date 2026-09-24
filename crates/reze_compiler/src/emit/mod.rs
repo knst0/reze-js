@@ -1,7 +1,9 @@
-//! IR → client DOM code (SPEC §5). Emission takes no decisions: every choice is in the IR.
+//! IR → code for one `Target` (SPEC §5, §14). Emission takes no decisions: every choice is in
+//! the IR; the target only picks how a template is written out.
 
 mod async_component;
 mod component;
+mod server;
 mod template;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -10,6 +12,7 @@ use std::fmt::Write;
 use oxc_allocator::Allocator;
 use oxc_semantic::Scoping;
 
+use crate::Target;
 use crate::code::Code;
 use crate::html::push_js_string;
 use crate::ir::{Child, Embed, ExprChild, Getter, HoleKind, Jsx, Namespace, Value};
@@ -39,9 +42,22 @@ enum Helper {
     Effect,
     TrackAsync,
     TrackPending,
+    Claim,
+    ClaimChild,
+    ClaimSibling,
+    ClaimInsert,
+    Ssr,
+    SsrChild,
+    SsrHydrationKey,
+    SsrAttribute,
+    SsrBoolAttribute,
+    SsrClass,
+    SsrStyle,
+    SsrSpread,
+    SsrRaw,
 }
 
-const HELPER_COUNT: usize = Helper::TrackPending as usize + 1;
+const HELPER_COUNT: usize = Helper::SsrRaw as usize + 1;
 
 impl Helper {
     fn export(self) -> &'static str {
@@ -69,6 +85,19 @@ impl Helper {
             Helper::Effect => "effect",
             Helper::TrackAsync => "trackAsync",
             Helper::TrackPending => "trackPending",
+            Helper::Claim => "claim",
+            Helper::ClaimChild => "claimChild",
+            Helper::ClaimSibling => "claimSibling",
+            Helper::ClaimInsert => "claimInsert",
+            Helper::Ssr => "ssr",
+            Helper::SsrChild => "ssrChild",
+            Helper::SsrHydrationKey => "ssrHydrationKey",
+            Helper::SsrAttribute => "ssrAttribute",
+            Helper::SsrBoolAttribute => "ssrBoolAttribute",
+            Helper::SsrClass => "ssrClass",
+            Helper::SsrStyle => "ssrStyle",
+            Helper::SsrSpread => "ssrSpread",
+            Helper::SsrRaw => "ssrRaw",
         }
     }
 
@@ -97,6 +126,19 @@ impl Helper {
             Helper::Effect => "_$effect",
             Helper::TrackAsync => "_$trackAsync",
             Helper::TrackPending => "_$trackPending",
+            Helper::Claim => "_$claim",
+            Helper::ClaimChild => "_$claimChild",
+            Helper::ClaimSibling => "_$claimSibling",
+            Helper::ClaimInsert => "_$claimInsert",
+            Helper::Ssr => "_$ssr",
+            Helper::SsrChild => "_$ssrChild",
+            Helper::SsrHydrationKey => "_$ssrHydrationKey",
+            Helper::SsrAttribute => "_$ssrAttribute",
+            Helper::SsrBoolAttribute => "_$ssrBoolAttribute",
+            Helper::SsrClass => "_$ssrClass",
+            Helper::SsrStyle => "_$ssrStyle",
+            Helper::SsrSpread => "_$ssrSpread",
+            Helper::SsrRaw => "_$ssrRaw",
         }
     }
 }
@@ -130,11 +172,11 @@ impl<'s> Namer<'s> {
     }
 }
 
-struct TemplateDecl<'a> {
-    name: &'a str,
-    factory: &'a str,
-    html: &'a str,
-    namespace: Namespace,
+enum TemplateDecl<'a> {
+    /// Client and hydrate: `factory(html)`.
+    Factory { name: &'a str, factory: &'a str, html: &'a str, namespace: Namespace },
+    /// Server: the static strings between the dynamic parts.
+    Strings { name: &'a str, strings: std::vec::Vec<&'a str> },
 }
 
 pub struct Emitter<'a, 's> {
@@ -142,11 +184,13 @@ pub struct Emitter<'a, 's> {
     source: &'a str,
     module_name: &'a str,
     is_typescript: bool,
+    target: Target,
     namer: Namer<'s>,
     aliases: [Option<&'a str>; HELPER_COUNT],
     helper_order: std::vec::Vec<Helper>,
     templates: std::vec::Vec<TemplateDecl<'a>>,
     template_names: HashMap<(&'a str, Namespace), &'a str>,
+    string_template_names: HashMap<std::vec::Vec<&'a str>, &'a str>,
     events: BTreeSet<&'a str>,
     scratch: String,
 }
@@ -157,6 +201,7 @@ impl<'a, 's> Emitter<'a, 's> {
         source: &'a str,
         module_name: &'a str,
         is_typescript: bool,
+        target: Target,
         scoping: &'s Scoping,
     ) -> Self {
         Self {
@@ -164,11 +209,13 @@ impl<'a, 's> Emitter<'a, 's> {
             source,
             module_name,
             is_typescript,
+            target,
             namer: Namer::new(scoping),
             aliases: [None; HELPER_COUNT],
             helper_order: std::vec::Vec::new(),
             templates: std::vec::Vec::new(),
             template_names: HashMap::new(),
+            string_template_names: HashMap::new(),
             events: BTreeSet::new(),
             scratch: String::new(),
         }
@@ -225,13 +272,27 @@ impl<'a, 's> Emitter<'a, 's> {
         out.push(';');
         for (i, template) in self.templates.iter().enumerate() {
             out.push_str(if i == 0 { "\nconst " } else { ",\n  " });
-            let _ = write!(out, "{} = /*#__PURE__*/ {}(", template.name, template.factory);
-            if template.namespace == Namespace::Svg {
-                push_js_string(&mut out, &format!("<svg>{}</svg>", template.html));
-            } else {
-                push_js_string(&mut out, template.html);
+            match template {
+                TemplateDecl::Factory { name, factory, html, namespace } => {
+                    let _ = write!(out, "{name} = /*#__PURE__*/ {factory}(");
+                    if *namespace == Namespace::Svg {
+                        push_js_string(&mut out, &format!("<svg>{html}</svg>"));
+                    } else {
+                        push_js_string(&mut out, html);
+                    }
+                    out.push(')');
+                }
+                TemplateDecl::Strings { name, strings } => {
+                    let _ = write!(out, "{name} = [");
+                    for (i, string) in strings.iter().enumerate() {
+                        if i > 0 {
+                            out.push_str(", ");
+                        }
+                        push_js_string(&mut out, string);
+                    }
+                    out.push(']');
+                }
             }
-            out.push(')');
         }
         if !self.templates.is_empty() {
             out.push(';');
@@ -268,8 +329,18 @@ impl<'a, 's> Emitter<'a, 's> {
             Namespace::MathMl => Helper::TemplateMathMl,
         });
         let name = self.fresh("_tmpl$");
-        self.templates.push(TemplateDecl { name, factory, html, namespace });
+        self.templates.push(TemplateDecl::Factory { name, factory, html, namespace });
         self.template_names.insert((html, namespace), name);
+        name
+    }
+
+    fn string_template_name(&mut self, strings: std::vec::Vec<&'a str>) -> &'a str {
+        if let Some(name) = self.string_template_names.get(&strings) {
+            return name;
+        }
+        let name = self.fresh("_tmpl$");
+        self.string_template_names.insert(strings.clone(), name);
+        self.templates.push(TemplateDecl::Strings { name, strings });
         name
     }
 
@@ -300,7 +371,10 @@ impl<'a, 's> Emitter<'a, 's> {
 
     fn jsx(&mut self, out: &mut Code, jsx: &Jsx<'a>) {
         match jsx {
-            Jsx::Template(template) => self.template(out, template),
+            Jsx::Template(template) => match self.target {
+                Target::Client | Target::Hydrate => self.template(out, template),
+                Target::Server => self.server_template(out, template),
+            },
             Jsx::Component(component) => self.component(out, component),
             Jsx::Fragment(children) => match children.as_slice() {
                 [] => out.push("[]"),

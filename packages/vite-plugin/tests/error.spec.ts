@@ -36,7 +36,7 @@ function compiled(diagnostics: Diagnostic[]) {
   return { code: failed ? null : "compiled();", map: failed ? null : "{}", diagnostics };
 }
 
-type Handler = (this: unknown, code: string, id: string) => unknown;
+type Handler = (this: unknown, code: string, id: string, options?: { ssr?: boolean }) => unknown;
 
 function pluginWith(options?: RezeOptions) {
   const plugin = reze(options) as unknown as { transform: { handler: Handler } };
@@ -92,7 +92,20 @@ test("options reach the compiler and the query is stripped from the filename", (
     moduleName: "my-runtime",
     sourceMap: false,
     optimize: true,
+    target: "client",
   });
+});
+
+test("SSR transforms compile for the server; hydratable browser transforms for hydrate", () => {
+  compile.mockReturnValue(compiled([]));
+  const targets = (options: RezeOptions) => {
+    const { handler } = (reze(options) as unknown as { transform: { handler: Handler } }).transform;
+    handler.call({}, "<i />", "src/A.tsx", { ssr: true });
+    handler.call({}, "<i />", "src/A.tsx", { ssr: false });
+    return compile.mock.calls.splice(0).map((call) => call[2].target);
+  };
+  expect(targets({})).toEqual(["server", "client"]);
+  expect(targets({ hydratable: true })).toEqual(["server", "hydrate"]);
 });
 
 test("warnings become Vite warnings with loc; the footer appears once per code per plugin", () => {

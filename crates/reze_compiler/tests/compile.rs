@@ -2,7 +2,7 @@ use oxc_allocator::Allocator;
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
-use reze_compiler::{Code, Diagnostic, Options, Output, Severity, compile};
+use reze_compiler::{Code, Diagnostic, Options, Output, Severity, Target, compile};
 
 fn output(source: &str) -> Output {
     compile(source, "test.tsx", &Options::default()).expect("compiles").expect("has JSX")
@@ -10,6 +10,13 @@ fn output(source: &str) -> Output {
 
 fn run(source: &str) -> String {
     let code = output(source).code;
+    assert_valid(&code, SourceType::tsx());
+    code
+}
+
+fn run_for(target: Target, source: &str) -> String {
+    let options = Options { target, ..Options::default() };
+    let code = compile(source, "test.tsx", &options).expect("compiles").expect("has JSX").code;
     assert_valid(&code, SourceType::tsx());
     code
 }
@@ -391,4 +398,41 @@ fn rendered_diagnostics_carry_code_path_frame_and_fix() {
     assert!(rendered.contains("> 2 |"), "{rendered}");
     assert!(rendered.contains("\n  fix: rename `classList` to `class`"), "{rendered}");
     assert!(out.diagnostics[0].docs().ends_with("SKILL.md#class_alias"));
+}
+
+#[test]
+fn server_output_never_evaluates_client_only_attributes() {
+    let code = run_for(
+        Target::Server,
+        "const a = <div ref={refs[i++]} onClick={go} on:scroll={scroll} prop:x={x()}>{a()}</div>;",
+    );
+    for client_only in ["refs", "go", "scroll", "x()"] {
+        assert!(!code.contains(client_only), "{client_only} in\n{code}");
+    }
+    assert!(code.contains("_$ssrChild(a())"), "{code}");
+}
+
+#[test]
+fn server_brackets_every_insert_but_a_sole_child() {
+    let sole = run_for(Target::Server, "const a = <p>{a()}</p>;");
+    assert!(!sole.contains("<!--["), "{sole}");
+    let shared = run_for(Target::Server, "const a = <p>{a()}{b()}<i /></p>;");
+    assert_eq!(shared.matches("<!--[-->").count(), 2, "{shared}");
+    assert_eq!(shared.matches("<!--]-->").count(), 2, "{shared}");
+}
+
+#[test]
+fn hydrate_skips_the_ranges_of_later_inserts_sharing_an_anchor() {
+    let code = run_for(Target::Hydrate, "const a = <p>{a()}{b()}{c()}<i /></p>;");
+    assert!(code.contains("_$claimInsert(_el$, a, _el$2, 2)"), "{code}");
+    assert!(code.contains("_$claimInsert(_el$, b, _el$2, 1)"), "{code}");
+    assert!(code.contains("_$claimInsert(_el$, c, _el$2)"), "{code}");
+}
+
+#[test]
+fn inserts_run_in_document_order() {
+    let code = run("const a = <div>{a()}<p>{b()}</p>{c()}</div>;");
+    let position = |call: &str| code.find(call).unwrap_or_else(|| panic!("{call} in\n{code}"));
+    assert!(position("_$insert(_el$, a") < position("_$insert(_el$2, b"), "{code}");
+    assert!(position("_$insert(_el$2, b") < position("_$insert(_el$, c"), "{code}");
 }

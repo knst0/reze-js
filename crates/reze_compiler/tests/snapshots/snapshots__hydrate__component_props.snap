@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <Card title=\"t\" count={n()} static={s} {...rest} onPick={() => pick()} ref={box.el}>body {n()}</Card>;"
+---
+import { createComponent as _$createComponent, mergeProps as _$mergeProps, memo as _$memo } from "reze-js";
+const a = _$createComponent(Card, _$mergeProps({ title: "t", get count() { return n(); }, static: s }, rest, { onPick: () => pick(), ref(r$) { var _o$ = box, _r$ = _o$.el;
+  typeof _r$ === "function" ? _r$(r$) : _o$.el = r$; }, get children() { return ["body ", _$memo(n)]; } }));

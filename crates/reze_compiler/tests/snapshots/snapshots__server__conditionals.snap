@@ -1,0 +1,10 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div>{ok() ? <b>yes</b> : <i>no</i>}{open() && <p>{text()}</p>}</div>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<div", "><!--[-->", "<!--]--><!--[-->", "<!--]--></div>"],
+  _tmpl$2 = ["<b", ">yes</b>"],
+  _tmpl$3 = ["<i", ">no</i>"],
+  _tmpl$4 = ["<p", ">", "</p>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild((ok()) ? _$ssr(_tmpl$2, _$ssrHydrationKey()) : _$ssr(_tmpl$3, _$ssrHydrationKey())), _$ssrChild((open()) ? _$ssr(_tmpl$4, _$ssrHydrationKey(), _$ssrChild(text())) : null));

@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <i class={[\"a\", { b: true, c: false }]} style={{ color: \"red\" }} />;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey } from "reze-js";
+const _tmpl$ = ["<i class=\"a b\" style=\"color:red\"", "></i>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey());

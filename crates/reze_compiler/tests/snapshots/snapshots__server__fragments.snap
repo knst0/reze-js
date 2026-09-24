@@ -1,0 +1,9 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <>{a()}<b />text</>;\nconst b = <></>;\nconst c = <>{x}</>;"
+---
+import { memo as _$memo, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey } from "reze-js";
+const _tmpl$ = ["<b", "></b>"];
+const a = [_$memo(a), _$ssr(_tmpl$, _$ssrHydrationKey()), "text"];
+const b = [];
+const c = x;

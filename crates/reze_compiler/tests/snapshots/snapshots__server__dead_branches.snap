@@ -1,0 +1,25 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const DEBUG = false;\nconst a = <div>{false && <b>never</b>}{true ? <i>y</i> : <u>n</u>}{DEBUG && <p />}</div>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<div", "><i>y</i><!--[-->", "<!--]--></div>"],
+  _tmpl$2 = ["<p", "></p>"];
+const DEBUG = false;
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(DEBUG && _$ssr(_tmpl$2, _$ssrHydrationKey())));
+// info
+[DEAD_BRANCH_REMOVED] The condition is a literal, so this branch can never render; it was removed.
+  in div
+  at case.tsx:2:17
+  1 | const DEBUG = false;
+> 2 | const a = <div>{false && <b>never</b>}{true ? <i>y</i> : <u>n</u>}{DEBUG && <p />}</div>;
+    |                 ^^^^^^^^^^^^^^^^^^^^^
+  note: never rendered (case.tsx:2:26)
+// info
+[DEAD_BRANCH_REMOVED] The condition is a literal, so this branch can never render; it was removed.
+  in div
+  at case.tsx:2:40
+  1 | const DEBUG = false;
+> 2 | const a = <div>{false && <b>never</b>}{true ? <i>y</i> : <u>n</u>}{DEBUG && <p />}</div>;
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  note: never rendered (case.tsx:2:58)

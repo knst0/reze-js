@@ -18,10 +18,10 @@ pub enum Item<'b, 'a> {
     Expr(&'b Expression<'a>),
 }
 
-/// A dynamic child waiting for its anchor: the `next_static`-th static sibling, if any.
-struct PendingInsert<'a> {
-    value: Child<'a>,
-    hoisted_test: Option<(MemoId, Embed<'a>)>,
+/// An insert op, pushed in document order, waiting for its anchor: the `next_static`-th static
+/// sibling, if any.
+struct PendingInsert {
+    op: usize,
     next_static: usize,
 }
 
@@ -128,23 +128,24 @@ impl<'a> Lowerer<'a, '_> {
         in_svg: bool,
     ) {
         let is_sole = items.len() == 1;
-        let mut pending: std::vec::Vec<PendingInsert<'a>> = std::vec::Vec::new();
+        let mut pending: std::vec::Vec<PendingInsert> = std::vec::Vec::new();
         let mut last_is_text = false;
         let mut after_dynamic = false;
         let mut static_count = 0;
         for item in items {
-            match item {
+            let value = match item {
                 Item::Text(text) => {
                     if after_dynamic && last_is_text {
-                        builder.html.push_str("<!>");
                         builder.node(parent);
+                        builder.html.push_str("<!>");
                         static_count += 1;
                     }
-                    crate::html::escape_text(&mut builder.html, &text);
                     builder.node(parent);
+                    crate::html::escape_text(&mut builder.html, &text);
                     static_count += 1;
                     last_is_text = true;
                     after_dynamic = false;
+                    continue;
                 }
                 Item::Element(el) => match self.tag_of(&el.opening_element.name) {
                     super::Tag::Native(tag) => {
@@ -153,49 +154,44 @@ impl<'a> Lowerer<'a, '_> {
                         static_count += 1;
                         last_is_text = false;
                         after_dynamic = false;
+                        continue;
                     }
                     super::Tag::Component(callee) => {
-                        let component = self.component(el, callee);
-                        pending.push(PendingInsert {
-                            value: Child::Jsx(crate::ir::Jsx::Component(component)),
-                            hoisted_test: None,
-                            next_static: static_count,
-                        });
-                        after_dynamic = true;
+                        Child::Jsx(crate::ir::Jsx::Component(self.component(el, callee)))
                     }
                 },
-                Item::Fragment(f) => {
-                    let fragment = self.fragment(f);
-                    pending.push(PendingInsert {
-                        value: Child::Jsx(fragment),
-                        hoisted_test: None,
-                        next_static: static_count,
-                    });
-                    after_dynamic = true;
-                }
+                Item::Fragment(f) => Child::Jsx(self.fragment(f)),
                 Item::Expr(e) => {
                     let (value, hoisted_test) = self.insert_value(e, builder);
-                    pending.push(PendingInsert { value, hoisted_test, next_static: static_count });
-                    after_dynamic = true;
+                    if let Some((id, test)) = hoisted_test {
+                        builder.ops.push(Op::Memo { id, test });
+                    }
+                    value
                 }
-            }
+            };
+            pending.push(PendingInsert { op: builder.ops.len(), next_static: static_count });
+            builder.ops.push(Op::Insert { parent, value, anchor: Anchor::End, inserts_after: 0 });
+            after_dynamic = true;
         }
 
         let statics = builder.children(parent).to_vec();
-        for PendingInsert { value, hoisted_test, next_static } in pending {
-            let anchor = if is_sole {
+        if !pending.is_empty() {
+            builder.reference(parent);
+        }
+        for (i, insert) in pending.iter().enumerate() {
+            let shared = pending[i + 1..].iter().filter(|p| p.next_static == insert.next_static);
+            let resolved = if is_sole {
                 Anchor::Only
-            } else if let Some(&node) = statics.get(next_static) {
+            } else if let Some(&node) = statics.get(insert.next_static) {
                 builder.reference(node);
                 Anchor::Before(node)
             } else {
                 Anchor::End
             };
-            if let Some((id, test)) = hoisted_test {
-                builder.ops.push(Op::Memo { id, test });
+            if let Op::Insert { anchor, inserts_after, .. } = &mut builder.ops[insert.op] {
+                *anchor = resolved;
+                *inserts_after = shared.count() as u32;
             }
-            builder.reference(parent);
-            builder.ops.push(Op::Insert { parent, value, anchor });
         }
     }
 

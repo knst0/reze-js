@@ -1,40 +1,71 @@
-//! Templates: clone, walk to the referenced nodes, run the ops, merge the binds.
+//! Client and hydrate templates: clone (or claim), walk to the referenced nodes, run the ops,
+//! merge the binds.
 
 use std::fmt::Write;
 
 use super::{Emitter, Helper};
+use crate::Target;
 use crate::code::Code;
 use crate::html::{push_js_string, push_member};
 use crate::ir::{
-    Anchor, AssignTarget, Bind, Embed, From, Handler, MemberKey, Op, RefTarget, Target, Template,
+    Anchor, AssignTarget, Bind, BindTarget, Embed, From, Handler, MemberKey, Op, RefTarget,
+    Template,
 };
 
 impl<'a> Emitter<'a, '_> {
     pub(super) fn template(&mut self, out: &mut Code, template: &Template<'a>) {
         let factory = self.template_name(template.html, template.namespace);
+        let is_hydrate = self.target == Target::Hydrate;
+        let mut create = String::new();
+        if is_hydrate {
+            let claim = self.helper(Helper::Claim);
+            let _ = write!(create, "{claim}({factory}, ");
+            push_js_string(&mut create, template.root_tag());
+            create.push(')');
+        } else {
+            let _ = write!(create, "{factory}()");
+        }
         if template.walks.is_empty() && template.ops.is_empty() && template.binds.is_empty() {
-            out.push(factory);
-            out.push("()");
+            out.push(&create);
             return;
         }
 
-        let mut names: std::vec::Vec<&'a str> = vec![""; template.node_count as usize];
+        let mut names: std::vec::Vec<&'a str> = vec![""; template.nodes.len()];
         let root = self.fresh("_el$");
         names[0] = root;
-        let _ = write!(out, "(() => {{\n  var {root} = {factory}()");
+        let _ = write!(out, "(() => {{\n  var {root} = {create}");
         for walk in &template.walks {
             let name = self.fresh("_el$");
             names[walk.node.index()] = name;
             let _ = write!(out, ",\n    {name} = ");
-            match walk.from {
-                From::FirstChildOf(parent) => {
+            match (walk.from, is_hydrate) {
+                (From::FirstChildOf(parent), false) => {
                     out.push(names[parent.index()]);
                     out.push(".firstChild");
+                    for _ in 0..walk.next_siblings {
+                        out.push(".nextSibling");
+                    }
                 }
-                From::Node(previous) => out.push(names[previous.index()]),
-            }
-            for _ in 0..walk.next_siblings {
-                out.push(".nextSibling");
+                (From::Node(previous), false) => {
+                    out.push(names[previous.index()]);
+                    for _ in 0..walk.next_siblings {
+                        out.push(".nextSibling");
+                    }
+                }
+                (From::FirstChildOf(parent), true) => {
+                    let child = self.helper(Helper::ClaimChild);
+                    let _ =
+                        write!(out, "{child}({}, {})", names[parent.index()], walk.next_siblings);
+                }
+                (From::Node(previous), true) => {
+                    let sibling = self.helper(Helper::ClaimSibling);
+                    let _ = write!(
+                        out,
+                        "{sibling}({}, {})",
+                        names[previous.index()],
+                        walk.next_siblings
+                    );
+                }
             }
         }
         out.push(";\n");
@@ -78,8 +109,10 @@ impl<'a> Emitter<'a, '_> {
                 self.embed(out, test);
                 out.push("))");
             }
-            Op::Insert { parent, value, anchor } => {
-                let insert = self.helper(Helper::Insert);
+            Op::Insert { parent, value, anchor, inserts_after } => {
+                let is_hydrate = self.target == Target::Hydrate;
+                let insert =
+                    self.helper(if is_hydrate { Helper::ClaimInsert } else { Helper::Insert });
                 let _ = write!(out, "{insert}({}, ", names[parent.index()]);
                 self.child(out, value, memos);
                 match anchor {
@@ -89,6 +122,9 @@ impl<'a> Emitter<'a, '_> {
                         out.push(names[node.index()]);
                     }
                     Anchor::End => out.push(", null"),
+                }
+                if is_hydrate && *inserts_after > 0 {
+                    let _ = write!(out, ", {inserts_after}");
                 }
                 out.push(")");
             }
@@ -238,14 +274,14 @@ impl<'a> Emitter<'a, '_> {
         let _ = write!(out, "    return {previous};\n  }}, [])");
     }
 
-    fn set_open(&mut self, out: &mut Code, element: &str, target: Target<'a>) {
+    fn set_open(&mut self, out: &mut Code, element: &str, target: BindTarget<'a>) {
         let helper = match target {
-            Target::Attr(_) => Helper::SetAttribute,
-            Target::AttrNs(..) => Helper::SetAttributeNs,
-            Target::Bool(_) => Helper::SetBoolAttribute,
-            Target::Class => Helper::ClassName,
-            Target::Style => Helper::Style,
-            Target::Prop(name) => {
+            BindTarget::Attr(_) => Helper::SetAttribute,
+            BindTarget::AttrNs(..) => Helper::SetAttributeNs,
+            BindTarget::Bool(_) => Helper::SetBoolAttribute,
+            BindTarget::Class => Helper::ClassName,
+            BindTarget::Style => Helper::Style,
+            BindTarget::Prop { name, .. } => {
                 push_member(&mut out.text, element, name);
                 out.push(" = ");
                 return;
@@ -254,22 +290,22 @@ impl<'a> Emitter<'a, '_> {
         let helper = self.helper(helper);
         let _ = write!(out, "{helper}({element}, ");
         match target {
-            Target::Attr(name) | Target::Bool(name) => {
+            BindTarget::Attr(name) | BindTarget::Bool(name) => {
                 push_js_string(&mut out.text, name);
                 out.push(", ");
             }
-            Target::AttrNs(namespace, name) => {
+            BindTarget::AttrNs(namespace, name) => {
                 push_js_string(&mut out.text, namespace);
                 out.push(", ");
                 push_js_string(&mut out.text, name);
                 out.push(", ");
             }
-            Target::Class | Target::Style | Target::Prop(_) => {}
+            BindTarget::Class | BindTarget::Style | BindTarget::Prop { .. } => {}
         }
     }
 
-    fn set_close(&mut self, out: &mut Code, target: Target<'a>, previous: Option<&str>) {
-        if matches!(target, Target::Prop(_)) {
+    fn set_close(&mut self, out: &mut Code, target: BindTarget<'a>, previous: Option<&str>) {
+        if matches!(target, BindTarget::Prop { .. }) {
             return;
         }
         if let Some(previous) = previous {

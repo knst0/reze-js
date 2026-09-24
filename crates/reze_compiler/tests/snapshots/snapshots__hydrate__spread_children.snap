@@ -1,0 +1,17 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div {...attrs()} />;\nconst b = <p {...rest}><b /></p>;"
+---
+import { template as _$template, claim as _$claim, spread as _$spread, mergeProps as _$mergeProps } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<div></div>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<p><b></b></p>");
+const a = (() => {
+  var _el$ = _$claim(_tmpl$, "div");
+  _$spread(_el$, _$mergeProps(() => (attrs())), false, false);
+  return _el$;
+})();
+const b = (() => {
+  var _el$2 = _$claim(_tmpl$2, "p");
+  _$spread(_el$2, rest, false, true);
+  return _el$2;
+})();

@@ -1,0 +1,11 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <svg viewBox=\"0 0 1 1\"><circle r={r()} /><foreignObject><p>x</p></foreignObject></svg>;\nconst b = <g><path d=\"M0\" /></g>;\nconst c = <math><mi>x</mi></math>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute } from "reze-js";
+const _tmpl$ = ["<svg viewBox=\"0 0 1 1\"", "><circle", "></circle><foreignObject><p>x</p></foreignObject></svg>"],
+  _tmpl$2 = ["<g", "><path d=\"M0\"></path></g>"],
+  _tmpl$3 = ["<math", "><mi>x</mi></math>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("r", r()));
+const b = _$ssr(_tmpl$2, _$ssrHydrationKey());
+const c = _$ssr(_tmpl$3, _$ssrHydrationKey());

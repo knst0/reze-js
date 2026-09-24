@@ -60,13 +60,62 @@ pub struct MemoId(pub u32);
 pub struct Template<'a> {
     pub html: &'a str,
     pub namespace: Namespace,
-    /// Number of node ids handed out, the root included.
-    pub node_count: u32,
+    /// Where each node sits in `html`, indexed by `NodeId`; the root is an element.
+    pub nodes: Vec<'a, TemplateNode<'a>>,
     /// Declaration order: each walk starts at an already declared node.
     pub walks: Vec<'a, Walk>,
+    /// Document order, except `<select value>`, which follows the select's inserts.
     pub ops: Vec<'a, Op<'a>>,
     pub binds: Vec<'a, Bind<'a>>,
     pub memo_count: u32,
+}
+
+impl<'a> Template<'a> {
+    pub fn root_tag(&self) -> &'a str {
+        match self.nodes[NodeId::ROOT.index()] {
+            TemplateNode::Element { tag, .. } => tag,
+            TemplateNode::Leaf { .. } => unreachable!("a template root is an element"),
+        }
+    }
+}
+
+/// Byte offsets into `Template::html`.
+#[derive(Clone, Copy)]
+pub enum TemplateNode<'a> {
+    Element {
+        tag: &'a str,
+        start: u32,
+        /// Just before the `>` of the opening tag: where attributes go.
+        attributes_end: u32,
+        /// Just before the closing tag (after `>` for void elements): where appended content goes.
+        content_end: u32,
+    },
+    /// A text run or a `<!>` marker.
+    Leaf { start: u32 },
+}
+
+impl TemplateNode<'_> {
+    pub fn start(self) -> u32 {
+        match self {
+            TemplateNode::Element { start, .. } | TemplateNode::Leaf { start } => start,
+        }
+    }
+
+    /// A leaf has no attributes: its start.
+    pub fn attributes_end(self) -> u32 {
+        match self {
+            TemplateNode::Element { attributes_end, .. } => attributes_end,
+            TemplateNode::Leaf { start } => start,
+        }
+    }
+
+    /// A leaf has no content: its start.
+    pub fn content_end(self) -> u32 {
+        match self {
+            TemplateNode::Element { content_end, .. } => content_end,
+            TemplateNode::Leaf { start } => start,
+        }
+    }
 }
 
 pub struct Walk {
@@ -82,12 +131,37 @@ pub enum From {
 }
 
 pub enum Op<'a> {
-    Set { node: NodeId, target: Target<'a>, value: Value<'a> },
-    Event { node: NodeId, event: &'a str, handler: Handler<'a> },
-    Ref { node: NodeId, target: RefTarget<'a> },
-    Spread { node: NodeId, props: Props<'a>, is_svg: bool, has_children: bool },
-    Memo { id: MemoId, test: Embed<'a> },
-    Insert { parent: NodeId, value: Child<'a>, anchor: Anchor },
+    Set {
+        node: NodeId,
+        target: BindTarget<'a>,
+        value: Value<'a>,
+    },
+    Event {
+        node: NodeId,
+        event: &'a str,
+        handler: Handler<'a>,
+    },
+    Ref {
+        node: NodeId,
+        target: RefTarget<'a>,
+    },
+    Spread {
+        node: NodeId,
+        props: Props<'a>,
+        is_svg: bool,
+        has_children: bool,
+    },
+    Memo {
+        id: MemoId,
+        test: Embed<'a>,
+    },
+    /// `inserts_after`: later inserts of the same parent that share `anchor`.
+    Insert {
+        parent: NodeId,
+        value: Child<'a>,
+        anchor: Anchor,
+        inserts_after: u32,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -99,25 +173,40 @@ pub enum Anchor {
 
 pub struct Bind<'a> {
     pub node: NodeId,
-    pub target: Target<'a>,
+    pub target: BindTarget<'a>,
     pub value: Value<'a>,
 }
 
 #[derive(Clone, Copy)]
-pub enum Target<'a> {
+pub enum BindTarget<'a> {
     Attr(&'a str),
     AttrNs(&'static str, &'a str),
     Bool(&'a str),
-    Prop(&'a str),
+    Prop { name: &'a str, html: PropHtml },
     Class,
     Style,
 }
 
-impl Target<'_> {
+impl BindTarget<'_> {
     /// Setters that diff against the previous value they returned.
     pub fn threads_prev(self) -> bool {
-        matches!(self, Target::Style)
+        matches!(self, BindTarget::Style)
     }
+}
+
+/// How a property shows in server-rendered HTML.
+#[derive(Clone, Copy)]
+pub enum PropHtml {
+    /// Client-only (`prop:x`, `<select value>`).
+    None,
+    /// `value`: the attribute holds the initial value.
+    Attr,
+    /// `checked`, `selected`.
+    Bool,
+    /// `textContent`, `<textarea value>`: escaped content.
+    Text,
+    /// `innerHTML`: raw content.
+    Html,
 }
 
 pub enum Value<'a> {

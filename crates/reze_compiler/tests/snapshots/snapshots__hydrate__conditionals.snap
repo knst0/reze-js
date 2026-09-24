@@ -1,0 +1,21 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div>{ok() ? <b>yes</b> : <i>no</i>}{open() && <p>{text()}</p>}</div>;"
+---
+import { template as _$template, claim as _$claim, memo as _$memo, claimInsert as _$claimInsert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<div></div>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<b>yes</b>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<i>no</i>"),
+  _tmpl$4 = /*#__PURE__*/ _$template("<p></p>");
+const a = (() => {
+  var _el$ = _$claim(_tmpl$, "div");
+  var _c$ = _$memo(() => !!(ok()));
+  _$claimInsert(_el$, () => _c$() ? _$claim(_tmpl$2, "b") : _$claim(_tmpl$3, "i"), null, 1);
+  var _c$2 = _$memo(() => !!(open()));
+  _$claimInsert(_el$, () => _c$2() && (() => {
+  var _el$2 = _$claim(_tmpl$4, "p");
+  _$claimInsert(_el$2, text);
+  return _el$2;
+})(), null);
+  return _el$;
+})();

@@ -7,39 +7,55 @@ use super::children::Item;
 use super::{Lowerer, attribute_name};
 use crate::diagnostic::{Code, Report};
 use crate::html::{is_svg_element, is_void};
-use crate::ir::{Bind, From, Namespace, NodeId, Op, Template, Walk};
+use crate::ir::{Bind, From, Namespace, NodeId, Op, Template, TemplateNode, Walk};
 
 pub struct TemplateBuilder<'a> {
     pub html: String,
-    nodes: std::vec::Vec<NodeInfo>,
+    nodes: std::vec::Vec<NodeInfo<'a>>,
     pub ops: Vec<'a, Op<'a>>,
     pub binds: Vec<'a, Bind<'a>>,
     pub memo_count: u32,
 }
 
-#[derive(Default)]
-struct NodeInfo {
+struct NodeInfo<'a> {
+    layout: TemplateNode<'a>,
     children: std::vec::Vec<NodeId>,
     is_referenced: bool,
+}
+
+impl<'a> NodeInfo<'a> {
+    fn at(start: u32) -> Self {
+        Self {
+            layout: TemplateNode::Leaf { start },
+            children: std::vec::Vec::new(),
+            is_referenced: false,
+        }
+    }
 }
 
 impl<'a> TemplateBuilder<'a> {
     fn new(alloc: &'a Allocator) -> Self {
         Self {
             html: String::new(),
-            nodes: vec![NodeInfo::default()],
+            nodes: vec![NodeInfo::at(0)],
             ops: Vec::new_in(&alloc),
             binds: Vec::new_in(&alloc),
             memo_count: 0,
         }
     }
 
-    /// A new static node (element, text run or `<!>` marker) appended to `parent`.
+    /// A new static node (element, text run or `<!>` marker) appended to `parent`, starting at
+    /// the end of the HTML written so far.
     pub fn node(&mut self, parent: NodeId) -> NodeId {
         let id = NodeId(self.nodes.len() as u32);
-        self.nodes.push(NodeInfo::default());
+        self.nodes.push(NodeInfo::at(self.html.len() as u32));
         self.nodes[parent.index()].children.push(id);
         id
+    }
+
+    fn element(&mut self, node: NodeId, tag: &'a str, attributes_end: u32, content_end: u32) {
+        let layout = &mut self.nodes[node.index()].layout;
+        *layout = TemplateNode::Element { tag, start: layout.start(), attributes_end, content_end };
     }
 
     pub fn children(&self, parent: NodeId) -> &[NodeId] {
@@ -59,7 +75,7 @@ impl<'a> TemplateBuilder<'a> {
         Template {
             html: alloc.alloc_str(&self.html),
             namespace,
-            node_count: self.nodes.len() as u32,
+            nodes: Vec::from_iter_in(self.nodes.iter().map(|node| node.layout), &alloc),
             walks,
             ops: self.ops,
             binds: self.binds,
@@ -69,7 +85,7 @@ impl<'a> TemplateBuilder<'a> {
 }
 
 /// A node needs a walk when it or a descendant is referenced.
-fn mark_needs_walk(nodes: &[NodeInfo], id: NodeId, needs_walk: &mut [bool]) -> bool {
+fn mark_needs_walk(nodes: &[NodeInfo<'_>], id: NodeId, needs_walk: &mut [bool]) -> bool {
     let mut needed = nodes[id.index()].is_referenced;
     for &child in &nodes[id.index()].children {
         needed |= mark_needs_walk(nodes, child, needs_walk);
@@ -81,7 +97,7 @@ fn mark_needs_walk(nodes: &[NodeInfo], id: NodeId, needs_walk: &mut [bool]) -> b
 /// Each needed node walks `nextSibling` from its nearest needed previous sibling, or
 /// `firstChild` from its parent.
 fn collect_walks(
-    nodes: &[NodeInfo],
+    nodes: &[NodeInfo<'_>],
     needs_walk: &[bool],
     parent: NodeId,
     walks: &mut Vec<'_, Walk>,
@@ -138,14 +154,18 @@ impl<'a> Lowerer<'a, '_> {
         } else {
             self.attributes(builder, node, tag, attrs, is_svg)
         };
+        let attributes_end = builder.html.len() as u32;
         builder.html.push('>');
+        let mut content_end = builder.html.len() as u32;
         if !is_void(tag) {
             let children_in_svg = is_svg && tag != "foreignObject";
             self.native_children(builder, node, items, children_in_svg);
+            content_end = builder.html.len() as u32;
             builder.html.push_str("</");
             builder.html.push_str(tag);
             builder.html.push('>');
         }
+        builder.element(node, tag, attributes_end, content_end);
         builder.ops.extend(deferred);
         self.path.pop();
     }

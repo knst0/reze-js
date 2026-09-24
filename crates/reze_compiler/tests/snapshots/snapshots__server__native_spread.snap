@@ -1,0 +1,14 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div {...attrs} className=\"x\" ref={el}>{kids()}</div>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrSpread as _$ssrSpread, mergeProps as _$mergeProps, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<div", "", ">", "</div>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrSpread(_$mergeProps(attrs, { class: "x" }), false), _$ssrChild(kids()));
+// warn
+[CLASS_ALIAS] `className` is a legacy alias: Reze has one `class` attribute that takes strings, objects and arrays. Rename it to `class`; it was compiled as `class`.
+  in div
+  at case.tsx:1:27
+> 1 | const a = <div {...attrs} className="x" ref={el}>{kids()}</div>;
+    |                           ^^^^^^^^^
+  fix: rename `className` to `class`

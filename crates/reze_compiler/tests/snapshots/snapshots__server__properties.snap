@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div><input value={v()} checked={c()} prop:x={x()} /><p textContent={t()} /><p innerHTML={h()} /><textarea value={v()} /><select value={v()}><option /></select></div>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute, ssrBoolAttribute as _$ssrBoolAttribute, ssrChild as _$ssrChild, ssrRaw as _$ssrRaw } from "reze-js";
+const _tmpl$ = ["<div", "><input", "", "><p>", "</p><p>", "</p><textarea>", "</textarea><select><option></option></select></div>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("value", v()), _$ssrBoolAttribute("checked", c()), _$ssrChild(t()), _$ssrRaw(h()), _$ssrChild(v()));

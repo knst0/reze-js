@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div>{a()}<p title={t()}>{b()}</p>{c()}{d()}<i />{e()}</div>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, ssrAttribute as _$ssrAttribute } from "reze-js";
+const _tmpl$ = ["<div", "><!--[-->", "<!--]--><p", ">", "</p><!--[-->", "<!--]--><!--[-->", "<!--]--><i></i><!--[-->", "<!--]--></div>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(a()), _$ssrAttribute("title", t()), _$ssrChild(b()), _$ssrChild(c()), _$ssrChild(d()), _$ssrChild(e()));

@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div class=\"box\"><p>hi</p><br /></div>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey } from "reze-js";
+const _tmpl$ = ["<div class=\"box\"", "><p>hi</p><br></div>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey());

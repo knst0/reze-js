@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <div onClick={() => go()} onInput={[pick, 1]} onKeyDown={handler} on:scroll={s} onDoubleClick={d} onclick=\"legacy()\" />;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey } from "reze-js";
+const _tmpl$ = ["<div onclick=\"legacy()\"", "></div>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey());

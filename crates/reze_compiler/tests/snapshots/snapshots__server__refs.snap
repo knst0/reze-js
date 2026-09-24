@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "let el; const a = <div ref={el}><b ref={(b) => use(b)} /><i ref={refs[i++]} /><u ref={pick()} /></div>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey } from "reze-js";
+const _tmpl$ = ["<div", "><b></b><i></i><u></u></div>"];
+let el; const a = _$ssr(_tmpl$, _$ssrHydrationKey());
