@@ -4,7 +4,11 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./vite": "./src/vite.ts",
+    "./client": {
+      "types": "./client.d.ts"
+    }
   },
   "scripts": {
     "test": "vitest run"
@@ -16,6 +20,15 @@
   "devDependencies": {
     "@rezejs/test-utils": "workspace:*",
     "@rezejs/vite-plugin": "workspace:*",
-    "happy-dom": "^20.14.5"
+    "happy-dom": "^20.14.5",
+    "vite": "^8.3.0"
+  },
+  "peerDependencies": {
+    "vite": "^8.3.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
   }
 }

@@ -5,15 +5,17 @@ import { cleanup, fire, mount } from "@rezejs/test-utils";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
 import {
-  A,
   compilePattern,
   matchPattern,
   Outlet,
+  preloadRoutes,
   Route,
   Router,
   useLocation,
+  useMatch,
   useNavigate,
   useParams,
+  type RouteConfig,
 } from "../src";
 
 afterEach(cleanup);
@@ -72,14 +74,22 @@ test("the most specific route wins and nested routes render in the outlet", () =
   expect(mount(() => <App />).el.innerHTML).toBe("<p>missing /nope/deep</p>");
 });
 
-test("A navigates on a plain click, marks the current link and keeps a modified click", async () => {
+test("native links navigate on a plain click; useMatch marks the current one", async () => {
   let go!: ReturnType<typeof useNavigate>;
+  const NavLink = (props: { href: string; children: JSX.Element }) => {
+    const isCurrent = useMatch(() => props.href);
+    return (
+      <a href={props.href} aria-current={isCurrent() ? "page" : undefined}>
+        {props.children}
+      </a>
+    );
+  };
   const Nav = () => {
     go = useNavigate();
     return (
       <nav>
-        <A href="/users/1">one</A>
-        <A href="/">home</A>
+        <NavLink href="/users/1">one</NavLink>
+        <NavLink href="/">home</NavLink>
       </nav>
     );
   };
@@ -118,6 +128,74 @@ test("A navigates on a plain click, marks the current link and keeps a modified 
   await go("2");
   flushSync();
   expect(el.querySelector("p")!.textContent).toBe("user 2");
+});
+
+test("links the router leaves to the browser", () => {
+  window.history.replaceState(null, "", "/app");
+  const { el } = mount(() => (
+    <Router base="/app">
+      <Route
+        path="/"
+        component={() => (
+          <nav>
+            <a href="/app/users/1" target="_blank">
+              new tab
+            </a>
+            <a href="/app/file.zip" download>
+              download
+            </a>
+            <a href="/app/users/1" rel="external">
+              external
+            </a>
+            <a href="https://example.com/app">other origin</a>
+            <a href="/elsewhere">outside base</a>
+            <a href="#top">hash</a>
+          </nav>
+        )}
+      />
+    </Router>
+  ));
+  const leftToBrowser: string[] = [];
+  const afterRouter = (event: MouseEvent): void => {
+    if (!event.defaultPrevented) leftToBrowser.push((event.target as Element).textContent!);
+    event.preventDefault();
+  };
+  window.addEventListener("click", afterRouter);
+  for (const link of el.querySelectorAll("a")) {
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  }
+  window.removeEventListener("click", afterRouter);
+  expect(leftToBrowser).toEqual([
+    "new tab",
+    "download",
+    "external",
+    "other origin",
+    "outside base",
+    "hash",
+  ]);
+});
+
+test("replace and noscroll attributes on links", async () => {
+  window.history.replaceState(null, "", "/app");
+  const { el } = mount(() => (
+    <Router base="/app">
+      <Route
+        path="/"
+        component={() => (
+          <a href="/app/users/4" replace noscroll>
+            four
+          </a>
+        )}
+      />
+      <Route path="/users/:id" component={User} />
+    </Router>
+  ));
+  const length = window.history.length;
+  fire(el.querySelector("a")!, "click");
+  await settle();
+  expect(window.location.pathname).toBe("/app/users/4");
+  expect(window.history.length).toBe(length);
+  expect(el.textContent).toBe("user 4");
 });
 
 test("back and forward follow popstate", async () => {
@@ -194,4 +272,31 @@ test("the server renders the route for url", () => {
   const html = renderToString(() => <App url="/users/9" />);
   expect(html).toContain("users");
   expect(html).toContain("user 9");
+});
+
+test("routes as data, with lazy components preloaded for server rendering", async () => {
+  let loads = 0;
+  const routes: RouteConfig[] = [
+    {
+      path: "/users",
+      component: Users,
+      children: [
+        {
+          path: ":id",
+          load: () => {
+            loads++;
+            return Promise.resolve({ default: User });
+          },
+        },
+      ],
+    },
+  ];
+  await preloadRoutes(routes, "/users/5");
+  expect(loads).toBe(1);
+  expect(renderToString(() => <Router url="/users/5" routes={routes} />)).toContain("user 5");
+  window.history.replaceState(null, "", "/users/6");
+  expect(mount(() => <Router routes={routes} />).el.innerHTML).toBe(
+    "<section><h1>users</h1><p>user 6</p></section>",
+  );
+  expect(loads).toBe(1);
 });

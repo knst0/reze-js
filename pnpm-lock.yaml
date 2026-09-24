@@ -270,6 +270,9 @@ importers:
 
   examples/router:
     dependencies:
+      '@rezejs/meta':
+        specifier: workspace:*
+        version: link:../../packages/meta
       '@rezejs/router':
         specifier: workspace:*
         version: link:../../packages/router
@@ -331,6 +334,25 @@ importers:
         specifier: ^20.14.5
         version: 20.14.5
 
+  packages/meta:
+    dependencies:
+      '@rezejs/dom':
+        specifier: workspace:*
+        version: link:../dom
+      '@rezejs/signals':
+        specifier: workspace:*
+        version: link:../signals
+    devDependencies:
+      '@rezejs/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+      '@rezejs/vite-plugin':
+        specifier: workspace:*
+        version: link:../vite-plugin
+      happy-dom:
+        specifier: ^20.14.5
+        version: 20.14.5
+
   packages/reze-js:
     dependencies:
       '@rezejs/dom':
@@ -358,6 +380,9 @@ importers:
       happy-dom:
         specifier: ^20.14.5
         version: 20.14.5
+      vite:
+        specifier: ^8.3.0
+        version: 8.3.0(@types/node@26.6.2)(esbuild@0.28.2)
 
   packages/signals:
     devDependencies:

@@ -1,16 +1,4 @@
-import {
-  createComponent,
-  createContext,
-  isServerRender,
-  mergeProps,
-  omit,
-  spread,
-  ssr,
-  ssrChild,
-  ssrSpread,
-  startTransition,
-  useContext,
-} from "@rezejs/dom";
+import { createComponent, createContext, lazy, startTransition, useContext } from "@rezejs/dom";
 import type { JSX } from "@rezejs/dom/jsx-runtime";
 import { computed, onCleanup, signal, untrack, type Getter } from "@rezejs/signals";
 
@@ -27,6 +15,14 @@ export interface RouteProps {
   children?: JSX.Element;
 }
 
+/** A route as data, e.g. from `virtual:reze-routes`: `load` imports a module whose default export is the component. */
+export interface RouteConfig {
+  path: string;
+  component?: Component;
+  load?: () => Promise<{ default: Component }>;
+  children?: RouteConfig[];
+}
+
 const RouteMark = Symbol("route");
 
 interface RouteDefinition {
@@ -39,6 +35,25 @@ export function Route(props: RouteProps): JSX.Element {
   return { [RouteMark]: true, props } as unknown as JSX.Element;
 }
 
+const configDefinitions = new WeakMap<RouteConfig, RouteDefinition>();
+
+function configDefinition(config: RouteConfig): RouteDefinition {
+  let definition = configDefinitions.get(config);
+  if (definition === undefined) {
+    const component = config.component ?? (config.load && lazy(config.load));
+    definition = {
+      [RouteMark]: true,
+      props: { path: config.path, component, children: config.children as JSX.Element },
+    };
+    configDefinitions.set(config, definition);
+  }
+  return definition;
+}
+
+function isRouteConfig(item: object): item is RouteConfig {
+  return typeof (item as RouteConfig).path === "string" && !(RouteMark in item);
+}
+
 interface Branch {
   pattern: Pattern;
   routes: RouteDefinition[];
@@ -47,10 +62,11 @@ interface Branch {
 
 function definitions(children: unknown): RouteDefinition[] {
   const list = Array.isArray(children) ? children.flat(Infinity) : [children];
-  return list.filter(
-    (item): item is RouteDefinition =>
-      typeof item === "object" && item !== null && RouteMark in item,
-  );
+  return list.flatMap((item): RouteDefinition[] => {
+    if (typeof item !== "object" || item === null) return [];
+    if (RouteMark in item) return [item as RouteDefinition];
+    return isRouteConfig(item) ? [configDefinition(item)] : [];
+  });
 }
 
 function joinPaths(parent: string, child: string): string {
@@ -102,6 +118,8 @@ export interface Location {
 export interface NavigateOptions {
   /** Replace the current history entry instead of pushing one. */
   replace?: boolean;
+  /** Scroll to the top after a push; defaults to `true`. */
+  scroll?: boolean;
 }
 
 interface RouterState {
@@ -121,7 +139,7 @@ function parseLocation(url: string): Location {
 }
 
 function withoutBase(pathname: string, base: string): string {
-  if (base === "" || !pathname.startsWith(base)) return pathname;
+  if (base === "" || !isUnderBase(pathname, base)) return pathname;
   return pathname.slice(base.length) || "/";
 }
 
@@ -130,7 +148,19 @@ export interface RouterProps {
   url?: string;
   /** A path prefix every route and link lives under, e.g. `/docs`. */
   base?: string;
+  /** Routes as data, e.g. `virtual:reze-routes`; used instead of the `<Route>` children. */
+  routes?: RouteConfig[];
+  /** A layout around every route: it gets the matched route as `children`. */
+  root?: (props: { children: JSX.Element }) => JSX.Element;
   children?: JSX.Element;
+}
+
+function normalizeBase(base: string | undefined): string {
+  return (base ?? "").replace(/\/+$/, "");
+}
+
+function isUnderBase(pathname: string, base: string): boolean {
+  return base === "" || pathname === base || pathname.startsWith(`${base}/`);
 }
 
 function isBrowser(url: string | undefined): boolean {
@@ -139,34 +169,34 @@ function isBrowser(url: string | undefined): boolean {
 
 /**
  * Renders the route matching the current location. In the browser it follows the History API:
- * `navigate` and `<A>` first load the code of lazy route components (the current page stays
- * meanwhile, `useIsRouting()` is true), then push an entry and change the location inside a
- * transition. A push scrolls to the top; back/forward restores the scroll position. On the
- * server, `url` is the location.
+ * `navigate` and clicks on native `<a>` elements first load the code of lazy route components
+ * (the current page stays meanwhile, `useIsRouting()` is true), then push an entry and change
+ * the location inside a transition. A push scrolls to the top; back/forward restores the scroll
+ * position. On the server, `url` is the location.
+ *
+ * A plain left click on a same-origin `<a href>` under `base` navigates without reloading,
+ * unless the link has `target` (other than `_self`), `download`, `rel="external"`, or only
+ * changes the hash of the current page. `<a replace>` replaces the history entry,
+ * `<a noscroll>` keeps the scroll position.
  */
 export function Router(props: RouterProps): JSX.Element {
-  const base = (props.base ?? "").replace(/\/+$/, "");
+  const base = normalizeBase(props.base);
   const inBrowser = isBrowser(props.url);
   const current = (): Location =>
     inBrowser ? parseLocation(window.location.href) : parseLocation(props.url ?? "/");
   const [location, setLocation] = signal(current(), {
     equals: (a, b) => a.pathname === b.pathname && a.search === b.search && a.hash === b.hash,
   });
-  const branches = computed(() => branchesOf(definitions(props.children), "/", [], []));
+  const branches = computed(() =>
+    branchesOf(definitions(props.routes ?? props.children), "/", [], []),
+  );
   const match = computed(() => matchBranches(branches(), withoutBase(location().pathname, base)));
   const [isRouting, setRouting] = signal(false);
   let latest = 0;
   const commit = async (target: Location, write: () => void): Promise<boolean> => {
     const navigation = ++latest;
     setRouting(true);
-    const routes =
-      matchBranches(untrack(branches), withoutBase(target.pathname, base))?.routes ?? [];
-    const preloads = routes.flatMap((route) => {
-      const preload = (route.props.component as { preload?: () => Promise<unknown> } | undefined)
-        ?.preload;
-      return preload === undefined ? [] : [preload()];
-    });
-    await Promise.all(preloads).catch(() => {});
+    await preloadMatched(untrack(branches), withoutBase(target.pathname, base)).catch(() => {});
     if (navigation !== latest) return false;
     write();
     await startTransition(() => setLocation(target));
@@ -191,7 +221,7 @@ export function Router(props: RouterProps): JSX.Element {
         window.history.pushState({ scroll: 0 }, "", url);
       }
     });
-    if (isCommitted && !options?.replace) window.scrollTo(0, 0);
+    if (isCommitted && !options?.replace && options?.scroll !== false) window.scrollTo(0, 0);
   };
   if (inBrowser) {
     const onPopState = (event: PopStateEvent): void => {
@@ -200,8 +230,26 @@ export function Router(props: RouterProps): JSX.Element {
         if (isCommitted && typeof scroll === "number") window.scrollTo(0, scroll);
       });
     };
+    const onClick = (event: MouseEvent): void => {
+      const anchor = linkOf(event);
+      if (anchor === undefined || !isPlainLeftClick(event, anchor)) return;
+      const url = new URL(anchor.href);
+      const here = untrack(location);
+      const isHashJump =
+        url.hash !== "" && url.pathname === here.pathname && url.search === here.search;
+      if (!isUnderBase(url.pathname, base) || isHashJump) return;
+      event.preventDefault();
+      void navigate(withoutBase(url.pathname, base) + url.search + url.hash, {
+        replace: anchor.hasAttribute("replace"),
+        scroll: !anchor.hasAttribute("noscroll"),
+      });
+    };
     window.addEventListener("popstate", onPopState);
-    onCleanup(() => window.removeEventListener("popstate", onPopState));
+    window.addEventListener("click", onClick);
+    onCleanup(() => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("click", onClick);
+    });
   }
   const state: RouterState = { location, match, isRouting, base, navigate };
   return createComponent(RouterContext, {
@@ -210,7 +258,13 @@ export function Router(props: RouterProps): JSX.Element {
       return createComponent(DepthContext, {
         value: 0,
         get children() {
-          return createComponent(Outlet, {});
+          const root = props.root;
+          if (root === undefined) return createComponent(Outlet, {});
+          return createComponent(root, {
+            get children() {
+              return createComponent(Outlet, {});
+            },
+          });
         },
       });
     },
@@ -219,7 +273,7 @@ export function Router(props: RouterProps): JSX.Element {
 
 function useRouter(): RouterState {
   const router = useContext(RouterContext);
-  if (router === undefined) throw new Error("router hooks and <A> must be used inside <Router>");
+  if (router === undefined) throw new Error("router hooks must be used inside <Router>");
   return router;
 }
 
@@ -290,11 +344,11 @@ export function useNavigate(): (to: string, options?: NavigateOptions) => Promis
   return useRouter().navigate;
 }
 
-export interface AProps extends Record<string, unknown> {
-  href: string;
-  /** Replace the current history entry instead of pushing one. */
-  replace?: boolean;
-  children?: JSX.Element;
+function linkOf(event: MouseEvent): HTMLAnchorElement | undefined {
+  for (const target of event.composedPath()) {
+    if (target instanceof HTMLAnchorElement && target.hasAttribute("href")) return target;
+  }
+  return undefined;
 }
 
 function isPlainLeftClick(event: MouseEvent, anchor: HTMLAnchorElement): boolean {
@@ -304,42 +358,39 @@ function isPlainLeftClick(event: MouseEvent, anchor: HTMLAnchorElement): boolean
     !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) &&
     (!anchor.target || anchor.target === "_self") &&
     !anchor.hasAttribute("download") &&
+    !anchor.relList.contains("external") &&
     anchor.origin === window.location.origin
   );
 }
 
 /**
- * A link to `href` (under the router's `base`) that navigates without reloading on a plain left
- * click, and has `aria-current="page"` while its path is the current one.
+ * The params `path()` binds for the current location, or `undefined` while it does not match:
+ * `aria-current={useMatch(() => "/users/*")() ? "page" : undefined}`.
  */
-export function A(props: AProps): JSX.Element {
+export function useMatch(path: () => string): Getter<Record<string, string> | undefined> {
   const router = useRouter();
-  const href = (): string => joinPaths(router.base || "/", props.href);
-  const isCurrent = (): boolean => parseLocation(href()).pathname === router.location().pathname;
-  const attributes = mergeProps(omit(props, "href", "replace", "children"), {
-    get href() {
-      return href();
-    },
-    get "aria-current"() {
-      return isCurrent() ? "page" : undefined;
-    },
-  });
-  if (isServerRender()) {
-    return ssr(["<a", ">", "</a>"], ssrSpread(attributes), ssrChild(props.children));
-  }
-  const anchor = document.createElement("a");
-  anchor.addEventListener("click", (event) => {
-    if (!isPlainLeftClick(event, anchor)) return;
-    event.preventDefault();
-    void router.navigate(props.href, { replace: props.replace });
-  });
-  spread(
-    anchor,
-    mergeProps(attributes, {
-      get children() {
-        return props.children;
-      },
+  const pattern = computed(() => compilePattern(path()));
+  return computed(() =>
+    matchPattern(pattern(), withoutBase(router.location().pathname, router.base)),
+  );
+}
+
+/**
+ * Loads the code of the lazy components `url` renders, so that server rendering and hydration
+ * show them at once. `routes` is what `<Router routes>` gets.
+ */
+export function preloadRoutes(routes: RouteConfig[], url: string, base?: string): Promise<void> {
+  const branches = branchesOf(definitions(routes), "/", [], []);
+  return preloadMatched(branches, withoutBase(parseLocation(url).pathname, normalizeBase(base)));
+}
+
+async function preloadMatched(branches: Branch[], path: string): Promise<void> {
+  const routes = matchBranches(branches, path)?.routes ?? [];
+  await Promise.all(
+    routes.flatMap((route) => {
+      const preload = (route.props.component as { preload?: () => Promise<unknown> } | undefined)
+        ?.preload;
+      return preload === undefined ? [] : [preload()];
     }),
   );
-  return anchor;
 }
