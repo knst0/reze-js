@@ -1,0 +1,15 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "function User({ user: { name, \"first-name\": first = \"?\" }, 0: zero }) {\n  return <Card title={name} onClick={() => open(first)}>{zero}</Card>;\n}"
+---
+import { createComponent as _$createComponent } from "reze-js";
+function User(_props$) {
+  return _$createComponent(Card, { get title() { return _props$.user.name; }, onClick: () => open((_props$.user["first-name"] === undefined ? "?" : _props$.user["first-name"])), get children() { return _props$["0"]; } });
+}
+// info
+[PROPS_REWRITTEN] `User` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <User>
+  at case.tsx:1:15
+> 1 | function User({ user: { name, "first-name": first = "?" }, 0: zero }) {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  2 |   return <Card title={name} onClick={() => open(first)}>{zero}</Card>;

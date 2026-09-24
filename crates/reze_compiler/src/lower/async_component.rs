@@ -12,7 +12,7 @@ use oxc_syntax::symbol::SymbolId;
 
 use super::{Lowerer, has_jsx};
 use crate::diagnostic::{Code, Report};
-use crate::ir::{AsyncComponent, AsyncHead, AsyncStep, ReturnType};
+use crate::ir::{AsyncComponent, AsyncHead, AsyncStep, Embed, ReturnType};
 
 /// Why an async component keeps its `async` form; `data.reason` of ASYNC_COMPONENT_SHAPE.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -117,6 +117,12 @@ impl<'a> Lowerer<'a, '_> {
         body: &FunctionBody<'a>,
         plan: Plan<'_, 'a>,
     ) -> AsyncComponent<'a> {
+        let props_rest = self
+            .props_rest(params, Span::empty(super::props::block_start(body)), None)
+            .map(|hole| Embed {
+                span: hole.span,
+                holes: oxc_allocator::Vec::from_iter_in([hole], &self.alloc),
+            });
         let params = self.params(params);
         let return_type = self.return_type(return_type);
         let mut steps = self.vec();
@@ -140,7 +146,7 @@ impl<'a> Lowerer<'a, '_> {
             tail.push(self.stmt(statement));
         }
         let result = self.expr(plan.result);
-        AsyncComponent { head, params, return_type, steps, tail, result }
+        AsyncComponent { head, params, props_rest, return_type, steps, tail, result }
     }
 
     /// `Promise<X>` unwraps to `X`: the rewritten component is synchronous.

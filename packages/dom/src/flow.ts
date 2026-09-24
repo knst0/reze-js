@@ -2,6 +2,7 @@ import { computed, effect, onCleanup, signal, untrack, type Getter } from "@reze
 import { renderEffect as bind } from "@rezejs/signals/render";
 
 import { createComponent, insert, insertExpression, splitProps, spread } from "./dom";
+import { Suspense as SuspenseFeature } from "./features";
 import type { JSX } from "./jsx";
 
 type Falsy = false | 0 | "" | null | undefined;
@@ -130,6 +131,7 @@ function withBoundary<T>(boundary: SuspenseBoundary, create: () => T): T {
 }
 
 export function trackPending(isPending: () => boolean): void {
+  if (!SuspenseFeature) return;
   const boundary = activeBoundary;
   if (boundary === undefined) return;
   effect(() => {

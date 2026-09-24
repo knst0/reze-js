@@ -16,10 +16,10 @@ export function nextHydrationKey(): string | undefined {
   return scope && scope.id + scope.count++;
 }
 
-/** Runs `fn` with fresh keys: `renderToString` and `hydrate` start here. */
-export function withKeyRoot<T>(fn: () => T): T {
+/** Runs `fn` with template keys starting at `id + 0`: `""` for `renderToString` and `hydrate`. */
+export function withKeyScope<T>(id: string, fn: () => T): T {
   const parent = scope;
-  scope = { id: "", count: 0 };
+  scope = { id, count: 0 };
   try {
     return fn();
   } finally {
@@ -27,14 +27,13 @@ export function withKeyRoot<T>(fn: () => T): T {
   }
 }
 
+/** The id of the next component key scope under the current one, while rendering or hydrating. */
+export function nextComponentScope(): string | undefined {
+  return scope && scope.id + scope.count++ + "-";
+}
+
 /** Runs a component body under its own key prefix. */
 export function withComponentKeys<T>(fn: () => T): T {
-  const parent = scope;
-  if (parent === undefined) return fn();
-  scope = { id: parent.id + parent.count++ + "-", count: 0 };
-  try {
-    return fn();
-  } finally {
-    scope = parent;
-  }
+  const id = nextComponentScope();
+  return id === undefined ? fn() : withKeyScope(id, fn);
 }

@@ -1,14 +1,21 @@
 //! Reze compiler: JSX → DOM code for the client, HTML strings for the server, or DOM claiming
-//! for hydration, with diagnostics and module-level optimizations. The contract is
-//! `crates/reze_compiler/SPEC.md`.
+//! for hydration, with diagnostics, module-level optimizations and whole-program analysis. The
+//! contract is `crates/reze_compiler/SPEC.md`.
 
 mod analyze;
 mod code;
 pub mod diagnostic;
 mod emit;
+pub mod facts;
+pub mod features;
 mod html;
 mod ir;
+mod link;
 mod lower;
+mod namer;
+pub mod summary;
+mod usage;
+mod verify;
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{Program, Statement};
@@ -16,9 +23,15 @@ use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType, Span};
 
-pub use diagnostic::{Code, Diagnostic, Edit, Fix, Label, Position, Severity};
+pub use diagnostic::{Code, Diagnostic, Edit, Fix, Label, Position, Related, Severity};
+pub use facts::{ModuleFacts, Reason};
+pub use features::Features;
+pub use link::{LinkOptions, Linked, ModuleInput, link};
+pub use summary::{ModuleSummary, SummaryOptions, summarize};
+pub use verify::{OutsideModule, verify};
 
 use diagnostic::Report;
+use namer::Namer;
 
 /// What the compiled module does with JSX.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -36,9 +49,12 @@ pub struct Options {
     /// Module the generated code imports its runtime helpers from.
     pub module_name: String,
     pub source_map: bool,
-    /// Enables O3 (constant signals) and O5 (dead JSX branches); O1 and O2 always run.
+    /// Enables O3 (constant signals), O4 (inlined computeds), O5 (dead JSX branches) and store
+    /// unproxying; O1 and O2 always run.
     pub optimize: bool,
     pub target: Target,
+    /// Program decisions from `link` (SPEC §15); `None` compiles the module on its own.
+    pub facts: Option<ModuleFacts>,
 }
 
 impl Default for Options {
@@ -48,6 +64,7 @@ impl Default for Options {
             source_map: true,
             optimize: true,
             target: Target::Client,
+            facts: None,
         }
     }
 }
@@ -60,9 +77,9 @@ pub struct Output {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Compiles the JSX in `source`. `Ok(None)` when the file has no JSX; `Err` holds every
-/// diagnostic when at least one is an `error`. `filename` picks the dialect and names the source
-/// in diagnostics and the source map.
+/// Compiles `source`. `Ok(None)` when nothing in the file is rewritten (no JSX, no fold); `Err`
+/// holds every diagnostic when at least one is an `error`. `filename` picks the dialect and names
+/// the source in diagnostics and the source map.
 pub fn compile(
     source: &str,
     filename: &str,
@@ -86,17 +103,50 @@ pub fn compile(
         return Err(diagnostic::resolve(reports, source, filename));
     }
 
-    let program = allocator.alloc(parsed.program);
-    let scoping = SemanticBuilder::new().build(program).semantic.into_scoping();
-    let mut reports = Vec::new();
-    let facts =
-        analyze::analyze(program, &scoping, &options.module_name, options.optimize, &mut reports);
-    let header_at = header_position(program);
-    let lowerer =
-        lower::Lowerer::new(&allocator, source, &facts, &scoping, options.optimize, &mut reports);
-    let Some(body) = lowerer.program(program, header_at) else { return Ok(None) };
+    if let Some(facts) = &options.facts
+        && facts.source_hash != facts::source_hash(source)
+    {
+        let report = Report::new(
+            Code::FactsStale,
+            Span::empty(0),
+            "The program facts were built for a different version of this module: another plugin \
+             changed it between the program scan and `transform`. Order that plugin after Reze, \
+             exclude the module from `program.include`, or disable `optimize`.",
+        );
+        return Err(diagnostic::resolve(vec![report], source, filename));
+    }
 
-    let diagnostics = diagnostic::resolve(reports, source, filename);
+    let program = allocator.alloc(parsed.program);
+    let (scoping, nodes) = SemanticBuilder::new()
+        .with_build_nodes(true)
+        .build(program)
+        .semantic
+        .into_scoping_and_nodes();
+    let mut reports = Vec::new();
+    let facts = analyze::analyze(
+        program,
+        &scoping,
+        &nodes,
+        &options.module_name,
+        options.optimize,
+        options.facts.as_ref(),
+        &mut reports,
+    );
+    let header_at = header_position(program);
+    let lowerer = lower::Lowerer::new(
+        &allocator,
+        source,
+        &facts,
+        &scoping,
+        &nodes,
+        options.optimize,
+        Namer::new(&scoping),
+        reports,
+    );
+    let lowered = lowerer.program(program, header_at);
+    let Some(body) = lowered.body else { return Ok(None) };
+
+    let diagnostics = diagnostic::resolve(lowered.reports, source, filename);
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(diagnostics);
     }
@@ -106,9 +156,9 @@ pub fn compile(
         &options.module_name,
         source_type.is_typescript(),
         options.target,
-        &scoping,
+        lowered.namer,
     );
-    let code = emitter.module(&body, header_at);
+    let code = emitter.module(&lowered.head, &body);
     let map = options.source_map.then(|| code.source_map(filename, source));
     Ok(Some(Output { code: code.text, map, diagnostics }))
 }

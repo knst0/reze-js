@@ -22,7 +22,10 @@ pub fn static_text(e: &Expression<'_>, facts: &Facts) -> Option<String> {
                 (None, None) => None,
             }
         }
-        inner => facts.folded_call(inner).and_then(|id| facts.folded_text(id)).map(str::to_string),
+        Expression::CallExpression(call) => {
+            facts.folded_callee(call).and_then(|(_, text)| text).map(str::to_string)
+        }
+        _ => None,
     }
 }
 
@@ -172,7 +175,7 @@ impl ClassKeys {
 
 /// Whether evaluating `e` may read reactive state: a call, a tagged template or a member access
 /// outside nested functions (and, with `jsx_is_dynamic`, any JSX). Calls of folded signals are
-/// constant reads.
+/// constant reads; rewritten props bindings are member accesses (SPEC §15.7).
 pub fn is_dynamic(e: &Expression<'_>, jsx_is_dynamic: bool, facts: &Facts) -> bool {
     let mut check = DynamicCheck { jsx_is_dynamic, facts, found: false };
     check.visit_expression(e);
@@ -187,13 +190,9 @@ struct DynamicCheck<'f> {
 
 impl<'a> Visit<'a> for DynamicCheck<'_> {
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
-        if let Expression::Identifier(id) = &it.callee
-            && it.arguments.is_empty()
-            && self.facts.is_folded_read(id)
-        {
-            return;
+        if self.facts.folded_callee(it).is_none() {
+            self.found = true;
         }
-        self.found = true;
     }
 
     fn visit_tagged_template_expression(&mut self, _: &TaggedTemplateExpression<'a>) {
@@ -210,6 +209,10 @@ impl<'a> Visit<'a> for DynamicCheck<'_> {
 
     fn visit_private_field_expression(&mut self, _: &PrivateFieldExpression<'a>) {
         self.found = true;
+    }
+
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        self.found |= self.facts.props.is_read(it);
     }
 
     fn visit_jsx_element(&mut self, _: &JSXElement<'a>) {

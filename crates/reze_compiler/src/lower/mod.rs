@@ -4,28 +4,47 @@ mod children;
 mod component;
 pub mod constant;
 mod element;
+mod island;
+pub mod props;
+pub mod store;
 
 use oxc_allocator::{Allocator, Box, Vec};
 use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, walk};
-use oxc_semantic::Scoping;
+use oxc_semantic::{AstNodes, Scoping};
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
 use crate::analyze::Facts;
-use crate::diagnostic::{Code, Edit, Report};
+use crate::diagnostic::{Edit, Report};
 use crate::ir::{Embed, Getter, Hole, HoleKind, Jsx};
+use crate::namer::Namer;
+
+/// What lowering leaves for emission.
+pub struct Lowered<'a, 'f> {
+    /// The hashbang, directives and leading imports, with their holes.
+    pub head: Embed<'a>,
+    /// `None` when nothing in the module is rewritten.
+    pub body: Option<Embed<'a>>,
+    pub namer: Namer<'f>,
+    pub reports: std::vec::Vec<Report>,
+}
 
 pub struct Lowerer<'a, 'f> {
     alloc: &'a Allocator,
     source: &'a str,
     facts: &'f Facts,
     scoping: &'f Scoping,
+    nodes: &'f AstNodes<'a>,
     optimize: bool,
-    reports: &'f mut std::vec::Vec<Report>,
+    namer: Namer<'f>,
+    reports: std::vec::Vec<Report>,
     /// Enclosing components (`<Name>`) and elements, for diagnostics.
     path: std::vec::Vec<String>,
     has_jsx: bool,
+    /// Props object names by the start of the parameter they replace.
+    props_names: std::collections::HashMap<u32, &'a str>,
+    store_names: store::StoreNames<'a>,
 }
 
 impl<'a, 'f> Lowerer<'a, 'f> {
@@ -34,24 +53,39 @@ impl<'a, 'f> Lowerer<'a, 'f> {
         source: &'a str,
         facts: &'f Facts,
         scoping: &'f Scoping,
+        nodes: &'f AstNodes<'a>,
         optimize: bool,
-        reports: &'f mut std::vec::Vec<Report>,
+        namer: Namer<'f>,
+        reports: std::vec::Vec<Report>,
     ) -> Self {
         Self {
             alloc,
             source,
             facts,
             scoping,
+            nodes,
             optimize,
+            namer,
             reports,
             path: std::vec::Vec::new(),
             has_jsx: false,
+            props_names: std::collections::HashMap::new(),
+            store_names: store::StoreNames::default(),
         }
     }
 
-    /// The program from `start` on with every hole compiled; `None` when there is no JSX.
-    pub fn program(mut self, program: &Program<'a>, start: u32) -> Option<Embed<'a>> {
+    /// The leading part up to `start` and the program from `start` on, with every hole compiled.
+    pub fn program(mut self, program: &Program<'a>, start: u32) -> Lowered<'a, 'f> {
         let end = self.source.len() as u32;
+        let head = self.embed(Span::new(0, start), |finder| {
+            for statement in &program.body {
+                if let Statement::ImportDeclaration(import) = statement
+                    && import.span.end <= start
+                {
+                    finder.visit_import_declaration(import);
+                }
+            }
+        });
         let embed = self.embed(Span::new(start, end), |finder| {
             for statement in &program.body {
                 if statement.span().start >= start {
@@ -59,7 +93,15 @@ impl<'a, 'f> Lowerer<'a, 'f> {
                 }
             }
         });
-        self.has_jsx.then_some(embed)
+        let is_rewritten = self.has_jsx || !embed.holes.is_empty() || !head.holes.is_empty();
+        let body = is_rewritten.then_some(embed);
+        Lowered { head, body, namer: self.namer, reports: self.reports }
+    }
+
+    /// A fresh identifier, reserved for the whole module.
+    fn fresh(&mut self, base: &str) -> &'a str {
+        let name = self.namer.fresh(base);
+        self.alloc.alloc_str(&name)
     }
 
     fn report(&mut self, mut report: Report) {
@@ -87,11 +129,11 @@ impl<'a, 'f> Lowerer<'a, 'f> {
         Embed { span, holes: Vec::from_iter_in(holes, &self.alloc) }
     }
 
-    fn expr(&mut self, e: &Expression<'a>) -> Embed<'a> {
+    pub(crate) fn expr(&mut self, e: &Expression<'a>) -> Embed<'a> {
         self.embed(e.span(), |finder| finder.visit_expression(e))
     }
 
-    fn stmt(&mut self, statement: &Statement<'a>) -> Embed<'a> {
+    pub(crate) fn stmt(&mut self, statement: &Statement<'a>) -> Embed<'a> {
         self.embed(statement.span(), |finder| finder.visit_statement(statement))
     }
 
@@ -106,6 +148,8 @@ impl<'a, 'f> Lowerer<'a, 'f> {
             && call.arguments.is_empty()
             && !call.optional
             && call.type_arguments.is_none()
+            && self.facts.inlined_body(call, self.nodes).is_none()
+            && self.facts.props.read(id).is_none()
         {
             return Getter::Call(id.span);
         }
@@ -119,31 +163,14 @@ impl<'a, 'f> Lowerer<'a, 'f> {
         let start = before.trim_end().len() as u32;
         Edit { start, end: span.end, text: String::new() }
     }
-
-    fn component_scope(&mut self, name: &str, params: &FormalParameters<'a>, body_has_jsx: bool) {
-        if !body_has_jsx {
-            return;
-        }
-        if let Some(first) = params.items.first()
-            && let BindingPattern::ObjectPattern(pattern) = &first.pattern
-        {
-            self.report(
-                Report::new(
-                    Code::PropsDestructured,
-                    pattern.span,
-                    format!(
-                        "`{name}` destructures its props: each value is read once when the component \
-                         runs and never updates. Take `props` and read `props.x` where it is used."
-                    ),
-                )
-                .data("component", name),
-            );
-        }
-    }
 }
 
 fn is_component_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_ascii_uppercase())
+}
+
+pub fn is_native_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_lowercase()) || name.contains('-')
 }
 
 /// Whether the nodes `visit` walks contain any JSX.
@@ -202,36 +229,107 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
     fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
         let name = it.id.as_ref().map(|id| id.name.as_str());
         self.in_component(name, |finder| {
-            if let (Some(name), Some(body)) = (name, &it.body)
-                && is_component_name(name)
-            {
-                finder.lowerer.component_scope(
-                    name,
-                    &it.params,
-                    has_jsx(|c| c.visit_function_body(body)),
-                );
+            if let Some(name) = name.filter(|n| is_component_name(n)) {
+                finder.lowerer.component_scope(name, &it.params);
             }
             match finder.lowerer.async_function(it) {
                 Some(component) => finder.holes.push(Hole {
                     span: it.span,
                     kind: HoleKind::AsyncComponent(finder.lowerer.boxed(component)),
                 }),
-                None => walk::walk_function(finder, it, flags),
+                None => {
+                    if let Some(body) = &it.body
+                        && let Some(rest) = finder.lowerer.props_rest(
+                            &it.params,
+                            Span::empty(props::block_start(body)),
+                            None,
+                        )
+                    {
+                        finder.holes.push(rest);
+                    }
+                    walk::walk_function(finder, it, flags);
+                }
             }
         });
     }
 
     fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
-        match self.lowerer.async_arrow(it) {
-            Some(component) => self.holes.push(Hole {
-                span: it.span,
-                kind: HoleKind::AsyncComponent(self.lowerer.boxed(component)),
+        if let Some(component) = self.lowerer.async_arrow(it) {
+            let kind = HoleKind::AsyncComponent(self.lowerer.boxed(component));
+            self.holes.push(Hole { span: it.span, kind });
+            return;
+        }
+        let rest = match &it.body {
+            ArrowFunctionBody::FunctionBody(body) => {
+                let at = Span::empty(props::block_start(body));
+                self.lowerer.props_rest(&it.params, at, None)
+            }
+            body => body.as_expression().and_then(|expression| {
+                self.lowerer.props_rest(&it.params, expression.span(), Some(expression))
             }),
-            None => walk::walk_arrow_function_expression(self, it),
+        };
+        let Some(rest) = rest else {
+            walk::walk_arrow_function_expression(self, it);
+            return;
+        };
+        self.holes.push(rest);
+        if let ArrowFunctionBody::FunctionBody(_) = &it.body {
+            walk::walk_arrow_function_expression(self, it);
+            return;
+        }
+        if let Some(type_parameters) = &it.type_parameters {
+            self.visit_ts_type_parameter_declaration(type_parameters);
+        }
+        self.visit_formal_parameters(&it.params);
+        if let Some(return_type) = &it.return_type {
+            self.visit_ts_type_annotation(return_type);
         }
     }
 
+    fn visit_formal_parameter(&mut self, it: &FormalParameter<'a>) {
+        let Some(hole) = self.lowerer.props_param(it) else {
+            walk::walk_formal_parameter(self, it);
+            return;
+        };
+        self.holes.push(hole);
+        if let Some(annotation) = &it.type_annotation {
+            self.visit_ts_type_annotation(annotation);
+        }
+        if let Some(initializer) = &it.initializer {
+            self.visit_expression(initializer);
+        }
+    }
+
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        if let Some(hole) = self.lowerer.props_read(it, it.span, false) {
+            self.holes.push(hole);
+        }
+    }
+
+    fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
+        if it.shorthand
+            && let Expression::Identifier(id) = &it.value
+            && let Some(hole) = self.lowerer.props_read(id, it.span, true)
+        {
+            self.holes.push(hole);
+            return;
+        }
+        walk::walk_object_property(self, it);
+    }
+
+    fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
+        if let Some(span) = self.lowerer.facts.removed_declaration(it) {
+            self.holes.push(Hole { span, kind: HoleKind::Remove });
+            return;
+        }
+        walk::walk_variable_declaration(self, it);
+    }
+
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
+        if let Some(hole) = self.lowerer.store_declaration(it) {
+            self.holes.push(hole);
+            return;
+        }
         if let Some(getter) = self.lowerer.facts.folded_getter(it)
             && let Some(init) = &it.init
             && let Expression::CallExpression(call) = init.without_parentheses()
@@ -246,33 +344,93 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
             BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
             _ => None,
         };
-        let arrow = match it.init.as_ref().map(Expression::without_parentheses) {
-            Some(Expression::ArrowFunctionExpression(arrow)) => Some(arrow),
+        let params = match it.init.as_ref().map(Expression::without_parentheses) {
+            Some(Expression::ArrowFunctionExpression(arrow)) => Some(&*arrow.params),
+            Some(Expression::FunctionExpression(function))
+                if props::is_declared_component(function) =>
+            {
+                Some(&*function.params)
+            }
             _ => None,
         };
-        let component = name.filter(|_| arrow.is_some());
+        let component = name.filter(|_| params.is_some());
         self.in_component(component, |finder| {
-            if let (Some(name), Some(arrow)) = (component, arrow)
+            if let (Some(name), Some(params)) = (component, params)
                 && is_component_name(name)
             {
-                let body_has_jsx = has_jsx(|c| c.visit_arrow_function_body(&arrow.body));
-                finder.lowerer.component_scope(name, &arrow.params, body_has_jsx);
+                finder.lowerer.component_scope(name, params);
             }
             walk::walk_variable_declarator(finder, it);
         });
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
-        if let Expression::Identifier(id) = &it.callee
-            && it.arguments.is_empty()
-            && !it.optional
-            && self.lowerer.facts.is_folded_read(id)
-        {
-            self.holes
-                .push(Hole { span: it.span, kind: HoleKind::ConstSignalRead { getter: id.span } });
+        if let Some(hole) = self.lowerer.store_set(it) {
+            self.holes.push(hole);
+            return;
+        }
+        if let Some(body) = self.lowerer.facts.inlined_body(it, self.lowerer.nodes) {
+            let body = self.lowerer.expr(body);
+            self.holes.push(Hole { span: it.span, kind: HoleKind::ComputedInline { body } });
+            return;
+        }
+        if let Some((getter, _)) = self.lowerer.facts.folded_callee(it) {
+            self.holes.push(Hole { span: it.span, kind: HoleKind::ConstSignalRead { getter } });
+            return;
+        }
+        if let Some(root) = self.lowerer.island_root(it) {
+            self.holes.push(root);
             return;
         }
         walk::walk_call_expression(self, it);
+    }
+
+    fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
+        match self.lowerer.store_read(it.span) {
+            Some(hole) => self.holes.push(hole),
+            None => walk::walk_static_member_expression(self, it),
+        }
+    }
+
+    fn visit_computed_member_expression(&mut self, it: &ComputedMemberExpression<'a>) {
+        match self.lowerer.store_read(it.span) {
+            Some(hole) => self.holes.push(hole),
+            None => walk::walk_computed_member_expression(self, it),
+        }
+    }
+
+    fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
+        match self.lowerer.store_assignment(it) {
+            Some(hole) => self.holes.push(hole),
+            None => walk::walk_assignment_expression(self, it),
+        }
+    }
+
+    fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
+        match self.lowerer.store_update(it) {
+            Some(hole) => self.holes.push(hole),
+            None => walk::walk_update_expression(self, it),
+        }
+    }
+
+    fn visit_import_declaration(&mut self, it: &ImportDeclaration<'a>) {
+        if let Some(hole) = self.lowerer.store_import(it) {
+            self.holes.push(hole);
+        }
+    }
+
+    fn visit_export_declaration(&mut self, it: &ExportDeclaration<'a>) {
+        match self.lowerer.store_export_declaration(it) {
+            Some(hole) => self.holes.push(hole),
+            None => walk::walk_export_declaration(self, it),
+        }
+    }
+
+    fn visit_export_named_declaration(&mut self, it: &ExportNamedDeclaration<'a>) {
+        match self.lowerer.store_export_specifiers(it) {
+            Some(hole) => self.holes.push(hole),
+            None => walk::walk_export_named_declaration(self, it),
+        }
     }
 }
 
@@ -285,11 +443,7 @@ enum Tag<'a> {
 impl<'a> Lowerer<'a, '_> {
     fn tag_of(&self, name: &JSXElementName<'a>) -> Tag<'a> {
         let by_name = |name: &'a str, span: Span| {
-            if name.starts_with(|c: char| c.is_ascii_lowercase()) || name.contains('-') {
-                Tag::Native(name)
-            } else {
-                Tag::Component(span)
-            }
+            if is_native_name(name) { Tag::Native(name) } else { Tag::Component(span) }
         };
         match name {
             JSXElementName::Identifier(id) => by_name(id.name.as_str(), id.span),

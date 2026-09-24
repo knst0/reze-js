@@ -1,0 +1,128 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+expression: render(&dir)
+---
+closed: ["/state.ts"]
+features: {"suspense": false}
+
+// ==== /main.tsx [client] ====
+import { render } from "reze-js";
+import { View } from "./view";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(() => _$createComponent(View, {}), document.body);
+
+// ==== /main.tsx [server] ====
+import { render } from "reze-js";
+import { View } from "./view";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(() => _$createComponent(View, {}), document.body);
+
+// ==== /main.tsx [hydrate] ====
+import { render } from "reze-js";
+import { View } from "./view";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(() => _$createComponent(View, {}), document.body);
+
+// ==== /state.ts [client] ====
+import { signal } from "reze-js";
+
+export const title = "Reze";
+export const [count, setCount] = signal(0);
+const theme = "dark";
+export { theme };
+
+// info
+[SIGNAL_FOLDED] `title` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
+  at /state.ts:3:14
+  2 | 
+> 3 | export const [title, setTitle] = signal("Reze");
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 | export const [count, setCount] = signal(0);
+  related: read here (/view.tsx:166)
+  related: read here (/view.tsx:190)
+// info
+[SIGNAL_FOLDED] `theme` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
+  at /state.ts:5:7
+  4 | export const [count, setCount] = signal(0);
+> 5 | const [theme, setTheme] = signal("dark");
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 | export { theme, setTheme };
+  related: read here (/view.tsx:145)
+// ==== /state.ts [server] ====
+import { signal } from "reze-js";
+
+export const title = "Reze";
+export const [count, setCount] = signal(0);
+const theme = "dark";
+export { theme };
+
+// ==== /state.ts [hydrate] ====
+import { signal } from "reze-js";
+
+export const title = "Reze";
+export const [count, setCount] = signal(0);
+const theme = "dark";
+export { theme };
+
+// ==== /view.tsx [client] ====
+import { count, setCount, title, theme } from "./state";
+import * as state from "./state";
+import { template as _$template, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main class=\"dark\"><h1>Reze</h1><p>Reze</p><button></button></main>");
+
+export function View() {
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild.nextSibling.nextSibling;
+  _el$2.$$click = () => setCount(count() + 1);
+  _$insert(_el$2, count);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `View` runs on the client: `onClick` attaches an event handler.
+  at /view.tsx:4:17
+  3 | 
+> 4 | export function View() {
+    |                 ^^^^
+  5 |   return (
+  note: first client-only part (/view.tsx:9:15)
+// ==== /view.tsx [server] ====
+import { count, setCount, title, theme } from "./state";
+import * as state from "./state";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<main class=\"dark\"", "><h1>Reze</h1><p>Reze</p><button>", "</button></main>"];
+
+export function View() {
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(count()))
+  );
+}
+
+// ==== /view.tsx [hydrate] ====
+import { count, setCount, title, theme } from "./state";
+import * as state from "./state";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main class=\"dark\"><h1>Reze</h1><p>Reze</p><button></button></main>");
+
+export function View() {
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "main"),
+    _el$2 = _$claimChild(_el$, 2);
+  _el$2.$$click = () => setCount(count() + 1);
+  _$claimInsert(_el$2, count);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);

@@ -1,0 +1,19 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "type Props = { id: number; label: string; as: any; ref?: (el: Element) => void };\nexport function Row({ id, label, as: Tag, ref }: Props = { id: 0, label: \"\", as: \"li\" }) {\n  const data: typeof id = id;\n  const row = { id, label };\n  return <Tag ref={ref} onClick={() => select(row, data)}>{label}</Tag>;\n}"
+---
+import { createComponent as _$createComponent } from "reze-js";
+type Props = { id: number; label: string; as: any; ref?: (el: Element) => void };
+export function Row(_props$: Props = { id: 0, label: "", as: "li" }) {
+  const data: typeof _props$.id = _props$.id;
+  const row = { id: _props$.id, label: _props$.label };
+  return _$createComponent(_props$.as, { get ref() { return _props$.ref; }, onClick: () => select(row, data), get children() { return _props$.label; } });
+}
+// info
+[PROPS_REWRITTEN] `Row` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Row>
+  at case.tsx:2:21
+  1 | type Props = { id: number; label: string; as: any; ref?: (el: Element) => void };
+> 2 | export function Row({ id, label, as: Tag, ref }: Props = { id: 0, label: "", as: "li" }) {
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 |   const data: typeof id = id;

@@ -3,19 +3,22 @@
 
 mod async_component;
 mod component;
+mod island;
+mod props;
 mod server;
+mod store;
 mod template;
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write;
 
 use oxc_allocator::Allocator;
-use oxc_semantic::Scoping;
 
 use crate::Target;
 use crate::code::Code;
 use crate::html::push_js_string;
 use crate::ir::{Child, Embed, ExprChild, Getter, HoleKind, Jsx, Namespace, Value};
+use crate::namer::Namer;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Helper {
@@ -27,6 +30,7 @@ enum Helper {
     Bind,
     CreateComponent,
     MergeProps,
+    SplitProps,
     Spread,
     Use,
     AddEventListener,
@@ -38,6 +42,7 @@ enum Helper {
     Style,
     GetOwner,
     Signal,
+    Untrack,
     OnCleanup,
     Effect,
     TrackAsync,
@@ -55,9 +60,11 @@ enum Helper {
     SsrStyle,
     SsrSpread,
     SsrRaw,
+    SsrIsland,
+    HydrateIslands,
 }
 
-const HELPER_COUNT: usize = Helper::SsrRaw as usize + 1;
+const HELPER_COUNT: usize = Helper::HydrateIslands as usize + 1;
 
 impl Helper {
     fn export(self) -> &'static str {
@@ -70,6 +77,7 @@ impl Helper {
             Helper::Bind => "bind",
             Helper::CreateComponent => "createComponent",
             Helper::MergeProps => "mergeProps",
+            Helper::SplitProps => "splitProps",
             Helper::Spread => "spread",
             Helper::Use => "use",
             Helper::AddEventListener => "addEventListener",
@@ -81,6 +89,7 @@ impl Helper {
             Helper::Style => "style",
             Helper::GetOwner => "getOwner",
             Helper::Signal => "signal",
+            Helper::Untrack => "untrack",
             Helper::OnCleanup => "onCleanup",
             Helper::Effect => "effect",
             Helper::TrackAsync => "trackAsync",
@@ -98,6 +107,8 @@ impl Helper {
             Helper::SsrStyle => "ssrStyle",
             Helper::SsrSpread => "ssrSpread",
             Helper::SsrRaw => "ssrRaw",
+            Helper::SsrIsland => "ssrIsland",
+            Helper::HydrateIslands => "hydrateIslands",
         }
     }
 
@@ -111,6 +122,7 @@ impl Helper {
             Helper::Bind => "_$bind",
             Helper::CreateComponent => "_$createComponent",
             Helper::MergeProps => "_$mergeProps",
+            Helper::SplitProps => "_$splitProps",
             Helper::Spread => "_$spread",
             Helper::Use => "_$use",
             Helper::AddEventListener => "_$addEventListener",
@@ -122,6 +134,7 @@ impl Helper {
             Helper::Style => "_$style",
             Helper::GetOwner => "_$getOwner",
             Helper::Signal => "_$signal",
+            Helper::Untrack => "_$untrack",
             Helper::OnCleanup => "_$onCleanup",
             Helper::Effect => "_$effect",
             Helper::TrackAsync => "_$trackAsync",
@@ -139,35 +152,8 @@ impl Helper {
             Helper::SsrStyle => "_$ssrStyle",
             Helper::SsrSpread => "_$ssrSpread",
             Helper::SsrRaw => "_$ssrRaw",
-        }
-    }
-}
-
-/// Fresh identifiers that avoid every name of the source.
-struct Namer<'s> {
-    reserved: HashSet<&'s str>,
-    next_suffix: HashMap<&'static str, u32>,
-}
-
-impl<'s> Namer<'s> {
-    fn new(scoping: &'s Scoping) -> Self {
-        let mut reserved: HashSet<&'s str> = scoping.symbol_names().collect();
-        reserved.extend(scoping.root_unresolved_references().keys().map(|name| name.as_str()));
-        Self { reserved, next_suffix: HashMap::new() }
-    }
-
-    fn fresh(&mut self, base: &'static str, out: &mut String) {
-        let suffix = self.next_suffix.entry(base).or_insert(1);
-        loop {
-            out.clear();
-            out.push_str(base);
-            if *suffix > 1 {
-                let _ = write!(out, "{suffix}");
-            }
-            *suffix += 1;
-            if !self.reserved.contains(out.as_str()) {
-                return;
-            }
+            Helper::SsrIsland => "_$ssrIsland",
+            Helper::HydrateIslands => "_$hydrateIslands",
         }
     }
 }
@@ -192,7 +178,8 @@ pub struct Emitter<'a, 's> {
     template_names: HashMap<(&'a str, Namespace), &'a str>,
     string_template_names: HashMap<std::vec::Vec<&'a str>, &'a str>,
     events: BTreeSet<&'a str>,
-    scratch: String,
+    /// `import { export as alias } from specifier` of island components, in first-use order.
+    island_imports: std::vec::Vec<(&'a str, &'a str, &'a str)>,
 }
 
 impl<'a, 's> Emitter<'a, 's> {
@@ -202,7 +189,7 @@ impl<'a, 's> Emitter<'a, 's> {
         module_name: &'a str,
         is_typescript: bool,
         target: Target,
-        scoping: &'s Scoping,
+        namer: Namer<'s>,
     ) -> Self {
         Self {
             alloc,
@@ -210,33 +197,36 @@ impl<'a, 's> Emitter<'a, 's> {
             module_name,
             is_typescript,
             target,
-            namer: Namer::new(scoping),
+            namer,
             aliases: [None; HELPER_COUNT],
             helper_order: std::vec::Vec::new(),
             templates: std::vec::Vec::new(),
             template_names: HashMap::new(),
             string_template_names: HashMap::new(),
             events: BTreeSet::new(),
-            scratch: String::new(),
+            island_imports: std::vec::Vec::new(),
         }
     }
 
-    /// The whole module: `source[..header_at]`, the runtime header, the compiled `body`, and the
-    /// event delegation trailer.
-    pub fn module(mut self, body: &Embed<'a>, header_at: u32) -> Code {
+    /// The whole module: the compiled `head` (hashbang, directives, leading imports), the runtime
+    /// header, the compiled `body`, and the event delegation trailer.
+    pub fn module(mut self, head: &Embed<'a>, body: &Embed<'a>) -> Code {
+        let mut code = Code::default();
+        self.embed(&mut code, head);
+        let header_at = head.span.end;
         let mut compiled = Code::default();
         self.embed(&mut compiled, body);
         let delegate = (!self.events.is_empty()).then(|| self.helper(Helper::DelegateEvents));
         let header = self.header();
 
-        let mut code = Code::default();
-        code.src(self.source, 0, header_at);
-        if header_at == 0 {
-            code.push(&header);
-            code.push("\n");
-        } else {
-            code.push("\n");
-            code.push(&header);
+        if !header.is_empty() {
+            if header_at == 0 {
+                code.push(&header);
+                code.push("\n");
+            } else {
+                code.push("\n");
+                code.push(&header);
+            }
         }
         code.append(compiled);
         if let Some(delegate) = delegate {
@@ -254,24 +244,53 @@ impl<'a, 's> Emitter<'a, 's> {
         code
     }
 
-    fn header(&mut self) -> String {
-        let mut out = String::from("import { ");
-        for (i, helper) in self.helper_order.iter().enumerate() {
-            if i > 0 {
-                out.push_str(", ");
-            }
-            let _ = write!(
-                out,
-                "{} as {}",
-                helper.export(),
-                self.aliases[*helper as usize].unwrap_or_default()
-            );
+    /// The runtime exports compiling `embed` imports, in first-use order (SPEC §15.11).
+    pub fn runtime_exports(mut self, embed: &Embed<'a>) -> std::vec::Vec<&'static str> {
+        let mut scratch = Code::default();
+        self.embed(&mut scratch, embed);
+        if !self.events.is_empty() {
+            self.helper(Helper::DelegateEvents);
         }
-        out.push_str(" } from ");
-        push_js_string(&mut out, self.module_name);
-        out.push(';');
+        self.helper_order.iter().map(|helper| helper.export()).collect()
+    }
+
+    /// Runtime imports and template declarations, one per line; empty when there are none.
+    fn header(&mut self) -> String {
+        let mut out = String::new();
+        if !self.helper_order.is_empty() {
+            out.push_str("import { ");
+            for (i, helper) in self.helper_order.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                let _ = write!(
+                    out,
+                    "{} as {}",
+                    helper.export(),
+                    self.aliases[*helper as usize].unwrap_or_default()
+                );
+            }
+            out.push_str(" } from ");
+            push_js_string(&mut out, self.module_name);
+            out.push(';');
+        }
+        for (export, alias, specifier) in &self.island_imports {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            let _ = write!(out, "import {{ {export} as {alias} }} from ");
+            push_js_string(&mut out, specifier);
+            out.push(';');
+        }
         for (i, template) in self.templates.iter().enumerate() {
-            out.push_str(if i == 0 { "\nconst " } else { ",\n  " });
+            if i == 0 {
+                if !out.is_empty() {
+                    out.push('\n');
+                }
+                out.push_str("const ");
+            } else {
+                out.push_str(",\n  ");
+            }
             match template {
                 TemplateDecl::Factory { name, factory, html, namespace } => {
                     let _ = write!(out, "{name} = /*#__PURE__*/ {factory}(");
@@ -300,12 +319,9 @@ impl<'a, 's> Emitter<'a, 's> {
         out
     }
 
-    fn fresh(&mut self, base: &'static str) -> &'a str {
-        let mut scratch = std::mem::take(&mut self.scratch);
-        self.namer.fresh(base, &mut scratch);
-        let name = self.alloc.alloc_str(&scratch);
-        self.scratch = scratch;
-        name
+    fn fresh(&mut self, base: &str) -> &'a str {
+        let name = self.namer.fresh(base);
+        self.alloc.alloc_str(&name)
     }
 
     /// Local alias of a runtime export, imported on first use.
@@ -363,6 +379,49 @@ impl<'a, 's> Emitter<'a, 's> {
                     self.embed(out, init);
                 }
                 HoleKind::ConstSignalRead { getter } => self.src(out, *getter),
+                HoleKind::ComputedInline { body } => {
+                    out.push("(");
+                    self.embed(out, body);
+                    out.push(")");
+                }
+                HoleKind::Remove => {}
+                HoleKind::IslandRoot { kind, callee, code, element, islands } => {
+                    self.island_root(out, *kind, *callee, code, element.as_ref(), islands);
+                }
+                HoleKind::PropsParam { name } => out.push(name),
+                HoleKind::PropsRead { props, path, default, shorthand } => {
+                    if *shorthand {
+                        self.src(out, hole.span);
+                        out.push(": ");
+                    }
+                    self.props_read(out, props, path, default.as_ref());
+                }
+                HoleKind::PropsRest { props, binding, keys, body } => {
+                    self.props_rest(out, props, *binding, keys, body.as_ref());
+                }
+                HoleKind::StoreDecl { leaves } => self.store_declaration(out, leaves),
+                HoleKind::StoreExport { declaration, specifiers } => {
+                    self.embed(out, declaration);
+                    if !specifiers.is_empty() {
+                        out.push("\nexport { ");
+                        self.specifiers(out, specifiers);
+                        out.push(" };");
+                    }
+                }
+                HoleKind::StoreRead { getter } => {
+                    out.push(getter);
+                    out.push("()");
+                }
+                HoleKind::StoreSet { body } => {
+                    let untrack = self.helper(Helper::Untrack);
+                    out.push("void ");
+                    out.push(untrack);
+                    out.push("(() => ");
+                    self.embed(out, body);
+                    out.push(")");
+                }
+                HoleKind::StoreWrite { setter, write } => self.store_write(out, setter, write),
+                HoleKind::Specifiers { specifiers } => self.specifiers(out, specifiers),
             }
             position = hole.span.end;
         }

@@ -1,0 +1,159 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+expression: render(&dir)
+---
+closed: ["/todo.ts"]
+features: {"suspense": false}
+
+// ==== /main.tsx [client] ====
+import { render } from "reze-js";
+import { TodoView } from "./view";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(() => _$createComponent(TodoView, {}), document.body);
+
+// ==== /main.tsx [server] ====
+import { render } from "reze-js";
+import { TodoView } from "./view";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(() => _$createComponent(TodoView, {}), document.body);
+
+// ==== /main.tsx [hydrate] ====
+import { render } from "reze-js";
+import { TodoView } from "./view";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(() => _$createComponent(TodoView, {}), document.body);
+
+// ==== /todo.ts [client] ====
+import { store } from "reze-js";
+import { signal as _$signal } from "reze-js";
+
+const [todo$title] = _$signal("Write M3"), [todo$meta$done, setTodo$meta$done] = _$signal(false), [todo$meta$due_date] = _$signal("today");
+export { todo$title, todo$meta$done, setTodo$meta$done, todo$meta$due_date };
+const [settings$theme] = _$signal("dark");
+export { settings$theme };
+export const [whole, setWhole] = store({ count: 0 });
+
+// info
+[STORE_UNPROXIED] Every use of `todo` reads one of its fields and every write goes through a `setTodo` draft, so the store compiled to one signal per field.
+  at /todo.ts:3:14
+  2 | 
+> 3 | export const [todo, setTodo] = store({ title: "Write M3", meta: { done: false, "due-date": "today" } });
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 | export const [settings] = store({ theme: "dark" });
+  related: used here (/view.tsx:194)
+  related: used here (/view.tsx:233)
+  related: used here (/view.tsx:298)
+  related: used here (/view.tsx:312)
+// info
+[STORE_UNPROXIED] Every use of `settings` reads one of its fields, so the store compiled to one signal per field.
+  at /todo.ts:4:14
+  3 | export const [todo, setTodo] = store({ title: "Write M3", meta: { done: false, "due-date": "today" } });
+> 4 | export const [settings] = store({ theme: "dark" });
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | export const [whole, setWhole] = store({ count: 0 });
+  related: used here (/view.tsx:123)
+// ==== /todo.ts [server] ====
+import { store } from "reze-js";
+import { signal as _$signal } from "reze-js";
+
+const [todo$title] = _$signal("Write M3"), [todo$meta$done, setTodo$meta$done] = _$signal(false), [todo$meta$due_date] = _$signal("today");
+export { todo$title, todo$meta$done, setTodo$meta$done, todo$meta$due_date };
+const [settings$theme] = _$signal("dark");
+export { settings$theme };
+export const [whole, setWhole] = store({ count: 0 });
+
+// ==== /todo.ts [hydrate] ====
+import { store } from "reze-js";
+import { signal as _$signal } from "reze-js";
+
+const [todo$title] = _$signal("Write M3"), [todo$meta$done, setTodo$meta$done] = _$signal(false), [todo$meta$due_date] = _$signal("today");
+export { todo$title, todo$meta$done, setTodo$meta$done, todo$meta$due_date };
+const [settings$theme] = _$signal("dark");
+export { settings$theme };
+export const [whole, setWhole] = store({ count: 0 });
+
+// ==== /view.tsx [client] ====
+import { todo$meta$done as _todo$meta$done, setTodo$meta$done as _setTodo$meta$done, settings$theme as _settings$theme, todo$title as _todo$title, todo$meta$due_date as _todo$meta$due_date, whole, setWhole } from "./todo";
+import { template as _$template, untrack as _$untrack, insert as _$insert, bind as _$bind, className as _$className, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<li><input type=\"checkbox\"> (<!>)<button></button></li>");
+
+export function TodoView() {
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild,
+    _el$3 = _el$2.nextSibling,
+    _el$4 = _el$3.nextSibling,
+    _el$5 = _el$4.nextSibling.nextSibling;
+  _el$2.$$input = () => void _$untrack(() => { _setTodo$meta$done(() => !_todo$meta$done()); });
+  _$insert(_el$, () => _todo$title(), _el$3);
+  _$insert(_el$, () => _todo$meta$due_date(), _el$4);
+  _el$5.$$click = () => setWhole((d) => d.count++);
+  _$insert(_el$5, () => JSON.stringify(whole));
+  _$bind(_p$ => {
+    var _v$ = _settings$theme(),
+      _v$2 = _todo$meta$done();
+    _v$ !== _p$[0] && (_$className(_el$, _p$[0] = _v$));
+    _v$2 !== _p$[1] && (_el$2.checked = _p$[1] = _v$2);
+    return _p$;
+  }, []);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click", "input"]);
+
+// info
+[CLIENT_COMPONENT] `TodoView` runs on the client: `settings.theme` reads a value that is not an inert constant.
+  at /view.tsx:3:17
+  2 | 
+> 3 | export function TodoView() {
+    |                 ^^^^^^^^
+  4 |   return (
+  note: first client-only part (/view.tsx:5:16)
+// ==== /view.tsx [server] ====
+import { todo$meta$done as _todo$meta$done, setTodo$meta$done as _setTodo$meta$done, settings$theme as _settings$theme, todo$title as _todo$title, todo$meta$due_date as _todo$meta$due_date, whole, setWhole } from "./todo";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrClass as _$ssrClass, ssrBoolAttribute as _$ssrBoolAttribute, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<li", "", "><input type=\"checkbox\"", "><!--[-->", "<!--]--> (<!--[-->", "<!--]--><!>)<button>", "</button></li>"];
+
+export function TodoView() {
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrClass(_settings$theme()), _$ssrBoolAttribute("checked", _todo$meta$done()), _$ssrChild(_todo$title()), _$ssrChild(_todo$meta$due_date()), _$ssrChild(JSON.stringify(whole)))
+  );
+}
+
+// ==== /view.tsx [hydrate] ====
+import { todo$meta$done as _todo$meta$done, setTodo$meta$done as _setTodo$meta$done, settings$theme as _settings$theme, todo$title as _todo$title, todo$meta$due_date as _todo$meta$due_date, whole, setWhole } from "./todo";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimSibling as _$claimSibling, untrack as _$untrack, claimInsert as _$claimInsert, bind as _$bind, className as _$className, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<li><input type=\"checkbox\"> (<!>)<button></button></li>");
+
+export function TodoView() {
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "li"),
+    _el$2 = _$claimChild(_el$, 0),
+    _el$3 = _$claimSibling(_el$2, 1),
+    _el$4 = _$claimSibling(_el$3, 1),
+    _el$5 = _$claimSibling(_el$4, 2);
+  _el$2.$$input = () => void _$untrack(() => { _setTodo$meta$done(() => !_todo$meta$done()); });
+  _$claimInsert(_el$, () => _todo$title(), _el$3);
+  _$claimInsert(_el$, () => _todo$meta$due_date(), _el$4);
+  _el$5.$$click = () => setWhole((d) => d.count++);
+  _$claimInsert(_el$5, () => JSON.stringify(whole));
+  _$bind(_p$ => {
+    var _v$ = _settings$theme(),
+      _v$2 = _todo$meta$done();
+    _v$ !== _p$[0] && (_$className(_el$, _p$[0] = _v$));
+    _v$2 !== _p$[1] && (_el$2.checked = _p$[1] = _v$2);
+    return _p$;
+  }, []);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click", "input"]);

@@ -70,18 +70,13 @@ An element has both a `children` attribute and nested JSX children. Nested child
 Before:
 
 ```tsx
-<div children={a()}>
-  <b />
-</div>
+<div children={a()}><b /></div>
 ```
 
 After:
 
 ```tsx
-<div>
-  {a()}
-  <b />
-</div>
+<div>{a()}<b /></div>
 ```
 
 ## KEY_ON_ELEMENT
@@ -95,9 +90,7 @@ After:
 Before:
 
 ```tsx
-{
-  items().map((item) => <li key={item.id}>{item.name}</li>);
-}
+{items().map((item) => <li key={item.id}>{item.name}</li>)}
 ```
 
 After:
@@ -228,7 +221,7 @@ After:
 
 ```tsx
 const numbers = [1, 2, 3];
-<For each={numbers}>{(n) => <li>{n}</li>}</For>;
+<For each={numbers}>{(n) => <li>{n}</li>}</For>
 ```
 
 ## ASYNC_COMPONENT_SHAPE
@@ -245,11 +238,7 @@ Before:
 async function User(props) {
   const label = props.label;
   const user = await fetchUser(props.id);
-  return (
-    <p>
-      {label}: {user.name}
-    </p>
-  );
+  return <p>{label}: {user.name}</p>;
 }
 ```
 
@@ -258,11 +247,7 @@ After:
 ```tsx
 async function User(props) {
   const user = await fetchUser(props.id);
-  return (
-    <p>
-      {props.label}: {user.name}
-    </p>
-  );
+  return <p>{props.label}: {user.name}</p>;
 }
 ```
 
@@ -298,7 +283,7 @@ Example:
 
 ```tsx
 const [title] = signal("Reze");
-<h1>{title()}</h1>;
+<h1>{title()}</h1>
 ```
 
 ## DEAD_BRANCH_REMOVED
@@ -312,7 +297,142 @@ A child's condition is a literal, so one branch can never render. The compiler d
 Example:
 
 ```tsx
-{
-  DEBUG && <DebugPanel />;
+{DEBUG && <DebugPanel />}
+```
+
+## COMPUTED_INLINED
+
+**`computed` inlined into its only read** · severity `info`
+
+A `computed` is read exactly once, as a call inside a reactive JSX expression of the same function. The compiler removed the declaration and put its expression at the read (optimization O4): the binding reads the sources directly and still compares the value before touching the DOM. `data.scope` is `module`.
+
+**Repair:** Nothing to repair. Read the computed a second time, or outside JSX, and it stays a node of the graph.
+
+Example:
+
+```tsx
+const doubled = computed(() => count() * 2);
+<p>{doubled()}</p>
+```
+
+## PROPS_REWRITTEN
+
+**Destructured props rewritten to lazy reads** · severity `info`
+
+The component destructures its props in the parameter list. The compiler replaced the pattern with one `props` parameter and every destructured name with a read of `props.name` at its use, so each read stays reactive. Defaults apply when the prop is `undefined`; a rest element becomes `splitProps`.
+
+**Repair:** Nothing to repair.
+
+Example:
+
+```tsx
+function Greeting({ name = "you" }) {
+  return <p>Hello {name}</p>;
 }
+```
+
+## STORE_UNPROXIED
+
+**Store replaced by one signal per field** · severity `info`
+
+Every read of the store is a path to a field and every write goes through its setter to a field, so the compiler replaced the Proxy with one signal per field: reads are signal calls and draft writes are signal writes under `untrack`. `data.scope` is `module`, or `program` when the store is exported and every importer was rewritten too; `related` lists the uses in other modules.
+
+**Repair:** Nothing to repair. Any other use of the store (passing it whole, a computed key, a namespace access) keeps the Proxy.
+
+Example:
+
+```tsx
+const [todo, setTodo] = store({ title: "", done: false });
+<input checked={todo.done} onInput={() => setTodo((d) => { d.done = !d.done; })} />
+```
+
+## STATIC_COMPONENT
+
+**Static component** · severity `info`
+
+Program analysis proved the component renders HTML and nothing else: it reads no reactive state, attaches no behavior, and its DOM never changes. Under an islands root it is rendered on the server only and its code is never run in the browser.
+
+**Repair:** Nothing to repair.
+
+Example:
+
+```tsx
+export function Footer() {
+  return <footer>© Reze</footer>;
+}
+```
+
+## CLIENT_COMPONENT
+
+**Client component** · severity `info`
+
+The component has to run in the browser. `data.reason` and the message name the first thing that makes it so (an event handler, a signal read, a component outside the program, or a client child in a position that cannot be an island); `related` continues the chain into other components and modules.
+
+**Repair:** Nothing to repair. To make a parent static, move the interactive part into its own exported component and render it with JSON-serializable props.
+
+Example:
+
+```tsx
+export function Counter() {
+  const [n, setN] = signal(0);
+  return <button onClick={() => setN(n() + 1)}>{n()}</button>;
+}
+```
+
+## ISLAND
+
+**Island boundary** · severity `info`
+
+A static component renders a client component with JSON-serializable props. The server marks the boundary and serializes the props; the browser hydrates only the island, with the runtime features in `data.features`. `data.id` identifies the island.
+
+**Repair:** Nothing to repair.
+
+Example:
+
+```tsx
+export function Page() {
+  return <main><h1>Docs</h1><Counter start={1} /></main>;
+}
+```
+
+## FACTS_STALE
+
+**Program facts built for a different source** · severity `error`
+
+The module was compiled with program facts whose source hash does not match the source being compiled: another plugin changed the module between the program scan and `transform`, so the cross-module decisions may be wrong.
+
+**Repair:** Order the plugin that rewrites the module after the Reze plugin, exclude the module from `program.include`, or disable `optimize`.
+
+Example:
+
+```tsx
+reze({ program: { exclude: /generated/ } })
+```
+
+## PROGRAM_OPEN_IMPORT
+
+**A module outside the program imports a closed module** · severity `error`
+
+Program analysis rewrote the exports of a module (a folded signal or an unproxied store) assuming it knows every importer, but a module outside the program imports it and would break.
+
+**Repair:** Add the importing module to `program.include`, or disable `optimize` for the build.
+
+Example:
+
+```tsx
+reze({ program: { include: /\.(tsx?|jsx?|vue)$/ } })
+```
+
+## FEATURE_FLAG_MISMATCH
+
+**A module outside the program uses a disabled runtime feature** · severity `error`
+
+The program does not use a runtime feature, so its define flag was turned off and the runtime dropped it, but a module outside the program uses that feature's export.
+
+**Repair:** Add the module to `program.include`, or force the flag on with the plugin option `features: { <name>: true }`.
+
+Example:
+
+```tsx
+reze({ features: { suspense: true } })
 ```

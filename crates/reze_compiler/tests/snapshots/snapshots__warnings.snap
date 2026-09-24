@@ -1,12 +1,12 @@
 ---
 source: crates/reze_compiler/tests/snapshots.rs
-expression: "import { signal } from \"reze-js\";\nconst [n, setN] = signal(0); setN(1);\nfunction Greeting({ name }) {\n  return <p key=\"k\" clas=\"x\" title={n} title=\"y\">{name}<For each={[1, 2]}>{(i) => i}</For></p>;\n}"
+expression: "import { signal } from \"reze-js\";\nconst [n, setN] = signal(0); setN(1);\nfunction Greeting({ name = fallback() }) {\n  return <p key=\"k\" clas=\"x\" title={n} title=\"y\">{name}<For each={[1, 2]}>{(i) => i}</For></p>;\n}"
 ---
 import { signal } from "reze-js";
 import { template as _$template, insert as _$insert, createComponent as _$createComponent } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<p key=\"k\" clas=\"x\" title=\"y\"></p>");
 const [n, setN] = signal(0); setN(1);
-function Greeting({ name }) {
+function Greeting({ name = fallback() }) {
   return (() => {
   var _el$ = _tmpl$();
   _$insert(_el$, name, null);
@@ -15,18 +15,18 @@ function Greeting({ name }) {
 })();
 }
 // warn
-[PROPS_DESTRUCTURED] `Greeting` destructures its props: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+[PROPS_DESTRUCTURED] `Greeting` destructures its props with a default that is not a literal, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
   in <Greeting>
   at case.tsx:3:19
   2 | const [n, setN] = signal(0); setN(1);
-> 3 | function Greeting({ name }) {
-    |                   ^^^^^^^^
+> 3 | function Greeting({ name = fallback() }) {
+    |                   ^^^^^^^^^^^^^^^^^^^^^
   4 |   return <p key="k" clas="x" title={n} title="y">{name}<For each={[1, 2]}>{(i) => i}</For></p>;
 // warn
 [KEY_ON_ELEMENT] `key` does nothing on a native element and renders as a useless attribute; rows of a list are keyed by `<For>`. Remove it.
   in <Greeting> › p
   at case.tsx:4:13
-  3 | function Greeting({ name }) {
+  3 | function Greeting({ name = fallback() }) {
 > 4 |   return <p key="k" clas="x" title={n} title="y">{name}<For each={[1, 2]}>{(i) => i}</For></p>;
     |             ^^^^^^^
   5 | }
@@ -35,7 +35,7 @@ function Greeting({ name }) {
 [UNKNOWN_ATTRIBUTE] `clas` is not a known attribute and renders as written, so the browser ignores it. Did you mean `class`?
   in <Greeting> › p
   at case.tsx:4:21
-  3 | function Greeting({ name }) {
+  3 | function Greeting({ name = fallback() }) {
 > 4 |   return <p key="k" clas="x" title={n} title="y">{name}<For each={[1, 2]}>{(i) => i}</For></p>;
     |                     ^^^^
   5 | }
@@ -44,7 +44,7 @@ function Greeting({ name }) {
 [DUPLICATE_ATTRIBUTE] `title` is set twice on this element; the last one wins, so the earlier one is dead code. Remove it or merge the values.
   in <Greeting> › p
   at case.tsx:4:40
-  3 | function Greeting({ name }) {
+  3 | function Greeting({ name = fallback() }) {
 > 4 |   return <p key="k" clas="x" title={n} title="y">{name}<For each={[1, 2]}>{(i) => i}</For></p>;
     |                                        ^^^^^^^^^
   5 | }
@@ -54,7 +54,7 @@ function Greeting({ name }) {
 [INLINE_EACH] `<For each={[…]}>` builds a new array on every evaluation, so every row is rebuilt each time. Hoist the array to a constant or keep it in a signal.
   in <Greeting> › p › <For>
   at case.tsx:4:67
-  3 | function Greeting({ name }) {
+  3 | function Greeting({ name = fallback() }) {
 > 4 |   return <p key="k" clas="x" title={n} title="y">{name}<For each={[1, 2]}>{(i) => i}</For></p>;
     |                                                                   ^^^^^^
   5 | }

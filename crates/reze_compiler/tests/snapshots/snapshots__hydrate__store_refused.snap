@@ -1,0 +1,37 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { store } from \"reze-js\";\nconst [whole] = store({ a: 1 });\nsave(whole);\nconst [nested] = store({ a: { b: 1 } });\nconst [keyed] = store({ a: 1 });\nconst [list, setList] = store({ items: [] });\nconst [later, setLater] = store({ a: 1 });\nsetLater((d) => { queue(() => { d.a = 2; }); });\nconst [valued, setValued] = store({ a: 1 });\nsetValued((d) => { log(d.a = 2); });\nexport const [exported] = store({ a: 1 });\nexport const view = (\n  <ul onClick={() => setList((d) => { d.items.push(1); })}>\n    {whole.a}{nested.a}{keyed[k]}{later.a}{valued.a}{exported.a}\n    {list.items.map((i) => <li>{i}</li>)}\n  </ul>\n);"
+---
+import { store } from "reze-js";
+import { template as _$template, claim as _$claim, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<ul></ul>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<li></li>");
+const [whole] = store({ a: 1 });
+save(whole);
+const [nested] = store({ a: { b: 1 } });
+const [keyed] = store({ a: 1 });
+const [list, setList] = store({ items: [] });
+const [later, setLater] = store({ a: 1 });
+setLater((d) => { queue(() => { d.a = 2; }); });
+const [valued, setValued] = store({ a: 1 });
+setValued((d) => { log(d.a = 2); });
+export const [exported] = store({ a: 1 });
+export const view = (
+  (() => {
+  var _el$ = _$claim(_tmpl$, "ul");
+  _el$.$$click = () => setList((d) => { d.items.push(1); });
+  _$claimInsert(_el$, () => whole.a, null, 6);
+  _$claimInsert(_el$, () => nested.a, null, 5);
+  _$claimInsert(_el$, () => keyed[k], null, 4);
+  _$claimInsert(_el$, () => later.a, null, 3);
+  _$claimInsert(_el$, () => valued.a, null, 2);
+  _$claimInsert(_el$, () => exported.a, null, 1);
+  _$claimInsert(_el$, () => list.items.map((i) => (() => {
+  var _el$2 = _$claim(_tmpl$2, "li");
+  _$claimInsert(_el$2, i);
+  return _el$2;
+})()), null);
+  return _el$;
+})()
+);
+_$delegateEvents(["click"]);

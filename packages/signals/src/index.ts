@@ -14,4 +14,5 @@ export {
   type Setter,
   type SignalOptions,
 } from "./signal";
+export { store } from "./store";
 export { trigger } from "./trigger";

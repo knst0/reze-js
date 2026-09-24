@@ -522,7 +522,9 @@ impl<'a> Lowerer<'a, '_> {
     /// `e` as an assignment target, when it is one.
     pub(super) fn assign_target(&mut self, e: &Expression<'a>) -> Option<AssignTarget<'a>> {
         Some(match e.without_parentheses() {
-            Expression::Identifier(id) => AssignTarget::Identifier(id.span),
+            Expression::Identifier(id) if !self.facts.props.is_read(id) => {
+                AssignTarget::Identifier(id.span)
+            }
             Expression::StaticMemberExpression(m) if !m.optional => AssignTarget::Member {
                 object: self.expr(&m.object),
                 key: MemberKey::Static(m.property.name.as_str()),

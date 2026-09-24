@@ -1,0 +1,37 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { store } from \"reze-js\";\nconst [todo, setTodo] = store({ title: \"\", done: false, meta: { count: 0, \"last-seen\": null } });\nconst [theme] = store({ color: \"red\" });\nexport const view = (\n  <p class={theme.color} onClick={() => setTodo((d) => { d.done = !d.done; d.meta.count *= 2; d.meta[\"last-seen\"] ??= Date.now(); d.meta.count++; })}>\n    {todo.title}{todo.meta.count}\n  </p>\n);\nexport const rename = (title) => setTodo((d) => d.title = title.trim());\nexport const reset = () => setTodo(function (d) { --d.meta.count; d.title = { text: \"\" }; });"
+---
+import { store } from "reze-js";
+import { signal as _$signal, template as _$template, untrack as _$untrack, insert as _$insert, bind as _$bind, className as _$className, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p></p>");
+const [todo$title, setTodo$title] = _$signal(""), [todo$done, setTodo$done] = _$signal(false), [todo$meta$count, setTodo$meta$count] = _$signal(0), [todo$meta$last_seen, setTodo$meta$last_seen] = _$signal(null);
+const [theme$color] = _$signal("red");
+export const view = (
+  (() => {
+  var _el$ = _tmpl$();
+  _el$.$$click = () => void _$untrack(() => { setTodo$done(() => !todo$done()); setTodo$meta$count((v) => v * 2); setTodo$meta$last_seen((v) => v ?? Date.now()); setTodo$meta$count((v) => ++v); });
+  _$insert(_el$, () => todo$title(), null);
+  _$insert(_el$, () => todo$meta$count(), null);
+  _$bind(() => _$className(_el$, theme$color()));
+  return _el$;
+})()
+);
+export const rename = (title) => void _$untrack(() => setTodo$title(() => title.trim()));
+export const reset = () => void _$untrack(() => { setTodo$meta$count((v) => --v); setTodo$title(() => ({ text: "" })); });
+_$delegateEvents(["click"]);
+
+// info
+[STORE_UNPROXIED] Every use of `todo` reads one of its fields and every write goes through a `setTodo` draft, so the store compiled to one signal per field.
+  at case.tsx:2:7
+  1 | import { store } from "reze-js";
+> 2 | const [todo, setTodo] = store({ title: "", done: false, meta: { count: 0, "last-seen": null } });
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | const [theme] = store({ color: "red" });
+// info
+[STORE_UNPROXIED] Every use of `theme` reads one of its fields, so the store compiled to one signal per field.
+  at case.tsx:3:7
+  2 | const [todo, setTodo] = store({ title: "", done: false, meta: { count: 0, "last-seen": null } });
+> 3 | const [theme] = store({ color: "red" });
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 | export const view = (

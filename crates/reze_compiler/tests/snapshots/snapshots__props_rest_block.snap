@@ -1,0 +1,21 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "function Link({ href, \"aria-label\": label, ...rest }) {\n  \"use client\";\n  return <a href={href} aria-label={label} {...rest} />;\n}"
+---
+import { splitProps as _$splitProps, template as _$template, spread as _$spread, mergeProps as _$mergeProps } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<a></a>");
+function Link(_props$) {
+  "use client"; const rest = _$splitProps(_props$, ["href", "aria-label"])[1];
+  return (() => {
+  var _el$ = _tmpl$();
+  _$spread(_el$, _$mergeProps({ get href() { return _props$.href; }, get "aria-label"() { return _props$["aria-label"]; } }, rest), false, false);
+  return _el$;
+})();
+}
+// info
+[PROPS_REWRITTEN] `Link` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Link>
+  at case.tsx:1:15
+> 1 | function Link({ href, "aria-label": label, ...rest }) {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  2 |   "use client";

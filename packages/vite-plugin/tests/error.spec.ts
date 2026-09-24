@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Diagnostic } from "@rezejs/compiler";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import reze, { formatDiagnostic, type RezeCompileError, type RezeOptions } from "../src/index";
+import reze, { formatDiagnostic, type CompileError, type Options } from "../src/index";
 
 const compile = vi.hoisted(() => vi.fn());
 vi.mock("@rezejs/compiler", () => ({ compile }));
@@ -38,7 +38,7 @@ function compiled(diagnostics: Diagnostic[]) {
 
 type Handler = (this: unknown, code: string, id: string, options?: { ssr?: boolean }) => unknown;
 
-function pluginWith(options?: RezeOptions) {
+function pluginWith(options?: Options) {
   const plugin = reze(options) as unknown as { transform: { handler: Handler } };
   const warnings: { message: string; id: string; loc: unknown }[] = [];
   const ctx = {
@@ -50,11 +50,11 @@ function pluginWith(options?: RezeOptions) {
   return { run, warnings };
 }
 
-function thrownBy(run: () => unknown): RezeCompileError {
+function thrownBy(run: () => unknown): CompileError {
   try {
     run();
   } catch (e) {
-    return e as RezeCompileError;
+    return e as CompileError;
   }
   return expect.unreachable("the transform throws");
 }
@@ -98,7 +98,7 @@ test("options reach the compiler and the query is stripped from the filename", (
 
 test("SSR transforms compile for the server; hydratable browser transforms for hydrate", () => {
   compile.mockReturnValue(compiled([]));
-  const targets = (options: RezeOptions) => {
+  const targets = (options: Options) => {
     const { handler } = (reze(options) as unknown as { transform: { handler: Handler } }).transform;
     handler.call({}, "<i />", "src/A.tsx", { ssr: true });
     handler.call({}, "<i />", "src/A.tsx", { ssr: false });

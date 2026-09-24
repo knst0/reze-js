@@ -1,7 +1,7 @@
-import { root } from "@rezejs/signals";
+import { root, untrack } from "@rezejs/signals";
 
-import { Properties, classTokens } from "./dom";
-import { nextHydrationKey, withKeyRoot } from "./hydration";
+import { IslandClose, IslandOpen, Properties, classTokens, createComponent } from "./dom";
+import { nextComponentScope, nextHydrationKey, withKeyScope } from "./hydration";
 import type { JSX } from "./jsx";
 
 // oxlint-disable-next-line typescript/no-explicit-any
@@ -13,21 +13,114 @@ class RenderedHTML {
   constructor(readonly html: string) {}
 }
 
+/** Whether `ssrIsland` marks islands: in the static area of `renderToString(code, true)`. */
+let isStaticArea = false;
+
 /**
  * Renders `code()` to HTML for `hydrate` to adopt. Runs the components once under a root that
  * is disposed right after: effects never run, and async components render what they have.
+ * With `islands`, rendering starts in the static area, where `ssrIsland` marks islands for
+ * `hydrateIslands`.
  */
-export function renderToString(code: () => JSX.Element): string {
-  return withKeyRoot(() =>
-    root((dispose) => {
-      try {
-        return ssrChild(code());
-      } finally {
-        dispose();
-      }
-    }),
-  );
+export function renderToString(code: () => JSX.Element, islands?: boolean): string {
+  const wasStaticArea = isStaticArea;
+  isStaticArea = islands === true;
+  try {
+    return withKeyScope("", () =>
+      root((dispose) => {
+        try {
+          return ssrChild(code());
+        } finally {
+          dispose();
+        }
+      }),
+    );
+  } finally {
+    isStaticArea = wasStaticArea;
+  }
 }
+
+/**
+ * `createComponent` for an island boundary. In the static area it renders the island between
+ * `<!--$id:scope:props-->` and `<!--/$-->`, `scope` being the key scope it opens and `props`
+ * JSON, and the island itself renders in the client area. Throws `[ISLAND_PROPS]` when `props`
+ * is not JSON: `null`, booleans, strings, finite numbers other than `-0`, dense arrays and
+ * plain objects, without cycles.
+ */
+export function ssrIsland<P>(id: string, Comp: (props: P) => JSX.Element, props: P): JSX.Element {
+  if (!isStaticArea) return createComponent(Comp, props);
+  const json = islandJSON(id, props, "props", []);
+  const scope = nextComponentScope()!;
+  isStaticArea = false;
+  try {
+    const html = withKeyScope(scope, () => ssrChild(untrack(() => Comp(props))));
+    return new RenderedHTML(
+      `<!--${IslandOpen}${id}:${scope}:${json}-->${html}<!--${IslandClose}-->`,
+    ) as unknown as JSX.Element;
+  } finally {
+    isStaticArea = true;
+  }
+}
+
+function islandJSON(id: string, value: unknown, path: string, ancestors: object[]): string {
+  if (value === null) return "null";
+  switch (typeof value) {
+    case "boolean":
+      return String(value);
+    case "string":
+      return JSON.stringify(value).replace(/[<>-]/g, (c) => IslandJSONEscapes[c]!);
+    case "number":
+      if (!Number.isFinite(value) || Object.is(value, -0)) {
+        throw islandPropsError(id, path, Object.is(value, -0) ? "-0" : String(value));
+      }
+      return String(value);
+    case "object": {
+      if (ancestors.includes(value)) throw islandPropsError(id, path, "a cycle");
+      ancestors.push(value);
+      let json: string;
+      if (Array.isArray(value)) {
+        json = "[";
+        for (let i = 0; i < value.length; i++) {
+          if (!(i in value)) throw islandPropsError(id, path, "a sparse array");
+          json += (i ? "," : "") + islandJSON(id, value[i], `${path}[${i}]`, ancestors);
+        }
+        json += "]";
+      } else {
+        const proto = Object.getPrototypeOf(value);
+        if (proto !== Object.prototype && proto !== null) {
+          throw islandPropsError(id, path, `a ${proto?.constructor?.name ?? "non-plain"} object`);
+        }
+        json = "{";
+        for (const key of Reflect.ownKeys(value)) {
+          const keyPath = `${path}.${String(key)}`;
+          if (typeof key === "symbol" || !Object.prototype.propertyIsEnumerable.call(value, key)) {
+            throw islandPropsError(id, keyPath, "a symbol or non-enumerable key");
+          }
+          json +=
+            (json.length > 1 ? "," : "") +
+            islandJSON(id, key, keyPath, ancestors) +
+            ":" +
+            islandJSON(id, (value as Record<string, unknown>)[key], keyPath, ancestors);
+        }
+        json += "}";
+      }
+      ancestors.pop();
+      return json;
+    }
+    default:
+      throw islandPropsError(id, path, value === undefined ? "undefined" : `a ${typeof value}`);
+  }
+}
+
+function islandPropsError(id: string, path: string, found: string): Error {
+  return new Error(`[ISLAND_PROPS] island "${id}": ${path} is ${found}, which is not JSON`);
+}
+
+const IslandJSONEscapes: Record<string, string> = {
+  "<": "\\u003c",
+  ">": "\\u003e",
+  "-": "\\u002d",
+};
 
 /** A server template: `strings` interleaved with the rendered dynamic `parts`. */
 export function ssr(strings: readonly string[], ...parts: string[]): JSX.Element {

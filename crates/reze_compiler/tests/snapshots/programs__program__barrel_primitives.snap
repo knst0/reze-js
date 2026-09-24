@@ -1,0 +1,122 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+expression: render(&dir)
+---
+closed: []
+features: {"suspense": false}
+
+// ==== /lib.ts [client] ====
+<unchanged>
+
+// ==== /lib.ts [server] ====
+<unchanged>
+
+// ==== /lib.ts [hydrate] ====
+<unchanged>
+
+// ==== /main.tsx [client] ====
+import { s, store } from "./lib";
+import * as lib from "./lib";
+import * as R from "reze-js";
+import { signal as _$signal, template as _$template, untrack as _$untrack, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<h1 title=\"x\">Reze 2 </h1>");
+
+const title = "Reze";
+const count = 2;
+const label = "x";
+const [todo$done, setTodo$done] = _$signal(false);
+
+export const App = () => (
+  (() => {
+  var _el$ = _tmpl$();
+  _el$.$$click = () => void _$untrack(() => { setTodo$done(() => !todo$done()); });
+  _$insert(_el$, () => todo$done() ? "yes" : "no", null);
+  return _el$;
+})()
+);
+
+_$delegateEvents(["click"]);
+
+// info
+[SIGNAL_FOLDED] `title` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
+  at /main.tsx:5:7
+  4 | 
+> 5 | const [title] = s("Reze");
+    |       ^^^^^^^^^^^^^^^^^^^
+  6 | const [count] = lib.s(2);
+// info
+[SIGNAL_FOLDED] `count` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
+  at /main.tsx:6:7
+  5 | const [title] = s("Reze");
+> 6 | const [count] = lib.s(2);
+    |       ^^^^^^^^^^^^^^^^^^
+  7 | const [label] = R.signal("x");
+// info
+[SIGNAL_FOLDED] `label` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
+  at /main.tsx:7:7
+  6 | const [count] = lib.s(2);
+> 7 | const [label] = R.signal("x");
+    |       ^^^^^^^^^^^^^^^^^^^^^^^
+  8 | const [todo, setTodo] = store({ done: false });
+// info
+[STORE_UNPROXIED] Every use of `todo` reads one of its fields and every write goes through a `setTodo` draft, so the store compiled to one signal per field.
+  at /main.tsx:8:7
+  7 | const [label] = R.signal("x");
+> 8 | const [todo, setTodo] = store({ done: false });
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  9 | 
+// info
+[CLIENT_COMPONENT] `App` runs on the client: `onClick` attaches an event handler.
+  at /main.tsx:10:14
+   9 | 
+> 10 | export const App = () => (
+     |              ^^^
+  11 |   <h1 title={label()} onClick={() => setTodo((d) => { d.done = !d.done; })}>
+  note: first client-only part (/main.tsx:11:23)
+// ==== /main.tsx [server] ====
+import { s, store } from "./lib";
+import * as lib from "./lib";
+import * as R from "reze-js";
+import { signal as _$signal, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<h1 title=\"x\"", ">Reze 2 <!--[-->", "<!--]--></h1>"];
+
+const title = "Reze";
+const count = 2;
+const label = "x";
+const [todo$done, setTodo$done] = _$signal(false);
+
+export const App = () => (
+  _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(todo$done() ? "yes" : "no"))
+);
+
+// ==== /main.tsx [hydrate] ====
+import { s, store } from "./lib";
+import * as lib from "./lib";
+import * as R from "reze-js";
+import { signal as _$signal, template as _$template, claim as _$claim, untrack as _$untrack, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<h1 title=\"x\">Reze 2 </h1>");
+
+const title = "Reze";
+const count = 2;
+const label = "x";
+const [todo$done, setTodo$done] = _$signal(false);
+
+export const App = () => (
+  (() => {
+  var _el$ = _$claim(_tmpl$, "h1");
+  _el$.$$click = () => void _$untrack(() => { setTodo$done(() => !todo$done()); });
+  _$claimInsert(_el$, () => todo$done() ? "yes" : "no", null);
+  return _el$;
+})()
+);
+
+_$delegateEvents(["click"]);
+
+// ==== /more.ts [client] ====
+<unchanged>
+
+// ==== /more.ts [server] ====
+<unchanged>
+
+// ==== /more.ts [hydrate] ====
+<unchanged>

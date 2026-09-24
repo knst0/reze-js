@@ -1,0 +1,53 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+assertion_line: 157
+expression: "import { computed, signal } from \"reze-js\";\nconst [n, setN] = signal(0);\nexport const total = computed(() => n() + 1);\nexport const view = <p onClick={() => setN(1)}>{total()}</p>;\nconst logged = computed(() => n() - 1);\nconsole.log(logged());\nfunction Panel() {\n  const twice = computed(() => n() * 2);\n  const typed: () => number = computed(() => n() + 2);\n  const nested = computed(() => n() + 3);\n  const shadowed = computed(() => n() + 4);\n  const row = <p title={typed()}>{twice()}{twice()}<For each={[1]}>{() => nested()}</For></p>;\n  if (row) {\n    const n = () => 0;\n    return <i>{shadowed()}{n()}</i>;\n  }\n  return row;\n}"
+---
+import { computed, signal } from "reze-js";
+import { template as _$template, insert as _$insert, createComponent as _$createComponent, bind as _$bind, setAttribute as _$setAttribute, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p></p>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<i></i>");
+const [n, setN] = signal(0);
+export const total = computed(() => n() + 1);
+export const view = (() => {
+  var _el$ = _tmpl$();
+  _el$.$$click = () => setN(1);
+  _$insert(_el$, total);
+  return _el$;
+})();
+const logged = computed(() => n() - 1);
+console.log(logged());
+function Panel() {
+  const twice = computed(() => n() * 2);
+  const typed: () => number = computed(() => n() + 2);
+  const nested = computed(() => n() + 3);
+  const shadowed = computed(() => n() + 4);
+  const row = (() => {
+  var _el$2 = _tmpl$();
+  _$insert(_el$2, twice, null);
+  _$insert(_el$2, twice, null);
+  _$insert(_el$2, _$createComponent(For, { each: [1], children: () => nested() }), null);
+  _$bind(() => _$setAttribute(_el$2, "title", typed()));
+  return _el$2;
+})();
+  if (row) {
+    const n = () => 0;
+    return (() => {
+  var _el$3 = _tmpl$2();
+  _$insert(_el$3, shadowed, null);
+  _$insert(_el$3, n, null);
+  return _el$3;
+})();
+  }
+  return row;
+}
+_$delegateEvents(["click"]);
+
+// warn
+[INLINE_EACH] `<For each={[…]}>` builds a new array on every evaluation, so every row is rebuilt each time. Hoist the array to a constant or keep it in a signal.
+  in <Panel> › p › <For>
+  at case.tsx:12:63
+  11 |   const shadowed = computed(() => n() + 4);
+> 12 |   const row = <p title={typed()}>{twice()}{twice()}<For each={[1]}>{() => nested()}</For></p>;
+     |                                                               ^^^
+  13 |   if (row) {

@@ -716,6 +716,9 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { compile } = nativeBinding
+const { compile, link, summarize, verify } = nativeBinding
 export { compile }
+export { link }
+export { summarize }
+export { verify }
 export const __napiBindingTarget = __napiLoadedBindingTarget

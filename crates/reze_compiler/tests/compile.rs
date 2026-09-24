@@ -333,6 +333,73 @@ fn signals_that_are_written_or_escape_do_not_fold() {
 }
 
 #[test]
+fn a_computed_read_once_in_reactive_jsx_is_inlined() {
+    let source = "import { computed, signal } from \"reze-js\";\n\
+                  function Counter() {\n\
+                    const [count, setCount] = signal(0);\n\
+                    const doubled = computed(() => count() * 2);\n\
+                    const label = computed(() => `n${count()}`);\n\
+                    const size = computed(() => count() > 9);\n\
+                    return <p title={label()} onClick={() => setCount(1)}><Badge big={size()} />{doubled()}</p>;\n\
+                  }";
+    let out = output(source);
+    assert_valid(&out.code, SourceType::tsx());
+    assert!(!out.code.contains("computed("), "{}", out.code);
+    for inlined in ["(count() * 2)", "(`n${count()}`)", "(count() > 9)"] {
+        assert_eq!(out.code.matches(inlined).count(), 1, "{inlined}\n{}", out.code);
+    }
+    assert!(out.code.contains("() => (count() * 2)"), "{}", out.code);
+    let inlined: Vec<_> =
+        out.diagnostics.iter().filter(|d| d.code == Code::ComputedInlined).collect();
+    assert_eq!(inlined.len(), 3);
+    assert!(inlined[0].data.contains(&("computed".into(), "doubled".into())), "{:?}", inlined[0]);
+    assert!(inlined[0].data.contains(&("scope".into(), "module".into())), "{:?}", inlined[0]);
+
+    let plain = compile(source, "a.tsx", &Options { optimize: false, ..Options::default() })
+        .unwrap()
+        .unwrap();
+    assert!(plain.code.contains("const doubled = computed(() => count() * 2);"), "{}", plain.code);
+    assert!(!plain.diagnostics.iter().any(|d| d.code == Code::ComputedInlined));
+    assert_valid(&plain.code, SourceType::tsx());
+}
+
+#[test]
+fn computeds_whose_inlining_could_change_meaning_are_kept() {
+    for source in [
+        "function A() { const d = computed(() => x()); return <p title={d()}>{d()}</p>; }",
+        "function A() { const d = computed(() => x()); log(d()); return <p>{x()}</p>; }",
+        "function A() { const d = computed(() => x()); return <For each={xs()}>{() => d()}</For>; }",
+        "function A() { const d = computed(() => x()); { const x = y; return <p>{d()}</p>; } }",
+        "export const d = computed(() => x()); export const a = <p>{d()}</p>;",
+        "const d = computed(() => x()); export { d }; export const a = <p>{d()}</p>;",
+        "function A() { const d: () => number = computed(() => x()); return <p>{d()}</p>; }",
+        "function A() { const d = computed<number>(() => x()); return <p>{d()}</p>; }",
+        "function A() { const d = computed(() => { return x(); }); return <p>{d()}</p>; }",
+        "function A() { const d = computed(() => x(), { equals: eq }); return <p>{d()}</p>; }",
+        "function A() { let d = computed(() => x()); return <p>{d()}</p>; }",
+        "function A() { const d = computed(() => x()), e = 1; return <p>{d()}{e}</p>; }",
+        "function A() { const d = computed(() => x()); return <p onClick={d()} />; }",
+        "function A() { const d = computed(() => x()); return <p ref={d()} />; }",
+        "function A() { const d = computed(() => x()); return <p {...d()} />; }",
+        "function A() { const d = computed(() => x()); return <p>{false && d()}</p>; }",
+        "function A() { const d = computed(() => x()); return <p title={d()} title=\"y\" />; }",
+        "function A() { const d = computed(() => x()); return <p>{d?.()}</p>; }",
+        "const d = computed(() => x()); function A() { return <p>{d()}</p>; }",
+        "async function A() { const d = computed(() => x()); await f(); return <p>{d()}</p>; }",
+        "function A() { const a = <p>{d()}</p>; const d = computed(() => x()); return a; }",
+    ] {
+        let out = output(&format!("import {{ computed }} from \"reze-js\";\n{source}"));
+        assert_valid(&out.code, SourceType::tsx());
+        assert!(
+            !out.diagnostics.iter().any(|d| d.code == Code::ComputedInlined),
+            "{source}\n{}",
+            out.code
+        );
+        assert!(out.code.contains("computed"), "{source}\n{}", out.code);
+    }
+}
+
+#[test]
 fn literal_conditions_drop_dead_branches() {
     let out = output("const a = <div>{false && <b>x</b>}{true ? <i>y</i> : <u>z</u>}{null}</div>;");
     assert_eq!(templates(&out.code), ["<div><i>y</i></div>"]);
@@ -370,7 +437,7 @@ fn each_warning_fix_removes_its_warning() {
 #[test]
 fn warnings_without_fixes_are_reported_where_they_apply() {
     let cases = [
-        (Code::PropsDestructured, "function Greeting({ name }) { return <p>{name}</p>; }"),
+        (Code::PropsDestructured, "function Greeting({ name = f() }) { return <p>{name}</p>; }"),
         (Code::InlineEach, "const a = <For each={[1, 2]}>{(n) => n}</For>;"),
         (Code::AsyncComponentShape, "async function A() { await ready(); return <p />; }"),
         (
@@ -386,6 +453,49 @@ fn warnings_without_fixes_are_reported_where_they_apply() {
         "const Row = (props) => <li>{props.name}</li>;\nconst a = <For each={items}>{({ name }) => <li>{name}</li>}</For>;",
     );
     assert!(quiet.diagnostics.is_empty(), "{:?}", quiet.diagnostics);
+}
+
+#[test]
+fn destructured_props_become_reactive_reads() {
+    let out = output(
+        "function Greeting({ name, count = 1 }) {\n  return <p title={name}>{name}{count}</p>;\n}",
+    );
+    let code = &out.code;
+    assert!(code.contains("function Greeting(_props$)"), "{code}");
+    assert_eq!(templates(code), ["<p></p>"], "{code}");
+    assert!(code.contains("() => _props$.name"), "{code}");
+    assert!(code.contains("(_props$.count === undefined ? 1 : _props$.count)"), "{code}");
+    assert!(code.contains("_$bind("), "{code}");
+    let rewritten: Vec<_> =
+        out.diagnostics.iter().filter(|d| d.code == Code::PropsRewritten).collect();
+    assert_eq!(rewritten.len(), 1, "{:?}", out.diagnostics);
+    assert!(rewritten[0].data.contains(&("component".into(), "Greeting".into())));
+    assert!(codes(&out.diagnostics).is_empty(), "{:?}", out.diagnostics);
+}
+
+#[test]
+fn props_destructuring_that_cannot_be_rewritten_warns_with_its_reason() {
+    let cases = [
+        ("computed-key", "function C({ [k]: a }) { return <p>{a}</p>; }"),
+        ("default", "function C({ a = f() }) { return <p>{a}</p>; }"),
+        ("nested-default", "function C({ a: { b } = {} }) { return <p>{b}</p>; }"),
+        ("nested-rest", "function C({ a: { ...b } }) { return <p>{b}</p>; }"),
+        ("written", "function C({ a }) { a = 1; return <p>{a}</p>; }"),
+        ("written", "function C({ a }) { var a = 2; return <p>{a}</p>; }"),
+        ("arguments", "function C({ a }) { return <p>{(() => arguments[0])()}{a}</p>; }"),
+        ("generator", "function* C({ a }) { yield <p>{a}</p>; }"),
+    ];
+    for (reason, source) in cases {
+        let out = output(source);
+        assert_eq!(codes(&out.diagnostics), [Code::PropsDestructured], "{source}");
+        let warning = &out.diagnostics[0];
+        assert!(warning.data.contains(&("reason".into(), reason.into())), "{source}: {warning:?}");
+        assert!(!out.code.contains("_props$"), "{}", out.code);
+    }
+    let own_arguments = output(
+        "function C({ a }) { const f = function () { return arguments[0]; }; return <p>{f()}{a}</p>; }",
+    );
+    assert!(own_arguments.code.contains("function C(_props$)"), "{}", own_arguments.code);
 }
 
 #[test]
@@ -435,4 +545,267 @@ fn inserts_run_in_document_order() {
     let position = |call: &str| code.find(call).unwrap_or_else(|| panic!("{call} in\n{code}"));
     assert!(position("_$insert(_el$, a") < position("_$insert(_el$2, b"), "{code}");
     assert!(position("_$insert(_el$2, b") < position("_$insert(_el$, c"), "{code}");
+}
+
+fn store_diagnostic(diagnostics: &[Diagnostic]) -> Option<&Diagnostic> {
+    diagnostics.iter().find(|d| d.code == Code::StoreUnproxied)
+}
+
+fn data<'d>(diagnostic: &'d Diagnostic, key: &str) -> Option<&'d str> {
+    diagnostic.data.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+}
+
+#[test]
+fn a_store_used_only_at_its_leaves_becomes_one_signal_per_leaf() {
+    let source = "import { store } from \"reze-js\";\n\
+                  const [todo, setTodo] = store({ title: \"\", meta: { count: 0, \"last-seen\": null } });\n\
+                  const a = <p onClick={() => setTodo((d) => { d.meta.count += d.meta.count; d.meta[\"last-seen\"] ??= now(); d.meta.count++; })}>{todo.title}</p>;\n\
+                  const rename = (t) => setTodo((d) => d.title = t);";
+    let out = output(source);
+    assert_valid(&out.code, SourceType::tsx());
+    let code = &out.code;
+    assert!(
+        code.contains(
+            "const [todo$title, setTodo$title] = _$signal(\"\"), [todo$meta$count, setTodo$meta$count] = _$signal(0), [todo$meta$last_seen, setTodo$meta$last_seen] = _$signal(null);"
+        ),
+        "{code}"
+    );
+    assert!(code.contains("void _$untrack(() => { setTodo$meta$count((v) => v + todo$meta$count()); setTodo$meta$last_seen((v) => v ?? now()); setTodo$meta$count((v) => ++v); })"), "{code}");
+    assert!(!code.contains("setTodo((d) =>"), "{code}");
+    assert!(code.contains("void _$untrack(() => setTodo$title(() => t))"), "{code}");
+    assert!(code.contains("todo$title()"), "{code}");
+    assert!(!code.contains("store("), "{code}");
+    let diagnostic = store_diagnostic(&out.diagnostics).expect("STORE_UNPROXIED");
+    assert_eq!(diagnostic.severity, Severity::Info);
+    assert_eq!(data(diagnostic, "store"), Some("todo"));
+    assert_eq!(data(diagnostic, "scope"), Some("module"));
+}
+
+#[test]
+fn a_read_only_store_declares_no_setters_and_namespace_store_is_recognized() {
+    let code = run("import * as R from \"reze-js\";\n\
+                    function Badge() { const [s] = R.store({ label: \"x\", size: { w: 1 } }); return <b title={(s.size).w}>{(s.label)}</b>; }");
+    assert!(
+        code.contains("const [s$label] = _$signal(\"x\"), [s$size$w] = _$signal(1);"),
+        "{code}"
+    );
+    assert!(
+        code.contains("s$label()") && code.contains("s$size$w()") && !code.contains("s.label"),
+        "{code}"
+    );
+}
+
+#[test]
+fn stores_with_any_other_use_keep_the_proxy() {
+    let prelude = "import { store } from \"reze-js\";\n";
+    for source in [
+        "const [s] = store({ a: 1 }); use(s); const x = <p>{s.a}</p>;",
+        "const [s] = store({ a: { b: 1 } }); const x = <p>{s.a}</p>;",
+        "const [s] = store({ a: 1 }); const x = <p>{s[key]}</p>;",
+        "const [s] = store({ items: [] }); const x = <ul>{s.items.map((i) => <li>{i}</li>)}</ul>;",
+        "const [s, set] = store({ a: 1 }); set((d) => { later(() => { d.a = 2; }); }); const x = <p>{s.a}</p>;",
+        "const [s, set] = store({ a: 1 }); set((d) => { use(d.a = 2); }); const x = <p>{s.a}</p>;",
+        "const [s, set] = store({ a: 1 }); set((d) => { d.b = 2; }); const x = <p>{s.a}</p>;",
+        "const [s, set] = store({ a: 1 }); set((d) => { this.x = d.a; }); const x = <p>{s.a}</p>;",
+        "const [s, set] = store({ a: 1 }); set(async (d) => { d.a = 2; }); const x = <p>{s.a}</p>;",
+        "const [s, set] = store({ a: 1 }); set(update); const x = <p>{s.a}</p>;",
+        "const [s] = store({ a: 1 }); const x = <p ref={s.a} />;",
+        "const [s] = store({ ...base }); const x = <p>{s.a}</p>;",
+        "const [s] = store({ [k]: 1 }); const x = <p>{s.a}</p>;",
+        "let [s] = store({ a: 1 }); const x = <p>{s.a}</p>;",
+        "export const [s] = store({ a: 1 }); const x = <p>{s.a}</p>;",
+        "const [s] = store({ a: 1 }); export { s }; const x = <p>{s.a}</p>;",
+    ] {
+        let out = output(&format!("{prelude}{source}"));
+        assert_valid(&out.code, SourceType::tsx());
+        assert!(store_diagnostic(&out.diagnostics).is_none(), "{source}\n{}", out.code);
+        assert!(out.code.contains("store("), "{}", out.code);
+    }
+}
+
+#[test]
+fn without_optimize_a_store_keeps_its_proxy() {
+    let source = "import { store } from \"reze-js\";\nconst [s, set] = store({ a: 1 });\n\
+                  const x = <p onClick={() => set((d) => { d.a++; })}>{s.a}</p>;";
+    let options = Options { optimize: false, ..Options::default() };
+    let out = compile(source, "test.tsx", &options).unwrap().unwrap();
+    assert_valid(&out.code, SourceType::tsx());
+    assert!(out.code.contains("store({ a: 1 })"), "{}", out.code);
+    assert!(out.code.contains("set((d) => { d.a++; })"), "{}", out.code);
+    assert!(store_diagnostic(&out.diagnostics).is_none());
+}
+
+fn program_options(source: &str, facts: reze_compiler::facts::ModuleFacts) -> Options {
+    use reze_compiler::facts::{VERSION, source_hash};
+    let facts = reze_compiler::facts::ModuleFacts {
+        version: VERSION.to_string(),
+        source_hash: source_hash(source),
+        ..facts
+    };
+    Options { source_map: false, facts: Some(facts), ..Options::default() }
+}
+
+fn leaf(
+    path: &[&str],
+    getter: Option<&str>,
+    setter: Option<&str>,
+) -> reze_compiler::facts::LeafNames {
+    reze_compiler::facts::LeafNames {
+        path: path.iter().map(|k| k.to_string()).collect(),
+        getter: getter.map(str::to_string),
+        setter: setter.map(str::to_string),
+    }
+}
+
+#[test]
+fn an_exported_store_the_program_unproxies_exports_its_leaves() {
+    use reze_compiler::facts::{ModuleFacts, StoreExport};
+    let source = "import { store } from \"reze-js\";\n\
+                  export const [state, setState] = store({ count: 0, user: { name: \"a\" } });\n\
+                  export function bump() { setState((d) => { d.count++; }); }\n";
+    let related = reze_compiler::Related {
+        file: "app.tsx".to_string(),
+        start: 1,
+        end: 5,
+        message: "read here".to_string(),
+    };
+    let facts = ModuleFacts {
+        stores: vec![StoreExport {
+            state: source.find("state").unwrap() as u32,
+            leaves: vec![
+                leaf(&["count"], Some("state$count"), Some("setState$count")),
+                leaf(&["user", "name"], Some("state$user$name"), None),
+            ],
+            related: vec![related.clone()],
+        }],
+        ..ModuleFacts::default()
+    };
+    let out = compile(source, "store.ts", &program_options(source, facts)).unwrap().unwrap();
+    assert_valid(&out.code, SourceType::ts());
+    assert!(out.code.contains(
+        "const [state$count, setState$count] = _$signal(0), [state$user$name] = _$signal(\"a\");\nexport { state$count, setState$count, state$user$name };"
+    ), "{}", out.code);
+    assert!(
+        out.code.contains("void _$untrack(() => { setState$count((v) => ++v); })"),
+        "{}",
+        out.code
+    );
+    let diagnostic = store_diagnostic(&out.diagnostics).expect("STORE_UNPROXIED");
+    assert_eq!(data(diagnostic, "scope"), Some("program"));
+    assert_eq!(diagnostic.related, [related]);
+
+    let source = "import { store } from \"reze-js\";\n\
+                  const [state, setState] = store({ count: 0 });\n\
+                  export { state, setState as set, other };\nconst other = 1;\n";
+    let facts = ModuleFacts {
+        stores: vec![StoreExport {
+            state: source.find("state").unwrap() as u32,
+            leaves: vec![leaf(&["count"], Some("state$count"), None)],
+            related: Vec::new(),
+        }],
+        ..ModuleFacts::default()
+    };
+    let out = compile(source, "store.ts", &program_options(source, facts)).unwrap().unwrap();
+    assert_valid(&out.code, SourceType::ts());
+    assert!(out.code.contains("const [state$count] = _$signal(0);"), "{}", out.code);
+    assert!(out.code.contains("export { state$count, other };"), "{}", out.code);
+}
+
+#[test]
+fn an_importer_of_an_unproxied_store_imports_its_leaves() {
+    use reze_compiler::facts::{ModuleFacts, StoreImport, StoreRole};
+    let source = "import { setState as set, state } from \"./store\";\n\
+                  export const App = () => <button onClick={() => set((d) => { d.count += 1; })}>{state.count}</button>;\n";
+    let facts = ModuleFacts {
+        store_imports: vec![
+            StoreImport {
+                binding: (source.find("as set").unwrap() + 3) as u32,
+                role: StoreRole::Setter,
+                leaves: vec![leaf(&["count"], None, Some("setState$count"))],
+            },
+            StoreImport {
+                binding: source.find("state }").unwrap() as u32,
+                role: StoreRole::State,
+                leaves: vec![leaf(&["count"], Some("state$count"), None)],
+            },
+        ],
+        ..ModuleFacts::default()
+    };
+    let out = compile(source, "app.tsx", &program_options(source, facts)).unwrap().unwrap();
+    assert_valid(&out.code, SourceType::tsx());
+    assert!(
+        out.code.starts_with(
+            "import { setState$count as _setState$count, state$count as _state$count } from \"./store\";"
+        ),
+        "{}",
+        out.code
+    );
+    assert!(
+        out.code.contains("void _$untrack(() => { _setState$count((v) => v + 1); })"),
+        "{}",
+        out.code
+    );
+    assert!(out.code.contains("_state$count()"), "{}", out.code);
+    assert!(store_diagnostic(&out.diagnostics).is_none());
+}
+
+#[test]
+fn facts_built_for_another_source_are_stale() {
+    let summary =
+        reze_compiler::summarize("const a = <p />;", "a.tsx", &Default::default()).unwrap();
+    let module = reze_compiler::ModuleInput {
+        id: "a.tsx".into(),
+        summary,
+        resolved: Vec::new(),
+        is_entry: true,
+    };
+    let linked = reze_compiler::link(
+        &[module],
+        &reze_compiler::LinkOptions { optimize: true, islands: false, root: String::new() },
+    );
+    let options = Options { facts: Some(linked.facts["a.tsx"].clone()), ..Options::default() };
+    let errors = compile("const a = <b />;", "a.tsx", &options).err().expect("stale facts");
+    assert_eq!(codes(&errors), [Code::FactsStale]);
+    assert!(compile("const a = <p />;", "a.tsx", &options).is_ok());
+}
+
+#[test]
+fn exported_signals_do_not_fold_without_the_program() {
+    for source in [
+        "import { signal } from \"reze-js\";\nexport const [title] = signal(\"x\");\nconst a = <p>{title()}</p>;",
+        "import { signal } from \"reze-js\";\nconst [title] = signal(\"x\");\nexport { title };\nconst a = <p>{title()}</p>;",
+        "import { signal } from \"reze-js\";\nconst [title, setTitle] = signal(\"x\");\nexport { setTitle };\nconst a = <p>{title()}</p>;",
+    ] {
+        let out = output(source);
+        assert!(out.code.contains("signal(\"x\")"), "{}", out.code);
+        assert!(!out.diagnostics.iter().any(|d| d.code == Code::SignalFolded), "{source}");
+    }
+}
+
+#[test]
+fn verify_reports_only_real_closed_world_and_flag_breaks() {
+    let summary =
+        |source: &str| reze_compiler::summarize(source, "/o.ts", &Default::default()).unwrap();
+    let linked = reze_compiler::Linked {
+        facts: Default::default(),
+        features: [("suspense".to_string(), false)].into_iter().collect(),
+        closed: vec!["/state.ts".to_string()],
+    };
+    let outside = |source: &str, imported: &str| reze_compiler::OutsideModule {
+        id: "/o.ts".into(),
+        summary: Some(summary(source)),
+        imported: vec![imported.to_string()],
+    };
+    let found =
+        |modules: &[reze_compiler::OutsideModule]| codes(&reze_compiler::verify(&linked, modules));
+    assert_eq!(found(&[outside("export const a = 1;", "/other.ts")]), []);
+    assert_eq!(found(&[outside("export const a = 1;", "/state.ts")]), [Code::ProgramOpenImport]);
+    assert_eq!(
+        found(&[outside("import * as R from \"reze-js\";\nexport const S = R.Suspense;", "/x.ts")]),
+        [Code::FeatureFlagMismatch]
+    );
+    assert_eq!(
+        found(&[outside("import { signal } from \"reze-js\";\nexport { signal };", "/x.ts")]),
+        []
+    );
 }

@@ -1,0 +1,21 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { store } from \"reze-js\";\nconst [whole] = store({ a: 1 });\nsave(whole);\nconst [nested] = store({ a: { b: 1 } });\nconst [keyed] = store({ a: 1 });\nconst [list, setList] = store({ items: [] });\nconst [later, setLater] = store({ a: 1 });\nsetLater((d) => { queue(() => { d.a = 2; }); });\nconst [valued, setValued] = store({ a: 1 });\nsetValued((d) => { log(d.a = 2); });\nexport const [exported] = store({ a: 1 });\nexport const view = (\n  <ul onClick={() => setList((d) => { d.items.push(1); })}>\n    {whole.a}{nested.a}{keyed[k]}{later.a}{valued.a}{exported.a}\n    {list.items.map((i) => <li>{i}</li>)}\n  </ul>\n);"
+---
+import { store } from "reze-js";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<ul", "><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></ul>"],
+  _tmpl$2 = ["<li", ">", "</li>"];
+const [whole] = store({ a: 1 });
+save(whole);
+const [nested] = store({ a: { b: 1 } });
+const [keyed] = store({ a: 1 });
+const [list, setList] = store({ items: [] });
+const [later, setLater] = store({ a: 1 });
+setLater((d) => { queue(() => { d.a = 2; }); });
+const [valued, setValued] = store({ a: 1 });
+setValued((d) => { log(d.a = 2); });
+export const [exported] = store({ a: 1 });
+export const view = (
+  _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(whole.a), _$ssrChild(nested.a), _$ssrChild(keyed[k]), _$ssrChild(later.a), _$ssrChild(valued.a), _$ssrChild(exported.a), _$ssrChild(list.items.map((i) => _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(i)))))
+);

@@ -1,7 +1,8 @@
 import { root, untrack } from "@rezejs/signals";
 import { renderEffect as bind } from "@rezejs/signals/render";
 
-import { nextHydrationKey, withComponentKeys, withKeyRoot } from "./hydration";
+import { Hydration } from "./features";
+import { nextHydrationKey, withComponentKeys, withKeyScope } from "./hydration";
 import type { JSX } from "./jsx";
 
 // Loosely typed on purpose: compiled output hangs `$$event` handlers and data off elements.
@@ -83,6 +84,7 @@ export function templateMathML(html: string): () => Node {
 
 /** Calls a component once, untracked: its reads never re-run the parent binding. */
 export function createComponent<P>(Comp: (props: P) => JSX.Element, props: P): JSX.Element {
+  if (!Hydration) return untrack(() => Comp(props));
   return withComponentKeys(() => untrack(() => Comp(props)));
 }
 
@@ -112,12 +114,10 @@ let claimable: Map<string, Element> | undefined;
  */
 export function hydrate(code: () => JSX.Element, element: Element): () => void {
   claimable = new Map();
-  for (const node of element.querySelectorAll("[data-hk]")) {
-    claimable.set(node.getAttribute("data-hk")!, node);
-  }
+  for (const node of element.querySelectorAll("[data-hk]")) addClaimable(node);
   let dispose!: () => void;
   try {
-    withKeyRoot(() =>
+    withKeyScope("", () =>
       root((d) => {
         dispose = d;
         insert(element, code(), undefined, renderedContent(element));
@@ -130,6 +130,71 @@ export function hydrate(code: () => JSX.Element, element: Element): () => void {
     dispose();
     element.textContent = "";
   };
+}
+
+function addClaimable(node: Element): void {
+  claimable!.set(node.getAttribute("data-hk")!, node);
+}
+
+interface ServerIsland {
+  open: Comment;
+  close: Comment;
+  render: (props: Any) => JSX.Element;
+  scope: string;
+  props: Props;
+}
+
+/**
+ * Hydrates only the islands `renderToString(code, true)` marked inside `element`: each runs
+ * `islands[id](props)` in the key scope the server rendered it in and adopts the nodes between
+ * its `<!--$id:scope:props-->` and `<!--/$-->` markers. Throws when `islands` lacks an id found
+ * in the markup; the returned function disposes every island and leaves the DOM as is.
+ */
+export function hydrateIslands(
+  element: Element,
+  islands: Record<string, (props: Any) => JSX.Element>,
+): () => void {
+  const found: ServerIsland[] = [];
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_COMMENT);
+  while (walker.nextNode()) {
+    const open = walker.currentNode as Comment;
+    const marker = open.data;
+    if (marker[0] !== IslandOpen) continue;
+    const idEnd = marker.indexOf(":");
+    const scopeEnd = marker.indexOf(":", idEnd + 1);
+    const id = marker.slice(1, idEnd);
+    if (!Object.hasOwn(islands, id)) throw new Error(`hydrateIslands: no component for island "${id}"`);
+    let close = open.nextSibling!;
+    while (!isInsertMarker(close, IslandClose)) close = close.nextSibling!;
+    walker.currentNode = close;
+    found.push({
+      open,
+      close: close as Comment,
+      render: islands[id]!,
+      scope: marker.slice(idEnd + 1, scopeEnd),
+      props: JSON.parse(marker.slice(scopeEnd + 1)),
+    });
+  }
+  return root((dispose) => {
+    for (const island of found) hydrateIsland(island);
+    return dispose;
+  });
+}
+
+function hydrateIsland({ open, close, render, scope, props }: ServerIsland): void {
+  const current: Node[] = [];
+  claimable = new Map();
+  for (let node = open.nextSibling!; node !== close; node = node.nextSibling!) {
+    current.push(node);
+    if (node.nodeType !== 1) continue;
+    if ((node as Element).hasAttribute("data-hk")) addClaimable(node as Element);
+    for (const claimed of (node as Element).querySelectorAll("[data-hk]")) addClaimable(claimed);
+  }
+  try {
+    withKeyScope(scope, () => insert(open.parentNode!, untrack(() => render(props)), close, current));
+  } finally {
+    claimable = undefined;
+  }
 }
 
 /** The server-rendered root of this template, or a fresh clone when there is none to claim. */
@@ -145,6 +210,8 @@ export function claim(template: () => Node, tag: string): Node {
 
 const InsertOpen = "[";
 const InsertClose = "]";
+export const IslandOpen = "$";
+export const IslandClose = "/$";
 
 function isInsertMarker(node: Node | null, data: string): boolean {
   return node?.nodeType === 8 && (node as Comment).data === data;

@@ -857,6 +857,8 @@ dependencies = [
  "oxc_sourcemap",
  "oxc_span",
  "oxc_syntax",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -867,6 +869,8 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "reze-compiler",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

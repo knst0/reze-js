@@ -1,0 +1,123 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "function A({ [key]: a }) { return <p>{a}</p>; }\nfunction B({ a = f() }) { return <p>{a}</p>; }\nfunction C({ a: { b } = {} }) { return <p>{b}</p>; }\nfunction D({ a: { ...b } }) { return <p>{b}</p>; }\nfunction E({ a }) { a = 1; return <p>{a}</p>; }\nfunction F({ a }) { return <p>{arguments.length}{a}</p>; }\nfunction* G({ a }) { yield <p>{a}</p>; }\nconst H = function ({ a }, ref) { return <p ref={ref}>{a}</p>; };\nconst I = ({ a: [b] }) => <p>{b}</p>;"
+---
+import { template as _$template, insert as _$insert, use as _$use } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p></p>");
+function A({ [key]: a }) { return (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, a);
+  return _el$;
+})(); }
+function B({ a = f() }) { return (() => {
+  var _el$2 = _tmpl$();
+  _$insert(_el$2, a);
+  return _el$2;
+})(); }
+function C({ a: { b } = {} }) { return (() => {
+  var _el$3 = _tmpl$();
+  _$insert(_el$3, b);
+  return _el$3;
+})(); }
+function D({ a: { ...b } }) { return (() => {
+  var _el$4 = _tmpl$();
+  _$insert(_el$4, b);
+  return _el$4;
+})(); }
+function E({ a }) { a = 1; return (() => {
+  var _el$5 = _tmpl$();
+  _$insert(_el$5, a);
+  return _el$5;
+})(); }
+function F({ a }) { return (() => {
+  var _el$6 = _tmpl$();
+  _$insert(_el$6, () => arguments.length, null);
+  _$insert(_el$6, a, null);
+  return _el$6;
+})(); }
+function* G({ a }) { yield (() => {
+  var _el$7 = _tmpl$();
+  _$insert(_el$7, a);
+  return _el$7;
+})(); }
+const H = function ({ a }, ref) { return (() => {
+  var _el$8 = _tmpl$();
+  typeof ref === "function" ? _$use(ref, _el$8) : ref = _el$8;
+  _$insert(_el$8, a);
+  return _el$8;
+})(); };
+const I = ({ a: [b] }) => (() => {
+  var _el$9 = _tmpl$();
+  _$insert(_el$9, b);
+  return _el$9;
+})();
+// warn
+[PROPS_DESTRUCTURED] `A` destructures its props with a computed key, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <A>
+  at case.tsx:1:12
+> 1 | function A({ [key]: a }) { return <p>{a}</p>; }
+    |            ^^^^^^^^^^^^
+  2 | function B({ a = f() }) { return <p>{a}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `B` destructures its props with a default that is not a literal, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <B>
+  at case.tsx:2:12
+  1 | function A({ [key]: a }) { return <p>{a}</p>; }
+> 2 | function B({ a = f() }) { return <p>{a}</p>; }
+    |            ^^^^^^^^^^^
+  3 | function C({ a: { b } = {} }) { return <p>{b}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `C` destructures its props with a default on a nested pattern, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <C>
+  at case.tsx:3:12
+  2 | function B({ a = f() }) { return <p>{a}</p>; }
+> 3 | function C({ a: { b } = {} }) { return <p>{b}</p>; }
+    |            ^^^^^^^^^^^^^^^^^
+  4 | function D({ a: { ...b } }) { return <p>{b}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `D` destructures its props with a rest element in a nested pattern, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <D>
+  at case.tsx:4:12
+  3 | function C({ a: { b } = {} }) { return <p>{b}</p>; }
+> 4 | function D({ a: { ...b } }) { return <p>{b}</p>; }
+    |            ^^^^^^^^^^^^^^^
+  5 | function E({ a }) { a = 1; return <p>{a}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `E` destructures its props with a destructured name that is assigned, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <E>
+  at case.tsx:5:12
+  4 | function D({ a: { ...b } }) { return <p>{b}</p>; }
+> 5 | function E({ a }) { a = 1; return <p>{a}</p>; }
+    |            ^^^^^
+  6 | function F({ a }) { return <p>{arguments.length}{a}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `F` destructures its props with a body that reads `arguments`, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <F>
+  at case.tsx:6:12
+  5 | function E({ a }) { a = 1; return <p>{a}</p>; }
+> 6 | function F({ a }) { return <p>{arguments.length}{a}</p>; }
+    |            ^^^^^
+  7 | function* G({ a }) { yield <p>{a}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `G` destructures its props with a generator function, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <G>
+  at case.tsx:7:13
+  6 | function F({ a }) { return <p>{arguments.length}{a}</p>; }
+> 7 | function* G({ a }) { yield <p>{a}</p>; }
+    |             ^^^^^
+  8 | const H = function ({ a }, ref) { return <p ref={ref}>{a}</p>; };
+// warn
+[PROPS_DESTRUCTURED] `H` destructures its props with more than one parameter, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <H>
+  at case.tsx:8:21
+  7 | function* G({ a }) { yield <p>{a}</p>; }
+> 8 | const H = function ({ a }, ref) { return <p ref={ref}>{a}</p>; };
+    |                     ^^^^^
+  9 | const I = ({ a: [b] }) => <p>{b}</p>;
+// warn
+[PROPS_DESTRUCTURED] `I` destructures its props with an array pattern, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <I>
+  at case.tsx:9:12
+  8 | const H = function ({ a }, ref) { return <p ref={ref}>{a}</p>; };
+> 9 | const I = ({ a: [b] }) => <p>{b}</p>;
+    |            ^^^^^^^^^^

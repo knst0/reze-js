@@ -28,6 +28,92 @@ pub enum HoleKind<'a> {
     ConstSignalRead {
         getter: Span,
     },
+    /// `[state, setState] = store(init)` → `[s$a, set$a] = signal(<a>), [s$b] = signal(<b>)`.
+    StoreDecl {
+        leaves: Vec<'a, StoreLeaf<'a>>,
+    },
+    /// `export const [state, setState] = store(init);` → the declaration, then
+    /// `export { s$a as state$a, … };` when `specifiers` is not empty.
+    StoreExport {
+        declaration: Embed<'a>,
+        specifiers: Vec<'a, Specifier<'a>>,
+    },
+    /// `state.a.b` or draft `d.a.b` → `s$a$b()`.
+    StoreRead {
+        getter: &'a str,
+    },
+    /// `setState((d) => E)` → `void untrack(() => E')`; `body` is the expression or the block.
+    StoreSet {
+        body: Embed<'a>,
+    },
+    /// A draft write → `set$p(…)`.
+    StoreWrite {
+        setter: &'a str,
+        write: StoreWriteKind<'a>,
+    },
+    /// The named specifiers of an import or export declaration, joined with `, `.
+    Specifiers {
+        specifiers: Vec<'a, Specifier<'a>>,
+    },
+    /// `d()` of an inlined computed → `(expr)` (O4).
+    ComputedInline {
+        body: Embed<'a>,
+    },
+    /// Source dropped without replacement: the declaration of an inlined computed (O4).
+    Remove,
+    /// `renderToString(() => <R/>)` / `hydrate(() => <R/>, el)` of a static root (SPEC §15.9):
+    /// server `renderToString(code, true)`, hydrate `hydrateIslands(el, { id: E, … })`, client
+    /// as written.
+    IslandRoot {
+        kind: RootKind,
+        callee: Span,
+        code: Embed<'a>,
+        element: Option<Embed<'a>>,
+        islands: Vec<'a, IslandImport<'a>>,
+    },
+    /// A destructured props parameter → `name` (SPEC §15.7).
+    PropsParam {
+        name: &'a str,
+    },
+    /// A rewritten binding → `props.k₁…kₙ`, `(p === undefined ? default : p)` with a default,
+    /// prefixed with `key: ` when `shorthand`.
+    PropsRead {
+        props: &'a str,
+        path: Vec<'a, &'a str>,
+        default: Option<Embed<'a>>,
+        shorthand: bool,
+    },
+    /// `const binding = splitProps(props, [keys])[1];`, wrapping `body` as
+    /// `{ …; return (body); }` for an expression-bodied arrow.
+    PropsRest {
+        props: &'a str,
+        binding: Span,
+        keys: Vec<'a, &'a str>,
+        body: Option<Embed<'a>>,
+    },
+}
+
+pub struct StoreLeaf<'a> {
+    pub getter: &'a str,
+    /// Declared only when the leaf is written.
+    pub setter: Option<&'a str>,
+    pub value: Embed<'a>,
+}
+
+pub enum StoreWriteKind<'a> {
+    /// `() => value`, parenthesized when `value` starts with `{`.
+    Assign { value: Embed<'a>, parenthesize: bool },
+    /// `(v) => v op value`, with `value` parenthesized when it binds looser than `op`.
+    Compound { parameter: &'a str, operator: &'static str, value: Embed<'a>, parenthesize: bool },
+    /// `(v) => ++v` or `(v) => --v`.
+    Update { parameter: &'a str, operator: &'static str },
+}
+
+pub enum Specifier<'a> {
+    /// Kept as written.
+    Source(Span),
+    /// `name as alias`, or `name` when both are equal.
+    Alias { name: &'a str, alias: &'a str },
 }
 
 pub enum Jsx<'a> {
@@ -256,8 +342,10 @@ pub struct Conditional<'a> {
 }
 
 pub struct Component<'a> {
-    pub callee: Span,
+    pub callee: Embed<'a>,
     pub props: Props<'a>,
+    /// Island id when this is a boundary position (SPEC §15.9): the server renders `ssrIsland`.
+    pub island: Option<&'a str>,
 }
 
 pub struct Props<'a> {
@@ -317,6 +405,8 @@ pub enum MemberKey<'a> {
 pub struct AsyncComponent<'a> {
     pub head: AsyncHead,
     pub params: Embed<'a>,
+    /// The rest declaration of rewritten props (`PropsRest`), first in the body.
+    pub props_rest: Option<Embed<'a>>,
     pub return_type: ReturnType,
     pub steps: Vec<'a, AsyncStep<'a>>,
     /// Statements between the last `await` and the `return`.
@@ -344,4 +434,17 @@ pub struct AsyncStep<'a> {
     pub pattern: Span,
     pub annotation: Option<Span>,
     pub argument: Embed<'a>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RootKind {
+    RenderToString,
+    Hydrate,
+}
+
+/// `import { export as <alias> } from "specifier"` for an island of a hydrate root.
+pub struct IslandImport<'a> {
+    pub id: &'a str,
+    pub specifier: &'a str,
+    pub export: &'a str,
 }

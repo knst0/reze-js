@@ -1,0 +1,43 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "async function User({ id, ...rest }) {\n  const user = await fetchUser(id);\n  return <p {...rest}>{user.name}</p>;\n}"
+---
+import { getOwner as _$getOwner, signal as _$signal, onCleanup as _$onCleanup, trackPending as _$trackPending, effect as _$effect, trackAsync as _$trackAsync, memo as _$memo, splitProps as _$splitProps, template as _$template, claim as _$claim, spread as _$spread, claimInsert as _$claimInsert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p></p>");
+function User(_props$) {
+const _owner$ = _$getOwner();
+ const rest = _$splitProps(_props$, ["id"])[1];
+const [_val$, _setVal$] = _$signal(undefined as any);
+const [_settled$, _setSettled$] = _$signal(false);
+const [_err$, _setErr$] = _$signal(undefined as any);
+let _epoch$ = 0;
+_$onCleanup(() => { _epoch$++; });
+_$trackPending(() => !_settled$() && _err$() === undefined);
+_$effect(() => {
+_setErr$(undefined);
+_setSettled$(false);
+const _p$ = Promise.resolve(fetchUser(_props$.id));
+const _my$ = ++_epoch$;
+_$trackAsync(_owner$, _p$, () => _my$ === _epoch$, (_v) => { _setVal$(_v); _setSettled$(true); }, _setErr$);
+});
+return _$memo(() => {
+const _ex$ = _err$();
+if (_ex$ !== undefined) throw _ex$;
+if (!_settled$()) return undefined;
+const _t$ = _val$();
+const user = _t$;
+return (() => {
+  var _el$ = _$claim(_tmpl$, "p");
+  _$spread(_el$, rest, false, true);
+  _$claimInsert(_el$, () => user.name);
+  return _el$;
+})();
+});
+}
+// info
+[PROPS_REWRITTEN] `User` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <User>
+  at case.tsx:1:21
+> 1 | async function User({ id, ...rest }) {
+    |                     ^^^^^^^^^^^^^^^
+  2 |   const user = await fetchUser(id);

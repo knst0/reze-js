@@ -1,0 +1,12 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const Card = ({ title, ...rest }) => <Panel {...rest} heading={title} />;"
+---
+import { splitProps as _$splitProps, createComponent as _$createComponent, mergeProps as _$mergeProps } from "reze-js";
+const Card = (_props$) => { const rest = _$splitProps(_props$, ["title"])[1]; return (_$createComponent(Panel, _$mergeProps(rest, { get heading() { return _props$.title; } }))); };
+// info
+[PROPS_REWRITTEN] `Card` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Card>
+  at case.tsx:1:15
+> 1 | const Card = ({ title, ...rest }) => <Panel {...rest} heading={title} />;
+    |               ^^^^^^^^^^^^^^^^^^

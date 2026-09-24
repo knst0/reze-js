@@ -2,6 +2,7 @@
 
 use oxc_allocator::{Allocator, Box, Vec};
 use oxc_ast::ast::*;
+use oxc_ast_visit::Visit;
 use oxc_span::Span;
 
 use super::children::Item;
@@ -80,7 +81,10 @@ impl<'a> Lowerer<'a, '_> {
             props.push(children);
         }
         self.path.pop();
-        self.boxed(Component { callee, props: props.finish() })
+        let island = self.island(el);
+        let callee =
+            self.embed(callee, |finder| finder.visit_jsx_element_name(&el.opening_element.name));
+        self.boxed(Component { callee, props: props.finish(), island })
     }
 
     fn check_inline_each(&mut self, el: &JSXElement<'a>) {

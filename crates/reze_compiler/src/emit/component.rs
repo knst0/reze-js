@@ -3,16 +3,28 @@
 use std::fmt::Write;
 
 use super::{Emitter, Helper};
+use crate::Target;
 use crate::code::Code;
 use crate::html::push_property_key;
 use crate::ir::{AssignTarget, Component, Prop, PropValue, Props, PropsPart};
 
 impl<'a> Emitter<'a, '_> {
     pub(super) fn component(&mut self, out: &mut Code, component: &Component<'a>) {
-        let create = self.helper(Helper::CreateComponent);
-        out.push(create);
-        out.push("(");
-        self.src(out, component.callee);
+        match component.island.filter(|_| self.target == Target::Server) {
+            Some(id) => {
+                let island = self.helper(Helper::SsrIsland);
+                out.push(island);
+                out.push("(");
+                crate::html::push_js_string(&mut out.text, id);
+                out.push(", ");
+            }
+            None => {
+                let create = self.helper(Helper::CreateComponent);
+                out.push(create);
+                out.push("(");
+            }
+        }
+        self.embed(out, &component.callee);
         out.push(", ");
         self.props(out, &component.props);
         out.push(")");

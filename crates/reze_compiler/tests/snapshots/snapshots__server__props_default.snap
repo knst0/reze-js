@@ -1,0 +1,16 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const Button = ({ label = \"Save\", size = 2, disabled = false, icon = undefined }) => (\n  <button disabled={disabled} class={size}>{icon}{label}</button>\n);"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute, ssrClass as _$ssrClass, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<button", "", "", "><!--[-->", "<!--]--><!--[-->", "<!--]--></button>"];
+const Button = (_props$) => (
+  _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("disabled", (_props$.disabled === undefined ? false : _props$.disabled)), _$ssrClass((_props$.size === undefined ? 2 : _props$.size)), _$ssrChild(_props$.icon), _$ssrChild((_props$.label === undefined ? "Save" : _props$.label)))
+);
+// info
+[PROPS_REWRITTEN] `Button` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Button>
+  at case.tsx:1:17
+> 1 | const Button = ({ label = "Save", size = 2, disabled = false, icon = undefined }) => (
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  2 |   <button disabled={disabled} class={size}>{icon}{label}</button>

@@ -1,0 +1,19 @@
+{
+  "name": "@rezejs/example-islands",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "build:server": "vite build --ssr src/server.tsx --outDir dist-server",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "reze-js": "workspace:*"
+  },
+  "devDependencies": {
+    "@rezejs/vite-plugin": "workspace:*",
+    "vite": "^8.3.0"
+  }
+}

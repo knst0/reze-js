@@ -16,6 +16,15 @@ pub enum Code {
     AsyncReturnType,
     SignalFolded,
     DeadBranchRemoved,
+    ComputedInlined,
+    PropsRewritten,
+    StoreUnproxied,
+    StaticComponent,
+    ClientComponent,
+    Island,
+    FactsStale,
+    ProgramOpenImport,
+    FeatureFlagMismatch,
 }
 
 pub struct Entry {
@@ -40,6 +49,24 @@ impl Code {
 
     pub fn severity(self) -> Severity {
         self.entry().severity
+    }
+
+    pub fn from_name(name: &str) -> Option<Code> {
+        CATALOG.iter().find(|entry| entry.name == name).map(|entry| entry.code)
+    }
+}
+
+impl serde::Serialize for Code {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Code {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = <std::borrow::Cow<'de, str>>::deserialize(deserializer)?;
+        Code::from_name(&name)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown diagnostic code `{name}`")))
     }
 }
 
@@ -187,6 +214,96 @@ pub const CATALOG: &[Entry] = &[
         repair: "Nothing to repair. Delete the dead branch from the source to make the intent explicit.",
         bad: "",
         good: "{DEBUG && <DebugPanel />}",
+    },
+    Entry {
+        code: Code::ComputedInlined,
+        name: "COMPUTED_INLINED",
+        severity: Severity::Info,
+        title: "`computed` inlined into its only read",
+        observed: "A `computed` is read exactly once, as a call inside a reactive JSX expression of the same function. The compiler removed the declaration and put its expression at the read (optimization O4): the binding reads the sources directly and still compares the value before touching the DOM. `data.scope` is `module`.",
+        repair: "Nothing to repair. Read the computed a second time, or outside JSX, and it stays a node of the graph.",
+        bad: "",
+        good: "const doubled = computed(() => count() * 2);\n<p>{doubled()}</p>",
+    },
+    Entry {
+        code: Code::PropsRewritten,
+        name: "PROPS_REWRITTEN",
+        severity: Severity::Info,
+        title: "Destructured props rewritten to lazy reads",
+        observed: "The component destructures its props in the parameter list. The compiler replaced the pattern with one `props` parameter and every destructured name with a read of `props.name` at its use, so each read stays reactive. Defaults apply when the prop is `undefined`; a rest element becomes `splitProps`.",
+        repair: "Nothing to repair.",
+        bad: "",
+        good: "function Greeting({ name = \"you\" }) {\n  return <p>Hello {name}</p>;\n}",
+    },
+    Entry {
+        code: Code::StoreUnproxied,
+        name: "STORE_UNPROXIED",
+        severity: Severity::Info,
+        title: "Store replaced by one signal per field",
+        observed: "Every read of the store is a path to a field and every write goes through its setter to a field, so the compiler replaced the Proxy with one signal per field: reads are signal calls and draft writes are signal writes under `untrack`. `data.scope` is `module`, or `program` when the store is exported and every importer was rewritten too; `related` lists the uses in other modules.",
+        repair: "Nothing to repair. Any other use of the store (passing it whole, a computed key, a namespace access) keeps the Proxy.",
+        bad: "",
+        good: "const [todo, setTodo] = store({ title: \"\", done: false });\n<input checked={todo.done} onInput={() => setTodo((d) => { d.done = !d.done; })} />",
+    },
+    Entry {
+        code: Code::StaticComponent,
+        name: "STATIC_COMPONENT",
+        severity: Severity::Info,
+        title: "Static component",
+        observed: "Program analysis proved the component renders HTML and nothing else: it reads no reactive state, attaches no behavior, and its DOM never changes. Under an islands root it is rendered on the server only and its code is never run in the browser.",
+        repair: "Nothing to repair.",
+        bad: "",
+        good: "export function Footer() {\n  return <footer>© Reze</footer>;\n}",
+    },
+    Entry {
+        code: Code::ClientComponent,
+        name: "CLIENT_COMPONENT",
+        severity: Severity::Info,
+        title: "Client component",
+        observed: "The component has to run in the browser. `data.reason` and the message name the first thing that makes it so (an event handler, a signal read, a component outside the program, or a client child in a position that cannot be an island); `related` continues the chain into other components and modules.",
+        repair: "Nothing to repair. To make a parent static, move the interactive part into its own exported component and render it with JSON-serializable props.",
+        bad: "",
+        good: "export function Counter() {\n  const [n, setN] = signal(0);\n  return <button onClick={() => setN(n() + 1)}>{n()}</button>;\n}",
+    },
+    Entry {
+        code: Code::Island,
+        name: "ISLAND",
+        severity: Severity::Info,
+        title: "Island boundary",
+        observed: "A static component renders a client component with JSON-serializable props. The server marks the boundary and serializes the props; the browser hydrates only the island, with the runtime features in `data.features`. `data.id` identifies the island.",
+        repair: "Nothing to repair.",
+        bad: "",
+        good: "export function Page() {\n  return <main><h1>Docs</h1><Counter start={1} /></main>;\n}",
+    },
+    Entry {
+        code: Code::FactsStale,
+        name: "FACTS_STALE",
+        severity: Severity::Error,
+        title: "Program facts built for a different source",
+        observed: "The module was compiled with program facts whose source hash does not match the source being compiled: another plugin changed the module between the program scan and `transform`, so the cross-module decisions may be wrong.",
+        repair: "Order the plugin that rewrites the module after the Reze plugin, exclude the module from `program.include`, or disable `optimize`.",
+        bad: "",
+        good: "reze({ program: { exclude: /generated/ } })",
+    },
+    Entry {
+        code: Code::ProgramOpenImport,
+        name: "PROGRAM_OPEN_IMPORT",
+        severity: Severity::Error,
+        title: "A module outside the program imports a closed module",
+        observed: "Program analysis rewrote the exports of a module (a folded signal or an unproxied store) assuming it knows every importer, but a module outside the program imports it and would break.",
+        repair: "Add the importing module to `program.include`, or disable `optimize` for the build.",
+        bad: "",
+        good: "reze({ program: { include: /\\.(tsx?|jsx?|vue)$/ } })",
+    },
+    Entry {
+        code: Code::FeatureFlagMismatch,
+        name: "FEATURE_FLAG_MISMATCH",
+        severity: Severity::Error,
+        title: "A module outside the program uses a disabled runtime feature",
+        observed: "The program does not use a runtime feature, so its define flag was turned off and the runtime dropped it, but a module outside the program uses that feature's export.",
+        repair: "Add the module to `program.include`, or force the flag on with the plugin option `features: { <name>: true }`.",
+        bad: "",
+        good: "reze({ features: { suspense: true } })",
     },
 ];
 

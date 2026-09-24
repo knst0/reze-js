@@ -9,6 +9,7 @@ export {
   createComponent,
   delegateEvents,
   hydrate,
+  hydrateIslands,
   insert,
   memo,
   mergeProps,
@@ -35,10 +36,20 @@ export {
   ssrChild,
   ssrClass,
   ssrHydrationKey,
+  ssrIsland,
   ssrRaw,
   ssrSpread,
   ssrStyle,
 } from "./server";
-export { effect, getOwner, onCleanup, signal, trackAsync } from "@rezejs/signals";
+export {
+  computed,
+  effect,
+  getOwner,
+  onCleanup,
+  signal,
+  store,
+  trackAsync,
+  untrack,
+} from "@rezejs/signals";
 export { Suspense, trackPending } from "./flow";
 export type { SuspenseProps } from "./flow";

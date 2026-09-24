@@ -2,7 +2,9 @@ use oxc_allocator::Allocator;
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
-use reze_compiler::{Options, Target, compile};
+use reze_compiler::{
+    LinkOptions, ModuleInput, Options, SummaryOptions, Target, compile, link, summarize,
+};
 
 const CASES: &[(&str, &str)] = &[
     ("static_template", "const a = <div class=\"box\"><p>hi</p><br /></div>;"),
@@ -75,7 +77,55 @@ const CASES: &[(&str, &str)] = &[
     ("spread_children", "const a = <div {...attrs()} />;\nconst b = <p {...rest}><b /></p>;"),
     (
         "warnings",
-        "import { signal } from \"reze-js\";\nconst [n, setN] = signal(0); setN(1);\nfunction Greeting({ name }) {\n  return <p key=\"k\" clas=\"x\" title={n} title=\"y\">{name}<For each={[1, 2]}>{(i) => i}</For></p>;\n}",
+        "import { signal } from \"reze-js\";\nconst [n, setN] = signal(0); setN(1);\nfunction Greeting({ name = fallback() }) {\n  return <p key=\"k\" clas=\"x\" title={n} title=\"y\">{name}<For each={[1, 2]}>{(i) => i}</For></p>;\n}",
+    ),
+    (
+        "props_simple",
+        "function Greeting({ name, count }) {\n  return <p title={name}>{name}: {count}</p>;\n}",
+    ),
+    (
+        "props_default",
+        "const Button = ({ label = \"Save\", size = 2, disabled = false, icon = undefined }) => (\n  <button disabled={disabled} class={size}>{icon}{label}</button>\n);",
+    ),
+    (
+        "props_nested",
+        "function User({ user: { name, \"first-name\": first = \"?\" }, 0: zero }) {\n  return <Card title={name} onClick={() => open(first)}>{zero}</Card>;\n}",
+    ),
+    (
+        "props_rest_block",
+        "function Link({ href, \"aria-label\": label, ...rest }) {\n  \"use client\";\n  return <a href={href} aria-label={label} {...rest} />;\n}",
+    ),
+    (
+        "props_rest_expression",
+        "const Card = ({ title, ...rest }) => <Panel {...rest} heading={title} />;",
+    ),
+    (
+        "props_typescript",
+        "type Props = { id: number; label: string; as: any; ref?: (el: Element) => void };\nexport function Row({ id, label, as: Tag, ref }: Props = { id: 0, label: \"\", as: \"li\" }) {\n  const data: typeof id = id;\n  const row = { id, label };\n  return <Tag ref={ref} onClick={() => select(row, data)}>{label}</Tag>;\n}",
+    ),
+    (
+        "props_async",
+        "async function User({ id, ...rest }) {\n  const user = await fetchUser(id);\n  return <p {...rest}>{user.name}</p>;\n}",
+    ),
+    (
+        "props_rejected",
+        "function A({ [key]: a }) { return <p>{a}</p>; }\nfunction B({ a = f() }) { return <p>{a}</p>; }\nfunction C({ a: { b } = {} }) { return <p>{b}</p>; }\nfunction D({ a: { ...b } }) { return <p>{b}</p>; }\nfunction E({ a }) { a = 1; return <p>{a}</p>; }\nfunction F({ a }) { return <p>{arguments.length}{a}</p>; }\nfunction* G({ a }) { yield <p>{a}</p>; }\nconst H = function ({ a }, ref) { return <p ref={ref}>{a}</p>; };\nconst I = ({ a: [b] }) => <p>{b}</p>;",
+    ),
+    (
+        "computed_inlined",
+        "import { computed, signal } from \"reze-js\";\nconst [name, setName] = signal(\"Reze\");\nconst greeting = computed(() => `Hi ${name()}`);\nexport const hello = <p onInput={() => setName(\"x\")}>{greeting()}</p>;\nfunction Counter() {\n  const [count, setCount] = signal(0);\n  const doubled = computed(() => count() * 2);\n  const label = computed(() => `n${count()}`);\n  const size = computed(() => (count() > 9 ? \"big\" : \"small\"));\n  const view = computed(() => <b>{count()}</b>);\n  return (\n    <div title={label()} onClick={() => setCount(count() + 1)}>\n      <Badge size={size()} />\n      {doubled()}\n      {view()}\n    </div>\n  );\n}",
+    ),
+    (
+        "computed_kept",
+        "import { computed, signal } from \"reze-js\";\nconst [n, setN] = signal(0);\nexport const total = computed(() => n() + 1);\nexport const view = <p onClick={() => setN(1)}>{total()}</p>;\nconst logged = computed(() => n() - 1);\nconsole.log(logged());\nfunction Panel() {\n  const twice = computed(() => n() * 2);\n  const typed: () => number = computed(() => n() + 2);\n  const nested = computed(() => n() + 3);\n  const shadowed = computed(() => n() + 4);\n  const row = <p title={typed()}>{twice()}{twice()}<For each={[1]}>{() => nested()}</For></p>;\n  if (row) {\n    const n = () => 0;\n    return <i>{shadowed()}{n()}</i>;\n  }\n  return row;\n}",
+    ),
+    (
+        "store_unproxied",
+        "import { store } from \"reze-js\";\nconst [todo, setTodo] = store({ title: \"\", done: false, meta: { count: 0, \"last-seen\": null } });\nconst [theme] = store({ color: \"red\" });\nexport const view = (\n  <p class={theme.color} onClick={() => setTodo((d) => { d.done = !d.done; d.meta.count *= 2; d.meta[\"last-seen\"] ??= Date.now(); d.meta.count++; })}>\n    {todo.title}{todo.meta.count}\n  </p>\n);\nexport const rename = (title) => setTodo((d) => d.title = title.trim());\nexport const reset = () => setTodo(function (d) { --d.meta.count; d.title = { text: \"\" }; });",
+    ),
+    (
+        "store_refused",
+        "import { store } from \"reze-js\";\nconst [whole] = store({ a: 1 });\nsave(whole);\nconst [nested] = store({ a: { b: 1 } });\nconst [keyed] = store({ a: 1 });\nconst [list, setList] = store({ items: [] });\nconst [later, setLater] = store({ a: 1 });\nsetLater((d) => { queue(() => { d.a = 2; }); });\nconst [valued, setValued] = store({ a: 1 });\nsetValued((d) => { log(d.a = 2); });\nexport const [exported] = store({ a: 1 });\nexport const view = (\n  <ul onClick={() => setList((d) => { d.items.push(1); })}>\n    {whole.a}{nested.a}{keyed[k]}{later.a}{valued.a}{exported.a}\n    {list.items.map((i) => <li>{i}</li>)}\n  </ul>\n);",
     ),
 ];
 
@@ -128,6 +178,31 @@ fn unoptimized_output_is_valid_too() {
     for (target, _) in TARGETS {
         for (_, source) in CASES {
             render(source, false, *target);
+        }
+    }
+}
+
+/// SPEC §15.2: a program of one entry module links to facts that change nothing in the output.
+#[test]
+fn a_single_entry_program_compiles_like_the_module_alone() {
+    for (name, source) in CASES {
+        let Ok(summary) = summarize(source, "case.tsx", &SummaryOptions::default()) else {
+            continue;
+        };
+        let resolved = vec![None; summary.specifiers.len()];
+        let module = ModuleInput { id: "case.tsx".into(), summary, resolved, is_entry: true };
+        let linked =
+            link(&[module], &LinkOptions { optimize: true, islands: true, root: String::new() });
+        for (target, _) in TARGETS {
+            let alone = Options { source_map: false, target: *target, ..Options::default() };
+            let linked_options = Options {
+                facts: Some(linked.facts["case.tsx"].clone()),
+                ..Options { source_map: false, target: *target, ..Options::default() }
+            };
+            let code = |options: &Options| {
+                compile(source, "case.tsx", options).ok().flatten().map(|out| out.code)
+            };
+            assert_eq!(code(&alone), code(&linked_options), "{name} [{target:?}]");
         }
     }
 }

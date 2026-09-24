@@ -95,6 +95,10 @@ impl<'a> Emitter<'a, '_> {
         let Names { owner, error, set_error, epoch, promise, mine, thrown, signal, .. } = names;
 
         let _ = writeln!(out, "{{\nconst {owner} = {get_owner}();");
+        if let Some(props_rest) = &component.props_rest {
+            self.embed(out, props_rest);
+            out.push("\n");
+        }
         for step in &names.steps {
             let _ =
                 writeln!(out, "const [{}, {}] = {signal}({unknown});", step.value, step.set_value);

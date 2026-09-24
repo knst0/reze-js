@@ -1,11 +1,8 @@
 {
+  "@rezejs/example-islands": {
+    "dir": "examples/islands"
+  },
   "@rezejs/example-counter": {
     "dir": "examples/counter"
-  },
-  "@rezejs/example-counter-solid": {
-    "dir": "examples/counter-solid"
-  },
-  "@rezejs/example-counter-solid-v2": {
-    "dir": "examples/counter-solid-v2"
   }
 }

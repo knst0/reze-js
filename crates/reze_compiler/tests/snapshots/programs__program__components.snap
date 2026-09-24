@@ -1,0 +1,480 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+expression: render(&dir)
+---
+closed: ["/data.ts"]
+features: {"suspense": false}
+
+// ==== /components.tsx [client] ====
+import { Show, signal } from "reze-js";
+import { Widget } from "ui-kit";
+import { brand, counter, links, year } from "./data";
+import { template as _$template, insert as _$insert, bind as _$bind, setAttribute as _$setAttribute, createComponent as _$createComponent, use as _$use, spread as _$spread, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<header><b>Reze</b><nav></nav></header>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<a></a>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<footer> © </footer>"),
+  _tmpl$4 = /*#__PURE__*/ _$template("<ul></ul>"),
+  _tmpl$5 = /*#__PURE__*/ _$template("<button>click</button>"),
+  _tmpl$6 = /*#__PURE__*/ _$template("<div></div>"),
+  _tmpl$7 = /*#__PURE__*/ _$template("<input>"),
+  _tmpl$8 = /*#__PURE__*/ _$template("<select><option value=\"b\"></option></select>"),
+  _tmpl$9 = /*#__PURE__*/ _$template("<p></p>"),
+  _tmpl$10 = /*#__PURE__*/ _$template("<p>0</p>"),
+  _tmpl$11 = /*#__PURE__*/ _$template("<section></section>");
+
+export function Header(props) {
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild.nextSibling;
+  _$insert(_el$2, () => links.map((link) => (() => {
+  var _el$3 = _tmpl$2();
+  _$insert(_el$3, () => link.label);
+  _$bind(() => _$setAttribute(_el$3, "href", link.href));
+  return _el$3;
+})()));
+  _$bind(() => _$setAttribute(_el$, "title", props.title));
+  return _el$;
+})()
+  );
+}
+
+export const Footer = (_props$) => (() => {
+  var _el$4 = _tmpl$3(),
+    _el$5 = _el$4.firstChild;
+  _$insert(_el$4, () => _props$.note, _el$5);
+  _$insert(_el$4, year, null);
+  return _el$4;
+})();
+
+export function Tree(props) {
+  const depth = props.depth;
+  return (() => {
+  var _el$6 = _tmpl$4();
+  _$insert(_el$6, depth > 0 ? _$createComponent(Tree, { depth: depth - 1 }) : null);
+  return _el$6;
+})();
+}
+
+export const Clicker = () => (() => {
+  var _el$7 = _tmpl$5();
+  _el$7.$$click = () => alert(1);
+  return _el$7;
+})();
+export const WithRef = () => (() => {
+  var _el$8 = _tmpl$6();
+  _$use((el) => el.focus(), _el$8);
+  return _el$8;
+})();
+export const WithSpread = (props) => (() => {
+  var _el$9 = _tmpl$6();
+  _$spread(_el$9, props, false, false);
+  return _el$9;
+})();
+export const WithProp = () => (() => {
+  var _el$10 = _tmpl$7();
+  _el$10.indeterminate = true;
+  return _el$10;
+})();
+export const Select = () => (() => {
+  var _el$11 = _tmpl$8();
+  _el$11.value = "b";
+  return _el$11;
+})();
+export async function Async() { return _tmpl$9(); }
+export const TwoParams = (a, b) => (() => {
+  var _el$12 = _tmpl$9();
+  _$insert(_el$12, a, null);
+  _$insert(_el$12, b, null);
+  return _el$12;
+})();
+export const Local = () => { let x = 1; return (() => {
+  var _el$13 = _tmpl$9();
+  _$insert(_el$13, x);
+  return _el$13;
+})(); };
+export const RuntimeChild = () => _$createComponent(Show, { when: true, get children() { return _tmpl$9(); } });
+export const OutsideChild = () => _$createComponent(Widget, {});
+export const Deep = (props) => (() => {
+  var _el$14 = _tmpl$9();
+  _$insert(_el$14, () => props.a.b);
+  return _el$14;
+})();
+export const Reactive = () => { const n = 0; return _tmpl$10(); };
+export const Mutated = () => (() => {
+  var _el$15 = _tmpl$9();
+  _$insert(_el$15, () => counter.value);
+  return _el$15;
+})();
+export const ClientChild = () => (() => {
+  var _el$16 = _tmpl$11();
+  _$insert(_el$16, _$createComponent(Clicker, {}));
+  return _el$16;
+})();
+
+_$delegateEvents(["click"]);
+
+// info
+[STATIC_COMPONENT] `Header` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /components.tsx:5:17
+  4 | 
+> 5 | export function Header(props) {
+    |                 ^^^^^^
+  6 |   return (
+// info
+[STATIC_COMPONENT] `Footer` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /components.tsx:14:14
+  13 | 
+> 14 | export const Footer = ({ note }) => <footer>{note} © {year}</footer>;
+     |              ^^^^^^
+  15 | 
+// info
+[PROPS_REWRITTEN] `Footer` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Footer>
+  at /components.tsx:14:24
+  13 | 
+> 14 | export const Footer = ({ note }) => <footer>{note} © {year}</footer>;
+     |                        ^^^^^^^^
+  15 | 
+// info
+[STATIC_COMPONENT] `Tree` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /components.tsx:16:17
+  15 | 
+> 16 | export function Tree(props) {
+     |                 ^^^^
+  17 |   const depth = props.depth;
+// info
+[CLIENT_COMPONENT] `Clicker` runs on the client: `onClick` attaches an event handler.
+  at /components.tsx:21:14
+  20 | 
+> 21 | export const Clicker = () => <button onClick={() => alert(1)}>click</button>;
+     |              ^^^^^^^
+  22 | export const WithRef = () => <div ref={(el) => el.focus()} />;
+  note: first client-only part (/components.tsx:21:38)
+// info
+[CLIENT_COMPONENT] `WithRef` runs on the client: `ref` attaches a ref.
+  at /components.tsx:22:14
+  21 | export const Clicker = () => <button onClick={() => alert(1)}>click</button>;
+> 22 | export const WithRef = () => <div ref={(el) => el.focus()} />;
+     |              ^^^^^^^
+  23 | export const WithSpread = (props) => <div {...props} />;
+  note: first client-only part (/components.tsx:22:35)
+// info
+[CLIENT_COMPONENT] `WithSpread` runs on the client: `{...props}` spreads attributes.
+  at /components.tsx:23:14
+  22 | export const WithRef = () => <div ref={(el) => el.focus()} />;
+> 23 | export const WithSpread = (props) => <div {...props} />;
+     |              ^^^^^^^^^^
+  24 | export const WithProp = () => <input prop:indeterminate={true} />;
+  note: first client-only part (/components.tsx:23:43)
+// info
+[CLIENT_COMPONENT] `WithProp` runs on the client: `prop:indeterminate` sets a client-only property.
+  at /components.tsx:24:14
+  23 | export const WithSpread = (props) => <div {...props} />;
+> 24 | export const WithProp = () => <input prop:indeterminate={true} />;
+     |              ^^^^^^^^
+  25 | export const Select = () => <select value="b"><option value="b" /></select>;
+  note: first client-only part (/components.tsx:24:38)
+// info
+[CLIENT_COMPONENT] `Select` runs on the client: `value` sets a property the server does not render.
+  at /components.tsx:25:14
+  24 | export const WithProp = () => <input prop:indeterminate={true} />;
+> 25 | export const Select = () => <select value="b"><option value="b" /></select>;
+     |              ^^^^^^
+  26 | export async function Async() { return <p />; }
+  note: first client-only part (/components.tsx:25:37)
+// info
+[CLIENT_COMPONENT] `Async` runs on the client: the component is async.
+  at /components.tsx:26:23
+  25 | export const Select = () => <select value="b"><option value="b" /></select>;
+> 26 | export async function Async() { return <p />; }
+     |                       ^^^^^
+  27 | export const TwoParams = (a, b) => <p>{a}{b}</p>;
+  note: first client-only part (/components.tsx:26:28)
+// info
+[CLIENT_COMPONENT] `TwoParams` runs on the client: `(a, b)` takes more than one parameter.
+  at /components.tsx:27:14
+  26 | export async function Async() { return <p />; }
+> 27 | export const TwoParams = (a, b) => <p>{a}{b}</p>;
+     |              ^^^^^^^^^
+  28 | export const Local = () => { let x = 1; return <p>{x}</p>; };
+  note: first client-only part (/components.tsx:27:26)
+// info
+[CLIENT_COMPONENT] `Local` runs on the client: `let x = 1;` is not a `const` declaration.
+  at /components.tsx:28:14
+  27 | export const TwoParams = (a, b) => <p>{a}{b}</p>;
+> 28 | export const Local = () => { let x = 1; return <p>{x}</p>; };
+     |              ^^^^^
+  29 | export const RuntimeChild = () => <Show when={true}><p /></Show>;
+  note: first client-only part (/components.tsx:28:30)
+// info
+[CLIENT_COMPONENT] `RuntimeChild` runs on the client: `<Show>` is a runtime component, which runs on the client.
+  at /components.tsx:29:14
+  28 | export const Local = () => { let x = 1; return <p>{x}</p>; };
+> 29 | export const RuntimeChild = () => <Show when={true}><p /></Show>;
+     |              ^^^^^^^^^^^^
+  30 | export const OutsideChild = () => <Widget />;
+  note: first client-only part (/components.tsx:29:36)
+// info
+[CLIENT_COMPONENT] `OutsideChild` runs on the client: `<Widget>` is not a component of the program.
+  at /components.tsx:30:14
+  29 | export const RuntimeChild = () => <Show when={true}><p /></Show>;
+> 30 | export const OutsideChild = () => <Widget />;
+     |              ^^^^^^^^^^^^
+  31 | export const Deep = (props) => <p>{props.a.b}</p>;
+  note: first client-only part (/components.tsx:30:36)
+// info
+[CLIENT_COMPONENT] `Deep` runs on the client: `props.a.b` reads a prop deeper than one level.
+  at /components.tsx:31:14
+  30 | export const OutsideChild = () => <Widget />;
+> 31 | export const Deep = (props) => <p>{props.a.b}</p>;
+     |              ^^^^
+  32 | export const Reactive = () => { const [n] = signal(0); return <p>{n()}</p>; };
+  note: first client-only part (/components.tsx:31:36)
+// info
+[CLIENT_COMPONENT] `Reactive` runs on the client: `[n] = signal(0)` destructures a value.
+  at /components.tsx:32:14
+  31 | export const Deep = (props) => <p>{props.a.b}</p>;
+> 32 | export const Reactive = () => { const [n] = signal(0); return <p>{n()}</p>; };
+     |              ^^^^^^^^
+  33 | export const Mutated = () => <p>{counter.value}</p>;
+  note: first client-only part (/components.tsx:32:39)
+// info
+[SIGNAL_FOLDED] `n` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
+  at /components.tsx:32:39
+  31 | export const Deep = (props) => <p>{props.a.b}</p>;
+> 32 | export const Reactive = () => { const [n] = signal(0); return <p>{n()}</p>; };
+     |                                       ^^^^^^^^^^^^^^^
+  33 | export const Mutated = () => <p>{counter.value}</p>;
+// info
+[CLIENT_COMPONENT] `Mutated` runs on the client: `counter.value` reads a value that is not an inert constant.
+  at /components.tsx:33:14
+  32 | export const Reactive = () => { const [n] = signal(0); return <p>{n()}</p>; };
+> 33 | export const Mutated = () => <p>{counter.value}</p>;
+     |              ^^^^^^^
+  34 | export const ClientChild = () => <section><Clicker /></section>;
+  note: first client-only part (/components.tsx:33:34)
+// info
+[CLIENT_COMPONENT] `ClientChild` runs on the client: `<Clicker>` is a client component in a position that cannot be an island: islands are off.
+  at /components.tsx:34:14
+  33 | export const Mutated = () => <p>{counter.value}</p>;
+> 34 | export const ClientChild = () => <section><Clicker /></section>;
+     |              ^^^^^^^^^^^
+  35 | 
+  note: first client-only part (/components.tsx:34:44)
+  related: `onClick` attaches an event handler (/components.tsx:564)
+// ==== /components.tsx [server] ====
+import { Show, signal } from "reze-js";
+import { Widget } from "ui-kit";
+import { brand, counter, links, year } from "./data";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute, ssrChild as _$ssrChild, createComponent as _$createComponent, ssrSpread as _$ssrSpread } from "reze-js";
+const _tmpl$ = ["<header", "", "><b>Reze</b><nav>", "</nav></header>"],
+  _tmpl$2 = ["<a", "", ">", "</a>"],
+  _tmpl$3 = ["<footer", "><!--[-->", "<!--]--> © <!--[-->", "<!--]--></footer>"],
+  _tmpl$4 = ["<ul", ">", "</ul>"],
+  _tmpl$5 = ["<button", ">click</button>"],
+  _tmpl$6 = ["<div", "></div>"],
+  _tmpl$7 = ["<div", "", ">", "</div>"],
+  _tmpl$8 = ["<input", ">"],
+  _tmpl$9 = ["<select", "><option value=\"b\"></option></select>"],
+  _tmpl$10 = ["<p", "></p>"],
+  _tmpl$11 = ["<p", "><!--[-->", "<!--]--><!--[-->", "<!--]--></p>"],
+  _tmpl$12 = ["<p", ">", "</p>"],
+  _tmpl$13 = ["<p", ">0</p>"],
+  _tmpl$14 = ["<section", ">", "</section>"];
+
+export function Header(props) {
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("title", props.title), _$ssrChild(links.map((link) => _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrAttribute("href", link.href), _$ssrChild(link.label)))))
+  );
+}
+
+export const Footer = (_props$) => _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_props$.note), _$ssrChild(year));
+
+export function Tree(props) {
+  const depth = props.depth;
+  return _$ssr(_tmpl$4, _$ssrHydrationKey(), _$ssrChild(depth > 0 ? _$createComponent(Tree, { depth: depth - 1 }) : null));
+}
+
+export const Clicker = () => _$ssr(_tmpl$5, _$ssrHydrationKey());
+export const WithRef = () => _$ssr(_tmpl$6, _$ssrHydrationKey());
+export const WithSpread = (props) => (() => {
+  var _s$ = props;
+  return _$ssr(_tmpl$7, _$ssrHydrationKey(), _$ssrSpread(_s$, false), _$ssrChild(_s$.children));
+})();
+export const WithProp = () => _$ssr(_tmpl$8, _$ssrHydrationKey());
+export const Select = () => _$ssr(_tmpl$9, _$ssrHydrationKey());
+export async function Async() { return _$ssr(_tmpl$10, _$ssrHydrationKey()); }
+export const TwoParams = (a, b) => _$ssr(_tmpl$11, _$ssrHydrationKey(), _$ssrChild(a), _$ssrChild(b));
+export const Local = () => { let x = 1; return _$ssr(_tmpl$12, _$ssrHydrationKey(), _$ssrChild(x)); };
+export const RuntimeChild = () => _$createComponent(Show, { when: true, get children() { return _$ssr(_tmpl$10, _$ssrHydrationKey()); } });
+export const OutsideChild = () => _$createComponent(Widget, {});
+export const Deep = (props) => _$ssr(_tmpl$12, _$ssrHydrationKey(), _$ssrChild(props.a.b));
+export const Reactive = () => { const n = 0; return _$ssr(_tmpl$13, _$ssrHydrationKey()); };
+export const Mutated = () => _$ssr(_tmpl$12, _$ssrHydrationKey(), _$ssrChild(counter.value));
+export const ClientChild = () => _$ssr(_tmpl$14, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Clicker, {})));
+
+// ==== /components.tsx [hydrate] ====
+import { Show, signal } from "reze-js";
+import { Widget } from "ui-kit";
+import { brand, counter, links, year } from "./data";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, bind as _$bind, setAttribute as _$setAttribute, createComponent as _$createComponent, use as _$use, spread as _$spread, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<header><b>Reze</b><nav></nav></header>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<a></a>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<footer> © </footer>"),
+  _tmpl$4 = /*#__PURE__*/ _$template("<ul></ul>"),
+  _tmpl$5 = /*#__PURE__*/ _$template("<button>click</button>"),
+  _tmpl$6 = /*#__PURE__*/ _$template("<div></div>"),
+  _tmpl$7 = /*#__PURE__*/ _$template("<input>"),
+  _tmpl$8 = /*#__PURE__*/ _$template("<select><option value=\"b\"></option></select>"),
+  _tmpl$9 = /*#__PURE__*/ _$template("<p></p>"),
+  _tmpl$10 = /*#__PURE__*/ _$template("<p>0</p>"),
+  _tmpl$11 = /*#__PURE__*/ _$template("<section></section>");
+
+export function Header(props) {
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "header"),
+    _el$2 = _$claimChild(_el$, 1);
+  _$claimInsert(_el$2, () => links.map((link) => (() => {
+  var _el$3 = _$claim(_tmpl$2, "a");
+  _$claimInsert(_el$3, () => link.label);
+  _$bind(() => _$setAttribute(_el$3, "href", link.href));
+  return _el$3;
+})()));
+  _$bind(() => _$setAttribute(_el$, "title", props.title));
+  return _el$;
+})()
+  );
+}
+
+export const Footer = (_props$) => (() => {
+  var _el$4 = _$claim(_tmpl$3, "footer"),
+    _el$5 = _$claimChild(_el$4, 0);
+  _$claimInsert(_el$4, () => _props$.note, _el$5);
+  _$claimInsert(_el$4, year, null);
+  return _el$4;
+})();
+
+export function Tree(props) {
+  const depth = props.depth;
+  return (() => {
+  var _el$6 = _$claim(_tmpl$4, "ul");
+  _$claimInsert(_el$6, depth > 0 ? _$createComponent(Tree, { depth: depth - 1 }) : null);
+  return _el$6;
+})();
+}
+
+export const Clicker = () => (() => {
+  var _el$7 = _$claim(_tmpl$5, "button");
+  _el$7.$$click = () => alert(1);
+  return _el$7;
+})();
+export const WithRef = () => (() => {
+  var _el$8 = _$claim(_tmpl$6, "div");
+  _$use((el) => el.focus(), _el$8);
+  return _el$8;
+})();
+export const WithSpread = (props) => (() => {
+  var _el$9 = _$claim(_tmpl$6, "div");
+  _$spread(_el$9, props, false, false);
+  return _el$9;
+})();
+export const WithProp = () => (() => {
+  var _el$10 = _$claim(_tmpl$7, "input");
+  _el$10.indeterminate = true;
+  return _el$10;
+})();
+export const Select = () => (() => {
+  var _el$11 = _$claim(_tmpl$8, "select");
+  _el$11.value = "b";
+  return _el$11;
+})();
+export async function Async() { return _$claim(_tmpl$9, "p"); }
+export const TwoParams = (a, b) => (() => {
+  var _el$12 = _$claim(_tmpl$9, "p");
+  _$claimInsert(_el$12, a, null, 1);
+  _$claimInsert(_el$12, b, null);
+  return _el$12;
+})();
+export const Local = () => { let x = 1; return (() => {
+  var _el$13 = _$claim(_tmpl$9, "p");
+  _$claimInsert(_el$13, x);
+  return _el$13;
+})(); };
+export const RuntimeChild = () => _$createComponent(Show, { when: true, get children() { return _$claim(_tmpl$9, "p"); } });
+export const OutsideChild = () => _$createComponent(Widget, {});
+export const Deep = (props) => (() => {
+  var _el$14 = _$claim(_tmpl$9, "p");
+  _$claimInsert(_el$14, () => props.a.b);
+  return _el$14;
+})();
+export const Reactive = () => { const n = 0; return _$claim(_tmpl$10, "p"); };
+export const Mutated = () => (() => {
+  var _el$15 = _$claim(_tmpl$9, "p");
+  _$claimInsert(_el$15, () => counter.value);
+  return _el$15;
+})();
+export const ClientChild = () => (() => {
+  var _el$16 = _$claim(_tmpl$11, "section");
+  _$claimInsert(_el$16, _$createComponent(Clicker, {}));
+  return _el$16;
+})();
+
+_$delegateEvents(["click"]);
+
+// ==== /data.ts [client] ====
+import { signal } from "reze-js";
+
+export const links = [{ href: "/", label: "Home" }, { href: "/docs", label: "Docs" }];
+export const year = 2026;
+export const brand = "Reze";
+export const counter = { value: 1 };
+counter.value++;
+
+// info
+[SIGNAL_FOLDED] `brand` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
+  at /data.ts:5:14
+  4 | export const year = 2026;
+> 5 | export const [brand] = signal("Reze");
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^
+  6 | export const counter = { value: 1 };
+  related: read here (/components.tsx:214)
+// ==== /data.ts [server] ====
+import { signal } from "reze-js";
+
+export const links = [{ href: "/", label: "Home" }, { href: "/docs", label: "Docs" }];
+export const year = 2026;
+export const brand = "Reze";
+export const counter = { value: 1 };
+counter.value++;
+
+// ==== /data.ts [hydrate] ====
+import { signal } from "reze-js";
+
+export const links = [{ href: "/", label: "Home" }, { href: "/docs", label: "Docs" }];
+export const year = 2026;
+export const brand = "Reze";
+export const counter = { value: 1 };
+counter.value++;
+
+// ==== /main.tsx [client] ====
+import { render } from "reze-js";
+import { Footer, Header, Tree } from "./components";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(() => [_$createComponent(Header, { title: "Docs" }), _$createComponent(Tree, { depth: 2 }), _$createComponent(Footer, { note: "Built" })], document.body);
+
+// ==== /main.tsx [server] ====
+import { render } from "reze-js";
+import { Footer, Header, Tree } from "./components";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(() => [_$createComponent(Header, { title: "Docs" }), _$createComponent(Tree, { depth: 2 }), _$createComponent(Footer, { note: "Built" })], document.body);
+
+// ==== /main.tsx [hydrate] ====
+import { render } from "reze-js";
+import { Footer, Header, Tree } from "./components";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(() => [_$createComponent(Header, { title: "Docs" }), _$createComponent(Tree, { depth: 2 }), _$createComponent(Footer, { note: "Built" })], document.body);

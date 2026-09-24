@@ -37,6 +37,15 @@ pub struct Label {
     pub message: String,
 }
 
+/// A span in another module of the program; offsets only, lines are unknown there.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Related {
+    pub file: String,
+    pub start: u32,
+    pub end: u32,
+    pub message: String,
+}
+
 /// Replaces bytes `start..end` of the source with `text`.
 #[derive(Clone, Debug)]
 pub struct Edit {
@@ -63,6 +72,8 @@ pub struct Diagnostic {
     /// Enclosing components (`<Name>`) and elements, root first.
     pub path: Vec<String>,
     pub labels: Vec<Label>,
+    /// The rest of a cross-module `Reason` chain.
+    pub related: Vec<Related>,
     pub fixes: Vec<Fix>,
     pub data: Vec<(String, String)>,
     /// Message, `in` line, location, code frame and fixes, without the once-per-code footer.
@@ -102,6 +113,7 @@ pub struct Report {
     pub message: String,
     pub path: Vec<String>,
     pub labels: Vec<Label>,
+    pub related: Vec<Related>,
     pub fixes: Vec<Fix>,
     pub data: Vec<(String, String)>,
 }
@@ -115,6 +127,7 @@ impl Report {
             message: message.into(),
             path: Vec::new(),
             labels: Vec::new(),
+            related: Vec::new(),
             fixes: Vec::new(),
             data: Vec::new(),
         }
@@ -130,6 +143,11 @@ impl Report {
         self
     }
 
+    pub fn related(mut self, related: Related) -> Self {
+        self.related.push(related);
+        self
+    }
+
     pub fn data(mut self, key: &str, value: impl Into<String>) -> Self {
         self.data.push((key.to_string(), value.into()));
         self
@@ -140,6 +158,34 @@ pub fn resolve(mut reports: Vec<Report>, source: &str, file: &str) -> Vec<Diagno
     reports.sort_by_key(|report| report.span.start);
     let lines = LineIndex::new(source);
     reports.into_iter().map(|report| resolve_one(report, source, file, &lines)).collect()
+}
+
+/// A diagnostic about a whole module whose source is not at hand (`verify`): empty span at the
+/// start, no code frame.
+pub fn resolve_detached(report: Report, file: &str) -> Diagnostic {
+    let start = Position { offset: 0, line: 1, column: 0 };
+    let message = format!("[{}] {}", report.code.name(), report.message);
+    let mut rendered = format!("{message}\n  in {file}");
+    for related in &report.related {
+        rendered.push_str(&format!(
+            "\n  related: {} ({}:{})",
+            related.message, related.file, related.start
+        ));
+    }
+    Diagnostic {
+        code: report.code,
+        severity: report.code.severity(),
+        message,
+        file: file.to_string(),
+        start,
+        end: start,
+        path: report.path,
+        labels: report.labels,
+        related: report.related,
+        fixes: report.fixes,
+        data: report.data,
+        rendered,
+    }
 }
 
 fn resolve_one(report: Report, source: &str, file: &str, lines: &LineIndex) -> Diagnostic {
@@ -157,6 +203,7 @@ fn resolve_one(report: Report, source: &str, file: &str, lines: &LineIndex) -> D
         end,
         path: report.path,
         labels: report.labels,
+        related: report.related,
         fixes: report.fixes,
         data: report.data,
         rendered,
@@ -185,6 +232,12 @@ fn render(
             label.message,
             at.line,
             at.column + 1
+        ));
+    }
+    for related in &report.related {
+        out.push_str(&format!(
+            "\n  related: {} ({}:{})",
+            related.message, related.file, related.start
         ));
     }
     for fix in &report.fixes {

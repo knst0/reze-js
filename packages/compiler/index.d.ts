@@ -10,8 +10,8 @@
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
 /**
- * Compiles the JSX in `source`. Returns `null` when the file has no JSX.
- * Compile errors are returned as `error` diagnostics with `code: null`; only invalid options
+ * Compiles `source`. Returns `null` when nothing in the file is rewritten.
+ * Compile errors are returned as `error` diagnostics without `code`; only invalid options
  * throw.
  */
 export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult | null
@@ -21,13 +21,15 @@ export interface CompileOptions {
   moduleName?: string
   /** Default: `true`. */
   sourceMap?: boolean
-  /** Constant signals and dead JSX branches (O3, O5). Default: `true`. */
+  /** Constant signals, inlined computeds, dead JSX branches and store unproxying. Default: `true`. */
   optimize?: boolean
   /**
    * `"client"` builds the DOM, `"server"` renders HTML strings for `renderToString`,
    * `"hydrate"` claims that HTML in the browser. Default: `"client"`.
    */
   target?: "client" | "server" | "hydrate"
+  /** This module's facts from `link`, as returned there. */
+  facts?: string
 }
 
 export interface CompileResult {
@@ -50,6 +52,8 @@ export interface Diagnostic {
   /** Enclosing components (`<Name>`) and elements, root first. */
   path: Array<string>
   labels: Array<Label>
+  /** The rest of a cross-module reason chain. */
+  related: Array<Related>
   fixes: Array<Fix>
   data: Record<string, string>
   /** Repair guide URL anchored at the code. */
@@ -77,6 +81,44 @@ export interface Label {
   message: string
 }
 
+/** Whole-program decisions: folds across modules, static components, islands, feature flags. */
+export declare function link(modules: Array<LinkModule>, options?: LinkOptions | undefined | null): LinkResult
+
+export interface LinkModule {
+  id: string
+  /** From `summarize`. */
+  summary: string
+  /** Program module id per specifier of the summary, `null` outside the program. */
+  resolved: Array<string | undefined | null>
+  isEntry: boolean
+}
+
+export interface LinkOptions {
+  /** Default: `true`. */
+  optimize?: boolean
+  /** Default: `false`. */
+  islands?: boolean
+  /** Directory island ids are relative to (Vite `config.root`). Default: `""`. */
+  root?: string
+}
+
+export interface LinkResult {
+  /** Opaque JSON per module id, for `compile({ facts })`. */
+  facts: Record<string, string>
+  /** Program-decided define flags by name. */
+  features: Record<string, boolean>
+  /** Modules no module outside the program may import. */
+  closed: Array<string>
+}
+
+export interface OutsideModule {
+  id: string
+  /** From `summarize`, for modules that mention a runtime module; otherwise `null`. */
+  summary?: string
+  /** Ids of every module it imports, statically or dynamically. */
+  imported: Array<string>
+}
+
 export interface Position {
   /** Byte offset. */
   offset: number
@@ -85,3 +127,30 @@ export interface Position {
   /** 0-based, in UTF-16 code units. */
   column: number
 }
+
+/** A span in another module; byte offsets only. */
+export interface Related {
+  file: string
+  start: number
+  end: number
+  message: string
+}
+
+/** What `link` needs to know about one module of the program. Any dialect, JSX or not. */
+export declare function summarize(source: string, filename: string, options?: SummarizeOptions | undefined | null): SummarizeResult
+
+export interface SummarizeOptions {
+  /** Default: `"reze-js"`. */
+  moduleName?: string
+}
+
+export interface SummarizeResult {
+  /** Opaque JSON for `link`; missing when `diagnostics` holds a parse error. */
+  summary?: string
+  /** Import specifiers to resolve for `link`'s `resolved`, in the summary's order. */
+  specifiers: Array<string>
+  diagnostics: Array<Diagnostic>
+}
+
+/** Closed-world and feature-flag errors for modules outside the program. */
+export declare function verify(linked: LinkResult, outside: Array<OutsideModule>): Array<Diagnostic>
