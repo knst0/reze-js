@@ -66,9 +66,10 @@ enum Helper {
     SsrRaw,
     SsrIsland,
     HydrateIslands,
+    Selector,
 }
 
-const HELPER_COUNT: usize = Helper::HydrateIslands as usize + 1;
+const HELPER_COUNT: usize = Helper::Selector as usize + 1;
 
 impl Helper {
     fn export(self) -> &'static str {
@@ -117,6 +118,7 @@ impl Helper {
             Helper::SsrRaw => "ssrRaw",
             Helper::SsrIsland => "ssrIsland",
             Helper::HydrateIslands => "hydrateIslands",
+            Helper::Selector => "selector",
         }
     }
 
@@ -166,6 +168,7 @@ impl Helper {
             Helper::SsrRaw => "_$ssrRaw",
             Helper::SsrIsland => "_$ssrIsland",
             Helper::HydrateIslands => "_$hydrateIslands",
+            Helper::Selector => "_$selector",
         }
     }
 }
@@ -408,6 +411,19 @@ impl<'a, 's> Emitter<'a, 's> {
                     out.push(")");
                 }
                 HoleKind::Remove => {}
+                HoleKind::SelectorRead { selector, key, original, is_negated } => {
+                    if self.target == Target::Server {
+                        self.embed(out, original);
+                    } else {
+                        if *is_negated {
+                            out.push("!");
+                        }
+                        out.push(selector);
+                        out.push("(");
+                        self.embed(out, key);
+                        out.push(")");
+                    }
+                }
                 HoleKind::IslandRoot { kind, callee, code, element, islands } => {
                     self.island_root(out, *kind, *callee, code, element.as_ref(), islands);
                 }

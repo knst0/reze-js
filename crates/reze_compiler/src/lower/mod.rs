@@ -7,6 +7,7 @@ pub mod constant;
 mod element;
 mod island;
 pub mod props;
+mod selector;
 pub mod store;
 
 use oxc_allocator::{Allocator, Box, Vec};
@@ -49,6 +50,8 @@ pub struct Lowerer<'a, 'f> {
     props_temporaries: std::collections::HashMap<u32, &'a str>,
     store_names: store::StoreNames<'a>,
     computed_names: computed::ComputedNames<'a, 'f>,
+    /// Row callbacks of the `<For>` elements being lowered, innermost last (O6).
+    for_scopes: std::vec::Vec<selector::ForScope<'a>>,
 }
 
 impl<'a, 'f> Lowerer<'a, 'f> {
@@ -77,6 +80,7 @@ impl<'a, 'f> Lowerer<'a, 'f> {
             props_temporaries: std::collections::HashMap::new(),
             store_names: store::StoreNames::default(),
             computed_names: computed::ComputedNames::default(),
+            for_scopes: std::vec::Vec::new(),
         }
     }
 
@@ -432,6 +436,13 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
             }
         }
         walk::walk_computed_member_expression(self, it);
+    }
+
+    fn visit_binary_expression(&mut self, it: &BinaryExpression<'a>) {
+        match self.lowerer.selector_read(it) {
+            Some(hole) => self.holes.push(hole),
+            None => walk::walk_binary_expression(self, it),
+        }
     }
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {

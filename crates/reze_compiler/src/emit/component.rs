@@ -33,6 +33,20 @@ impl<'a> Emitter<'a, '_> {
                 return;
             }
             None => {
+                let selectors = match self.target {
+                    Target::Server => &[][..],
+                    Target::Client | Target::Hydrate => component.selectors.as_slice(),
+                };
+                if !selectors.is_empty() {
+                    out.push("((");
+                    for (i, selector) in selectors.iter().enumerate() {
+                        if i > 0 {
+                            out.push(", ");
+                        }
+                        out.push(selector.selector);
+                    }
+                    out.push(") => ");
+                }
                 let create = self.helper(Helper::CreateComponent);
                 out.push(create);
                 out.push("(");
@@ -40,6 +54,20 @@ impl<'a> Emitter<'a, '_> {
                 out.push(", ");
                 self.props(out, &component.props);
                 out.push(")");
+                if !selectors.is_empty() {
+                    let helper = self.helper(Helper::Selector);
+                    out.push(")(");
+                    for (i, selector) in selectors.iter().enumerate() {
+                        if i > 0 {
+                            out.push(", ");
+                        }
+                        out.push(helper);
+                        out.push("(");
+                        self.src(out, selector.source);
+                        out.push(")");
+                    }
+                    out.push(")");
+                }
             }
         }
     }

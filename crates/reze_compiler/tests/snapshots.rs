@@ -151,6 +151,10 @@ const CASES: &[(&str, &str)] = &[
         "store_arrays_refused",
         "import { store } from \"reze-js\";\nconst [bare, setBare] = store({ items: [1] });\nconst kept = bare.items;\nconst [compared, setCompared] = store({ items: [1] });\nconst same = compared.items === compared.items;\nconst [called, setCalled] = store({ items: [1] });\nuse(called.items);\nconst [spread, setSpread] = store({ items: [{ v: 1 }] });\nconst copy = { ...spread.items[0] };\nconst [deleted, setDeleted] = store({ items: [1] });\nsetDeleted((d) => { delete d.items[0]; });\nconst [shaped, setShaped] = store({ form: { a: 1, b: 2 } });\nsetShaped((d) => { d.form = other(); });\nconst [valued, setValued] = store({ items: [1] });\nsetValued((d) => { log(d.items.push(1)); });\nconst [jsx, setJsx] = store({ items: [0] });\nsetJsx((d) => { d.items[<b />] = 1; });\nexport const view = <ul>{kept.length}{same}{copy.v}</ul>;",
     ),
+    (
+        "auto_selector",
+        "import { For, computed, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nconst [hovered, setHovered] = signal(0);\nconst active = computed(() => selected() + 1);\nexport const list = (\n  <For each={rows()}>\n    {(row, index) => {\n      const [local, setLocal] = signal(0);\n      return (\n        <tr class={selected() === row().id ? \"danger\" : \"\"} title={row().id !== selected() ? \"a\" : \"b\"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>\n          {selected() === row().id && <b>on</b>}\n          <td onInput={() => setLocal(1)} data-local={local() === row().id} data-other={selected() === other()} data-loose={selected() == row().id} />\n        </tr>\n      );\n    }}\n  </For>\n);\nexport const unrelated = <p>{selected() === 1}</p>;\nsetHovered(1);",
+    ),
 ];
 
 const TARGETS: &[(Target, &str)] =

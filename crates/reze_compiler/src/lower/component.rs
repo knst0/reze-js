@@ -57,6 +57,7 @@ impl<'a> Lowerer<'a, '_> {
         if name == "For" {
             self.check_inline_each(el);
         }
+        let is_row_scope = self.enter_for(el);
         let items = self.items(&el.children, false);
         let is_boundary = self.facts.program.islands.contains_key(&el.span.start);
         let mut props = PropsBuilder::new(self.alloc);
@@ -86,11 +87,12 @@ impl<'a> Lowerer<'a, '_> {
         if let Some(children) = self.component_children(items) {
             props.push(children);
         }
+        let selectors = if is_row_scope { self.leave_for() } else { self.vec() };
         self.path.pop();
         let island = self.island(el);
         let callee =
             self.embed(callee, |finder| finder.visit_jsx_element_name(&el.opening_element.name));
-        self.boxed(Component { callee, props: props.finish(), island })
+        self.boxed(Component { callee, props: props.finish(), island, selectors })
     }
 
     fn check_inline_each(&mut self, el: &JSXElement<'a>) {
