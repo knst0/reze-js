@@ -167,15 +167,22 @@ interface ServerIsland {
  * `requestIdleCallback` (`setTimeout` fallback), `visible` for an `IntersectionObserver` on the
  * first element after the opening marker (else the parent), `interaction` for a capture
  * `pointerdown`/`focusin`/`keydown` on the parent — and any of those events inside the island
- * loads it at once in every lazy mode. Events that arrive before the code loads are lost.
+ * loads it at once in every lazy mode. Delegated events inside a lazy island before it hydrates
+ * are recorded (the last 32; a submit, and a click that would navigate or submit, have their
+ * default prevented) and dispatched again on the same elements once it hydrated, unless
+ * `options.replay` is `false`.
  * Throws when `islands` lacks an id found in the markup; the returned function disposes every
  * hydrated island, cancels the pending ones, and leaves the DOM as is.
  */
-export function hydrateIslands(element: Element, islands: Record<string, IslandValue>): () => void {
+export function hydrateIslands(
+  element: Element,
+  islands: Record<string, IslandValue>,
+  options?: { replay?: boolean },
+): () => void {
   applyStreamChunks(element);
   const found = collectIslands(element, islands);
   return root((dispose) => {
-    const state = { cancelled: false };
+    const state: IslandsState = { cancelled: false, replay: options?.replay !== false };
     const cancellations: (() => void)[] = [];
     for (const island of found) hydrateFound(island, state, cancellations.push.bind(cancellations));
     return () => {
@@ -254,9 +261,14 @@ function parseIslandMarker(
   };
 }
 
+interface IslandsState {
+  cancelled: boolean;
+  replay: boolean;
+}
+
 function hydrateFound(
   island: ServerIsland,
-  state: { cancelled: boolean },
+  state: IslandsState,
   onPending: (cancel: () => void) => void,
 ): void {
   const props = { ...island.props };
@@ -303,11 +315,12 @@ function hydrateLazy(
   island: ServerIsland,
   props: Props,
   descriptor: { load: () => Promise<Record<string, Any>>; export: string },
-  state: { cancelled: boolean },
+  state: IslandsState,
   onPending: (cancel: () => void) => void,
 ): void {
   let settled = false;
   const cancels: (() => void)[] = [];
+  const recorder = state.replay ? recordEvents(island) : undefined;
   const load = (): void => {
     if (settled || state.cancelled) return;
     settled = true;
@@ -320,8 +333,9 @@ function hydrateLazy(
           throw new Error(`hydrateIslands: no export "${descriptor.export}" for island`);
         }
         hydrateNow(island, render, props);
+        recorder?.replay();
       },
-      () => {},
+      () => recorder?.stop(),
     );
   };
   const mode = islandValueMode(descriptor as IslandValue);
@@ -350,6 +364,7 @@ function hydrateLazy(
   }
   onPending(() => {
     for (const cancel of cancels) cancel();
+    recorder?.stop();
   });
 }
 
@@ -382,6 +397,99 @@ function watchVisible(island: ServerIsland, load: () => void): () => void {
   if (target) observer.observe(target);
   else load();
   return () => observer.disconnect();
+}
+
+const ReplayedEvents = [
+  "click",
+  "input",
+  "change",
+  "submit",
+  "keydown",
+  "keyup",
+  "pointerdown",
+  "pointerup",
+  "focusin",
+  "focusout",
+];
+const ReplayedFields = [
+  "bubbles",
+  "cancelable",
+  "composed",
+  "detail",
+  "view",
+  "key",
+  "code",
+  "location",
+  "repeat",
+  "isComposing",
+  "button",
+  "buttons",
+  "clientX",
+  "clientY",
+  "screenX",
+  "screenY",
+  "relatedTarget",
+  "shiftKey",
+  "ctrlKey",
+  "altKey",
+  "metaKey",
+  "pointerId",
+  "pointerType",
+  "width",
+  "height",
+  "pressure",
+  "isPrimary",
+  "inputType",
+  "data",
+];
+const MaxReplayedEvents = 32;
+
+/** Whether the default action of `event` would leave the page before the island can handle it. */
+function leavesPage(event: Event): boolean {
+  if (event.type === "submit") return true;
+  if (event.type !== "click") return false;
+  const target = event.target as Element | null;
+  return !!target?.closest?.('a[href], button[type="submit"], input[type="submit"]');
+}
+
+function replayed(event: Event): Event {
+  const init: Record<string, unknown> = {};
+  for (const field of ReplayedFields) {
+    if (field in event) init[field] = (event as Any)[field];
+  }
+  return new (event.constructor as typeof Event)(event.type, init);
+}
+
+/** Records the delegated events inside `island` until `replay` dispatches them again or `stop`. */
+function recordEvents(island: ServerIsland): { replay: () => void; stop: () => void } {
+  const parent = island.open.parentNode as Element | null;
+  const recorded: { event: Event; target: Element }[] = [];
+  const onEvent = (event: Event): void => {
+    const target = event.target as Element | null;
+    if (!target || !inIslandRange(island, target)) return;
+    if (leavesPage(event)) event.preventDefault();
+    if (recorded.length === MaxReplayedEvents) recorded.shift();
+    recorded.push({ event, target });
+  };
+  for (const name of ReplayedEvents) parent?.addEventListener(name, onEvent, true);
+  const stop = (): void => {
+    for (const name of ReplayedEvents) parent?.removeEventListener(name, onEvent, true);
+  };
+  const replay = (): void => {
+    stop();
+    for (const { event, target } of recorded.splice(0)) {
+      if (!target.isConnected) continue;
+      if (
+        event.type === "submit" &&
+        typeof (target as HTMLFormElement).requestSubmit === "function"
+      ) {
+        (target as HTMLFormElement).requestSubmit();
+      } else {
+        target.dispatchEvent(replayed(event));
+      }
+    }
+  };
+  return { replay, stop };
 }
 
 /**
