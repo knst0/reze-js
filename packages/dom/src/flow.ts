@@ -3,6 +3,7 @@ import { renderEffect as bind } from "@rezejs/signals/render";
 
 import { createComponent, insert, insertExpression, splitProps, spread } from "./dom";
 import { Suspense as SuspenseFeature } from "./features";
+import { isServerRender } from "./hydration";
 import type { JSX } from "./jsx";
 
 type Falsy = false | 0 | "" | null | undefined;
@@ -142,6 +143,7 @@ export function trackPending(isPending: () => boolean): void {
 }
 
 export function Suspense(props: SuspenseProps): JSX.Element {
+  if (isServerRender()) return props.children;
   const [pendingCount, setPendingCount] = signal(0);
   const boundary: SuspenseBoundary = {
     retain: () => setPendingCount((count) => count + 1),

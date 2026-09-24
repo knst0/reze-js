@@ -1,0 +1,18 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { theme } from \"./theme\";\nconst Button = ({ label = theme.label, size, width = size, user: { name = theme.guest }, onPress = () => log(label, later), title = `${label}!`, style = { color: theme.color, [theme.key]: width }, items = [label, -size] as const, count = 0, later = label }: Props) => (\n  <button title={title} style={style} onClick={onPress}>{label}{width}{name}{items}{count}</button>\n);"
+---
+import { theme } from "./theme";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute, ssrStyle as _$ssrStyle, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<button", "", "", "><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></button>"];
+const Button = (_props$: Props) => { const _label$default = theme.label; const _width$default = _props$.size; const _name$default = theme.guest; const _onPress$default = () => log((_props$.label === undefined ? _label$default : _props$.label), (_props$.later === undefined ? _later$default : _props$.later)); const _title$default = `${(_props$.label === undefined ? _label$default : _props$.label)}!`; const _style$default = { color: theme.color, [theme.key]: (_props$.width === undefined ? _width$default : _props$.width) }; const _items$default = [(_props$.label === undefined ? _label$default : _props$.label), -_props$.size] as const; const _later$default = (_props$.label === undefined ? _label$default : _props$.label); return ((
+  _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("title", (_props$.title === undefined ? _title$default : _props$.title)), _$ssrStyle((_props$.style === undefined ? _style$default : _props$.style)), _$ssrChild((_props$.label === undefined ? _label$default : _props$.label)), _$ssrChild((_props$.width === undefined ? _width$default : _props$.width)), _$ssrChild((_props$.user.name === undefined ? _name$default : _props$.user.name)), _$ssrChild((_props$.items === undefined ? _items$default : _props$.items)), _$ssrChild((_props$.count === undefined ? 0 : _props$.count)))
+)); };
+// info
+[PROPS_REWRITTEN] `Button` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Button>
+  at case.tsx:2:17
+  1 | import { theme } from "./theme";
+> 2 | const Button = ({ label = theme.label, size, width = size, user: { name = theme.guest }, onPress = () => log(label, later), title = `${label}!`, style = { color: theme.color, [theme.key]: width }, items = [label, -size] as const, count = 0, later = label }: Props) => (
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 |   <button title={title} style={style} onClick={onPress}>{label}{width}{name}{items}{count}</button>

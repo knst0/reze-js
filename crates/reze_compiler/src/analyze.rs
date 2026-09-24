@@ -3,7 +3,7 @@
 //! program facts, primitives re-exported through the program and exported signals the program
 //! folds are recognized too (§15.4, §15.5).
 
-mod computed;
+pub mod computed;
 
 use std::collections::{HashMap, HashSet};
 
@@ -43,7 +43,8 @@ pub struct Facts {
     folded_bindings: HashSet<u32>,
     /// Calls of inlined computeds, with the computed's declarator (O4).
     inlined_reads: HashMap<ReferenceId, NodeId>,
-    /// Declarations of inlined computeds by start, with the span removed (O4).
+    /// Declarations of inlined computeds, and `export { … }` statements left without
+    /// specifiers, by start, with the span removed (O4, §16.5).
     removed_declarations: HashMap<u32, Span>,
     /// Unproxied stores and the uses they rewrite (SPEC §15.6).
     pub stores: Stores,
@@ -53,12 +54,20 @@ pub struct Facts {
 /// Decisions from program facts that lowering applies at a position (SPEC §15.5, §15.9).
 #[derive(Default)]
 pub struct ProgramDecisions {
-    /// Export specifiers, by start, of setters whose signal the program folded.
+    /// Export specifiers, by start, of setters whose signal the program folded and of computeds
+    /// it inlined into another module.
     pub removed_specifiers: HashSet<u32>,
+    /// Reads of computeds inlined from other modules, by the start of the callee (§16.5).
+    pub computed_reads: HashMap<u32, computed::InlinedRead>,
+    /// Import specifiers of those computeds, by local start, with the bindings that replace them.
+    pub computed_imports: HashMap<u32, Vec<computed::ImportedName>>,
     /// Island boundaries by the start of their JSX element.
     pub islands: HashMap<u32, IslandFact>,
     /// Island roots by the start of their call.
     pub roots: HashMap<u32, RootFact>,
+    /// With program facts, whether the build has islands; `None` in module mode, where
+    /// `island:*` attributes compile as written without a warning (§16.3).
+    pub islands_enabled: Option<bool>,
 }
 
 impl Facts {
@@ -110,6 +119,11 @@ impl Facts {
     /// The span to remove for `declaration` when it declares an inlined computed (O4).
     pub fn removed_declaration(&self, declaration: &VariableDeclaration<'_>) -> Option<Span> {
         self.removed_declarations.get(&declaration.span.start).copied()
+    }
+
+    /// The span to remove for `export { … }` when the program removed each of its specifiers.
+    pub fn removed_export(&self, export: &ExportNamedDeclaration<'_>) -> Option<Span> {
+        self.removed_declarations.get(&export.span.start).copied()
     }
 }
 
@@ -380,9 +394,11 @@ fn apply_program_facts(
             facts.getter_refs.extend(scoping.get_resolved_reference_ids(symbol));
         }
     }
+    computed::apply_program(facts, program, scoping, nodes, module_facts, reports);
     facts.program.islands =
         module_facts.islands.iter().map(|island| (island.element, island.clone())).collect();
     facts.program.roots = module_facts.roots.iter().map(|root| (root.call, root.clone())).collect();
+    facts.program.islands_enabled = Some(module_facts.islands_enabled);
 
     let root = scoping.root_scope_id();
     for component in &module_facts.components {

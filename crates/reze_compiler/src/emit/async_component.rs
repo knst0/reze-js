@@ -1,11 +1,14 @@
 //! The synchronous shape of an async component (SPEC §7.9): one fetch `effect` per `await`,
-//! linked by an epoch, and a `memo` running the rest once every step settled.
+//! linked by an epoch, and a `memo` running the rest once every step settled. Server and
+//! hydrate also stream it (SPEC §16.8): the component captures its boundary on entry, each
+//! await loads through `ssrAwait`/`streamValue`, and `streamOutput` hands out the `memo`.
 
 use std::fmt::Write;
 
 use super::{Emitter, Helper};
+use crate::Target;
 use crate::code::Code;
-use crate::ir::{AsyncComponent, AsyncHead, AsyncStep, ReturnType};
+use crate::ir::{AsyncComponent, AsyncHead, AsyncStep, Embed, ReturnType};
 
 struct StepNames<'a> {
     value: &'a str,
@@ -25,6 +28,14 @@ struct Names<'a> {
     thrown: &'a str,
     signal: &'a str,
     steps: std::vec::Vec<StepNames<'a>>,
+}
+
+struct Streaming<'a> {
+    capture: &'a str,
+    boundary: &'a str,
+    /// `ssrAwait` on the server, `streamValue` when hydrating.
+    load: &'a str,
+    output: &'a str,
 }
 
 impl<'a> Emitter<'a, '_> {
@@ -85,6 +96,7 @@ impl<'a> Emitter<'a, '_> {
 
     fn async_body(&mut self, out: &mut Code, component: &AsyncComponent<'a>) {
         let get_owner = self.helper(Helper::GetOwner);
+        let streaming = self.streaming();
         let names = self.async_names(component.steps.len());
         let on_cleanup = self.helper(Helper::OnCleanup);
         let track_pending = self.helper(Helper::TrackPending);
@@ -95,8 +107,11 @@ impl<'a> Emitter<'a, '_> {
         let Names { owner, error, set_error, epoch, promise, mine, thrown, signal, .. } = names;
 
         let _ = writeln!(out, "{{\nconst {owner} = {get_owner}();");
-        if let Some(props_rest) = &component.props_rest {
-            self.embed(out, props_rest);
+        if let Some(streaming) = &streaming {
+            let _ = writeln!(out, "const {} = {}();", streaming.boundary, streaming.capture);
+        }
+        if let Some(props_entry) = &component.props_entry {
+            self.embed(out, props_entry);
             out.push("\n");
         }
         for step in &names.steps {
@@ -121,9 +136,24 @@ impl<'a> Emitter<'a, '_> {
             }
             let own = &names.steps[index];
             let _ = writeln!(out, "{set_error}(undefined);\n{}(false);", own.set_settled);
-            let _ = write!(out, "const {promise} = Promise.resolve(");
-            self.embed(out, &step.argument);
-            out.push(");\n");
+            let _ = write!(out, "const {promise} = ");
+            match &streaming {
+                None => {
+                    out.push("Promise.resolve(");
+                    self.embed(out, &step.argument);
+                    out.push(")");
+                }
+                Some(streaming) => {
+                    let is_server = self.target == Target::Server;
+                    if is_server {
+                        out.push("Promise.resolve(");
+                    }
+                    let _ = write!(out, "{}({}, {index}, ", streaming.load, streaming.boundary);
+                    self.await_loader(out, &step.argument);
+                    out.push(if is_server { "))" } else { ")" });
+                }
+            }
+            out.push(";\n");
             let _ = writeln!(out, "const {mine} = ++{epoch};");
             let _ = writeln!(
                 out,
@@ -132,7 +162,18 @@ impl<'a> Emitter<'a, '_> {
             );
             out.push("});\n");
         }
-        let _ = writeln!(out, "return {memo}(() => {{");
+        match &streaming {
+            None => {
+                let _ = writeln!(out, "return {memo}(() => {{");
+            }
+            Some(streaming) => {
+                let _ = writeln!(
+                    out,
+                    "return {}({}, {memo}(() => {{",
+                    streaming.output, streaming.boundary
+                );
+            }
+        }
         let _ = writeln!(
             out,
             "const {thrown} = {error}();\nif ({thrown} !== undefined) throw {thrown};"
@@ -144,7 +185,32 @@ impl<'a> Emitter<'a, '_> {
         }
         out.push("return ");
         self.embed(out, &component.result);
-        out.push(";\n});\n}");
+        out.push(if streaming.is_some() { ";\n}));\n}" } else { ";\n});\n}" });
+    }
+
+    /// The boundary capture and the helpers of server and hydrate streaming (SPEC §16.8).
+    fn streaming(&mut self) -> Option<Streaming<'a>> {
+        let load = match self.target {
+            Target::Client => return None,
+            Target::Server => Helper::SsrAwait,
+            Target::Hydrate => Helper::StreamValue,
+        };
+        Some(Streaming {
+            capture: self.helper(Helper::StreamBoundary),
+            boundary: self.fresh("_boundary$"),
+            load: self.helper(load),
+            output: self.helper(Helper::StreamOutput),
+        })
+    }
+
+    /// `() => e`, parenthesized when `e` is an object literal.
+    fn await_loader(&mut self, out: &mut Code, argument: &Embed<'a>) {
+        let is_object = self.source[argument.span.start as usize..].starts_with('{');
+        out.push(if is_object { "() => (" } else { "() => " });
+        self.embed(out, argument);
+        if is_object {
+            out.push(")");
+        }
     }
 
     /// Bails out until every step so far settled, then redeclares their bindings.

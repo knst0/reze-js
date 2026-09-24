@@ -2,6 +2,7 @@ mod async_component;
 mod attribute;
 mod children;
 mod component;
+mod computed;
 pub mod constant;
 mod element;
 mod island;
@@ -44,7 +45,10 @@ pub struct Lowerer<'a, 'f> {
     has_jsx: bool,
     /// Props object names by the start of the parameter they replace.
     props_names: std::collections::HashMap<u32, &'a str>,
+    /// Temporaries of hoisted props defaults by the start of the default (SPEC §16.7).
+    props_temporaries: std::collections::HashMap<u32, &'a str>,
     store_names: store::StoreNames<'a>,
+    computed_names: computed::ComputedNames<'a, 'f>,
 }
 
 impl<'a, 'f> Lowerer<'a, 'f> {
@@ -70,7 +74,9 @@ impl<'a, 'f> Lowerer<'a, 'f> {
             path: std::vec::Vec::new(),
             has_jsx: false,
             props_names: std::collections::HashMap::new(),
+            props_temporaries: std::collections::HashMap::new(),
             store_names: store::StoreNames::default(),
+            computed_names: computed::ComputedNames::default(),
         }
     }
 
@@ -149,6 +155,7 @@ impl<'a, 'f> Lowerer<'a, 'f> {
             && !call.optional
             && call.type_arguments.is_none()
             && self.facts.inlined_body(call, self.nodes).is_none()
+            && !self.facts.program.computed_reads.contains_key(&id.span.start)
             && self.facts.props.read(id).is_none()
         {
             return Getter::Call(id.span);
@@ -239,13 +246,13 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
                 }),
                 None => {
                     if let Some(body) = &it.body
-                        && let Some(rest) = finder.lowerer.props_rest(
+                        && let Some(entry) = finder.lowerer.props_entry(
                             &it.params,
                             Span::empty(props::block_start(body)),
                             None,
                         )
                     {
-                        finder.holes.push(rest);
+                        finder.holes.push(entry);
                     }
                     walk::walk_function(finder, it, flags);
                 }
@@ -259,20 +266,20 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
             self.holes.push(Hole { span: it.span, kind });
             return;
         }
-        let rest = match &it.body {
+        let entry = match &it.body {
             ArrowFunctionBody::FunctionBody(body) => {
                 let at = Span::empty(props::block_start(body));
-                self.lowerer.props_rest(&it.params, at, None)
+                self.lowerer.props_entry(&it.params, at, None)
             }
             body => body.as_expression().and_then(|expression| {
-                self.lowerer.props_rest(&it.params, expression.span(), Some(expression))
+                self.lowerer.props_entry(&it.params, expression.span(), Some(expression))
             }),
         };
-        let Some(rest) = rest else {
+        let Some(entry) = entry else {
             walk::walk_arrow_function_expression(self, it);
             return;
         };
-        self.holes.push(rest);
+        self.holes.push(entry);
         if let ArrowFunctionBody::FunctionBody(_) = &it.body {
             walk::walk_arrow_function_expression(self, it);
             return;
@@ -369,9 +376,17 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
             self.holes.push(hole);
             return;
         }
+        if let Some(hole) = self.lowerer.store_method_call(it) {
+            self.holes.push(hole);
+            return;
+        }
         if let Some(body) = self.lowerer.facts.inlined_body(it, self.lowerer.nodes) {
             let body = self.lowerer.expr(body);
             self.holes.push(Hole { span: it.span, kind: HoleKind::ComputedInline { body } });
+            return;
+        }
+        if let Some(hole) = self.lowerer.computed_read(it) {
+            self.holes.push(hole);
             return;
         }
         if let Some((getter, _)) = self.lowerer.facts.folded_callee(it) {
@@ -384,33 +399,62 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
         }
         walk::walk_call_expression(self, it);
     }
-
     fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
-        match self.lowerer.store_read(it.span) {
-            Some(hole) => self.holes.push(hole),
-            None => walk::walk_static_member_expression(self, it),
+        if let Some(hole) = self.lowerer.store_read(it.span) {
+            self.holes.push(hole);
+            return;
         }
+        if let Some(mut steps) = self.lowerer.member_steps(&it.object) {
+            steps.push(crate::ir::ArraySuffix::Key(it.property.name.as_str()));
+            if let Some(hole) = self.lowerer.array_read(it.span, steps) {
+                self.holes.push(hole);
+                return;
+            }
+        }
+        walk::walk_static_member_expression(self, it);
     }
 
     fn visit_computed_member_expression(&mut self, it: &ComputedMemberExpression<'a>) {
-        match self.lowerer.store_read(it.span) {
-            Some(hole) => self.holes.push(hole),
-            None => walk::walk_computed_member_expression(self, it),
+        if let Some(hole) = self.lowerer.store_read(it.span) {
+            self.holes.push(hole);
+            return;
         }
+        if let Some(mut steps) = self.lowerer.member_steps(&it.object) {
+            match it.expression.without_parentheses() {
+                Expression::StringLiteral(key) => {
+                    steps.push(crate::ir::ArraySuffix::Key(self.lowerer.str(&key.value)))
+                }
+                _ => steps.push(crate::ir::ArraySuffix::Index(self.lowerer.expr(&it.expression))),
+            }
+            if let Some(hole) = self.lowerer.array_read(it.span, steps) {
+                self.holes.push(hole);
+                return;
+            }
+        }
+        walk::walk_computed_member_expression(self, it);
     }
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
-        match self.lowerer.store_assignment(it) {
-            Some(hole) => self.holes.push(hole),
-            None => walk::walk_assignment_expression(self, it),
+        if let Some(hole) =
+            self.lowerer.store_assignment(it).or_else(|| self.lowerer.array_assignment(it))
+        {
+            self.holes.push(hole);
+            return;
         }
+        if let Some(hole) = self.lowerer.form_assignment(it) {
+            self.holes.push(hole);
+            return;
+        }
+        walk::walk_assignment_expression(self, it);
     }
 
     fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
-        match self.lowerer.store_update(it) {
-            Some(hole) => self.holes.push(hole),
-            None => walk::walk_update_expression(self, it),
+        if let Some(hole) = self.lowerer.store_update(it).or_else(|| self.lowerer.array_update(it))
+        {
+            self.holes.push(hole);
+            return;
         }
+        walk::walk_update_expression(self, it);
     }
 
     fn visit_import_declaration(&mut self, it: &ImportDeclaration<'a>) {
@@ -427,6 +471,10 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
     }
 
     fn visit_export_named_declaration(&mut self, it: &ExportNamedDeclaration<'a>) {
+        if let Some(span) = self.lowerer.facts.removed_export(it) {
+            self.holes.push(Hole { span, kind: HoleKind::Remove });
+            return;
+        }
         match self.lowerer.store_export_specifiers(it) {
             Some(hole) => self.holes.push(hole),
             None => walk::walk_export_named_declaration(self, it),

@@ -4,6 +4,7 @@ import { renderEffect as bind } from "@rezejs/signals/render";
 import { Hydration } from "./features";
 import { nextHydrationKey, withComponentKeys, withKeyScope } from "./hydration";
 import type { JSX } from "./jsx";
+import { applyStreamChunks } from "./stream";
 
 // Loosely typed on purpose: compiled output hangs `$$event` handlers and data off elements.
 // oxlint-disable-next-line typescript/no-explicit-any
@@ -113,6 +114,7 @@ let claimable: Map<string, Element> | undefined;
  * rendered in its place. What cannot be claimed is created and reconciled as usual.
  */
 export function hydrate(code: () => JSX.Element, element: Element): () => void {
+  applyStreamChunks(element);
   claimable = new Map();
   for (const node of element.querySelectorAll("[data-hk]")) addClaimable(node);
   let dispose!: () => void;
@@ -135,53 +137,145 @@ export function hydrate(code: () => JSX.Element, element: Element): () => void {
 function addClaimable(node: Element): void {
   claimable!.set(node.getAttribute("data-hk")!, node);
 }
+/** A component or a lazy descriptor in the `hydrateIslands` map. */
+export type IslandValue =
+  | ((props: Any) => JSX.Element)
+  | { load: () => Promise<Record<string, Any>>; mode: string; export: string };
+
+interface SlotRange {
+  name: string;
+  nodes: Node[];
+}
 
 interface ServerIsland {
   open: Comment;
   close: Comment;
-  render: (props: Any) => JSX.Element;
+  value: IslandValue;
   scope: string;
   props: Props;
+  slots: SlotRange[];
 }
 
 /**
- * Hydrates only the islands `renderToString(code, true)` marked inside `element`: each runs
- * `islands[id](props)` in the key scope the server rendered it in and adopts the nodes between
- * its `<!--$id:scope:props-->` and `<!--/$-->` markers. Throws when `islands` lacks an id found
- * in the markup; the returned function disposes every island and leaves the DOM as is.
+ * Hydrates only the islands `renderToString(code, true)` marked inside `element`: each runs its
+ * component in the key scope the server rendered it in and adopts the nodes between its
+ * `<!--$id:scope:props:mode-->` and `<!--/$-->` markers. A slot range
+ * `<!--$slot:name-->…<!--/$slot-->` becomes an array of the nodes of its first range
+ * (`undefined` when empty); every insert of the slot moves those nodes, like one value
+ * inserted twice. Eager islands hydrate at once, in document order;
+ * lazy ones (`{ load, mode, export }`) load their module first: `idle` waits for
+ * `requestIdleCallback` (`setTimeout` fallback), `visible` for an `IntersectionObserver` on the
+ * first element after the opening marker (else the parent), `interaction` for a capture
+ * `pointerdown`/`focusin`/`keydown` on the parent — and any of those events inside the island
+ * loads it at once in every lazy mode. Events that arrive before the code loads are lost.
+ * Throws when `islands` lacks an id found in the markup; the returned function disposes every
+ * hydrated island, cancels the pending ones, and leaves the DOM as is.
  */
-export function hydrateIslands(
-  element: Element,
-  islands: Record<string, (props: Any) => JSX.Element>,
-): () => void {
-  const found: ServerIsland[] = [];
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_COMMENT);
-  while (walker.nextNode()) {
-    const open = walker.currentNode as Comment;
-    const marker = open.data;
-    if (marker[0] !== IslandOpen) continue;
-    const idEnd = marker.indexOf(":");
-    const scopeEnd = marker.indexOf(":", idEnd + 1);
-    const id = marker.slice(1, idEnd);
-    if (!Object.hasOwn(islands, id)) throw new Error(`hydrateIslands: no component for island "${id}"`);
-    let close = open.nextSibling!;
-    while (!isInsertMarker(close, IslandClose)) close = close.nextSibling!;
-    walker.currentNode = close;
-    found.push({
-      open,
-      close: close as Comment,
-      render: islands[id]!,
-      scope: marker.slice(idEnd + 1, scopeEnd),
-      props: JSON.parse(marker.slice(scopeEnd + 1)),
-    });
-  }
+export function hydrateIslands(element: Element, islands: Record<string, IslandValue>): () => void {
+  applyStreamChunks(element);
+  const found = collectIslands(element, islands);
   return root((dispose) => {
-    for (const island of found) hydrateIsland(island);
-    return dispose;
+    const state = { cancelled: false };
+    const cancellations: (() => void)[] = [];
+    for (const island of found) hydrateFound(island, state, cancellations.push.bind(cancellations));
+    return () => {
+      state.cancelled = true;
+      for (const cancel of cancellations) cancel();
+      dispose();
+    };
   });
 }
 
-function hydrateIsland({ open, close, render, scope, props }: ServerIsland): void {
+/** Every island marker pair in document order, with its slot ranges; nested islands inside slots included. */
+function collectIslands(element: Element, islands: Record<string, IslandValue>): ServerIsland[] {
+  interface Frame {
+    open: Comment;
+    value: IslandValue;
+    scope: string;
+    props: Props;
+    slots: SlotRange[];
+    openSlot: { name: string; open: Comment } | undefined;
+  }
+  const found: ServerIsland[] = [];
+  const stack: Frame[] = [];
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_COMMENT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Comment;
+    const marker = node.data;
+    if (marker === IslandClose) {
+      const frame = stack.pop();
+      if (frame) found.push({ ...frame, close: node });
+    } else if (marker === SlotClose) {
+      const frame = stack[stack.length - 1];
+      const openSlot = frame?.openSlot;
+      if (!frame || !openSlot) continue;
+      frame.openSlot = undefined;
+      const nodes: Node[] = [];
+      for (let n = openSlot.open.nextSibling!; n !== node; n = n.nextSibling!) nodes.push(n);
+      frame.slots.push({ name: openSlot.name, nodes });
+    } else if (marker.startsWith(SlotOpen)) {
+      const frame = stack[stack.length - 1];
+      if (!frame || frame.openSlot) continue;
+      frame.openSlot = { name: decodeURIComponent(marker.slice(SlotOpen.length)), open: node };
+    } else if (marker[0] === IslandOpen) {
+      const parsed = parseIslandMarker(marker);
+      if (!parsed) continue;
+      if (!Object.hasOwn(islands, parsed.id)) {
+        throw new Error(`hydrateIslands: no component for island "${parsed.id}"`);
+      }
+      stack.push({
+        open: node,
+        value: islands[parsed.id]!,
+        scope: parsed.scope,
+        props: parsed.props,
+        slots: [],
+        openSlot: undefined,
+      });
+    }
+  }
+  return found;
+}
+
+/** `<!--$id:scope:json:mode-->`; `mode` is the text after the last colon. */
+function parseIslandMarker(
+  marker: string,
+): { id: string; scope: string; props: Props; mode: string } | undefined {
+  const idEnd = marker.indexOf(":");
+  const modeEnd = marker.lastIndexOf(":");
+  if (marker[0] !== IslandOpen || idEnd < 0 || modeEnd <= idEnd) return undefined;
+  const middle = marker.slice(idEnd + 1, modeEnd);
+  const scopeEnd = middle.indexOf(":");
+  if (scopeEnd < 0) return undefined;
+  return {
+    id: marker.slice(1, idEnd),
+    scope: middle.slice(0, scopeEnd),
+    props: JSON.parse(middle.slice(scopeEnd + 1)),
+    mode: marker.slice(modeEnd + 1),
+  };
+}
+
+function hydrateFound(
+  island: ServerIsland,
+  state: { cancelled: boolean },
+  onPending: (cancel: () => void) => void,
+): void {
+  const props = { ...island.props };
+  for (const slot of island.slots) {
+    if (!(slot.name in props)) props[slot.name] = slot.nodes.length ? slot.nodes : undefined;
+  }
+  if (typeof island.value === "function") {
+    hydrateNow(island, island.value, props);
+    return;
+  }
+  hydrateLazy(island, props, island.value, state, onPending);
+}
+
+function islandValueMode(value: IslandValue): string {
+  return typeof value === "function" ? "eager" : value.mode;
+}
+
+function hydrateNow(island: ServerIsland, render: (props: Any) => JSX.Element, props: Props): void {
+  const { open, close, scope } = island;
   const current: Node[] = [];
   claimable = new Map();
   for (let node = open.nextSibling!; node !== close; node = node.nextSibling!) {
@@ -191,12 +285,131 @@ function hydrateIsland({ open, close, render, scope, props }: ServerIsland): voi
     for (const claimed of (node as Element).querySelectorAll("[data-hk]")) addClaimable(claimed);
   }
   try {
-    withKeyScope(scope, () => insert(open.parentNode!, untrack(() => render(props)), close, current));
+    withKeyScope(scope, () =>
+      insert(
+        open.parentNode!,
+        untrack(() => render(props)),
+        close,
+        current,
+      ),
+    );
   } finally {
     claimable = undefined;
   }
 }
 
+/** Loads a lazy island on its trigger and hydrates it; cancelled islands never load. */
+function hydrateLazy(
+  island: ServerIsland,
+  props: Props,
+  descriptor: { load: () => Promise<Record<string, Any>>; export: string },
+  state: { cancelled: boolean },
+  onPending: (cancel: () => void) => void,
+): void {
+  let settled = false;
+  const cancels: (() => void)[] = [];
+  const load = (): void => {
+    if (settled || state.cancelled) return;
+    settled = true;
+    for (const cancel of cancels) cancel();
+    void descriptor.load().then(
+      (namespace) => {
+        if (state.cancelled) return;
+        const render = namespace[descriptor.export];
+        if (typeof render !== "function") {
+          throw new Error(`hydrateIslands: no export "${descriptor.export}" for island`);
+        }
+        hydrateNow(island, render, props);
+      },
+      () => {},
+    );
+  };
+  const mode = islandValueMode(descriptor as IslandValue);
+  if (mode === "eager") {
+    load();
+    return;
+  }
+  cancels.push(watchInteraction(island, load));
+  if (mode === "idle") {
+    const idle = (window as Any).requestIdleCallback as
+      | ((callback: () => void) => number)
+      | undefined;
+    if (idle) {
+      const id = idle.call(window, load);
+      const cancelIdle = (window as Any).cancelIdleCallback as ((id: number) => void) | undefined;
+      cancels.push(() => (cancelIdle ? cancelIdle.call(window, id) : undefined));
+    } else {
+      const id = setTimeout(load, 1);
+      cancels.push(() => clearTimeout(id));
+    }
+  } else if (mode === "visible") {
+    cancels.push(watchVisible(island, load));
+  } else if (mode !== "interaction") {
+    const id = setTimeout(load, 1);
+    cancels.push(() => clearTimeout(id));
+  }
+  onPending(() => {
+    for (const cancel of cancels) cancel();
+  });
+}
+
+/** The first element after the opening marker inside the island, else its parent. */
+function visibleTarget(island: ServerIsland): Element | null {
+  for (let n = island.open.nextSibling; n && n !== island.close; n = n.nextSibling) {
+    if (n.nodeType === 1) return n as Element;
+  }
+  return island.open.parentNode as Element | null;
+}
+
+function watchVisible(island: ServerIsland, load: () => void): () => void {
+  const Observer = (window as Any).IntersectionObserver as
+    | (new (callback: (entries: { isIntersecting: boolean }[]) => void) => {
+        observe(target: Element): void;
+        disconnect(): void;
+      })
+    | undefined;
+  if (!Observer) {
+    const id = setTimeout(load, 1);
+    return () => clearTimeout(id);
+  }
+  const observer = new Observer((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) {
+      observer.disconnect();
+      load();
+    }
+  });
+  const target = visibleTarget(island);
+  if (target) observer.observe(target);
+  else load();
+  return () => observer.disconnect();
+}
+
+/**
+ * Capture `pointerdown`/`focusin`/`keydown` on the opening marker's parent: an event inside the
+ * island range loads it at once, in every lazy mode.
+ */
+function watchInteraction(island: ServerIsland, load: () => void): () => void {
+  const parent = island.open.parentNode as Element | null;
+  if (!parent) return () => {};
+  const onEvent = (event: Event): void => {
+    if (inIslandRange(island, event.target as Node | null)) load();
+  };
+  for (const name of ["pointerdown", "focusin", "keydown"]) {
+    parent.addEventListener(name, onEvent, true);
+  }
+  return () => {
+    for (const name of ["pointerdown", "focusin", "keydown"]) {
+      parent.removeEventListener(name, onEvent, true);
+    }
+  };
+}
+
+function inIslandRange(island: ServerIsland, target: Node | null): boolean {
+  for (let n = island.open.nextSibling; n && n !== island.close; n = n.nextSibling) {
+    if (n === target || (n.nodeType === 1 && (n as Element).contains(target))) return true;
+  }
+  return false;
+}
 /** The server-rendered root of this template, or a fresh clone when there is none to claim. */
 export function claim(template: () => Node, tag: string): Node {
   const key = claimable && nextHydrationKey();
@@ -212,6 +425,9 @@ const InsertOpen = "[";
 const InsertClose = "]";
 export const IslandOpen = "$";
 export const IslandClose = "/$";
+/** `<!--$slot:<percent-encoded name>-->` opens the range of one island slot. */
+export const SlotOpen = "$slot:";
+export const SlotClose = "/$slot";
 
 function isInsertMarker(node: Node | null, data: string): boolean {
   return node?.nodeType === 8 && (node as Comment).data === data;

@@ -29,9 +29,11 @@ export {
 } from "./dom";
 export type { ClassValue } from "./dom";
 export {
+  renderToStream,
   renderToString,
   ssr,
   ssrAttribute,
+  ssrAwait,
   ssrBoolAttribute,
   ssrChild,
   ssrClass,
@@ -53,3 +55,5 @@ export {
 } from "@rezejs/signals";
 export { Suspense, trackPending } from "./flow";
 export type { SuspenseProps } from "./flow";
+export { applyStreamChunks, streamBoundary, streamOutput, streamValue } from "./stream";
+export type { StreamBoundary } from "./stream";

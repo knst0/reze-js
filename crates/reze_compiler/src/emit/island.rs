@@ -1,5 +1,5 @@
-//! Island roots (SPEC §15.9): `renderToString(code, true)` on the server, `hydrateIslands` in
-//! the browser, the call as written for the client target.
+//! Island roots (SPEC §15.9, §16.3): `renderToString(code, true)` on the server,
+//! `hydrateIslands` in the browser, the call as written for the client target.
 
 use std::fmt::Write;
 
@@ -8,6 +8,7 @@ use oxc_span::Span;
 use super::{Emitter, Helper};
 use crate::Target;
 use crate::code::Code;
+use crate::facts::IslandMode;
 use crate::html::push_js_string;
 use crate::ir::{Embed, IslandImport, RootKind};
 
@@ -28,10 +29,10 @@ impl<'a> Emitter<'a, '_> {
                 self.embed(out, element);
                 out.push(", {");
                 for (i, island) in islands.iter().enumerate() {
-                    let alias = self.island_import(island, i);
                     out.push(if i == 0 { " " } else { ", " });
                     push_js_string(&mut out.text, island.id);
-                    let _ = write!(out, ": {alias}");
+                    out.push(": ");
+                    self.island_value(out, island, i);
                 }
                 out.push(if islands.is_empty() { "})" } else { " })" });
             }
@@ -53,7 +54,23 @@ impl<'a> Emitter<'a, '_> {
             }
         }
     }
-
+    /// The value of an island in the `hydrateIslands` map: the statically imported component
+    /// when some position is eager, otherwise a lazy descriptor the bundler splits per island
+    /// (`load()` resolves the module namespace, the component is read off `export`).
+    fn island_value(&mut self, out: &mut Code, island: &IslandImport<'a>, index: usize) {
+        if island.mode == IslandMode::Eager {
+            let alias = self.island_import(island, index);
+            out.push(alias);
+            return;
+        }
+        out.push("{ load: () => import(");
+        push_js_string(&mut out.text, island.specifier);
+        out.push("), mode: ");
+        push_js_string(&mut out.text, island.mode.as_str());
+        out.push(", export: ");
+        push_js_string(&mut out.text, island.export);
+        out.push(" }");
+    }
     /// The local name of an island's component, imported once per module.
     fn island_import(&mut self, island: &IslandImport<'a>, index: usize) -> &'a str {
         if let Some((_, alias, _)) = self.island_imports.iter().find(|(export, _, specifier)| {

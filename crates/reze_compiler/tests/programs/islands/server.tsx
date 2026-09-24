@@ -1,6 +1,7 @@
 import { renderToString } from "reze-js";
-import { Layout } from "./Page";
+
 import { Panel } from "./Hidden";
+import { Layout } from "./Page";
 
 export const html = renderToString(() => <Layout title="Docs" />);
 export const panel = renderToString(() => <Panel />);

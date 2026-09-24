@@ -1,0 +1,45 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+assertion_line: 191
+expression: "import { store } from \"reze-js\";\nconst [todos, setTodos] = store({ items: [{ done: false }], filter: \"all\" });\nconst [user, setUser] = store({ profile: { name: \"\", age: 0 } });\nexport const push = (x) => { todos.items.push(x); };\nexport const view = (\n  <ul onClick={() => setTodos((d) => { d.items.push({ done: true }); d.items[0].done = true; d.items[0].done ||= false; d.items.sort(); })}>\n    <For each={todos.items}>{(item) => <li>{item().done}</li>}</For>\n    {todos.items.length}{todos.items[0].done}{[...todos.items]}\n  </ul>\n);\nexport const fill = (name, age) => setUser((d) => { d.profile = { name, age }; });\nexport const bump = (i) => setUser((d) => { d.profile.age += i; });"
+---
+import { store } from "reze-js";
+import { signal as _$signal, template as _$template, claim as _$claim, untrack as _$untrack, claimInsert as _$claimInsert, createComponent as _$createComponent, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<ul></ul>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<li></li>");
+const [todos$items, setTodos$items] = _$signal([{ done: false }]), [todos$filter] = _$signal("all");
+const [user$profile$name, setUser$profile$name] = _$signal(""), [user$profile$age, setUser$profile$age] = _$signal(0);
+export const push = (x) => { setTodos$items((v) => { const c = v.slice(); c.push(x); return c; }); };
+export const view = (
+  (() => {
+  var _el$ = _$claim(_tmpl$, "ul");
+  _el$.$$click = () => void _$untrack(() => { setTodos$items((v) => { const c = v.slice(); c.push({ done: true }); return c; }); setTodos$items((v) => { const c = v.slice(); const i$ = 0; c[i$] = { ...c[i$], done: true }; return c; }); setTodos$items((v) => { const c = v.slice(); const i$2 = 0; c[i$2] = { ...c[i$2], done: c[i$2].done || false }; return c; }); setTodos$items((v) => { const c = v.slice(); c.sort(); return c; }); });
+  _$claimInsert(_el$, _$createComponent(For, { get each() { return todos$items(); }, children: (item) => (() => {
+  var _el$2 = _$claim(_tmpl$2, "li");
+  _$claimInsert(_el$2, () => item().done);
+  return _el$2;
+})() }), null, 3);
+  _$claimInsert(_el$, () => todos$items().length, null, 2);
+  _$claimInsert(_el$, () => todos$items()[0].done, null, 1);
+  _$claimInsert(_el$, () => [...todos$items()], null);
+  return _el$;
+})()
+);
+export const fill = (name, age) => void _$untrack(() => { { const t$ = name; const t$2 = age; setUser$profile$name(() => t$); setUser$profile$age(() => t$2); }; });
+export const bump = (i) => void _$untrack(() => { setUser$profile$age((v) => v + i); });
+_$delegateEvents(["click"]);
+
+// info
+[STORE_UNPROXIED] Every use of `todos` reads one of its fields and every write goes through a `setTodos` draft, so the store compiled to one signal per field.
+  at case.tsx:2:7
+  1 | import { store } from "reze-js";
+> 2 | const [todos, setTodos] = store({ items: [{ done: false }], filter: "all" });
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | const [user, setUser] = store({ profile: { name: "", age: 0 } });
+// info
+[STORE_UNPROXIED] Every use of `user` reads one of its fields and every write goes through a `setUser` draft, so the store compiled to one signal per field.
+  at case.tsx:3:7
+  2 | const [todos, setTodos] = store({ items: [{ done: false }], filter: "all" });
+> 3 | const [user, setUser] = store({ profile: { name: "", age: 0 } });
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 | export const push = (x) => { todos.items.push(x); };

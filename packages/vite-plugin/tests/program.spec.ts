@@ -2,8 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, expect, test } from "vitest";
 import { build } from "vite";
+import { afterEach, expect, test } from "vitest";
 
 import reze, { type Options } from "../src/index";
 

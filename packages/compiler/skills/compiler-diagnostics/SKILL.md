@@ -383,7 +383,7 @@ export function Counter() {
 
 **Island boundary** · severity `info`
 
-A static component renders a client component with JSON-serializable props. The server marks the boundary and serializes the props; the browser hydrates only the island, with the runtime features in `data.features`. `data.id` identifies the island.
+A static component renders a client component with JSON-serializable props or JSX slots. The server marks the boundary and serializes the props; the browser hydrates only the island, with the runtime features in `data.features` and the load mode in `data.mode`. `data.id` identifies the island.
 
 **Repair:** Nothing to repair.
 
@@ -393,6 +393,42 @@ Example:
 export function Page() {
   return <main><h1>Docs</h1><Counter start={1} /></main>;
 }
+```
+
+## LAZY_ISLAND
+
+**Island loaded lazily** · severity `info`
+
+The island boundary carries `island:load` with a mode other than `eager`: its module is split into its own chunk and loaded on `idle`, when it becomes `visible`, or on the first `interaction` (`data.mode`). Events that reach the island before its code has loaded are dropped.
+
+**Repair:** Nothing to repair. Use `island:load="eager"` (or drop the attribute) for islands that must react to the very first event.
+
+Example:
+
+```tsx
+export function Page() {
+  return <main><Comments island:load="visible" post={1} /></main>;
+}
+```
+
+## ISLAND_DIRECTIVE_IGNORED
+
+**`island:*` attribute outside an island boundary** · severity `warn`
+
+An `island:load` attribute sits on an element that is not an island boundary: a native element, a component that is static or runs on the client anyway, or a build without `islands`. It is compiled as a plain attribute and has no effect on loading.
+
+**Repair:** Remove the attribute, or make the position an island boundary (a client component rendered by a static component with JSON props or JSX slots) in a build with `islands`.
+
+Before:
+
+```tsx
+<Counter island:load="idle" start={1} />  // inside a client component
+```
+
+After:
+
+```tsx
+<Counter start={1} />
 ```
 
 ## FACTS_STALE

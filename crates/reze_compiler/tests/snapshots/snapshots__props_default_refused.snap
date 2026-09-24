@@ -1,0 +1,85 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "function A({ a = new Date() }) { return <p>{a}</p>; }\nfunction B({ a = tag`x` }) { return <p>{a}</p>; }\nfunction C({ a = b, b }) { return <p>{a}{b}</p>; }\nfunction D({ a = x }) { const x = 1; return <p>{a}{x}</p>; }\nconst E = ({ a = <b /> }) => <p>{a}</p>;\nfunction F({ a = arguments[0] }) { return <p>{a}</p>; }"
+---
+import { template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p></p>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<b></b>");
+function A({ a = new Date() }) { return (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, a);
+  return _el$;
+})(); }
+function B({ a = tag`x` }) { return (() => {
+  var _el$2 = _tmpl$();
+  _$insert(_el$2, a);
+  return _el$2;
+})(); }
+function C({ a = b, b }) { return (() => {
+  var _el$3 = _tmpl$();
+  _$insert(_el$3, a, null);
+  _$insert(_el$3, b, null);
+  return _el$3;
+})(); }
+function D({ a = x }) { const x = 1; return (() => {
+  var _el$4 = _tmpl$();
+  _$insert(_el$4, a, null);
+  _$insert(_el$4, x, null);
+  return _el$4;
+})(); }
+const E = ({ a = _tmpl$2() }) => (() => {
+  var _el$5 = _tmpl$();
+  _$insert(_el$5, a);
+  return _el$5;
+})();
+function F({ a = arguments[0] }) { return (() => {
+  var _el$6 = _tmpl$();
+  _$insert(_el$6, a);
+  return _el$6;
+})(); }
+// warn
+[PROPS_DESTRUCTURED] `A` destructures its props with a default that cannot run once at the component's start (a call, `new`, a tagged template, or a name declared later or in the body), which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <A>
+  at case.tsx:1:12
+> 1 | function A({ a = new Date() }) { return <p>{a}</p>; }
+    |            ^^^^^^^^^^^^^^^^^^
+  2 | function B({ a = tag`x` }) { return <p>{a}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `B` destructures its props with a default that cannot run once at the component's start (a call, `new`, a tagged template, or a name declared later or in the body), which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <B>
+  at case.tsx:2:12
+  1 | function A({ a = new Date() }) { return <p>{a}</p>; }
+> 2 | function B({ a = tag`x` }) { return <p>{a}</p>; }
+    |            ^^^^^^^^^^^^^^
+  3 | function C({ a = b, b }) { return <p>{a}{b}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `C` destructures its props with a default that cannot run once at the component's start (a call, `new`, a tagged template, or a name declared later or in the body), which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <C>
+  at case.tsx:3:12
+  2 | function B({ a = tag`x` }) { return <p>{a}</p>; }
+> 3 | function C({ a = b, b }) { return <p>{a}{b}</p>; }
+    |            ^^^^^^^^^^^^
+  4 | function D({ a = x }) { const x = 1; return <p>{a}{x}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `D` destructures its props with a default that cannot run once at the component's start (a call, `new`, a tagged template, or a name declared later or in the body), which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <D>
+  at case.tsx:4:12
+  3 | function C({ a = b, b }) { return <p>{a}{b}</p>; }
+> 4 | function D({ a = x }) { const x = 1; return <p>{a}{x}</p>; }
+    |            ^^^^^^^^^
+  5 | const E = ({ a = <b /> }) => <p>{a}</p>;
+// warn
+[PROPS_DESTRUCTURED] `E` destructures its props with a default that cannot run once at the component's start (a call, `new`, a tagged template, or a name declared later or in the body), which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <E>
+  at case.tsx:5:12
+  4 | function D({ a = x }) { const x = 1; return <p>{a}{x}</p>; }
+> 5 | const E = ({ a = <b /> }) => <p>{a}</p>;
+    |            ^^^^^^^^^^^^^
+  6 | function F({ a = arguments[0] }) { return <p>{a}</p>; }
+// warn
+[PROPS_DESTRUCTURED] `F` destructures its props with a body that reads `arguments`, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+  in <F>
+  at case.tsx:6:12
+  5 | const E = ({ a = <b /> }) => <p>{a}</p>;
+> 6 | function F({ a = arguments[0] }) { return <p>{a}</p>; }
+    |            ^^^^^^^^^^^^^^^^^^^^

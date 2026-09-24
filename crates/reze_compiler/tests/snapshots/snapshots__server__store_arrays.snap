@@ -1,0 +1,31 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+assertion_line: 191
+expression: "import { store } from \"reze-js\";\nconst [todos, setTodos] = store({ items: [{ done: false }], filter: \"all\" });\nconst [user, setUser] = store({ profile: { name: \"\", age: 0 } });\nexport const push = (x) => { todos.items.push(x); };\nexport const view = (\n  <ul onClick={() => setTodos((d) => { d.items.push({ done: true }); d.items[0].done = true; d.items[0].done ||= false; d.items.sort(); })}>\n    <For each={todos.items}>{(item) => <li>{item().done}</li>}</For>\n    {todos.items.length}{todos.items[0].done}{[...todos.items]}\n  </ul>\n);\nexport const fill = (name, age) => setUser((d) => { d.profile = { name, age }; });\nexport const bump = (i) => setUser((d) => { d.profile.age += i; });"
+---
+import { store } from "reze-js";
+import { signal as _$signal, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, createComponent as _$createComponent, untrack as _$untrack } from "reze-js";
+const _tmpl$ = ["<ul", "><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></ul>"],
+  _tmpl$2 = ["<li", ">", "</li>"];
+const [todos$items, setTodos$items] = _$signal([{ done: false }]), [todos$filter] = _$signal("all");
+const [user$profile$name, setUser$profile$name] = _$signal(""), [user$profile$age, setUser$profile$age] = _$signal(0);
+export const push = (x) => { setTodos$items((v) => { const c = v.slice(); c.push(x); return c; }); };
+export const view = (
+  _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$createComponent(For, { get each() { return todos$items(); }, children: (item) => _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(item().done)) })), _$ssrChild(todos$items().length), _$ssrChild(todos$items()[0].done), _$ssrChild([...todos$items()]))
+);
+export const fill = (name, age) => void _$untrack(() => { { const t$ = name; const t$2 = age; setUser$profile$name(() => t$); setUser$profile$age(() => t$2); }; });
+export const bump = (i) => void _$untrack(() => { setUser$profile$age((v) => v + i); });
+// info
+[STORE_UNPROXIED] Every use of `todos` reads one of its fields and every write goes through a `setTodos` draft, so the store compiled to one signal per field.
+  at case.tsx:2:7
+  1 | import { store } from "reze-js";
+> 2 | const [todos, setTodos] = store({ items: [{ done: false }], filter: "all" });
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | const [user, setUser] = store({ profile: { name: "", age: 0 } });
+// info
+[STORE_UNPROXIED] Every use of `user` reads one of its fields and every write goes through a `setUser` draft, so the store compiled to one signal per field.
+  at case.tsx:3:7
+  2 | const [todos, setTodos] = store({ items: [{ done: false }], filter: "all" });
+> 3 | const [user, setUser] = store({ profile: { name: "", age: 0 } });
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 | export const push = (x) => { todos.items.push(x); };

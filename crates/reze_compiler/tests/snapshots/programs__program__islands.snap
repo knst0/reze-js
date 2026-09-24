@@ -1,5 +1,6 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
 expression: render(&dir)
 ---
 closed: []
@@ -12,14 +13,16 @@ const _tmpl$ = /*#__PURE__*/ _$template("<button>: </button>");
 
 export function Counter(props) {
   const [count, setCount] = signal(props.start);
-  return (() => {
+  return (
+    (() => {
   var _el$ = _tmpl$(),
     _el$2 = _el$.firstChild;
   _el$.$$click = () => setCount(count() + 1);
   _$insert(_el$, () => props.label, _el$2);
   _$insert(_el$, count, null);
   return _el$;
-})();
+})()
+  );
 }
 
 _$delegateEvents(["click"]);
@@ -39,7 +42,9 @@ const _tmpl$ = ["<button", "><!--[-->", "<!--]-->: <!--[-->", "<!--]--></button>
 
 export function Counter(props) {
   const [count, setCount] = signal(props.start);
-  return _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(props.label), _$ssrChild(count()));
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(props.label), _$ssrChild(count()))
+  );
 }
 
 // ==== /Counter.tsx [hydrate] ====
@@ -49,14 +54,16 @@ const _tmpl$ = /*#__PURE__*/ _$template("<button>: </button>");
 
 export function Counter(props) {
   const [count, setCount] = signal(props.start);
-  return (() => {
+  return (
+    (() => {
   var _el$ = _$claim(_tmpl$, "button"),
     _el$2 = _$claimChild(_el$, 0);
   _el$.$$click = () => setCount(count() + 1);
   _$claimInsert(_el$, () => props.label, _el$2);
   _$claimInsert(_el$, count, null);
   return _el$;
-})();
+})()
+  );
 }
 
 _$delegateEvents(["click"]);
@@ -77,11 +84,13 @@ function Hidden() {
 })();
 }
 
-export const Panel = () => (() => {
+export const Panel = () => (
+  (() => {
   var _el$2 = _tmpl$2();
   _$insert(_el$2, _$createComponent(Hidden, {}));
   return _el$2;
-})();
+})()
+);
 
 // info
 [CLIENT_COMPONENT] `Hidden` runs on the client: `[open, setOpen] = signal(false)` destructures a value.
@@ -95,10 +104,10 @@ export const Panel = () => (() => {
 [CLIENT_COMPONENT] `Panel` runs on the client: `<Hidden>` is a client component in a position that cannot be an island: the component is not exported from its module.
   at /Hidden.tsx:8:14
   7 | 
-> 8 | export const Panel = () => <aside><Hidden /></aside>;
+> 8 | export const Panel = () => (
     |              ^^^^^
-  9 | 
-  note: first client-only part (/Hidden.tsx:8:36)
+  9 |   <aside>
+  note: first client-only part (/Hidden.tsx:10:6)
   related: `[open, setOpen] = signal(false)` destructures a value (/Hidden.tsx:63)
 // ==== /Hidden.tsx [server] ====
 import { signal } from "reze-js";
@@ -111,7 +120,9 @@ function Hidden() {
   return _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("open", open()));
 }
 
-export const Panel = () => _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Hidden, {})));
+export const Panel = () => (
+  _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Hidden, {})))
+);
 
 // ==== /Hidden.tsx [hydrate] ====
 import { signal } from "reze-js";
@@ -129,11 +140,13 @@ function Hidden() {
 })();
 }
 
-export const Panel = () => (() => {
+export const Panel = () => (
+  (() => {
   var _el$2 = _$claim(_tmpl$2, "aside");
   _$claimInsert(_el$2, _$createComponent(Hidden, {}));
   return _el$2;
-})();
+})()
+);
 
 // ==== /Page.tsx [client] ====
 import { Counter } from "./Counter";
@@ -159,41 +172,53 @@ export function Page(props) {
 }
 
 export function Layout(props) {
-  return (() => {
+  return (
+    (() => {
   var _el$3 = _tmpl$2();
   _$insert(_el$3, _$createComponent(Page, { get title() { return props.title; } }));
   return _el$3;
-})();
+})()
+  );
 }
 
 export function Broken() {
-  return (() => {
+  return (
+    (() => {
   var _el$4 = _tmpl$3();
   _$insert(_el$4, _$createComponent(Counter, { start: () => 1 }));
   return _el$4;
-})();
+})()
+  );
 }
 
-export const WithChildren = () => (() => {
+export const WithChildren = () => (
+  (() => {
   var _el$5 = _tmpl$3();
   _$insert(_el$5, _$createComponent(Counter, { start: 1, children: "more" }));
   return _el$5;
-})();
-export const WithSpread = (props) => (() => {
+})()
+);
+export const WithSpread = (props) => (
+  (() => {
   var _el$6 = _tmpl$3();
   _$insert(_el$6, _$createComponent(Counter, props));
   return _el$6;
-})();
-export const WithRef = () => (() => {
+})()
+);
+export const WithRef = () => (
+  (() => {
   var _el$7 = _tmpl$3();
   _$insert(_el$7, _$createComponent(Counter, { start: 1, ref(r$) { typeof undefined === "function" ? undefined(r$) : undefined = r$; } }));
   return _el$7;
-})();
-export const WithJsxProp = () => (() => {
+})()
+);
+export const WithJsxProp = () => (
+  (() => {
   var _el$8 = _tmpl$3();
   _$insert(_el$8, _$createComponent(Counter, { start: 1, get label() { return _tmpl$4(); } }));
   return _el$8;
-})();
+})()
+);
 
 // info
 [STATIC_COMPONENT] `Page` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
@@ -224,50 +249,62 @@ export const WithJsxProp = () => (() => {
   14 | 
 > 15 | export function Layout(props) {
      |                 ^^^^^^
-  16 |   return <div class="layout"><Page title={props.title} /></div>;
+  16 |   return (
 // info
 [CLIENT_COMPONENT] `Broken` runs on the client: `() => 1` is not an inert expression.
-  at /Page.tsx:19:17
-  18 | 
-> 19 | export function Broken() {
-     |                 ^^^^^^
-  20 |   return <main><Counter start={() => 1} /></main>;
-  note: first client-only part (/Page.tsx:20:32)
-// info
-[CLIENT_COMPONENT] `WithChildren` runs on the client: `<Counter>` is a client component in a position that cannot be an island: `more` passes children, which an island cannot take.
-  at /Page.tsx:23:14
+  at /Page.tsx:23:17
   22 | 
-> 23 | export const WithChildren = () => <main><Counter start={1}>more</Counter></main>;
+> 23 | export function Broken() {
+     |                 ^^^^^^
+  24 |   return (
+  note: first client-only part (/Page.tsx:26:23)
+// info
+[STATIC_COMPONENT] `WithChildren` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Page.tsx:31:14
+  30 | 
+> 31 | export const WithChildren = () => (
      |              ^^^^^^^^^^^^
-  24 | export const WithSpread = (props) => <main><Counter {...props} /></main>;
-  note: first client-only part (/Page.tsx:23:42)
-  related: `[count, setCount] = signal(props.start)` destructures a value (/Counter.tsx:76)
+  32 |   <main>
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
+  in <WithChildren> › main
+  at /Page.tsx:33:6
+  32 |   <main>
+> 33 |     <Counter start={1}>more</Counter>
+     |      ^^^^^^^
+  34 |   </main>
 // info
 [CLIENT_COMPONENT] `WithSpread` runs on the client: `{...props}` spreads props.
-  at /Page.tsx:24:14
-  23 | export const WithChildren = () => <main><Counter start={1}>more</Counter></main>;
-> 24 | export const WithSpread = (props) => <main><Counter {...props} /></main>;
+  at /Page.tsx:36:14
+  35 | );
+> 36 | export const WithSpread = (props) => (
      |              ^^^^^^^^^^
-  25 | export const WithRef = () => <main><Counter start={1} ref={undefined} /></main>;
-  note: first client-only part (/Page.tsx:24:53)
+  37 |   <main>
+  note: first client-only part (/Page.tsx:38:14)
 // info
 [CLIENT_COMPONENT] `WithRef` runs on the client: `<Counter>` is a client component in a position that cannot be an island: `ref={undefined}` cannot cross an island boundary.
-  at /Page.tsx:25:14
-  24 | export const WithSpread = (props) => <main><Counter {...props} /></main>;
-> 25 | export const WithRef = () => <main><Counter start={1} ref={undefined} /></main>;
+  at /Page.tsx:41:14
+  40 | );
+> 41 | export const WithRef = () => (
      |              ^^^^^^^
-  26 | export const WithJsxProp = () => <main><Counter start={1} label={<b>x</b>} /></main>;
-  note: first client-only part (/Page.tsx:25:37)
+  42 |   <main>
+  note: first client-only part (/Page.tsx:43:6)
   related: `[count, setCount] = signal(props.start)` destructures a value (/Counter.tsx:76)
 // info
-[CLIENT_COMPONENT] `WithJsxProp` runs on the client: `<Counter>` is a client component in a position that cannot be an island: `<b>x</b>` is not serializable to an island.
-  at /Page.tsx:26:14
-  25 | export const WithRef = () => <main><Counter start={1} ref={undefined} /></main>;
-> 26 | export const WithJsxProp = () => <main><Counter start={1} label={<b>x</b>} /></main>;
+[STATIC_COMPONENT] `WithJsxProp` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Page.tsx:46:14
+  45 | );
+> 46 | export const WithJsxProp = () => (
      |              ^^^^^^^^^^^
-  27 | 
-  note: first client-only part (/Page.tsx:26:41)
-  related: `[count, setCount] = signal(props.start)` destructures a value (/Counter.tsx:76)
+  47 |   <main>
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
+  in <WithJsxProp> › main
+  at /Page.tsx:48:6
+  47 |   <main>
+> 48 |     <Counter start={1} label={<b>x</b>} />
+     |      ^^^^^^^
+  49 |   </main>
 // ==== /Page.tsx [server] ====
 import { Counter } from "./Counter";
 import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, ssrIsland as _$ssrIsland, createComponent as _$createComponent } from "reze-js";
@@ -285,17 +322,29 @@ export function Page(props) {
 }
 
 export function Layout(props) {
-  return _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Page, { get title() { return props.title; } })));
+  return (
+    _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Page, { get title() { return props.title; } })))
+  );
 }
 
 export function Broken() {
-  return _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Counter, { start: () => 1 })));
+  return (
+    _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Counter, { start: () => 1 })))
+  );
 }
 
-export const WithChildren = () => _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Counter, { start: 1, children: "more" })));
-export const WithSpread = (props) => _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Counter, props)));
-export const WithRef = () => _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Counter, { start: 1, ref(r$) { typeof undefined === "function" ? undefined(r$) : undefined = r$; } })));
-export const WithJsxProp = () => _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Counter, { start: 1, get label() { return _$ssr(_tmpl$4, _$ssrHydrationKey()); } })));
+export const WithChildren = () => (
+  _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 1 }, { get children() { return "more"; } })))
+);
+export const WithSpread = (props) => (
+  _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Counter, props)))
+);
+export const WithRef = () => (
+  _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Counter, { start: 1, ref(r$) { typeof undefined === "function" ? undefined(r$) : undefined = r$; } })))
+);
+export const WithJsxProp = () => (
+  _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 1 }, { get label() { return _$ssr(_tmpl$4, _$ssrHydrationKey()); } })))
+);
 
 // ==== /Page.tsx [hydrate] ====
 import { Counter } from "./Counter";
@@ -321,44 +370,57 @@ export function Page(props) {
 }
 
 export function Layout(props) {
-  return (() => {
+  return (
+    (() => {
   var _el$3 = _$claim(_tmpl$2, "div");
   _$claimInsert(_el$3, _$createComponent(Page, { get title() { return props.title; } }));
   return _el$3;
-})();
+})()
+  );
 }
 
 export function Broken() {
-  return (() => {
+  return (
+    (() => {
   var _el$4 = _$claim(_tmpl$3, "main");
   _$claimInsert(_el$4, _$createComponent(Counter, { start: () => 1 }));
   return _el$4;
-})();
+})()
+  );
 }
 
-export const WithChildren = () => (() => {
+export const WithChildren = () => (
+  (() => {
   var _el$5 = _$claim(_tmpl$3, "main");
   _$claimInsert(_el$5, _$createComponent(Counter, { start: 1, children: "more" }));
   return _el$5;
-})();
-export const WithSpread = (props) => (() => {
+})()
+);
+export const WithSpread = (props) => (
+  (() => {
   var _el$6 = _$claim(_tmpl$3, "main");
   _$claimInsert(_el$6, _$createComponent(Counter, props));
   return _el$6;
-})();
-export const WithRef = () => (() => {
+})()
+);
+export const WithRef = () => (
+  (() => {
   var _el$7 = _$claim(_tmpl$3, "main");
   _$claimInsert(_el$7, _$createComponent(Counter, { start: 1, ref(r$) { typeof undefined === "function" ? undefined(r$) : undefined = r$; } }));
   return _el$7;
-})();
-export const WithJsxProp = () => (() => {
+})()
+);
+export const WithJsxProp = () => (
+  (() => {
   var _el$8 = _$claim(_tmpl$3, "main");
   _$claimInsert(_el$8, _$createComponent(Counter, { start: 1, get label() { return _$claim(_tmpl$4, "b"); } }));
   return _el$8;
-})();
+})()
+);
 
 // ==== /client.tsx [client] ====
 import { hydrate } from "reze-js";
+
 import { Layout } from "./Page";
 import { createComponent as _$createComponent } from "reze-js";
 
@@ -366,6 +428,7 @@ hydrate(() => _$createComponent(Layout, { title: "Docs" }), document.getElementB
 
 // ==== /client.tsx [server] ====
 import { hydrate } from "reze-js";
+
 import { Layout } from "./Page";
 import { createComponent as _$createComponent } from "reze-js";
 
@@ -373,6 +436,7 @@ hydrate(() => _$createComponent(Layout, { title: "Docs" }), document.getElementB
 
 // ==== /client.tsx [hydrate] ====
 import { hydrate } from "reze-js";
+
 import { Layout } from "./Page";
 import { hydrateIslands as _$hydrateIslands } from "reze-js";
 import { Counter as _$island0 } from "./Counter.tsx";
@@ -381,8 +445,9 @@ _$hydrateIslands(document.getElementById("app"), { "qggwslvd5as5": _$island0 });
 
 // ==== /server.tsx [client] ====
 import { renderToString } from "reze-js";
-import { Layout } from "./Page";
+
 import { Panel } from "./Hidden";
+import { Layout } from "./Page";
 import { createComponent as _$createComponent } from "reze-js";
 
 export const html = renderToString(() => _$createComponent(Layout, { title: "Docs" }));
@@ -390,8 +455,9 @@ export const panel = renderToString(() => _$createComponent(Panel, {}));
 
 // ==== /server.tsx [server] ====
 import { renderToString } from "reze-js";
-import { Layout } from "./Page";
+
 import { Panel } from "./Hidden";
+import { Layout } from "./Page";
 import { createComponent as _$createComponent } from "reze-js";
 
 export const html = renderToString(() => _$createComponent(Layout, { title: "Docs" }), true);
@@ -399,8 +465,9 @@ export const panel = renderToString(() => _$createComponent(Panel, {}));
 
 // ==== /server.tsx [hydrate] ====
 import { renderToString } from "reze-js";
-import { Layout } from "./Page";
+
 import { Panel } from "./Hidden";
+import { Layout } from "./Page";
 import { createComponent as _$createComponent } from "reze-js";
 
 export const html = renderToString(() => _$createComponent(Layout, { title: "Docs" }));

@@ -1,5 +1,6 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
 expression: render(&dir)
 ---
 closed: ["/todo.ts"]
@@ -7,6 +8,7 @@ features: {"suspense": false}
 
 // ==== /main.tsx [client] ====
 import { render } from "reze-js";
+
 import { TodoView } from "./view";
 import { createComponent as _$createComponent } from "reze-js";
 
@@ -14,6 +16,7 @@ render(() => _$createComponent(TodoView, {}), document.body);
 
 // ==== /main.tsx [server] ====
 import { render } from "reze-js";
+
 import { TodoView } from "./view";
 import { createComponent as _$createComponent } from "reze-js";
 
@@ -21,6 +24,7 @@ render(() => _$createComponent(TodoView, {}), document.body);
 
 // ==== /main.tsx [hydrate] ====
 import { render } from "reze-js";
+
 import { TodoView } from "./view";
 import { createComponent as _$createComponent } from "reze-js";
 
@@ -40,20 +44,20 @@ export const [whole, setWhole] = store({ count: 0 });
 [STORE_UNPROXIED] Every use of `todo` reads one of its fields and every write goes through a `setTodo` draft, so the store compiled to one signal per field.
   at /todo.ts:3:14
   2 | 
-> 3 | export const [todo, setTodo] = store({ title: "Write M3", meta: { done: false, "due-date": "today" } });
-    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  4 | export const [settings] = store({ theme: "dark" });
+> 3 | export const [todo, setTodo] = store({
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 |   title: "Write M3",
   related: used here (/view.tsx:194)
-  related: used here (/view.tsx:233)
-  related: used here (/view.tsx:298)
-  related: used here (/view.tsx:312)
+  related: used here (/view.tsx:243)
+  related: used here (/view.tsx:339)
+  related: used here (/view.tsx:353)
 // info
 [STORE_UNPROXIED] Every use of `settings` reads one of its fields, so the store compiled to one signal per field.
-  at /todo.ts:4:14
-  3 | export const [todo, setTodo] = store({ title: "Write M3", meta: { done: false, "due-date": "today" } });
-> 4 | export const [settings] = store({ theme: "dark" });
+  at /todo.ts:7:14
+  6 | });
+> 7 | export const [settings] = store({ theme: "dark" });
     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  5 | export const [whole, setWhole] = store({ count: 0 });
+  8 | export const [whole, setWhole] = store({ count: 0 });
   related: used here (/view.tsx:123)
 // ==== /todo.ts [server] ====
 import { store } from "reze-js";
@@ -88,7 +92,10 @@ export function TodoView() {
     _el$3 = _el$2.nextSibling,
     _el$4 = _el$3.nextSibling,
     _el$5 = _el$4.nextSibling.nextSibling;
-  _el$2.$$input = () => void _$untrack(() => { _setTodo$meta$done(() => !_todo$meta$done()); });
+  _el$2.$$input = () =>
+          void _$untrack(() => {
+            _setTodo$meta$done(() => !_todo$meta$done());
+          });
   _$insert(_el$, () => _todo$title(), _el$3);
   _$insert(_el$, () => _todo$meta$due_date(), _el$4);
   _el$5.$$click = () => setWhole((d) => d.count++);
@@ -139,7 +146,10 @@ export function TodoView() {
     _el$3 = _$claimSibling(_el$2, 1),
     _el$4 = _$claimSibling(_el$3, 1),
     _el$5 = _$claimSibling(_el$4, 2);
-  _el$2.$$input = () => void _$untrack(() => { _setTodo$meta$done(() => !_todo$meta$done()); });
+  _el$2.$$input = () =>
+          void _$untrack(() => {
+            _setTodo$meta$done(() => !_todo$meta$done());
+          });
   _$claimInsert(_el$, () => _todo$title(), _el$3);
   _$claimInsert(_el$, () => _todo$meta$due_date(), _el$4);
   _el$5.$$click = () => setWhole((d) => d.count++);

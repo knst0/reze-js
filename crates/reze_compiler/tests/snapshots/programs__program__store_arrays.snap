@@ -1,0 +1,117 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
+expression: render(&dir)
+---
+closed: ["/store.ts"]
+features: {"suspense": false}
+
+// ==== /app.tsx [client] ====
+import { setState$todos as _setState$todos, state$todos as _state$todos } from "./store";
+import { template as _$template, untrack as _$untrack, insert as _$insert, createComponent as _$createComponent, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<ul></ul>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<li></li>");
+
+export function App() {
+  return (
+    (() => {
+  var _el$ = _tmpl$();
+  _el$.$$click = () =>
+        void _$untrack(() => {
+          _setState$todos((v) => { const c = v.slice(); c.push({ done: true }); return c; });
+          _setState$todos((v) => { const c = v.slice(); const i$ = 0; c[i$] = { ...c[i$], done: true }; return c; });
+        });
+  _$insert(_el$, _$createComponent(For, { get each() { return _state$todos(); }, children: (item) => (() => {
+  var _el$2 = _tmpl$2();
+  _$insert(_el$2, () => item().done);
+  return _el$2;
+})() }), null);
+  _$insert(_el$, () => _state$todos().length, null);
+  _$insert(_el$, () => _state$todos()[0].done, null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `App` runs on the client: `onClick` attaches an event handler.
+  at /app.tsx:3:17
+  2 | 
+> 3 | export function App() {
+    |                 ^^^
+  4 |   return (
+  note: first client-only part (/app.tsx:6:7)
+// ==== /app.tsx [server] ====
+import { setState$todos as _setState$todos, state$todos as _state$todos } from "./store";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = ["<ul", "><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></ul>"],
+  _tmpl$2 = ["<li", ">", "</li>"];
+
+export function App() {
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$createComponent(For, { get each() { return _state$todos(); }, children: (item) => _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(item().done)) })), _$ssrChild(_state$todos().length), _$ssrChild(_state$todos()[0].done))
+  );
+}
+
+// ==== /app.tsx [hydrate] ====
+import { setState$todos as _setState$todos, state$todos as _state$todos } from "./store";
+import { template as _$template, claim as _$claim, untrack as _$untrack, claimInsert as _$claimInsert, createComponent as _$createComponent, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<ul></ul>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<li></li>");
+
+export function App() {
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "ul");
+  _el$.$$click = () =>
+        void _$untrack(() => {
+          _setState$todos((v) => { const c = v.slice(); c.push({ done: true }); return c; });
+          _setState$todos((v) => { const c = v.slice(); const i$ = 0; c[i$] = { ...c[i$], done: true }; return c; });
+        });
+  _$claimInsert(_el$, _$createComponent(For, { get each() { return _state$todos(); }, children: (item) => (() => {
+  var _el$2 = _$claim(_tmpl$2, "li");
+  _$claimInsert(_el$2, () => item().done);
+  return _el$2;
+})() }), null, 2);
+  _$claimInsert(_el$, () => _state$todos().length, null, 1);
+  _$claimInsert(_el$, () => _state$todos()[0].done, null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// ==== /store.ts [client] ====
+import { store } from "reze-js";
+import { signal as _$signal } from "reze-js";
+
+const [state$todos, setState$todos] = _$signal([{ done: false }]), [state$filter] = _$signal("all");
+export { state$todos, setState$todos };
+
+// info
+[STORE_UNPROXIED] Every use of `state` reads one of its fields and every write goes through a `setState` draft, so the store compiled to one signal per field.
+  at /store.ts:3:14
+  2 | 
+> 3 | export const [state, setState] = store({ todos: [{ done: false }], filter: "all" });
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 | 
+  related: used here (/app.tsx:116)
+  related: used here (/app.tsx:250)
+  related: used here (/app.tsx:311)
+  related: used here (/app.tsx:338)
+// ==== /store.ts [server] ====
+import { store } from "reze-js";
+import { signal as _$signal } from "reze-js";
+
+const [state$todos, setState$todos] = _$signal([{ done: false }]), [state$filter] = _$signal("all");
+export { state$todos, setState$todos };
+
+// ==== /store.ts [hydrate] ====
+import { store } from "reze-js";
+import { signal as _$signal } from "reze-js";
+
+const [state$todos, setState$todos] = _$signal([{ done: false }]), [state$filter] = _$signal("all");
+export { state$todos, setState$todos };

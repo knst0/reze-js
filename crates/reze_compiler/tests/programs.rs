@@ -2,10 +2,11 @@
 //! `summarize` → `link` → `compile` for the three targets; the snapshot holds every output, the
 //! info diagnostics, and what `link` decided for the build.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use oxc_allocator::Allocator;
+use oxc_ast::ast::{Declaration, ImportDeclarationSpecifier, Statement};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
@@ -90,6 +91,87 @@ fn assert_valid(code: &str, id: &str) {
     assert!(semantic.diagnostics.is_empty(), "{id}: {:?}\n{code}", semantic.diagnostics);
 }
 
+/// Named imports of each module (specifier, imported name) and the names it exports; `None` for
+/// the exports of a module with `export *`.
+fn module_names(code: &str, id: &str) -> (Vec<(String, String)>, Option<BTreeSet<String>>) {
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, code, SourceType::from_path(id).unwrap()).parse();
+    let mut imports = Vec::new();
+    let mut exports = Some(BTreeSet::new());
+    macro_rules! export {
+        ($name:expr) => {
+            if let Some(exports) = &mut exports {
+                exports.insert($name);
+            }
+        };
+    }
+    for statement in &parsed.program.body {
+        match statement {
+            Statement::ImportDeclaration(import) if !import.import_kind.is_type() => {
+                for specifier in import.specifiers.iter().flatten() {
+                    let name = match specifier {
+                        ImportDeclarationSpecifier::ImportSpecifier(s)
+                            if !s.import_kind.is_type() =>
+                        {
+                            s.imported.name().to_string()
+                        }
+                        ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => "default".into(),
+                        _ => continue,
+                    };
+                    imports.push((import.source.value.to_string(), name));
+                }
+            }
+            Statement::ExportDeclaration(declaration) => match &declaration.declaration {
+                Declaration::VariableDeclaration(variables) => {
+                    for declarator in &variables.declarations {
+                        for id in declarator.id.get_binding_identifiers() {
+                            export!(id.name.to_string());
+                        }
+                    }
+                }
+                Declaration::FunctionDeclaration(f) => {
+                    f.id.iter().for_each(|id| export!(id.name.to_string()))
+                }
+                Declaration::ClassDeclaration(c) => {
+                    c.id.iter().for_each(|id| export!(id.name.to_string()))
+                }
+                _ => {}
+            },
+            Statement::ExportNamedDeclaration(named) => {
+                named.specifiers.iter().for_each(|s| export!(s.exported.name().to_string()));
+            }
+            Statement::ExportFromDeclaration(from) => {
+                from.specifiers.iter().for_each(|s| export!(s.exported.name().to_string()));
+            }
+            Statement::ExportDefaultDeclaration(_) => export!("default".into()),
+            Statement::ExportAllDeclaration(all) => match &all.exported {
+                Some(name) => export!(name.name().to_string()),
+                None => exports = None,
+            },
+            _ => {}
+        }
+    }
+    (imports, exports)
+}
+
+/// Every named import of a program module names an export of that module's output for the same
+/// target: no cross-module rewrite removes an export another module still imports.
+fn assert_imports_resolve(outputs: &BTreeMap<String, String>, label: &str) {
+    let names: BTreeMap<&str, _> =
+        outputs.iter().map(|(id, code)| (id.as_str(), module_names(code, id))).collect();
+    for (id, (imports, _)) in &names {
+        for (specifier, name) in imports {
+            let Some(target) = resolve(id, specifier, outputs) else { continue };
+            if let (_, Some(exports)) = &names[target.as_str()] {
+                assert!(
+                    exports.contains(name),
+                    "{id} [{label}] imports `{name}` from {target}, whose output does not export it"
+                );
+            }
+        }
+    }
+}
+
 fn render(dir: &Path) -> String {
     let config = config(dir);
     let ids = sources(dir);
@@ -110,6 +192,7 @@ fn render(dir: &Path) -> String {
         &LinkOptions { optimize: config.optimize, islands: config.islands, root: "/".to_string() },
     );
     let mut out = format!("closed: {:?}\nfeatures: {:?}\n", linked.closed, linked.features);
+    let mut outputs: BTreeMap<&str, BTreeMap<String, String>> = BTreeMap::new();
     for (id, source) in &ids {
         let facts = linked.facts.get(id).expect("facts for every module").clone();
         let json = serde_json::to_string(&facts).unwrap();
@@ -125,10 +208,14 @@ fn render(dir: &Path) -> String {
             };
             out.push_str(&format!("\n// ==== {id} [{label}] ====\n"));
             match compile(source, id, &options) {
-                Ok(None) => out.push_str("<unchanged>\n"),
+                Ok(None) => {
+                    out.push_str("<unchanged>\n");
+                    outputs.entry(label).or_default().insert(id.clone(), source.clone());
+                }
                 Ok(Some(output)) => {
                     assert_valid(&output.code, id);
                     out.push_str(&output.code);
+                    outputs.entry(label).or_default().insert(id.clone(), output.code.clone());
                     if *target == Target::Client {
                         for diagnostic in &output.diagnostics {
                             out.push_str("\n// ");
@@ -146,6 +233,9 @@ fn render(dir: &Path) -> String {
                 }
             }
         }
+    }
+    for (label, outputs) in &outputs {
+        assert_imports_resolve(outputs, label);
     }
     out
 }

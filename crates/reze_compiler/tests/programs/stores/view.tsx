@@ -6,7 +6,11 @@ export function TodoView() {
       <input
         type="checkbox"
         checked={todo.meta.done}
-        onInput={() => setTodo((d) => { d.meta.done = !d.meta.done; })}
+        onInput={() =>
+          setTodo((d) => {
+            d.meta.done = !d.meta.done;
+          })
+        }
       />
       {todo.title} ({todo.meta["due-date"]})
       <button onClick={() => setWhole((d) => d.count++)}>{JSON.stringify(whole)}</button>

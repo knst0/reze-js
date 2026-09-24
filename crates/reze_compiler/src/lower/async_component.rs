@@ -117,8 +117,8 @@ impl<'a> Lowerer<'a, '_> {
         body: &FunctionBody<'a>,
         plan: Plan<'_, 'a>,
     ) -> AsyncComponent<'a> {
-        let props_rest = self
-            .props_rest(params, Span::empty(super::props::block_start(body)), None)
+        let props_entry = self
+            .props_entry(params, Span::empty(super::props::block_start(body)), None)
             .map(|hole| Embed {
                 span: hole.span,
                 holes: oxc_allocator::Vec::from_iter_in([hole], &self.alloc),
@@ -146,7 +146,7 @@ impl<'a> Lowerer<'a, '_> {
             tail.push(self.stmt(statement));
         }
         let result = self.expr(plan.result);
-        AsyncComponent { head, params, props_rest, return_type, steps, tail, result }
+        AsyncComponent { head, params, props_entry, return_type, steps, tail, result }
     }
 
     /// `Promise<X>` unwraps to `X`: the rewritten component is synchronous.

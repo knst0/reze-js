@@ -21,12 +21,19 @@ pub struct ModuleFacts {
     pub folded_imports: Vec<FoldedImport>,
     /// Imported `signal`/`computed` getters, for `SIGNAL_NOT_CALLED`.
     pub getter_imports: Vec<ImportRef>,
+    /// Exported computeds of this module the program inlines into their only read (§16.5).
+    pub inlined_computeds: Vec<InlinedComputed>,
+    /// Reads of computeds of other modules inlined here (§16.5).
+    pub computed_reads: Vec<ComputedRead>,
     /// Exported stores of this module that the program unproxies (§15.6).
     pub stores: Vec<StoreExport>,
     /// Imported store bindings whose store is unproxied: the specifier is replaced by leaves.
     pub store_imports: Vec<StoreImport>,
     /// Every component of this module; `client: None` when it is static (§15.8).
     pub components: Vec<ComponentFact>,
+    /// Whether the build links islands at all (§15.9): without it every `island:*` attribute is
+    /// ignored (§16.3).
+    pub islands_enabled: bool,
     pub islands: Vec<IslandFact>,
     pub roots: Vec<RootFact>,
 }
@@ -84,6 +91,36 @@ pub struct FoldedImport {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct InlinedComputed {
+    /// Start of the computed's binding identifier.
+    pub binding: u32,
+    /// The read it is inlined into.
+    pub related: Vec<Related>,
+}
+
+/// `d()` of an imported computed → `(body)`, each reference of `body` renamed to a local binding
+/// of the imported module's export.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ComputedRead {
+    /// Start of the callee `d`.
+    pub callee: u32,
+    /// Start of the local identifier of the import specifier of `d`.
+    pub import: u32,
+    pub body: String,
+    pub references: Vec<BodyExport>,
+}
+
+/// A reference in the text of a computed body, by offsets into it, and the export naming it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct BodyExport {
+    pub start: u32,
+    pub end: u32,
+    pub export: String,
+    /// An import of this module (local identifier start) that already names the same binding.
+    pub import: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StoreExport {
     /// Start of the `state` binding identifier.
     pub state: u32,
@@ -98,6 +135,8 @@ pub struct LeafNames {
     pub path: Vec<String>,
     pub getter: Option<String>,
     pub setter: Option<String>,
+    /// Whether the leaf holds an array: whole reads need an array position (§16.6).
+    pub is_array: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,6 +168,41 @@ pub struct IslandFact {
     pub id: String,
     /// Sorted runtime exports the island's client code uses (§15.11).
     pub features: Vec<String>,
+    pub mode: IslandMode,
+    /// Props the server renders to HTML in the parent (§16.4); `children` for nested children.
+    pub slots: Vec<String>,
+}
+
+/// When the browser loads and hydrates an island (`island:load`, §16.3).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum IslandMode {
+    #[default]
+    Eager,
+    Idle,
+    Visible,
+    Interaction,
+}
+
+impl IslandMode {
+    pub fn from_directive(value: &str) -> Option<IslandMode> {
+        Some(match value {
+            "eager" => IslandMode::Eager,
+            "idle" => IslandMode::Idle,
+            "visible" => IslandMode::Visible,
+            "interaction" => IslandMode::Interaction,
+            _ => return None,
+        })
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            IslandMode::Eager => "eager",
+            IslandMode::Idle => "idle",
+            IslandMode::Visible => "visible",
+            IslandMode::Interaction => "interaction",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -144,6 +218,9 @@ pub struct RootIsland {
     /// Import specifier of the island's module, relative to the root's module.
     pub specifier: String,
     pub export: String,
+    /// `Eager` when any position of the island under the root is eager: the root imports it
+    /// statically. Otherwise the mode of its first position, and the root loads it lazily.
+    pub mode: IslandMode,
 }
 
 /// Why a decision was taken; `cause` continues the chain, possibly in another module.

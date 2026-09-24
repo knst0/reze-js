@@ -47,6 +47,10 @@ enum Helper {
     Effect,
     TrackAsync,
     TrackPending,
+    StreamBoundary,
+    StreamOutput,
+    StreamValue,
+    SsrAwait,
     Claim,
     ClaimChild,
     ClaimSibling,
@@ -94,6 +98,10 @@ impl Helper {
             Helper::Effect => "effect",
             Helper::TrackAsync => "trackAsync",
             Helper::TrackPending => "trackPending",
+            Helper::StreamBoundary => "streamBoundary",
+            Helper::StreamOutput => "streamOutput",
+            Helper::StreamValue => "streamValue",
+            Helper::SsrAwait => "ssrAwait",
             Helper::Claim => "claim",
             Helper::ClaimChild => "claimChild",
             Helper::ClaimSibling => "claimSibling",
@@ -139,6 +147,10 @@ impl Helper {
             Helper::Effect => "_$effect",
             Helper::TrackAsync => "_$trackAsync",
             Helper::TrackPending => "_$trackPending",
+            Helper::StreamBoundary => "_$streamBoundary",
+            Helper::StreamOutput => "_$streamOutput",
+            Helper::StreamValue => "_$streamValue",
+            Helper::SsrAwait => "_$ssrAwait",
             Helper::Claim => "_$claim",
             Helper::ClaimChild => "_$claimChild",
             Helper::ClaimSibling => "_$claimSibling",
@@ -384,20 +396,31 @@ impl<'a, 's> Emitter<'a, 's> {
                     self.embed(out, body);
                     out.push(")");
                 }
+                HoleKind::ImportedComputed { body, names } => {
+                    out.push("(");
+                    let mut position = 0;
+                    for name in names {
+                        out.push(&body[position..name.start as usize]);
+                        out.push(name.name);
+                        position = name.end as usize;
+                    }
+                    out.push(&body[position..]);
+                    out.push(")");
+                }
                 HoleKind::Remove => {}
                 HoleKind::IslandRoot { kind, callee, code, element, islands } => {
                     self.island_root(out, *kind, *callee, code, element.as_ref(), islands);
                 }
                 HoleKind::PropsParam { name } => out.push(name),
-                HoleKind::PropsRead { props, path, default, shorthand } => {
+                HoleKind::PropsRead { props, path, fallback, shorthand } => {
                     if *shorthand {
                         self.src(out, hole.span);
                         out.push(": ");
                     }
-                    self.props_read(out, props, path, default.as_ref());
+                    self.props_read(out, props, path, fallback.as_ref());
                 }
-                HoleKind::PropsRest { props, binding, keys, body } => {
-                    self.props_rest(out, props, *binding, keys, body.as_ref());
+                HoleKind::PropsEntry { props, rest, defaults, body } => {
+                    self.props_entry(out, props, rest.as_ref(), defaults, body.as_ref());
                 }
                 HoleKind::StoreDecl { leaves } => self.store_declaration(out, leaves),
                 HoleKind::StoreExport { declaration, specifiers } => {
@@ -412,6 +435,7 @@ impl<'a, 's> Emitter<'a, 's> {
                     out.push(getter);
                     out.push("()");
                 }
+                HoleKind::ArrayRead { getter, suffix } => self.array_read(out, getter, suffix),
                 HoleKind::StoreSet { body } => {
                     let untrack = self.helper(Helper::Untrack);
                     out.push("void ");
@@ -421,6 +445,7 @@ impl<'a, 's> Emitter<'a, 's> {
                     out.push(")");
                 }
                 HoleKind::StoreWrite { setter, write } => self.store_write(out, setter, write),
+                HoleKind::ArrayWrite { setter, write } => self.array_write(out, setter, write),
                 HoleKind::Specifiers { specifiers } => self.specifiers(out, specifiers),
             }
             position = hole.span.end;

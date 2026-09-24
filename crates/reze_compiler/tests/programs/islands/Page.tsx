@@ -13,14 +13,38 @@ export function Page(props) {
 }
 
 export function Layout(props) {
-  return <div class="layout"><Page title={props.title} /></div>;
+  return (
+    <div class="layout">
+      <Page title={props.title} />
+    </div>
+  );
 }
 
 export function Broken() {
-  return <main><Counter start={() => 1} /></main>;
+  return (
+    <main>
+      <Counter start={() => 1} />
+    </main>
+  );
 }
 
-export const WithChildren = () => <main><Counter start={1}>more</Counter></main>;
-export const WithSpread = (props) => <main><Counter {...props} /></main>;
-export const WithRef = () => <main><Counter start={1} ref={undefined} /></main>;
-export const WithJsxProp = () => <main><Counter start={1} label={<b>x</b>} /></main>;
+export const WithChildren = () => (
+  <main>
+    <Counter start={1}>more</Counter>
+  </main>
+);
+export const WithSpread = (props) => (
+  <main>
+    <Counter {...props} />
+  </main>
+);
+export const WithRef = () => (
+  <main>
+    <Counter start={1} ref={undefined} />
+  </main>
+);
+export const WithJsxProp = () => (
+  <main>
+    <Counter start={1} label={<b>x</b>} />
+  </main>
+);

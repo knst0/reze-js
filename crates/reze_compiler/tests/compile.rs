@@ -478,6 +478,13 @@ fn props_destructuring_that_cannot_be_rewritten_warns_with_its_reason() {
     let cases = [
         ("computed-key", "function C({ [k]: a }) { return <p>{a}</p>; }"),
         ("default", "function C({ a = f() }) { return <p>{a}</p>; }"),
+        ("default", "function C({ a = new Date() }) { return <p>{a}</p>; }"),
+        ("default", "function C({ a = tag`x` }) { return <p>{a}</p>; }"),
+        ("default", "function C({ a = <b /> }) { return <p>{a}</p>; }"),
+        ("default", "function C({ a = b, b }) { return <p>{a}{b}</p>; }"),
+        ("default", "function C({ a = x }) { const x = 1; return <p>{a}{x}</p>; }"),
+        ("default", "const C = ({ a = x }) => { if (a) { var x; } return <p>{a}</p>; };"),
+        ("arguments", "function C({ a = arguments[0] }) { return <p>{a}</p>; }"),
         ("nested-default", "function C({ a: { b } = {} }) { return <p>{b}</p>; }"),
         ("nested-rest", "function C({ a: { ...b } }) { return <p>{b}</p>; }"),
         ("written", "function C({ a }) { a = 1; return <p>{a}</p>; }"),
@@ -496,6 +503,27 @@ fn props_destructuring_that_cannot_be_rewritten_warns_with_its_reason() {
         "function C({ a }) { const f = function () { return arguments[0]; }; return <p>{f()}{a}</p>; }",
     );
     assert!(own_arguments.code.contains("function C(_props$)"), "{}", own_arguments.code);
+}
+
+#[test]
+fn pure_props_defaults_run_once_at_the_start_and_reads_stay_lazy() {
+    let out = output(
+        "function Badge({ label, color = theme.color, text = `${label}!`, onPick = () => pick(later), tone = color, n = 1, later }) {\n  \"use client\";\n  return <b title={text} onClick={onPick}>{tone}{n}{later}</b>;\n}",
+    );
+    let code = &out.code;
+    assert_valid(code, SourceType::tsx());
+    assert!(codes(&out.diagnostics).is_empty(), "{:?}", out.diagnostics);
+    assert!(
+        code.contains(
+            "\"use client\"; const _color$default = theme.color; const _text$default = `${_props$.label}!`; const _onPick$default = () => pick(_props$.later); const _tone$default = (_props$.color === undefined ? _color$default : _props$.color);"
+        ),
+        "{code}"
+    );
+    assert_eq!(code.matches("theme.color").count(), 1, "{code}");
+    assert!(code.contains("(_props$.tone === undefined ? _tone$default : _props$.tone)"), "{code}");
+    assert!(code.contains("(_props$.n === undefined ? 1 : _props$.n)"), "{code}");
+    let arrow = run("const C = ({ a = x }) => <p>{a}</p>;");
+    assert!(arrow.contains("const C = (_props$) => { const _a$default = x; return ("), "{arrow}");
 }
 
 #[test]
@@ -654,6 +682,7 @@ fn leaf(
         path: path.iter().map(|k| k.to_string()).collect(),
         getter: getter.map(str::to_string),
         setter: setter.map(str::to_string),
+        is_array: false,
     }
 }
 

@@ -2,10 +2,9 @@ import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { cleanup, fire, tick } from "@rezejs/test-utils";
+import reze from "@rezejs/vite-plugin";
 import { build } from "vite";
 import { afterEach, beforeAll, expect, test } from "vitest";
-
-import reze from "@rezejs/vite-plugin";
 
 afterEach(cleanup);
 
@@ -38,7 +37,11 @@ const configurations: Record<string, Configuration> = {
 
 type BuildName = keyof typeof configurations;
 
-async function viteBuild(name: string, configuration: Configuration, server: boolean): Promise<void> {
+async function viteBuild(
+  name: string,
+  configuration: Configuration,
+  server: boolean,
+): Promise<void> {
   const outDir = join(generated, `${name}-${server ? "server" : "client"}`);
   mkdirSync(outDir, { recursive: true });
   await build({
@@ -49,7 +52,9 @@ async function viteBuild(name: string, configuration: Configuration, server: boo
       reze({
         moduleName: "@rezejs/dom",
         ...configuration,
-        diagnostics: { jsonl: join(diagnosticsDir, `${name}-${server ? "server" : "client"}.jsonl`) },
+        diagnostics: {
+          jsonl: join(diagnosticsDir, `${name}-${server ? "server" : "client"}.jsonl`),
+        },
       }),
     ],
     build: {
@@ -76,11 +81,18 @@ async function buildProgram(): Promise<void> {
 
 beforeAll(buildProgram, 180000);
 
-async function loadBundles(name: BuildName, tag: string): Promise<{ server: ServerBundle; client: ClientBundle }> {
+async function loadBundles(
+  name: BuildName,
+  tag: string,
+): Promise<{ server: ServerBundle; client: ClientBundle }> {
   const query = `?program-${tag}`;
   return {
-    server: await import(/* @vite-ignore */ join(generated, `${name}-server`, "bundle.mjs") + query),
-    client: await import(/* @vite-ignore */ join(generated, `${name}-client`, "bundle.mjs") + query),
+    server: await import(
+      /* @vite-ignore */ join(generated, `${name}-server`, "bundle.mjs") + query
+    ),
+    client: await import(
+      /* @vite-ignore */ join(generated, `${name}-client`, "bundle.mjs") + query
+    ),
   };
 }
 
@@ -133,12 +145,16 @@ async function awaitBundleEffects(): Promise<void> {
 
 test("whole-program analysis folds the exported signal and unproxies the exported store", () => {
   const decisions = infos("islands");
-  expect(decisions.some((line) => line.includes('"scope":"program"') && line.startsWith("SIGNAL_FOLDED"))).toBe(
-    true,
-  );
-  expect(decisions.some((line) => line.includes('"scope":"program"') && line.startsWith("STORE_UNPROXIED"))).toBe(
-    true,
-  );
+  expect(
+    decisions.some(
+      (line) => line.includes('"scope":"program"') && line.startsWith("SIGNAL_FOLDED"),
+    ),
+  ).toBe(true);
+  expect(
+    decisions.some(
+      (line) => line.includes('"scope":"program"') && line.startsWith("STORE_UNPROXIED"),
+    ),
+  ).toBe(true);
   expect(decisions.some((line) => line.startsWith("ISLAND"))).toBe(true);
   expect(decisions.some((line) => line.startsWith("STATIC_COMPONENT"))).toBe(true);
 

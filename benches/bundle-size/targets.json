@@ -1,8 +1,14 @@
 {
-  "@rezejs/example-islands": {
-    "dir": "examples/islands"
+  "@rezejs/example-async": {
+    "dir": "examples/async"
   },
   "@rezejs/example-counter": {
     "dir": "examples/counter"
+  },
+  "@rezejs/example-islands": {
+    "dir": "examples/islands"
+  },
+  "@rezejs/example-islands-lazy": {
+    "dir": "examples/islands-lazy"
   }
 }

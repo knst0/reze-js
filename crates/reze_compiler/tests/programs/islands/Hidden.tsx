@@ -5,4 +5,8 @@ function Hidden() {
   return <details open={open()} onToggle={() => setOpen(!open())} />;
 }
 
-export const Panel = () => <aside><Hidden /></aside>;
+export const Panel = () => (
+  <aside>
+    <Hidden />
+  </aside>
+);

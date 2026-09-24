@@ -112,6 +112,22 @@ const CASES: &[(&str, &str)] = &[
         "function A({ [key]: a }) { return <p>{a}</p>; }\nfunction B({ a = f() }) { return <p>{a}</p>; }\nfunction C({ a: { b } = {} }) { return <p>{b}</p>; }\nfunction D({ a: { ...b } }) { return <p>{b}</p>; }\nfunction E({ a }) { a = 1; return <p>{a}</p>; }\nfunction F({ a }) { return <p>{arguments.length}{a}</p>; }\nfunction* G({ a }) { yield <p>{a}</p>; }\nconst H = function ({ a }, ref) { return <p ref={ref}>{a}</p>; };\nconst I = ({ a: [b] }) => <p>{b}</p>;",
     ),
     (
+        "props_default_hoisted",
+        "import { theme } from \"./theme\";\nconst Button = ({ label = theme.label, size, width = size, user: { name = theme.guest }, onPress = () => log(label, later), title = `${label}!`, style = { color: theme.color, [theme.key]: width }, items = [label, -size] as const, count = 0, later = label }: Props) => (\n  <button title={title} style={style} onClick={onPress}>{label}{width}{name}{items}{count}</button>\n);",
+    ),
+    (
+        "props_default_rest",
+        "function Link({ href = base + \"/\", label = href, ...rest }) {\n  \"use client\";\n  return <a href={href} {...rest}>{label}</a>;\n}",
+    ),
+    (
+        "props_default_async",
+        "async function User({ id = session.id, fallback = \"?\", ...rest }) {\n  const user = await fetchUser(id);\n  return <p {...rest}>{user.name ?? fallback}</p>;\n}",
+    ),
+    (
+        "props_default_refused",
+        "function A({ a = new Date() }) { return <p>{a}</p>; }\nfunction B({ a = tag`x` }) { return <p>{a}</p>; }\nfunction C({ a = b, b }) { return <p>{a}{b}</p>; }\nfunction D({ a = x }) { const x = 1; return <p>{a}{x}</p>; }\nconst E = ({ a = <b /> }) => <p>{a}</p>;\nfunction F({ a = arguments[0] }) { return <p>{a}</p>; }",
+    ),
+    (
         "computed_inlined",
         "import { computed, signal } from \"reze-js\";\nconst [name, setName] = signal(\"Reze\");\nconst greeting = computed(() => `Hi ${name()}`);\nexport const hello = <p onInput={() => setName(\"x\")}>{greeting()}</p>;\nfunction Counter() {\n  const [count, setCount] = signal(0);\n  const doubled = computed(() => count() * 2);\n  const label = computed(() => `n${count()}`);\n  const size = computed(() => (count() > 9 ? \"big\" : \"small\"));\n  const view = computed(() => <b>{count()}</b>);\n  return (\n    <div title={label()} onClick={() => setCount(count() + 1)}>\n      <Badge size={size()} />\n      {doubled()}\n      {view()}\n    </div>\n  );\n}",
     ),
@@ -126,6 +142,14 @@ const CASES: &[(&str, &str)] = &[
     (
         "store_refused",
         "import { store } from \"reze-js\";\nconst [whole] = store({ a: 1 });\nsave(whole);\nconst [nested] = store({ a: { b: 1 } });\nconst [keyed] = store({ a: 1 });\nconst [list, setList] = store({ items: [] });\nconst [later, setLater] = store({ a: 1 });\nsetLater((d) => { queue(() => { d.a = 2; }); });\nconst [valued, setValued] = store({ a: 1 });\nsetValued((d) => { log(d.a = 2); });\nexport const [exported] = store({ a: 1 });\nexport const view = (\n  <ul onClick={() => setList((d) => { d.items.push(1); })}>\n    {whole.a}{nested.a}{keyed[k]}{later.a}{valued.a}{exported.a}\n    {list.items.map((i) => <li>{i}</li>)}\n  </ul>\n);",
+    ),
+    (
+        "store_arrays",
+        "import { store } from \"reze-js\";\nconst [todos, setTodos] = store({ items: [{ done: false }], filter: \"all\" });\nconst [user, setUser] = store({ profile: { name: \"\", age: 0 } });\nexport const push = (x) => { todos.items.push(x); };\nexport const view = (\n  <ul onClick={() => setTodos((d) => { d.items.push({ done: true }); d.items[0].done = true; d.items[0].done ||= false; d.items.sort(); })}>\n    <For each={todos.items}>{(item) => <li>{item().done}</li>}</For>\n    {todos.items.length}{todos.items[0].done}{[...todos.items]}\n  </ul>\n);\nexport const fill = (name, age) => setUser((d) => { d.profile = { name, age }; });\nexport const bump = (i) => setUser((d) => { d.profile.age += i; });",
+    ),
+    (
+        "store_arrays_refused",
+        "import { store } from \"reze-js\";\nconst [bare, setBare] = store({ items: [1] });\nconst kept = bare.items;\nconst [compared, setCompared] = store({ items: [1] });\nconst same = compared.items === compared.items;\nconst [called, setCalled] = store({ items: [1] });\nuse(called.items);\nconst [spread, setSpread] = store({ items: [{ v: 1 }] });\nconst copy = { ...spread.items[0] };\nconst [deleted, setDeleted] = store({ items: [1] });\nsetDeleted((d) => { delete d.items[0]; });\nconst [shaped, setShaped] = store({ form: { a: 1, b: 2 } });\nsetShaped((d) => { d.form = other(); });\nconst [valued, setValued] = store({ items: [1] });\nsetValued((d) => { log(d.items.push(1)); });\nconst [jsx, setJsx] = store({ items: [0] });\nsetJsx((d) => { d.items[<b />] = 1; });\nexport const view = <ul>{kept.length}{same}{copy.v}</ul>;",
     ),
 ];
 

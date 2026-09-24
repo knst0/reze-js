@@ -8,5 +8,8 @@ export function renderPage(): string {
 }
 
 export function renderFn(): string {
-  return renderToString(() => ssrIsland("e2e", Counter, { start: 1, label: "fn", run: () => 1 }), true);
+  return renderToString(
+    () => ssrIsland("e2e", Counter, { start: 1, label: "fn", run: () => 1 }),
+    true,
+  );
 }

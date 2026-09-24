@@ -8,9 +8,13 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::node::NodeId;
 use oxc_syntax::reference::ReferenceId;
 
-/// A reference as the root of `x.k₁…kₙ` (static keys only, `n ≥ 0`) and what uses the chain.
+/// A reference as the root of `x.k₁…kₙ` (static keys only, `n ≥ 0`), an index tail and what
+/// uses the chain.
 pub struct Access<'a> {
     pub keys: Vec<&'a str>,
+    /// Computed indices and the static keys after them: `x.a[i].p` is keys `[a]` and tail
+    /// `[Index, Key("p")]` (§16.6). A string key before any index stays in `keys`.
+    pub tail: Vec<Tail<'a>>,
     pub context: Context,
     /// The whole chain, `x` included.
     pub span: Span,
@@ -18,6 +22,25 @@ pub struct Access<'a> {
     pub node: NodeId,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum Tail<'a> {
+    /// `[i]`: any index expression, literal or not.
+    Index { index: &'a Expression<'a> },
+    /// A static key after an index.
+    Key(&'a str),
+}
+
+impl PartialEq for Tail<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Tail::Index { index }, Tail::Index { index: other }) => index.span() == other.span(),
+            (Tail::Key(key), Tail::Key(other)) => key == other,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Tail<'_> {}
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Context {
     /// Callee of a call that is not optional and has no type arguments.
@@ -45,6 +68,7 @@ pub fn classify<'a>(
     if reference.flags().is_type() && !reference.flags().is_value() {
         return Some(Access {
             keys: Vec::new(),
+            tail: Vec::new(),
             context: Context::Other,
             span: start_span,
             node: start,
@@ -55,6 +79,7 @@ pub fn classify<'a>(
         AstKind::JSXOpeningElement(_) => {
             return Some(Access {
                 keys: Vec::new(),
+                tail: Vec::new(),
                 context: Context::Tag,
                 span: start_span,
                 node: start,
@@ -68,6 +93,7 @@ pub fn classify<'a>(
             };
             return Some(Access {
                 keys: vec![member.property.name.as_str()],
+                tail: Vec::new(),
                 context: tag_context,
                 span: member.span,
                 node: nodes.parent_id(start),
@@ -75,8 +101,8 @@ pub fn classify<'a>(
         }
         _ => {}
     }
-
     let mut keys = Vec::new();
+    let mut tail = Vec::new();
     let mut current = start;
     let mut current_span = start_span;
     loop {
@@ -87,31 +113,35 @@ pub fn classify<'a>(
                 if member.optional {
                     return Some(Access {
                         keys,
+                        tail,
                         context: Context::Other,
                         span: member.span,
                         node: parent,
                     });
                 }
-                keys.push(member.property.name.as_str());
+                if tail.is_empty() {
+                    keys.push(member.property.name.as_str());
+                } else {
+                    tail.push(Tail::Key(member.property.name.as_str()));
+                }
             }
             AstKind::ComputedMemberExpression(member) if member.object.span() == current_span => {
-                let Expression::StringLiteral(key) = member.expression.without_parentheses() else {
-                    return Some(Access {
-                        keys,
-                        context: Context::Other,
-                        span: member.span,
-                        node: parent,
-                    });
-                };
                 if member.optional {
                     return Some(Access {
                         keys,
+                        tail,
                         context: Context::Other,
                         span: member.span,
                         node: parent,
                     });
                 }
-                keys.push(key.value.as_str());
+                match member.expression.without_parentheses() {
+                    Expression::StringLiteral(key) if tail.is_empty() => {
+                        keys.push(key.value.as_str());
+                    }
+                    Expression::StringLiteral(key) => tail.push(Tail::Key(key.value.as_str())),
+                    _ => tail.push(Tail::Index { index: &member.expression }),
+                }
             }
             _ => break,
         }
@@ -149,13 +179,11 @@ pub fn classify<'a>(
         | AstKind::AssignmentTargetWithDefault(_)
         | AstKind::AssignmentTargetPropertyIdentifier(_)
         | AstKind::AssignmentTargetPropertyProperty(_)
-        | AstKind::TSAsExpression(_)
         | AstKind::TSSatisfiesExpression(_)
         | AstKind::TSNonNullExpression(_)
-        | AstKind::TSTypeAssertion(_)
         | AstKind::TSInstantiationExpression(_)
         | AstKind::ExportDefaultDeclaration(_) => Context::Other,
         _ => Context::Read,
     };
-    Some(Access { keys, context, span: current_span, node: current })
+    Some(Access { keys, tail, context, span: current_span, node: current })
 }

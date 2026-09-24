@@ -2,6 +2,7 @@
 //! §15.4). Independent of target and `optimize`; built from any dialect, JSX or not.
 
 mod inert;
+mod slots;
 
 use std::collections::HashMap;
 
@@ -12,10 +13,13 @@ use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
 use oxc_semantic::{AstNodes, Scoping, SemanticBuilder};
 use oxc_span::{GetSpan, SourceType, Span};
+use oxc_syntax::node::NodeId;
 use oxc_syntax::symbol::SymbolId;
 use serde::{Deserialize, Serialize};
 
-use crate::analyze::{self, is_foldable_signal_shape, is_runtime_module, static_text_alone};
+use crate::analyze::{
+    self, computed, is_foldable_signal_shape, is_runtime_module, static_text_alone,
+};
 use crate::diagnostic::{self, Code, Diagnostic, Report};
 use crate::facts::{self, ImportRef};
 use crate::lower::{self, has_jsx};
@@ -23,7 +27,8 @@ use crate::namer::Namer;
 use crate::usage::{self, Context};
 use crate::{Target, emit};
 
-pub use inert::{Dep, DepKind, Violation};
+pub use inert::{Boundary, Dep, DepKind, Violation, island_load_mode};
+pub use slots::SlotUses;
 
 pub struct SummaryOptions {
     /// Module the runtime is imported from, next to the built-in runtime modules (SPEC §8.0).
@@ -49,6 +54,11 @@ pub struct ModuleSummary {
     pub dynamic: Dynamic,
     /// Every reference to a top-level binding or an import, in source order.
     pub uses: Vec<Use>,
+    /// Starts of calls `x()` of imports standing in a reactive JSX expression (bind, insert,
+    /// getter prop), where an inlined computed keeps its semantics (§8 O4, §16.5).
+    pub reactive_reads: Vec<u32>,
+    /// Top-level computeds whose body can move to another module as text (§16.5).
+    pub computeds: Vec<ComputedSummary>,
     /// Top-level `const [a, b] = f(…)` and `const a = f(…)`: signal, computed and store
     /// candidates once `f` resolves to a primitive.
     pub declarations: Vec<CallDeclaration>,
@@ -121,13 +131,63 @@ pub enum UseClass {
     Tag,
     /// `x((d) => …)` in the shape of a store setter call, with the draft paths it touches.
     StoreSet(Vec<DraftUse>),
+    /// An array-leaf use: an index tail, `.length`, `each`, spread or a method call (§16.6).
+    Array(ArrayUse),
     Other,
+}
+
+/// `state.a` with an index tail, a `.length`, or in an array position.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ArrayUse {
+    /// Static keys before the first index.
+    pub path: Vec<String>,
+    /// Index and key steps after them.
+    pub tail: Vec<ArrayTail>,
+    pub site: ArraySite,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum ArrayTail {
+    /// `[i]`: any index expression without JSX.
+    Index,
+    /// `.length` or a static key after an index.
+    Key(String),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum ArraySite {
+    /// Read as a value.
+    Read,
+    /// `each={…}` of a JSX element with this tag.
+    Each(String),
+    /// `[...…]` of an array literal.
+    Spread,
+    /// Callee of a call; `statement` when the call discards its value.
+    Call { statement: bool },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DraftUse {
     pub path: Vec<String>,
+    /// The path ends at an array leaf, read or written through `[i]`.
+    pub index: bool,
+    /// Static keys after the index.
+    pub tail: Vec<String>,
+    /// A statement-position method call on the array leaf at `path` (§16.6).
+    pub method: Option<String>,
+    /// A write of an object literal to the non-leaf form at `path`, with the literal's
+    /// leaf-relative key paths (§16.6).
+    pub form: Option<Vec<Vec<String>>>,
+    /// A static read in an array position (`each`, spread): whole array leaves need it.
+    pub array_site: bool,
     pub is_write: bool,
+}
+
+/// A leaf of a store form: its path from the root and whether it holds an array (§16.6).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct LeafShape {
+    pub path: Vec<String>,
+    pub is_array: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -136,6 +196,23 @@ pub struct CallDeclaration {
     pub start: u32,
     pub end: u32,
     pub kind: DeclarationKind,
+}
+
+/// `const d = computed(() => expr)`: `expr` is plain expression syntax whose every identifier
+/// names a top-level declaration of this module.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ComputedSummary {
+    pub binding: u32,
+    pub body: String,
+    pub references: Vec<BodyReference>,
+}
+
+/// An identifier of a computed body, by offsets into the body, and the declaration it names.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct BodyReference {
+    pub start: u32,
+    pub end: u32,
+    pub binding: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -150,7 +227,7 @@ pub enum DeclarationKind {
         literal: Option<String>,
         /// Leaves of the initializer when it is a store form (§15.6) and the declaration has
         /// the store shape.
-        store_leaves: Option<Vec<Vec<String>>>,
+        store_leaves: Option<Vec<LeafShape>>,
     },
     /// `const name = f(…)`.
     Single { binding: u32 },
@@ -169,6 +246,8 @@ pub struct ComponentSummary {
     pub deps: Vec<Dep>,
     /// Runtime helpers the `hydrate` target emits for its JSX (§15.11).
     pub helpers: Vec<String>,
+    /// Props used other than as JSX inserts, which it cannot take as island slots (§16.4).
+    pub slot_uses: SlotUses,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -236,6 +315,8 @@ pub fn summarize(
             exports: Vec::new(),
             dynamic: Dynamic::default(),
             uses: Vec::new(),
+            reactive_reads: Vec::new(),
+            computeds: Vec::new(),
             declarations: Vec::new(),
             components: Vec::new(),
             constants: Vec::new(),
@@ -439,6 +520,12 @@ impl<'a> Builder<'_, 'a> {
                 }
                 Some(Declaration::VariableDeclaration(variables)) => {
                     let is_single = variables.declarations.len() == 1;
+                    if is_single
+                        && variables.kind == VariableDeclarationKind::Const
+                        && !variables.declare
+                    {
+                        self.portable_computed(&variables.declarations[0], top_level);
+                    }
                     for declarator in &variables.declarations {
                         self.variable(declarator, variables.kind, is_single, top_level, &mut sites);
                     }
@@ -447,6 +534,31 @@ impl<'a> Builder<'_, 'a> {
             }
         }
         sites
+    }
+
+    fn portable_computed(&mut self, declarator: &VariableDeclarator<'a>, top_level: &TopLevel) {
+        let BindingPattern::BindingIdentifier(id) = &declarator.id else { return };
+        let Some(expr) = computed::body(declarator) else { return };
+        let Some(references) = computed::portable_references(expr, self.scoping) else { return };
+        let body_start = expr.span().start;
+        let mut body_references = Vec::with_capacity(references.len());
+        for (span, symbol) in references {
+            let Some(&binding) = top_level.starts.get(&symbol) else { return };
+            if self.summary.imports.iter().any(|i| i.binding == binding) {
+                return;
+            }
+            body_references.push(BodyReference {
+                start: span.start - body_start,
+                end: span.end - body_start,
+                binding,
+            });
+        }
+        body_references.sort_unstable_by_key(|r| r.start);
+        self.summary.computeds.push(ComputedSummary {
+            binding: id.span.start,
+            body: expr.span().source_text(self.source).to_string(),
+            references: body_references,
+        });
     }
 
     fn function_component(
@@ -466,7 +578,15 @@ impl<'a> Builder<'_, 'a> {
             f.r#async,
             f.generator,
         );
-        self.component(id, f.span, checked, sites);
+        let slot_uses = slots::slot_uses(
+            self.source,
+            self.scoping,
+            self.nodes,
+            f.node_id(),
+            &f.params,
+            Some(body),
+        );
+        self.component(id, f.span, checked, slot_uses, sites);
     }
 
     fn component(
@@ -474,6 +594,7 @@ impl<'a> Builder<'_, 'a> {
         id: &BindingIdentifier<'a>,
         span: Span,
         checked: inert::Checked,
+        slot_uses: SlotUses,
         sites: &mut HashMap<u32, u32>,
     ) {
         for &site in &checked.sites {
@@ -487,6 +608,7 @@ impl<'a> Builder<'_, 'a> {
             violation: checked.violation,
             deps: checked.deps,
             helpers: Vec::new(),
+            slot_uses,
         });
     }
 
@@ -522,7 +644,15 @@ impl<'a> Builder<'_, 'a> {
                     ),
                 };
                 let checked = checker.function(&arrow.params, body, arrow.r#async, false);
-                self.component(id, arrow.span, checked, sites);
+                let slot_uses = slots::slot_uses(
+                    self.source,
+                    self.scoping,
+                    self.nodes,
+                    arrow.node_id(),
+                    &arrow.params,
+                    None,
+                );
+                self.component(id, arrow.span, checked, slot_uses, sites);
             }
             Expression::FunctionExpression(f)
                 if f.body.as_ref().is_some_and(|b| has_jsx(|c| c.visit_function_body(b))) =>
@@ -530,7 +660,15 @@ impl<'a> Builder<'_, 'a> {
                 let body = f.body.as_ref().expect("checked above");
                 let checked =
                     checker.function(&f.params, inert::Body::Block(body), f.r#async, f.generator);
-                self.component(id, f.span, checked, sites);
+                let slot_uses = slots::slot_uses(
+                    self.source,
+                    self.scoping,
+                    self.nodes,
+                    f.node_id(),
+                    &f.params,
+                    Some(body),
+                );
+                self.component(id, f.span, checked, slot_uses, sites);
             }
             _ => {
                 let checked = checker.constant(init);
@@ -619,6 +757,13 @@ impl<'a> Builder<'_, 'a> {
                     self.class(&access, keys)
                 };
                 let start = access.span.start;
+                if class == UseClass::Call0
+                    && !is_namespace
+                    && self.summary.imports.iter().any(|i| i.binding == binding)
+                    && computed::is_reactive_read(self.nodes.parent_id(access.node), self.nodes)
+                {
+                    self.summary.reactive_reads.push(start);
+                }
                 uses.push(Use {
                     target: Ref { binding, member },
                     class,
@@ -635,13 +780,17 @@ impl<'a> Builder<'_, 'a> {
             }
         }
         uses.sort_by_key(|u| (u.start, u.end));
+        self.summary.reactive_reads.sort_unstable();
         self.summary.uses = uses;
     }
 
     fn class(&self, access: &usage::Access<'a>, keys: &[&str]) -> UseClass {
+        let path: Vec<String> = keys.iter().map(|k| k.to_string()).collect();
         match access.context {
-            Context::Call { argument_count: 0 } if keys.is_empty() => UseClass::Call0,
-            Context::Call { argument_count: 1 } if keys.is_empty() => {
+            Context::Call { argument_count: 0 } if keys.is_empty() && access.tail.is_empty() => {
+                UseClass::Call0
+            }
+            Context::Call { argument_count: 1 } if keys.is_empty() && access.tail.is_empty() => {
                 let AstKind::CallExpression(call) = self.nodes.parent_kind(access.node) else {
                     return UseClass::Other;
                 };
@@ -649,17 +798,77 @@ impl<'a> Builder<'_, 'a> {
                     Some(accesses) => UseClass::StoreSet(
                         accesses
                             .into_iter()
-                            .map(|a| DraftUse { path: a.path, is_write: a.write.is_some() })
+                            .map(|a| DraftUse {
+                                path: a.path,
+                                index: a.index.is_some(),
+                                tail: a.index.map_or(Vec::new(), |index| index.tail),
+                                method: a.method,
+                                form: a.form,
+                                array_site: a.array_site,
+                                is_write: a.write.is_some(),
+                            })
                             .collect(),
                     ),
                     None => UseClass::Other,
                 }
             }
-            Context::Read if !keys.is_empty() => {
-                UseClass::Path(keys.iter().map(|k| k.to_string()).collect())
+            Context::Call { .. } => {
+                let Some(tail) = index_clean(&access.tail) else { return UseClass::Other };
+                if !tail.is_empty() || path.is_empty() {
+                    return UseClass::Other;
+                }
+                let call = self.nodes.parent_id(access.node);
+                let statement =
+                    matches!(self.nodes.parent_kind(call), AstKind::ExpressionStatement(_));
+                UseClass::Array(ArrayUse { path, tail, site: ArraySite::Call { statement } })
             }
-            Context::Tag if keys.is_empty() => UseClass::Tag,
+            Context::Read if !keys.is_empty() => {
+                let Some(tail) = index_clean(&access.tail) else { return UseClass::Other };
+                if tail.is_empty()
+                    && path.last().is_some_and(|key| key == "length")
+                    && path.len() >= 2
+                {
+                    return UseClass::Array(ArrayUse { path, tail, site: ArraySite::Read });
+                }
+                if !tail.is_empty()
+                    && !lower::store::element_position_valid(access.node, self.nodes)
+                {
+                    return UseClass::Other;
+                }
+                match self.read_site(access.node) {
+                    Some(site) => UseClass::Array(ArrayUse { path, tail, site }),
+                    None if tail.is_empty() => UseClass::Path(path),
+                    None => UseClass::Array(ArrayUse { path, tail, site: ArraySite::Read }),
+                }
+            }
             _ => UseClass::Other,
+        }
+    }
+
+    /// The array position a read chain stands in: `each`, an array spread, or nowhere.
+    fn read_site(&self, node: NodeId) -> Option<ArraySite> {
+        let parent = self.nodes.parent_id(node);
+        match self.nodes.kind(parent) {
+            AstKind::JSXExpressionContainer(_) => {
+                let attribute_node = self.nodes.parent_id(parent);
+                let AstKind::JSXAttribute(attribute) = self.nodes.kind(attribute_node) else {
+                    return None;
+                };
+                let JSXAttributeName::Identifier(id) = &attribute.name else { return None };
+                if id.name != "each" {
+                    return None;
+                }
+                let opening_node = self.nodes.parent_id(attribute_node);
+                let AstKind::JSXOpeningElement(opening) = self.nodes.kind(opening_node) else {
+                    return None;
+                };
+                Some(ArraySite::Each(jsx_tag_name(&opening.name)))
+            }
+            AstKind::SpreadElement(_) => {
+                matches!(self.nodes.parent_kind(parent), AstKind::ArrayExpression(_))
+                    .then_some(ArraySite::Spread)
+            }
+            _ => None,
         }
     }
 
@@ -925,4 +1134,38 @@ fn literal_string(e: &Expression<'_>) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// The serializable form of an index tail; `None` when an index holds JSX.
+fn index_clean(tail: &[usage::Tail<'_>]) -> Option<Vec<ArrayTail>> {
+    tail.iter()
+        .map(|step| match step {
+            usage::Tail::Index { index } => {
+                (!has_jsx(|check| check.visit_expression(index))).then_some(ArrayTail::Index)
+            }
+            usage::Tail::Key(key) => Some(ArrayTail::Key(key.to_string())),
+        })
+        .collect()
+}
+
+/// The tag of a JSX element as written, dotted for member tags.
+fn jsx_tag_name(name: &JSXElementName<'_>) -> String {
+    match name {
+        JSXElementName::Identifier(id) => id.name.to_string(),
+        JSXElementName::IdentifierReference(id) => id.name.to_string(),
+        JSXElementName::NamespacedName(name) => {
+            format!("{}:{}", name.namespace.name, name.name.name)
+        }
+        JSXElementName::MemberExpression(member) => jsx_member_name(member),
+        JSXElementName::ThisExpression(_) => "this".to_string(),
+    }
+}
+
+fn jsx_member_name(member: &JSXMemberExpression<'_>) -> String {
+    let object = match &member.object {
+        JSXMemberExpressionObject::IdentifierReference(id) => id.name.to_string(),
+        JSXMemberExpressionObject::MemberExpression(nested) => jsx_member_name(nested),
+        JSXMemberExpressionObject::ThisExpression(_) => "this".to_string(),
+    };
+    format!("{object}.{}", member.property.name)
 }

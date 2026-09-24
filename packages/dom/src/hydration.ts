@@ -4,7 +4,7 @@
  * the template's index among the templates created directly in that component, so it only
  * depends on the order in which one component creates its templates.
  */
-interface KeyScope {
+export interface KeyScope {
   id: string;
   count: number;
 }
@@ -18,8 +18,18 @@ export function nextHydrationKey(): string | undefined {
 
 /** Runs `fn` with template keys starting at `id + 0`: `""` for `renderToString` and `hydrate`. */
 export function withKeyScope<T>(id: string, fn: () => T): T {
+  return resumeKeyScope({ id, count: 0 }, fn);
+}
+
+/** The scope the next template key comes from, while rendering or hydrating. */
+export function currentKeyScope(): KeyScope | undefined {
+  return scope;
+}
+
+/** Runs `fn` taking keys from `resumed`, where a scope `currentKeyScope` returned left off. */
+export function resumeKeyScope<T>(resumed: KeyScope, fn: () => T): T {
   const parent = scope;
-  scope = { id, count: 0 };
+  scope = resumed;
   try {
     return fn();
   } finally {
@@ -36,4 +46,21 @@ export function nextComponentScope(): string | undefined {
 export function withComponentKeys<T>(fn: () => T): T {
   const id = nextComponentScope();
   return id === undefined ? fn() : withKeyScope(id, fn);
+}
+
+let serverDepth = 0;
+
+/** Whether a server render (`renderToString`, `renderToStream`) is running: no document, no effects. */
+export function isServerRender(): boolean {
+  return serverDepth > 0;
+}
+
+/** Runs `fn` as a server render, so `Suspense` shows its children. */
+export function withServerRender<T>(fn: () => T): T {
+  serverDepth++;
+  try {
+    return fn();
+  } finally {
+    serverDepth--;
+  }
 }

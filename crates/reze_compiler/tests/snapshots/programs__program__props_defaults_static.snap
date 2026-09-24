@@ -1,0 +1,152 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
+expression: render(&dir)
+---
+closed: []
+features: {"suspense": false}
+
+// ==== /components.tsx [client] ====
+import { site } from "./data";
+import { template as _$template, insert as _$insert, bind as _$bind, className as _$className, setAttribute as _$setAttribute } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<h1>: </h1>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<p></p>");
+
+export const Banner = (_props$) => { const _title$default = site.name; const _tagline$default = `${(_props$.title === undefined ? _title$default : _props$.title)} docs`; return ((
+  (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
+  _$insert(_el$, () => (_props$.title === undefined ? _title$default : _props$.title), _el$2);
+  _$insert(_el$, () => (_props$.tagline === undefined ? _tagline$default : _props$.tagline), null);
+  _$bind(() => _$className(_el$, (_props$.size === undefined ? 2 : _props$.size)));
+  return _el$;
+})()
+)); };
+
+export function Hint(_props$2) { const _text$default = document.title;
+  return (() => {
+  var _el$3 = _tmpl$2();
+  _$insert(_el$3, () => (_props$2.text === undefined ? _text$default : _props$2.text));
+  _$bind(() => _$setAttribute(_el$3, "title", (_props$2.label === undefined ? "Hint" : _props$2.label)));
+  return _el$3;
+})();
+}
+
+// info
+[STATIC_COMPONENT] `Banner` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /components.tsx:3:14
+  2 | 
+> 3 | export const Banner = ({ title = site.name, tagline = `${title} docs`, size = 2 }) => (
+    |              ^^^^^^
+  4 |   <h1 class={size}>
+// info
+[PROPS_REWRITTEN] `Banner` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Banner>
+  at /components.tsx:3:24
+  2 | 
+> 3 | export const Banner = ({ title = site.name, tagline = `${title} docs`, size = 2 }) => (
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 |   <h1 class={size}>
+// info
+[CLIENT_COMPONENT] `Hint` runs on the client: `document.title` reads a member of a value that is not a constant.
+  at /components.tsx:9:17
+   8 | 
+>  9 | export function Hint({ label = "Hint", text = document.title }) {
+     |                 ^^^^
+  10 |   return <p title={label}>{text}</p>;
+  note: first client-only part (/components.tsx:9:47)
+// info
+[PROPS_REWRITTEN] `Hint` destructures its props: the pattern became one props object and every destructured name a read of it at its use, so each read stays reactive.
+  in <Hint>
+  at /components.tsx:9:22
+   8 | 
+>  9 | export function Hint({ label = "Hint", text = document.title }) {
+     |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  10 |   return <p title={label}>{text}</p>;
+// ==== /components.tsx [server] ====
+import { site } from "./data";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrClass as _$ssrClass, ssrChild as _$ssrChild, ssrAttribute as _$ssrAttribute } from "reze-js";
+const _tmpl$ = ["<h1", "", "><!--[-->", "<!--]-->: <!--[-->", "<!--]--></h1>"],
+  _tmpl$2 = ["<p", "", ">", "</p>"];
+
+export const Banner = (_props$) => { const _title$default = site.name; const _tagline$default = `${(_props$.title === undefined ? _title$default : _props$.title)} docs`; return ((
+  _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrClass((_props$.size === undefined ? 2 : _props$.size)), _$ssrChild((_props$.title === undefined ? _title$default : _props$.title)), _$ssrChild((_props$.tagline === undefined ? _tagline$default : _props$.tagline)))
+)); };
+
+export function Hint(_props$2) { const _text$default = document.title;
+  return _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrAttribute("title", (_props$2.label === undefined ? "Hint" : _props$2.label)), _$ssrChild((_props$2.text === undefined ? _text$default : _props$2.text)));
+}
+
+// ==== /components.tsx [hydrate] ====
+import { site } from "./data";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, bind as _$bind, className as _$className, setAttribute as _$setAttribute } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<h1>: </h1>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<p></p>");
+
+export const Banner = (_props$) => { const _title$default = site.name; const _tagline$default = `${(_props$.title === undefined ? _title$default : _props$.title)} docs`; return ((
+  (() => {
+  var _el$ = _$claim(_tmpl$, "h1"),
+    _el$2 = _$claimChild(_el$, 0);
+  _$claimInsert(_el$, () => (_props$.title === undefined ? _title$default : _props$.title), _el$2);
+  _$claimInsert(_el$, () => (_props$.tagline === undefined ? _tagline$default : _props$.tagline), null);
+  _$bind(() => _$className(_el$, (_props$.size === undefined ? 2 : _props$.size)));
+  return _el$;
+})()
+)); };
+
+export function Hint(_props$2) { const _text$default = document.title;
+  return (() => {
+  var _el$3 = _$claim(_tmpl$2, "p");
+  _$claimInsert(_el$3, () => (_props$2.text === undefined ? _text$default : _props$2.text));
+  _$bind(() => _$setAttribute(_el$3, "title", (_props$2.label === undefined ? "Hint" : _props$2.label)));
+  return _el$3;
+})();
+}
+
+// ==== /data.ts [client] ====
+<unchanged>
+
+// ==== /data.ts [server] ====
+<unchanged>
+
+// ==== /data.ts [hydrate] ====
+<unchanged>
+
+// ==== /main.tsx [client] ====
+import { render } from "reze-js";
+
+import { Banner, Hint } from "./components";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(
+  () => (
+    [_$createComponent(Banner, {}), _$createComponent(Hint, {})]
+  ),
+  document.body,
+);
+
+// ==== /main.tsx [server] ====
+import { render } from "reze-js";
+
+import { Banner, Hint } from "./components";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(
+  () => (
+    [_$createComponent(Banner, {}), _$createComponent(Hint, {})]
+  ),
+  document.body,
+);
+
+// ==== /main.tsx [hydrate] ====
+import { render } from "reze-js";
+
+import { Banner, Hint } from "./components";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(
+  () => (
+    [_$createComponent(Banner, {}), _$createComponent(Hint, {})]
+  ),
+  document.body,
+);

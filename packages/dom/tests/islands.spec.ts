@@ -76,7 +76,7 @@ test("an island renders between markers naming its id, key scope and escaped JSO
   const { Page } = await load("server");
   expect(renderToString(() => Page(), true)).toBe(
     '<main data-hk="0"><h1>Static</h1><!--[-->' +
-      '<!--$c1:1-:{"start":1,"label":"\\u003ca\\u003e","note":"\\u002d\\u002d\\u003e \\u003c!\\u002d\\u002d"}-->' +
+      '<!--$c1:1-:{"start":1,"label":"\\u003ca\\u003e","note":"\\u002d\\u002d\\u003e \\u003c!\\u002d\\u002d"}:eager-->' +
       '<button data-hk="1-0"><!--[-->&lt;a><!--]--> <!--[-->1<!--]--></button>' +
       "<!--/$--><!--]--><p>after</p></main>",
   );
@@ -90,21 +90,25 @@ test("island markers are the only difference from rendering without islands", as
 });
 
 test("an island inside an island renders like a component, without markers", () => {
-  const Inner = (props: { text: string }): JSX.Element => ssr(["<i>", "</i>"], ssrChild(props.text));
+  const Inner = (props: { text: string }): JSX.Element =>
+    ssr(["<i>", "</i>"], ssrChild(props.text));
   const Outer = (): JSX.Element =>
     ssr(["<b>", "</b>"], ssrChild(ssrIsland("inner", Inner, { text: "x" })));
   expect(renderToString(() => ssrIsland("outer", Outer, {}), true)).toBe(
-    "<!--$outer:0-:{}--><b><i>x</i></b><!--/$-->",
+    "<!--$outer:0-:{}:eager--><b><i>x</i></b><!--/$-->",
   );
 });
 
 test("island props that are not JSON fail the render with the island id and the key", () => {
   const Island = (): JSX.Element => null;
-  const render = (props: object) => () => renderToString(() => ssrIsland("x1", Island, props), true);
+  const render = (props: object) => () =>
+    renderToString(() => ssrIsland("x1", Island, props), true);
   expect(render({ onClick: () => {} })).toThrow(
     /^\[ISLAND_PROPS\] island "x1": props\.onClick is a function/,
   );
-  expect(render({ list: [1, -0] })).toThrow(/^\[ISLAND_PROPS\] island "x1": props\.list\[1\] is -0/);
+  expect(render({ list: [1, -0] })).toThrow(
+    /^\[ISLAND_PROPS\] island "x1": props\.list\[1\] is -0/,
+  );
   const cyclic: Record<string, unknown> = {};
   cyclic.self = cyclic;
   expect(render({ data: cyclic })).toThrow(

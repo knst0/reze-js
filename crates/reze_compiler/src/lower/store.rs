@@ -1,8 +1,16 @@
 //! Store unproxying (SPEC §15.6): a `store` whose every use reads a leaf of its form or writes one
 //! through a setter draft becomes one signal per leaf.
 
-use std::collections::{HashMap, HashSet};
-
+use super::Lowerer;
+use crate::diagnostic::{Code, Report};
+use crate::facts::{ModuleFacts, StoreExport, StoreRole};
+use crate::ir::{
+    ArrayWriteKind, Embed, FormSet, FormTemp, Hole, HoleKind, IndexOp, Specifier, StoreLeaf,
+    StoreWriteKind,
+};
+use crate::summary::LeafShape;
+use crate::usage::{self, Context};
+use oxc_allocator::Vec as ArenaVec;
 use oxc_ast::AstKind;
 use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, walk};
@@ -12,28 +20,44 @@ use oxc_syntax::identifier::is_identifier_part;
 use oxc_syntax::node::NodeId;
 use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
+use std::collections::{HashMap, HashSet};
 
-use super::Lowerer;
-use crate::diagnostic::{Code, Report};
-use crate::facts::{LeafNames, ModuleFacts, StoreExport, StoreRole};
-use crate::ir::{Hole, HoleKind, Specifier, StoreLeaf, StoreWriteKind};
-use crate::usage::{self, Context};
-
-/// Leaf paths of the form `init`, in source order; `None` when `init` is not a form.
-pub fn store_shape(init: &Expression<'_>) -> Option<Vec<Vec<String>>> {
-    Some(form_leaves(init)?.into_iter().map(|(path, _)| path).collect())
+/// Array methods a draft or a statement may call on an array leaf (§16.6): each rewrites to a
+/// copy-on-write updater, so untouched elements keep their identity.
+pub const ARRAY_METHODS: &[&str] =
+    &["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "copyWithin", "fill"];
+/// Leaf paths of the form `init`, in source order, with whether each holds an array; `None`
+/// when `init` is not a form.
+pub fn store_shape(init: &Expression<'_>) -> Option<Vec<LeafShape>> {
+    Some(
+        form_leaves(init)?
+            .into_iter()
+            .map(|(path, _, is_array)| LeafShape { path, is_array })
+            .collect(),
+    )
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DraftWrite {
     Assign,
     Compound,
     Update,
 }
 
-/// A chain `d.k₁…kₙ` in a setter draft; `write` is `None` for an rvalue.
+/// A chain `d.k₁…kₙ` in a setter draft: `target` says what it touches, `write` is `None` for
+/// an rvalue.
 pub struct DraftAccess {
     pub path: Vec<String>,
+    pub index: Option<DraftIndex>,
+    pub method: Option<String>,
+    pub form: Option<Vec<Vec<String>>>,
     pub write: Option<DraftWrite>,
+    /// A static read in an array position (`each`, spread).
+    pub array_site: bool,
+}
+/// `d.a[i].p…`: the tail keys after the index.
+pub struct DraftIndex {
+    pub tail: Vec<String>,
 }
 
 /// The draft chains of `setState((d) => …)`; `None` when the call is not a valid setter form.
@@ -43,10 +67,21 @@ pub fn draft_accesses(
     nodes: &AstNodes<'_>,
 ) -> Option<Vec<DraftAccess>> {
     let chains = draft_chains(call, scoping, nodes)?;
-    Some(chains.into_iter().map(|c| DraftAccess { path: c.path, write: c.write }).collect())
+    Some(
+        chains
+            .into_iter()
+            .map(|c| DraftAccess {
+                path: c.path,
+                index: c.index,
+                method: c.method,
+                form: c.form,
+                write: c.write,
+                array_site: c.array_site,
+            })
+            .collect(),
+    )
 }
-
-type Leaves<'b, 'a> = Vec<(Vec<String>, &'b Expression<'a>)>;
+type Leaves<'b, 'a> = Vec<(Vec<String>, &'b Expression<'a>, bool)>;
 
 fn form_leaves<'b, 'a>(init: &'b Expression<'a>) -> Option<Leaves<'b, 'a>> {
     let mut leaves = Vec::new();
@@ -71,10 +106,15 @@ fn collect_leaves<'b, 'a>(
             return None;
         }
         path.push(key);
-        if matches!(property.value.without_parentheses(), Expression::ObjectExpression(_)) {
+        let value = property.value.without_parentheses();
+        if matches!(value, Expression::ObjectExpression(_)) {
             collect_leaves(&property.value, path, leaves)?;
         } else {
-            leaves.push((path.clone(), &property.value));
+            leaves.push((
+                path.clone(),
+                &property.value,
+                matches!(value, Expression::ArrayExpression(_)),
+            ));
         }
         path.pop();
     }
@@ -95,10 +135,87 @@ fn form_key(key: &PropertyKey<'_>) -> Option<String> {
     }
 }
 
+/// The tail keys of an index chain: exactly one index first, then static keys.
+fn draft_index(tail: &[usage::Tail<'_>]) -> Option<DraftIndex> {
+    let mut steps = tail.iter();
+    if !matches!(steps.next(), Some(usage::Tail::Index { .. })) {
+        return None;
+    }
+    let mut keys = Vec::new();
+    for step in steps {
+        match step {
+            usage::Tail::Key(key) => keys.push(key.to_string()),
+            usage::Tail::Index { .. } => return None,
+        }
+    }
+    Some(DraftIndex { tail: keys })
+}
+
+/// Whether an index of the tail holds JSX, which `src` copies cannot reproduce.
+fn index_has_jsx(tail: &[usage::Tail<'_>]) -> bool {
+    tail.iter().any(|step| match step {
+        usage::Tail::Index { index } => super::has_jsx(|check| check.visit_expression(index)),
+        usage::Tail::Key(_) => false,
+    })
+}
+
+/// The write of the assignment or update at `write_node`, when its value is discarded.
+fn write_kind(write_node: NodeId, callback_span: Span, nodes: &AstNodes<'_>) -> Option<DraftWrite> {
+    let write = match nodes.kind(write_node) {
+        AstKind::AssignmentExpression(a) if a.operator.is_assign() => DraftWrite::Assign,
+        AstKind::AssignmentExpression(_) => DraftWrite::Compound,
+        AstKind::UpdateExpression(_) => DraftWrite::Update,
+        _ => return None,
+    };
+    is_value_unused(write_node, callback_span, nodes).then_some(write)
+}
+
+/// Leaf-relative key paths of the object literal assigned at `write_node`, when it is a plain
+/// literal without spread, methods or computed keys.
+fn form_literal(write_node: NodeId, nodes: &AstNodes<'_>) -> Option<Vec<Vec<String>>> {
+    let AstKind::AssignmentExpression(assignment) = nodes.kind(write_node) else { return None };
+    let Expression::ObjectExpression(object) = assignment.right.without_parentheses() else {
+        return None;
+    };
+    let mut out = Vec::new();
+    literal_shape(object, &mut Vec::new(), &mut out)?;
+    Some(out)
+}
+
+fn literal_shape(
+    object: &ObjectExpression<'_>,
+    prefix: &mut Vec<String>,
+    out: &mut Vec<Vec<String>>,
+) -> Option<()> {
+    let mut keys = HashSet::new();
+    for property in &object.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else { return None };
+        if property.kind != PropertyKind::Init || property.method || property.computed {
+            return None;
+        }
+        let key = form_key(&property.key)?;
+        if key == "__proto__" || !keys.insert(key.clone()) {
+            return None;
+        }
+        prefix.push(key);
+        match property.value.without_parentheses() {
+            Expression::ObjectExpression(nested) => literal_shape(nested, prefix, out)?,
+            _ => out.push(prefix.clone()),
+        }
+        prefix.pop();
+    }
+    Some(())
+}
+
 struct DraftChain {
     path: Vec<String>,
+    index: Option<DraftIndex>,
+    method: Option<String>,
+    form: Option<Vec<Vec<String>>>,
     write: Option<DraftWrite>,
-    /// The chain for an rvalue, the whole assignment or update for a write.
+    /// A static read in an array position (`each`, spread): whole array leaves need it.
+    array_site: bool,
+    /// The chain for an rvalue, the whole assignment, update or call for a write.
     span: Span,
 }
 
@@ -151,26 +268,55 @@ fn draft_chains(
             return None;
         }
         let path = access.keys.iter().map(|k| k.to_string()).collect();
-        let (write, span) = match access.context {
-            Context::Read => (None, chain_span(access.node, nodes)),
+        let mut chain = DraftChain {
+            path,
+            index: None,
+            method: None,
+            form: None,
+            write: None,
+            array_site: false,
+            span: chain_span(access.node, nodes),
+        };
+        if access.tail.is_empty() && access.context == Context::Read {
+            chain.array_site = array_read_site(access.node, nodes);
+        }
+        if !access.tail.is_empty() {
+            chain.index = Some(draft_index(&access.tail)?);
+            if index_has_jsx(&access.tail) || !element_position_valid(access.node, nodes) {
+                return None;
+            }
+        }
+        match access.context {
+            Context::Read => {}
+            Context::Write if chain.index.is_some() => {
+                let write_node = nodes.parent_id(access.node);
+                chain.write = Some(write_kind(write_node, callback_span, nodes)?);
+                chain.span = nodes.kind(write_node).span();
+            }
             Context::Write => {
                 let write_node = nodes.parent_id(access.node);
-                let write = match nodes.kind(write_node) {
-                    AstKind::AssignmentExpression(a) if a.operator.is_assign() => {
-                        DraftWrite::Assign
-                    }
-                    AstKind::AssignmentExpression(_) => DraftWrite::Compound,
-                    AstKind::UpdateExpression(_) => DraftWrite::Update,
-                    _ => return None,
-                };
-                if !is_value_unused(write_node, callback_span, nodes) {
+                let write = write_kind(write_node, callback_span, nodes)?;
+                if write == DraftWrite::Assign
+                    && matches!(nodes.parent_kind(write_node), AstKind::ExpressionStatement(_))
+                {
+                    chain.form = form_literal(write_node, nodes);
+                }
+                chain.write = Some(write);
+                chain.span = nodes.kind(write_node).span();
+            }
+            Context::Call { .. } if chain.index.is_none() => {
+                let call_node = nodes.parent_id(access.node);
+                let AstKind::CallExpression(call) = nodes.kind(call_node) else { return None };
+                if !is_value_unused(call_node, callback_span, nodes) {
                     return None;
                 }
-                (Some(write), nodes.kind(write_node).span())
+                let Some(method) = chain.path.pop() else { return None };
+                chain.method = Some(method);
+                chain.span = call.span;
             }
             _ => return None,
-        };
-        chains.push(DraftChain { path, write, span });
+        }
+        chains.push(chain);
     }
     chains.sort_by_key(|c| c.span.start);
     Some(chains)
@@ -273,7 +419,7 @@ pub struct Candidate {
     span: Span,
     state: SymbolId,
     setter: Option<SymbolId>,
-    leaves: Vec<Vec<String>>,
+    leaves: Vec<LeafShape>,
 }
 
 pub fn candidate(
@@ -323,10 +469,31 @@ pub struct Stores {
     import_specifiers: HashMap<u32, Vec<(String, usize)>>,
     /// Leaf reads (`state.a`, draft `d.a`), by chain span: the getter slot.
     reads: HashMap<Span, usize>,
+    /// Indexed reads (`state.a[i].p`, `state.a.length`), by chain span.
+    array_reads: HashMap<Span, ArrayReadPlan>,
     /// Draft writes, by assignment or update span: the setter slot.
     writes: HashMap<Span, usize>,
+    /// Indexed draft writes (`d.a[i].p = e`), by assignment or update span: the setter slot.
+    index_writes: HashMap<Span, ArrayReadPlan>,
+    /// Array method calls (`d.a.push(x)`, `state.a.push(x)`), by call span: the setter slot.
+    method_calls: HashMap<Span, usize>,
+    /// Literal writes to a form path, by assignment span: the setter slot and leaf-relative
+    /// path of each written leaf.
+    form_writes: HashMap<Span, Vec<(usize, Vec<String>)>>,
     /// Setter calls, by span.
     sets: HashSet<Span>,
+}
+
+/// An indexed read of an array leaf: the leaf and what follows the array (§16.6). Lowering
+/// rebuilds the index expressions from the chain itself; the shape aligns them.
+struct ArrayReadPlan {
+    slot: usize,
+    suffix: Vec<ArraySuffix>,
+}
+
+enum ArraySuffix {
+    Key(String),
+    Index,
 }
 
 impl Stores {
@@ -336,14 +503,115 @@ impl Stores {
     }
 }
 
+/// An indexed read of an array leaf at plan time: the leaf index and what follows the array.
+struct ArrayRead {
+    slot: usize,
+    suffix: Vec<ArraySuffix>,
+}
+
 struct Plan<'f> {
     reads: Vec<(Span, usize)>,
+    array_reads: Vec<(Span, ArrayRead)>,
     writes: Vec<(Span, usize)>,
+    index_writes: Vec<(Span, ArrayRead)>,
+    method_calls: Vec<(Span, usize)>,
+    form_writes: Vec<(Span, Vec<(usize, Vec<String>)>)>,
     sets: Vec<Span>,
     written: Vec<bool>,
     export_statement: Option<u32>,
     export_specifiers: Vec<Span>,
     program: Option<&'f StoreExport>,
+}
+
+/// The array leaf of `keys` when it ends in `.length` (§16.6).
+fn length_leaf(keys: &[&str], leaves: &[LeafShape]) -> Option<usize> {
+    let (last, prefix) = keys.split_last()?;
+    if *last != "length" || prefix.is_empty() {
+        return None;
+    }
+    leaves.iter().position(|leaf| leaf.is_array && same_path(&leaf.path, prefix))
+}
+
+/// The suffix of an index tail: one index, then static keys; `None` with JSX inside.
+fn array_suffix(tail: &[usage::Tail<'_>]) -> Option<Vec<ArraySuffix>> {
+    let mut steps = tail.iter();
+    let mut suffix = Vec::new();
+    match steps.next()? {
+        usage::Tail::Index { index } => {
+            if super::has_jsx(|check| check.visit_expression(index)) {
+                return None;
+            }
+            suffix.push(ArraySuffix::Index);
+        }
+        usage::Tail::Key(_) => return None,
+    }
+    for step in steps {
+        match step {
+            usage::Tail::Key(key) => suffix.push(ArraySuffix::Key(key.to_string())),
+            usage::Tail::Index { .. } => return None,
+        }
+    }
+    Some(suffix)
+}
+
+/// Whether the chain at `node` is `each={…}` of a bare `<For>` or `[...…]` of an array
+/// literal: the only positions a whole array leaf may be read in (§16.6).
+fn array_read_site(node: NodeId, nodes: &AstNodes<'_>) -> bool {
+    match nodes.kind(nodes.parent_id(node)) {
+        AstKind::JSXExpressionContainer(_) => {
+            let attribute_node = nodes.parent_id(nodes.parent_id(node));
+            let AstKind::JSXAttribute(attribute) = nodes.kind(attribute_node) else {
+                return false;
+            };
+            if !matches!(&attribute.name, JSXAttributeName::Identifier(id) if id.name == "each") {
+                return false;
+            }
+            let opening_node = nodes.parent_id(attribute_node);
+            let AstKind::JSXOpeningElement(opening) = nodes.kind(opening_node) else {
+                return false;
+            };
+            matches!(&opening.name, JSXElementName::IdentifierReference(tag) if tag.name == "For")
+        }
+        AstKind::SpreadElement(_) => {
+            matches!(nodes.parent_kind(nodes.parent_id(node)), AstKind::ArrayExpression(_))
+        }
+        _ => false,
+    }
+}
+/// Whether an index read at `node` stands where §16.6 allows an element: not compared with
+/// `==`, not passed as a call argument, and not spread into an object.
+pub(crate) fn element_position_valid(node: NodeId, nodes: &AstNodes<'_>) -> bool {
+    let parent = nodes.parent_id(node);
+    match nodes.kind(parent) {
+        AstKind::BinaryExpression(binary) => !matches!(
+            binary.operator,
+            BinaryOperator::Equality
+                | BinaryOperator::Inequality
+                | BinaryOperator::StrictEquality
+                | BinaryOperator::StrictInequality
+        ),
+        AstKind::CallExpression(call) => call.callee.span() == nodes.kind(node).span(),
+        AstKind::SpreadElement(_) => {
+            !matches!(nodes.parent_kind(parent), AstKind::ObjectExpression(_))
+        }
+        _ => true,
+    }
+}
+
+/// Whether the call of the chain at `node` discards its value as a statement.
+fn is_statement_call(node: NodeId, nodes: &AstNodes<'_>) -> bool {
+    let call = nodes.parent_id(node);
+    matches!(nodes.kind(call), AstKind::CallExpression(_))
+        && matches!(nodes.parent_kind(call), AstKind::ExpressionStatement(_))
+}
+
+/// The span of the call of the chain at `node`.
+fn call_span(node: NodeId, nodes: &AstNodes<'_>) -> Option<Span> {
+    let call = nodes.parent_id(node);
+    match nodes.kind(call) {
+        AstKind::CallExpression(call) => Some(call.span),
+        _ => None,
+    }
 }
 
 fn same_path(path: &[String], keys: &[impl AsRef<str>]) -> bool {
@@ -402,10 +670,14 @@ fn plan<'f>(
     {
         return None;
     }
-    let leaf = |keys: &[&str]| candidate.leaves.iter().position(|path| same_path(path, keys));
+    let leaf = |keys: &[&str]| candidate.leaves.iter().position(|leaf| same_path(&leaf.path, keys));
     let mut plan = Plan {
         reads: Vec::new(),
+        array_reads: Vec::new(),
         writes: Vec::new(),
+        index_writes: Vec::new(),
+        method_calls: Vec::new(),
+        form_writes: Vec::new(),
         sets: Vec::new(),
         written: vec![false; candidate.leaves.len()],
         export_statement,
@@ -422,35 +694,73 @@ fn plan<'f>(
             plan.export_specifiers.push(export_specifier(reference)?);
             continue;
         };
-        if access.context != Context::Read || is_ref_value(access.node, nodes) {
+        if is_ref_value(access.node, nodes) {
             return None;
         }
-        plan.reads.push((chain_span(access.node, nodes), leaf(&access.keys)?));
+        let span = chain_span(access.node, nodes);
+        match access.context {
+            Context::Read if access.tail.is_empty() => {
+                let keys: Vec<&str> = access.keys.iter().map(|k| *k).collect();
+                match length_leaf(&keys, &candidate.leaves) {
+                    Some(index) => plan.array_reads.push((
+                        span,
+                        ArrayRead {
+                            slot: index,
+                            suffix: vec![ArraySuffix::Key("length".to_string())],
+                        },
+                    )),
+                    None => {
+                        let index = leaf(&access.keys)?;
+                        if candidate.leaves[index].is_array && !array_read_site(access.node, nodes)
+                        {
+                            return None;
+                        }
+                        plan.reads.push((span, index));
+                    }
+                }
+            }
+            Context::Read => {
+                let index = leaf(&access.keys)?;
+                if !candidate.leaves[index].is_array || !element_position_valid(access.node, nodes)
+                {
+                    return None;
+                }
+                plan.array_reads
+                    .push((span, ArrayRead { slot: index, suffix: array_suffix(&access.tail)? }));
+            }
+            Context::Call { .. } if access.tail.is_empty() => {
+                let (method, prefix) = access.keys.split_last()?;
+                let index = leaf(prefix)?;
+                if !candidate.leaves[index].is_array || !ARRAY_METHODS.contains(method) {
+                    return None;
+                }
+                plan.method_calls.push((call_span(access.node, nodes)?, index));
+                plan.written[index] = true;
+            }
+            _ => return None,
+        }
     }
     for &reference in candidate.setter.map_or(&[][..], |s| scoping.get_resolved_reference_ids(s)) {
         let Some(access) = usage::classify(reference, scoping, nodes) else {
             plan.export_specifiers.push(export_specifier(reference)?);
             continue;
         };
-        if !access.keys.is_empty() || access.context != (Context::Call { argument_count: 1 }) {
+        if !access.keys.is_empty()
+            || !access.tail.is_empty()
+            || access.context != (Context::Call { argument_count: 1 })
+        {
             return None;
         }
         let AstKind::CallExpression(call) = nodes.parent_kind(access.node) else { return None };
-        for chain in draft_chains(call, scoping, nodes)? {
-            let keys: Vec<&str> = chain.path.iter().map(String::as_str).collect();
-            let index = leaf(&keys)?;
-            if chain.write.is_some() {
-                plan.written[index] = true;
-                plan.writes.push((chain.span, index));
-            } else {
-                plan.reads.push((chain.span, index));
-            }
+        let chains = draft_chains(call, scoping, nodes)?;
+        for chain in chains {
+            plan_draft(&mut plan, candidate, chain)?;
         }
         plan.sets.push(call.span);
     }
     if let Some(program) = program {
         for names in &program.leaves {
-            let index = candidate.leaves.iter().position(|path| path == &names.path)?;
+            let index = candidate.leaves.iter().position(|leaf| leaf.path == names.path)?;
             if names.setter.is_some() {
                 if candidate.setter.is_none() {
                     return None;
@@ -460,6 +770,88 @@ fn plan<'f>(
         }
     }
     Some(plan)
+}
+
+/// Records one draft chain of `candidate` into `plan`: a leaf read or write, an index or a
+/// method of an array leaf, or a literal write to a form path (§16.6).
+fn plan_draft(plan: &mut Plan<'_>, candidate: &Candidate, chain: DraftChain) -> Option<()> {
+    let leaf = |keys: &[String]| candidate.leaves.iter().position(|leaf| leaf.path == *keys);
+    if let Some(method) = &chain.method {
+        let index = leaf(&chain.path)?;
+        if !candidate.leaves[index].is_array || !ARRAY_METHODS.contains(&method.as_str()) {
+            return None;
+        }
+        plan.method_calls.push((chain.span, index));
+        plan.written[index] = true;
+        return Some(());
+    }
+    if let Some(index_chain) = &chain.index {
+        let index = leaf(&chain.path)?;
+        if !candidate.leaves[index].is_array {
+            return None;
+        }
+        if chain.write.is_some() {
+            let mut suffix = vec![ArraySuffix::Index];
+            suffix.extend(index_chain.tail.iter().cloned().map(ArraySuffix::Key));
+            plan.index_writes.push((chain.span, ArrayRead { slot: index, suffix }));
+            plan.written[index] = true;
+        } else {
+            let mut suffix = vec![ArraySuffix::Index];
+            suffix.extend(index_chain.tail.iter().cloned().map(ArraySuffix::Key));
+            plan.array_reads.push((chain.span, ArrayRead { slot: index, suffix }));
+        }
+        return Some(());
+    }
+    if let Some(shape) = &chain.form {
+        if chain.write.is_none() {
+            return None;
+        }
+        if let Some(index) = leaf(&chain.path) {
+            plan.writes.push((chain.span, index));
+            plan.written[index] = true;
+            return Some(());
+        }
+        let mut writes = Vec::new();
+        for relative in shape {
+            let mut full = chain.path.clone();
+            full.extend(relative.iter().cloned());
+            let index = leaf(&full)?;
+            writes.push((index, relative.clone()));
+            plan.written[index] = true;
+        }
+        plan.form_writes.push((chain.span, writes));
+        return Some(());
+    }
+    match leaf(&chain.path) {
+        Some(index) => {
+            if chain.write.is_none() && candidate.leaves[index].is_array && !chain.array_site {
+                return None;
+            }
+            if chain.write.is_some() {
+                plan.writes.push((chain.span, index));
+                plan.written[index] = true;
+            } else {
+                plan.reads.push((chain.span, index));
+            }
+            Some(())
+        }
+        None if chain.write.is_none() => {
+            let (last, prefix) = chain.path.split_last()?;
+            if *last != "length" || prefix.is_empty() {
+                return None;
+            }
+            let index = leaf(&prefix.to_vec())?;
+            if !candidate.leaves[index].is_array {
+                return None;
+            }
+            plan.array_reads.push((
+                chain.span,
+                ArrayRead { slot: index, suffix: vec![ArraySuffix::Key("length".to_string())] },
+            ));
+            Some(())
+        }
+        None => None,
+    }
 }
 
 fn identifier_part(key: &str) -> String {
@@ -479,25 +871,47 @@ fn commit(stores: &mut Stores, candidate: &Candidate, plan: Plan<'_>, scoping: &
     let state = scoping.symbol_name(candidate.state);
     let setter = candidate.setter.map(|s| scoping.symbol_name(s));
     let mut leaves = Vec::with_capacity(candidate.leaves.len());
-    for (path, &written) in candidate.leaves.iter().zip(&plan.written) {
-        let getter = stores.slot(leaf_name(state, path));
-        let setter = setter.filter(|_| written).map(|s| stores.slot(leaf_name(s, path)));
+    for (leaf, &written) in candidate.leaves.iter().zip(&plan.written) {
+        let getter = stores.slot(leaf_name(state, &leaf.path));
+        let setter = setter.filter(|_| written).map(|s| stores.slot(leaf_name(s, &leaf.path)));
         leaves.push((getter, setter));
     }
     for (span, index) in plan.reads {
         stores.reads.insert(span, leaves[index].0);
+    }
+    for (span, read) in plan.array_reads {
+        stores
+            .array_reads
+            .insert(span, ArrayReadPlan { slot: leaves[read.slot].0, suffix: read.suffix });
     }
     for (span, index) in plan.writes {
         if let Some(setter) = leaves[index].1 {
             stores.writes.insert(span, setter);
         }
     }
+    for (span, write) in plan.index_writes {
+        if let Some(setter) = leaves[write.slot].1 {
+            stores.index_writes.insert(span, ArrayReadPlan { slot: setter, suffix: write.suffix });
+        }
+    }
+    for (span, index) in plan.method_calls {
+        if let Some(setter) = leaves[index].1 {
+            stores.method_calls.insert(span, setter);
+        }
+    }
+    for (span, writes) in plan.form_writes {
+        let writes = writes
+            .into_iter()
+            .filter_map(|(index, relative)| leaves[index].1.map(|setter| (setter, relative)))
+            .collect::<Vec<_>>();
+        stores.form_writes.insert(span, writes);
+    }
     stores.sets.extend(plan.sets);
 
     if let Some(program) = plan.program {
         let mut exports = Vec::new();
-        for (path, (getter, setter)) in candidate.leaves.iter().zip(&leaves) {
-            let Some(names) = program.leaves.iter().find(|l| &l.path == path) else { continue };
+        for (leaf, (getter, setter)) in candidate.leaves.iter().zip(&leaves) {
+            let Some(names) = program.leaves.iter().find(|l| l.path == leaf.path) else { continue };
             if let Some(name) = &names.getter {
                 exports.push((*getter, name.clone()));
             }
@@ -546,6 +960,92 @@ fn commit(stores: &mut Stores, candidate: &Candidate, plan: Plan<'_>, scoping: &
     report
 }
 
+/// Records one draft chain of an imported store: like `plan_draft`, with the link's export
+/// names. Array-ness was validated by `link`; only shapes are rechecked here.
+#[allow(clippy::too_many_arguments)]
+fn import_draft<'i>(
+    chain: DraftChain,
+    import: &'i crate::facts::StoreImport,
+    reads: &mut Vec<(Span, &'i str)>,
+    array_reads: &mut Vec<(Span, &'i str, Vec<ArraySuffix>)>,
+    writes: &mut Vec<(Span, &'i str)>,
+    index_writes: &mut Vec<(Span, &'i str, Vec<ArraySuffix>)>,
+    method_calls: &mut Vec<(Span, &'i str)>,
+    form_writes: &mut Vec<(Span, Vec<(&'i str, Vec<String>)>)>,
+) -> Option<()> {
+    let names = |keys: &[&str]| import.leaves.iter().find(|l| same_path(&l.path, keys));
+    if let Some(method) = &chain.method {
+        if !ARRAY_METHODS.contains(&method.as_str()) {
+            return None;
+        }
+        let leaf = names(&chain.path.iter().map(String::as_str).collect::<Vec<_>>())?;
+        method_calls.push((chain.span, leaf.setter.as_deref()?));
+        return Some(());
+    }
+    if let Some(index_chain) = &chain.index {
+        let leaf = names(&chain.path.iter().map(String::as_str).collect::<Vec<_>>())?;
+        let mut suffix = vec![ArraySuffix::Index];
+        suffix.extend(index_chain.tail.iter().cloned().map(ArraySuffix::Key));
+        if chain.write.is_some() {
+            index_writes.push((chain.span, leaf.setter.as_deref()?, suffix));
+        } else {
+            array_reads.push((chain.span, leaf.getter.as_deref()?, suffix));
+        }
+        return Some(());
+    }
+    if let Some(shape) = &chain.form {
+        if chain.write.is_none() {
+            return None;
+        }
+        let keys: Vec<&str> = chain.path.iter().map(String::as_str).collect();
+        if let Some(leaf) = names(&keys) {
+            writes.push((chain.span, leaf.setter.as_deref()?));
+            return Some(());
+        }
+        let mut form = Vec::new();
+        for relative in shape {
+            let mut full = chain.path.clone();
+            full.extend(relative.iter().cloned());
+            let keys: Vec<&str> = full.iter().map(String::as_str).collect();
+            let leaf = names(&keys)?;
+            form.push((leaf.setter.as_deref()?, relative.clone()));
+        }
+        form_writes.push((chain.span, form));
+        return Some(());
+    }
+    match names(&chain.path.iter().map(String::as_str).collect::<Vec<_>>()) {
+        Some(leaf) => {
+            if chain.write.is_none() && leaf.is_array && !chain.array_site {
+                return None;
+            }
+            if chain.write.is_some() {
+                writes.push((chain.span, leaf.setter.as_deref()?));
+            } else {
+                reads.push((chain.span, leaf.getter.as_deref()?));
+            }
+            Some(())
+        }
+        None if chain.write.is_none() => {
+            let (last, prefix) = chain.path.split_last()?;
+            if *last != "length" || prefix.is_empty() {
+                return None;
+            }
+            let keys: Vec<&str> = prefix.iter().map(String::as_str).collect();
+            let leaf = names(&keys)?;
+            if !leaf.is_array {
+                return None;
+            }
+            array_reads.push((
+                chain.span,
+                leaf.getter.as_deref()?,
+                vec![ArraySuffix::Key("length".to_string())],
+            ));
+            Some(())
+        }
+        None => None,
+    }
+}
+
 /// Rewrites the uses of one imported store binding the program unproxied; leaves it alone when a
 /// use is not one the facts name.
 fn import_store(
@@ -569,22 +1069,67 @@ fn import_store(
     })?;
     let names = |keys: &[&str]| import.leaves.iter().find(|l| same_path(&l.path, keys));
     let mut reads: Vec<(Span, &str)> = Vec::new();
+    let mut array_reads: Vec<(Span, &str, Vec<ArraySuffix>)> = Vec::new();
     let mut writes: Vec<(Span, &str)> = Vec::new();
+    let mut index_writes: Vec<(Span, &str, Vec<ArraySuffix>)> = Vec::new();
+    let mut method_calls: Vec<(Span, &str)> = Vec::new();
+    let mut form_writes: Vec<(Span, Vec<(&str, Vec<String>)>)> = Vec::new();
     let mut sets = Vec::new();
     for &reference in scoping.get_resolved_reference_ids(symbol) {
         let access = usage::classify(reference, scoping, nodes)?;
         match import.role {
             StoreRole::State => {
-                if access.context != Context::Read || is_ref_value(access.node, nodes) {
+                if is_ref_value(access.node, nodes) {
                     return None;
                 }
-                reads.push((
-                    chain_span(access.node, nodes),
-                    names(&access.keys)?.getter.as_deref()?,
-                ));
+                let span = chain_span(access.node, nodes);
+                match access.context {
+                    Context::Read if access.tail.is_empty() => {
+                        if let Some(leaf) = names(&access.keys) {
+                            if leaf.is_array && !array_read_site(access.node, nodes) {
+                                return None;
+                            }
+                            reads.push((span, leaf.getter.as_deref()?));
+                        } else {
+                            let (last, prefix) = access.keys.split_last()?;
+                            if *last != "length" || prefix.is_empty() {
+                                return None;
+                            }
+                            let leaf = names(prefix)?;
+                            array_reads.push((
+                                span,
+                                leaf.getter.as_deref()?,
+                                vec![ArraySuffix::Key("length".to_string())],
+                            ));
+                        }
+                    }
+                    Context::Read => {
+                        if !element_position_valid(access.node, nodes) {
+                            return None;
+                        }
+                        let leaf = names(&access.keys)?;
+                        array_reads.push((
+                            span,
+                            leaf.getter.as_deref()?,
+                            array_suffix(&access.tail)?,
+                        ));
+                    }
+                    Context::Call { .. } if access.tail.is_empty() => {
+                        let (method, prefix) = access.keys.split_last()?;
+                        if !ARRAY_METHODS.contains(method) || !is_statement_call(access.node, nodes)
+                        {
+                            return None;
+                        }
+                        let leaf = names(prefix)?;
+                        method_calls
+                            .push((call_span(access.node, nodes)?, leaf.setter.as_deref()?));
+                    }
+                    _ => return None,
+                }
             }
             StoreRole::Setter => {
                 if !access.keys.is_empty()
+                    || !access.tail.is_empty()
                     || access.context != (Context::Call { argument_count: 1 })
                 {
                     return None;
@@ -593,13 +1138,16 @@ fn import_store(
                     return None;
                 };
                 for chain in draft_chains(call, scoping, nodes)? {
-                    let keys: Vec<&str> = chain.path.iter().map(String::as_str).collect();
-                    let leaf: &LeafNames = names(&keys)?;
-                    if chain.write.is_some() {
-                        writes.push((chain.span, leaf.setter.as_deref()?));
-                    } else {
-                        reads.push((chain.span, leaf.getter.as_deref()?));
-                    }
+                    import_draft(
+                        chain,
+                        import,
+                        &mut reads,
+                        &mut array_reads,
+                        &mut writes,
+                        &mut index_writes,
+                        &mut method_calls,
+                        &mut form_writes,
+                    )?;
                 }
                 sets.push(call.span);
             }
@@ -617,9 +1165,31 @@ fn import_store(
         }
     }
     let reads: Vec<_> = reads.into_iter().map(|(span, export)| (span, slot(export))).collect();
+    let array_reads: Vec<_> = array_reads
+        .into_iter()
+        .map(|(span, export, suffix)| (span, ArrayReadPlan { slot: slot(export), suffix }))
+        .collect();
     let writes: Vec<_> = writes.into_iter().map(|(span, export)| (span, slot(export))).collect();
+    let index_writes: Vec<_> = index_writes
+        .into_iter()
+        .map(|(span, export, suffix)| (span, ArrayReadPlan { slot: slot(export), suffix }))
+        .collect();
+    let method_calls: Vec<_> =
+        method_calls.into_iter().map(|(span, export)| (span, slot(export))).collect();
+    let form_writes: Vec<_> = form_writes
+        .into_iter()
+        .map(|(span, writes)| {
+            let writes =
+                writes.into_iter().map(|(export, relative)| (slot(export), relative)).collect();
+            (span, writes)
+        })
+        .collect();
+    stores.form_writes.extend(form_writes);
     stores.reads.extend(reads);
+    stores.array_reads.extend(array_reads);
     stores.writes.extend(writes);
+    stores.index_writes.extend(index_writes);
+    stores.method_calls.extend(method_calls);
     stores.sets.extend(sets);
     stores.import_specifiers.insert(import.binding, specifiers);
     Some(())
@@ -667,7 +1237,7 @@ impl<'a> Lowerer<'a, '_> {
         };
         let values = form_leaves(call.arguments.first()?.as_expression()?)?;
         let mut leaves = self.vec();
-        for ((_, value), &(getter, setter)) in values.into_iter().zip(slots) {
+        for ((_, value, _), &(getter, setter)) in values.into_iter().zip(slots) {
             let getter = self.slot_name(getter);
             let setter = setter.map(|s| self.slot_name(s));
             let value = self.expr(value);
@@ -732,7 +1302,8 @@ impl<'a> Lowerer<'a, '_> {
         })
     }
 
-    /// `import { state } from "./store"` → the leaf imports, each once per module.
+    /// `import { state } from "./store"` → the leaf imports, each once per module; the import of
+    /// a computed the program inlined → the bindings its body reads (SPEC §16.5).
     pub(super) fn store_import(&mut self, import: &ImportDeclaration<'a>) -> Option<Hole<'a>> {
         let named: Vec<&ImportSpecifier<'a>> = import
             .specifiers
@@ -745,13 +1316,19 @@ impl<'a> Lowerer<'a, '_> {
             .collect();
         let facts = self.facts;
         let stores = &facts.stores;
-        if !named.iter().any(|s| stores.import_specifiers.contains_key(&s.local.span.start)) {
+        if !named.iter().any(|s| {
+            stores.import_specifiers.contains_key(&s.local.span.start)
+                || facts.program.computed_imports.contains_key(&s.local.span.start)
+        }) {
             return None;
         }
         let mut specifiers = self.vec();
         for specifier in &named {
             let Some(imports) = stores.import_specifiers.get(&specifier.local.span.start) else {
-                specifiers.push(Specifier::Source(specifier.span));
+                match self.computed_import(specifier) {
+                    Some(replacement) => specifiers.extend(replacement),
+                    None => specifiers.push(Specifier::Source(specifier.span)),
+                }
                 continue;
             };
             for (export, slot) in imports {
@@ -793,6 +1370,117 @@ impl<'a> Lowerer<'a, '_> {
         Some(Hole { span: call.span, kind: HoleKind::StoreSet { body } })
     }
 
+    /// `state.a[i].p`, `state.a.length` → `s$a()[i].p`, `s$a().length` (§16.6).
+    pub(super) fn array_read(
+        &mut self,
+        span: Span,
+        steps: Vec<crate::ir::ArraySuffix<'a>>,
+    ) -> Option<Hole<'a>> {
+        let plan = self.facts.stores.array_reads.get(&span)?;
+        let suffix = self.align_suffix(steps, &plan.suffix)?;
+        Some(Hole { span, kind: HoleKind::ArrayRead { getter: self.slot_name(plan.slot), suffix } })
+    }
+
+    /// Member steps of a chain as IR suffix steps, root first; `None` on optional links or
+    /// exotic roots.
+    pub(super) fn member_steps(
+        &mut self,
+        e: &Expression<'a>,
+    ) -> Option<Vec<crate::ir::ArraySuffix<'a>>> {
+        match e.without_parentheses() {
+            Expression::StaticMemberExpression(m) if !m.optional => {
+                let mut steps = self.member_steps(&m.object)?;
+                steps.push(crate::ir::ArraySuffix::Key(m.property.name.as_str()));
+                Some(steps)
+            }
+            Expression::ComputedMemberExpression(m) if !m.optional => {
+                let mut steps = self.member_steps(&m.object)?;
+                match m.expression.without_parentheses() {
+                    Expression::StringLiteral(key) => {
+                        steps.push(crate::ir::ArraySuffix::Key(self.str(&key.value)))
+                    }
+                    _ => steps.push(crate::ir::ArraySuffix::Index(self.expr(&m.expression))),
+                }
+                Some(steps)
+            }
+            Expression::Identifier(_) => Some(Vec::new()),
+            _ => None,
+        }
+    }
+
+    /// Member steps of an assignment target or update argument, root first.
+    fn target_steps(
+        &mut self,
+        target: &AssignmentTarget<'a>,
+    ) -> Option<Vec<crate::ir::ArraySuffix<'a>>> {
+        match target {
+            AssignmentTarget::StaticMemberExpression(m) if !m.optional => {
+                let mut steps = self.member_steps(&m.object)?;
+                steps.push(crate::ir::ArraySuffix::Key(m.property.name.as_str()));
+                Some(steps)
+            }
+            AssignmentTarget::ComputedMemberExpression(m) if !m.optional => {
+                let mut steps = self.member_steps(&m.object)?;
+                match m.expression.without_parentheses() {
+                    Expression::StringLiteral(key) => {
+                        steps.push(crate::ir::ArraySuffix::Key(self.str(&key.value)))
+                    }
+                    _ => steps.push(crate::ir::ArraySuffix::Index(self.expr(&m.expression))),
+                }
+                Some(steps)
+            }
+            _ => None,
+        }
+    }
+
+    fn simple_steps(
+        &mut self,
+        target: &SimpleAssignmentTarget<'a>,
+    ) -> Option<Vec<crate::ir::ArraySuffix<'a>>> {
+        match target {
+            SimpleAssignmentTarget::StaticMemberExpression(m) if !m.optional => {
+                let mut steps = self.member_steps(&m.object)?;
+                steps.push(crate::ir::ArraySuffix::Key(m.property.name.as_str()));
+                Some(steps)
+            }
+            SimpleAssignmentTarget::ComputedMemberExpression(m) if !m.optional => {
+                let mut steps = self.member_steps(&m.object)?;
+                match m.expression.without_parentheses() {
+                    Expression::StringLiteral(key) => {
+                        steps.push(crate::ir::ArraySuffix::Key(self.str(&key.value)))
+                    }
+                    _ => steps.push(crate::ir::ArraySuffix::Index(self.expr(&m.expression))),
+                }
+                Some(steps)
+            }
+            _ => None,
+        }
+    }
+
+    /// The trailing steps as an IR suffix, aligned with the planned shape.
+    fn align_suffix(
+        &mut self,
+        steps: Vec<crate::ir::ArraySuffix<'a>>,
+        shape: &[ArraySuffix],
+    ) -> Option<ArenaVec<'a, crate::ir::ArraySuffix<'a>>> {
+        let start = steps.len().checked_sub(shape.len())?;
+        let mut suffix = self.vec();
+        for (step, expected) in steps.into_iter().skip(start).zip(shape) {
+            match (step, expected) {
+                (crate::ir::ArraySuffix::Key(key), ArraySuffix::Key(expected))
+                    if key == expected =>
+                {
+                    suffix.push(crate::ir::ArraySuffix::Key(key));
+                }
+                (crate::ir::ArraySuffix::Index(index), ArraySuffix::Index) => {
+                    suffix.push(crate::ir::ArraySuffix::Index(index));
+                }
+                _ => return None,
+            }
+        }
+        Some(suffix)
+    }
+
     /// Draft `d.p = e` → `set$p(() => e)`, `d.p op= e` → `set$p((v) => v op e)`.
     pub(super) fn store_assignment(
         &mut self,
@@ -829,6 +1517,145 @@ impl<'a> Lowerer<'a, '_> {
         };
         Some(Hole { span: update.span, kind: HoleKind::StoreWrite { setter, write } })
     }
+
+    /// `d.a[i].p = e` → `set$a((v) => { const c = v.slice(); c[i].p = e; return c; })`.
+    pub(super) fn array_assignment(
+        &mut self,
+        assignment: &AssignmentExpression<'a>,
+    ) -> Option<Hole<'a>> {
+        let plan = self.facts.stores.index_writes.get(&assignment.span)?;
+        let setter = self.slot_name(plan.slot);
+        let steps = self.target_steps(&assignment.left)?;
+        let (index, tail) = self.split_index(steps, plan.suffix.len())?;
+        let right = &assignment.right;
+        let op = if assignment.operator.is_assign() {
+            IndexOp::Assign { value: self.expr(right) }
+        } else {
+            let operator = match assignment.operator.to_binary_operator() {
+                Some(binary) => binary.as_str(),
+                None => assignment.operator.to_logical_operator()?.as_str(),
+            };
+            IndexOp::Compound { operator, value: self.expr(right) }
+        };
+        let temp = (!tail.is_empty()).then(|| self.fresh("i$"));
+        let write = ArrayWriteKind::Index { index, tail, op, temp };
+        Some(Hole { span: assignment.span, kind: HoleKind::ArrayWrite { setter, write } })
+    }
+
+    /// `d.a[i].p++` → `set$a((v) => { const c = v.slice(); ++c[i].p; return c; })`.
+    pub(super) fn array_update(&mut self, update: &UpdateExpression<'a>) -> Option<Hole<'a>> {
+        let plan = self.facts.stores.index_writes.get(&update.span)?;
+        let setter = self.slot_name(plan.slot);
+        let steps = self.simple_steps(&update.argument)?;
+        let (index, tail) = self.split_index(steps, plan.suffix.len())?;
+        let temp = (!tail.is_empty()).then(|| self.fresh("i$"));
+        let write = ArrayWriteKind::Index {
+            index,
+            tail,
+            op: IndexOp::Update { operator: update.operator.as_str() },
+            temp,
+        };
+        Some(Hole { span: update.span, kind: HoleKind::ArrayWrite { setter, write } })
+    }
+
+    /// The index expression and tail keys of an indexed write: the trailing shape steps.
+    fn split_index(
+        &mut self,
+        steps: Vec<crate::ir::ArraySuffix<'a>>,
+        shape: usize,
+    ) -> Option<(Embed<'a>, ArenaVec<'a, &'a str>)> {
+        let start = steps.len().checked_sub(shape)?;
+        if shape == 0 {
+            return None;
+        }
+        let mut tail = self.vec();
+        let mut index = None;
+        for step in steps.into_iter().skip(start) {
+            match step {
+                crate::ir::ArraySuffix::Index(embed) if index.is_none() => index = Some(embed),
+                crate::ir::ArraySuffix::Key(key) if index.is_some() => tail.push(key),
+                _ => return None,
+            }
+        }
+        Some((index?, tail))
+    }
+    /// `d.a.push(e)` and statement `state.a.push(e)` → copy-on-write updaters (§16.6).
+    pub(super) fn store_method_call(&mut self, call: &CallExpression<'a>) -> Option<Hole<'a>> {
+        let slot = *self.facts.stores.method_calls.get(&call.span)?;
+        let setter = self.slot_name(slot);
+        let Expression::StaticMemberExpression(callee) = call.callee.without_parentheses() else {
+            return None;
+        };
+        let name = self.str(callee.property.name.as_str());
+        let mut args = self.vec();
+        for argument in &call.arguments {
+            args.push(self.expr(argument.as_expression()?));
+        }
+        let write = ArrayWriteKind::Method { name, args };
+        Some(Hole { span: call.span, kind: HoleKind::ArrayWrite { setter, write } })
+    }
+
+    /// `d.a.b = {…}` → `{ const _t0 = v0; …; set$l0(() => _t0); … }` (§16.6).
+    pub(super) fn form_assignment(
+        &mut self,
+        assignment: &AssignmentExpression<'a>,
+    ) -> Option<Hole<'a>> {
+        let writes = self.facts.stores.form_writes.get(&assignment.span)?.clone();
+        let Expression::ObjectExpression(object) = assignment.right.without_parentheses() else {
+            return None;
+        };
+        let mut parts: std::vec::Vec<(Vec<String>, &Expression<'a>)> = std::vec::Vec::new();
+        literal_parts(object, &mut std::vec::Vec::new(), &mut parts)?;
+        let mut temps = self.vec();
+        let mut temp_of: std::vec::Vec<(Vec<String>, &'a str)> = std::vec::Vec::new();
+        for (relative, value) in parts {
+            let name = self.fresh("t$");
+            temps.push(FormTemp { name, value: self.expr(value) });
+            temp_of.push((relative, name));
+        }
+        let mut ordered: std::vec::Vec<(usize, &'a str)> = writes
+            .iter()
+            .map(|(slot, relative)| {
+                let temp = temp_of.iter().find(|(path, _)| path == relative)?.1;
+                Some((*slot, temp))
+            })
+            .collect::<Option<_>>()?;
+        ordered.sort_by_key(|(slot, _)| *slot);
+        let mut sets = self.vec();
+        for (slot, temp) in ordered {
+            sets.push(FormSet { setter: self.slot_name(slot), temp });
+        }
+        Some(Hole {
+            span: assignment.span,
+            kind: HoleKind::ArrayWrite { setter: "", write: ArrayWriteKind::Form { temps, sets } },
+        })
+    }
+}
+
+/// Leaf-relative paths and values of a plain object literal, in source order.
+fn literal_parts<'b, 'a>(
+    object: &'b ObjectExpression<'a>,
+    prefix: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, &'b Expression<'a>)>,
+) -> Option<()> {
+    let mut keys = HashSet::new();
+    for property in &object.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else { return None };
+        if property.kind != PropertyKind::Init || property.method || property.computed {
+            return None;
+        }
+        let key = form_key(&property.key)?;
+        if key == "__proto__" || !keys.insert(key.clone()) {
+            return None;
+        }
+        prefix.push(key);
+        match property.value.without_parentheses() {
+            Expression::ObjectExpression(nested) => literal_parts(nested, prefix, out)?,
+            value => out.push((prefix.clone(), value)),
+        }
+        prefix.pop();
+    }
+    Some(())
 }
 
 /// Whether `e` binds tighter than any binary or logical operator.

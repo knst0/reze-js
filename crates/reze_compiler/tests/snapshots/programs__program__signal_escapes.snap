@@ -1,5 +1,6 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
 expression: render(&dir)
 ---
 closed: ["/entry-export.ts"]
@@ -18,7 +19,7 @@ export const [shown] = signal("exported by the entry");
 > 3 | export const [name] = signal("imported by the entry, folded");
     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   4 | export const [shown] = signal("exported by the entry");
-  related: read here (/main.tsx:280)
+  related: read here (/main.tsx:297)
 // ==== /entry-export.ts [server] ====
 import { signal } from "reze-js";
 
@@ -42,9 +43,10 @@ export const [shown] = signal("exported by the entry");
 
 // ==== /main.tsx [client] ====
 import { render } from "reze-js";
+
 import { name } from "./entry-export";
-import * as opened from "./opened";
 import { kept } from "./globbed";
+import * as opened from "./opened";
 import { template as _$template, insert as _$insert } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<p>imported by the entry, folded <!> </p>");
 
@@ -52,19 +54,25 @@ export { shown } from "./entry-export";
 export const modules = import.meta.glob("./globbed.ts");
 
 console.log(opened);
-render(() => (() => {
+render(
+  () => (
+    (() => {
   var _el$ = _tmpl$(),
     _el$2 = _el$.firstChild.nextSibling;
   _$insert(_el$, () => opened.value(), _el$2);
   _$insert(_el$, kept, null);
   return _el$;
-})(), document.body);
+})()
+  ),
+  document.body,
+);
 
 // ==== /main.tsx [server] ====
 import { render } from "reze-js";
+
 import { name } from "./entry-export";
-import * as opened from "./opened";
 import { kept } from "./globbed";
+import * as opened from "./opened";
 import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
 const _tmpl$ = ["<p", ">imported by the entry, folded <!--[-->", "<!--]--><!> <!--[-->", "<!--]--></p>"];
 
@@ -72,13 +80,19 @@ export { shown } from "./entry-export";
 export const modules = import.meta.glob("./globbed.ts");
 
 console.log(opened);
-render(() => _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(opened.value()), _$ssrChild(kept())), document.body);
+render(
+  () => (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(opened.value()), _$ssrChild(kept()))
+  ),
+  document.body,
+);
 
 // ==== /main.tsx [hydrate] ====
 import { render } from "reze-js";
+
 import { name } from "./entry-export";
-import * as opened from "./opened";
 import { kept } from "./globbed";
+import * as opened from "./opened";
 import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<p>imported by the entry, folded <!> </p>");
 
@@ -86,13 +100,18 @@ export { shown } from "./entry-export";
 export const modules = import.meta.glob("./globbed.ts");
 
 console.log(opened);
-render(() => (() => {
+render(
+  () => (
+    (() => {
   var _el$ = _$claim(_tmpl$, "p"),
     _el$2 = _$claimChild(_el$, 1);
   _$claimInsert(_el$, () => opened.value(), _el$2);
   _$claimInsert(_el$, kept, null);
   return _el$;
-})(), document.body);
+})()
+  ),
+  document.body,
+);
 
 // ==== /opened.ts [client] ====
 <unchanged>

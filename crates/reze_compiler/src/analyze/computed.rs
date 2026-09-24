@@ -1,5 +1,6 @@
 //! O4 (SPEC §8): `const d = computed(() => expr)` read once, as `d()` inside a reactive JSX
-//! expression of the function that declares it, is inlined into that read.
+//! expression of the function that declares it, is inlined into that read. Across modules
+//! (§16.5), `link` decides and each side applies its part of the decision.
 
 use std::collections::HashSet;
 
@@ -7,13 +8,14 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::*;
 use oxc_ast_visit::Visit;
 use oxc_semantic::{AstNodes, Scoping};
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 use oxc_syntax::node::NodeId;
 use oxc_syntax::scope::ScopeId;
 use oxc_syntax::symbol::SymbolId;
 
 use super::Facts;
 use crate::diagnostic::{Code, Report};
+use crate::facts::{ComputedRead, InlinedComputed, ModuleFacts};
 use crate::lower::constant::literal_truthy;
 use crate::lower::is_native_name;
 use crate::usage::{Context, classify};
@@ -81,7 +83,10 @@ pub fn inline(
         };
         let &[reference] = scoping.get_resolved_reference_ids(computed) else { continue };
         let Some(access) = classify(reference, scoping, nodes) else { continue };
-        if access.context != (Context::Call { argument_count: 0 }) || !access.keys.is_empty() {
+        if access.context != (Context::Call { argument_count: 0 })
+            || !access.keys.is_empty()
+            || !access.tail.is_empty()
+        {
             continue;
         }
         let call_node = nodes.parent_id(access.node);
@@ -121,6 +126,278 @@ pub fn inline(
             .data("scope", "module"),
         );
     }
+}
+
+/// A read of a computed another module declares, inlined here (§16.5).
+pub struct InlinedRead {
+    pub body: String,
+    pub references: Vec<ReadReference>,
+}
+
+/// A reference of an inlined body, by offsets into it, and the name it reads here.
+pub struct ReadReference {
+    pub start: u32,
+    pub end: u32,
+    pub name: ReadName,
+}
+
+pub enum ReadName {
+    /// An import already in scope at the read.
+    Local(String),
+    /// An import added for the body.
+    Imported(ImportedName),
+}
+
+/// The export `export` of the module imported from `source`, imported under a fresh name based on
+/// `base`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ImportedName {
+    pub source: String,
+    pub export: String,
+    pub base: String,
+}
+
+/// Whether `call` stands in a reactive JSX expression of a function lowering keeps in place, as
+/// O4 requires of a read.
+pub fn is_reactive_read(call: NodeId, nodes: &AstNodes<'_>) -> bool {
+    reactive_jsx_boundary(call, nodes, &Facts::default())
+        .is_some_and(|boundary| is_plain_boundary(nodes.kind(boundary)))
+}
+
+/// The identifiers of `expr` with their symbols when `expr` can move to another module as text:
+/// plain expression syntax (no functions, JSX, types, `this` or object literals) whose every
+/// identifier names a binding of the program scope.
+pub fn portable_references(
+    expr: &Expression<'_>,
+    scoping: &Scoping,
+) -> Option<Vec<(Span, SymbolId)>> {
+    let mut references = Vec::new();
+    portable(expr, scoping, &mut references)?;
+    Some(references)
+}
+
+fn portable(
+    e: &Expression<'_>,
+    scoping: &Scoping,
+    references: &mut Vec<(Span, SymbolId)>,
+) -> Option<()> {
+    match e {
+        Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::NumericLiteral(_)
+        | Expression::BigIntLiteral(_)
+        | Expression::StringLiteral(_) => Some(()),
+        Expression::TemplateLiteral(template) => {
+            template.expressions.iter().try_for_each(|e| portable(e, scoping, references))
+        }
+        Expression::Identifier(id) => {
+            let symbol = scoping.get_reference(id.reference_id.get()?).symbol_id()?;
+            if scoping.symbol_scope_id(symbol) != scoping.root_scope_id() {
+                return None;
+            }
+            references.push((id.span, symbol));
+            Some(())
+        }
+        Expression::StaticMemberExpression(member) => portable(&member.object, scoping, references),
+        Expression::ComputedMemberExpression(member) => {
+            portable(&member.object, scoping, references)?;
+            portable(&member.expression, scoping, references)
+        }
+        Expression::CallExpression(call) => portable_call(call, scoping, references),
+        Expression::ChainExpression(chain) => match &chain.expression {
+            ChainElement::CallExpression(call) => portable_call(call, scoping, references),
+            ChainElement::StaticMemberExpression(member) => {
+                portable(&member.object, scoping, references)
+            }
+            ChainElement::ComputedMemberExpression(member) => {
+                portable(&member.object, scoping, references)?;
+                portable(&member.expression, scoping, references)
+            }
+            _ => None,
+        },
+        Expression::UnaryExpression(unary) if unary.operator != UnaryOperator::Delete => {
+            portable(&unary.argument, scoping, references)
+        }
+        Expression::BinaryExpression(binary) => {
+            portable(&binary.left, scoping, references)?;
+            portable(&binary.right, scoping, references)
+        }
+        Expression::LogicalExpression(logical) => {
+            portable(&logical.left, scoping, references)?;
+            portable(&logical.right, scoping, references)
+        }
+        Expression::ConditionalExpression(conditional) => {
+            portable(&conditional.test, scoping, references)?;
+            portable(&conditional.consequent, scoping, references)?;
+            portable(&conditional.alternate, scoping, references)
+        }
+        Expression::ParenthesizedExpression(parenthesized) => {
+            portable(&parenthesized.expression, scoping, references)
+        }
+        Expression::SequenceExpression(sequence) => {
+            sequence.expressions.iter().try_for_each(|e| portable(e, scoping, references))
+        }
+        _ => None,
+    }
+}
+
+fn portable_call(
+    call: &CallExpression<'_>,
+    scoping: &Scoping,
+    references: &mut Vec<(Span, SymbolId)>,
+) -> Option<()> {
+    if call.type_arguments.is_some() {
+        return None;
+    }
+    portable(&call.callee, scoping, references)?;
+    call.arguments.iter().try_for_each(|argument| match argument {
+        Argument::SpreadElement(spread) => portable(&spread.argument, scoping, references),
+        argument => portable(argument.as_expression()?, scoping, references),
+    })
+}
+
+/// Applies the §16.5 decisions of `module_facts`: computeds of this module inlined elsewhere are
+/// removed with their export specifiers, reads of other modules' computeds are inlined here.
+pub fn apply_program(
+    facts: &mut Facts,
+    program: &Program<'_>,
+    scoping: &Scoping,
+    nodes: &AstNodes<'_>,
+    module_facts: &ModuleFacts,
+    reports: &mut Vec<Report>,
+) {
+    for inlined in &module_facts.inlined_computeds {
+        remove_inlined(facts, program, scoping, nodes, inlined, reports);
+    }
+    for read in &module_facts.computed_reads {
+        inline_read(facts, program, scoping, nodes, read);
+    }
+    for statement in &program.body {
+        let Statement::ExportNamedDeclaration(export) = statement else { continue };
+        let is_emptied = !export.specifiers.is_empty()
+            && export
+                .specifiers
+                .iter()
+                .all(|s| facts.program.removed_specifiers.contains(&s.span.start));
+        if is_emptied {
+            facts
+                .removed_declarations
+                .insert(export.span.start, removal(program.source_text, export.span, true));
+        }
+    }
+}
+
+fn remove_inlined(
+    facts: &mut Facts,
+    program: &Program<'_>,
+    scoping: &Scoping,
+    nodes: &AstNodes<'_>,
+    inlined: &InlinedComputed,
+    reports: &mut Vec<Report>,
+) -> Option<()> {
+    let (statement, declaration) = program.body.iter().find_map(|statement| {
+        let declaration = match statement {
+            Statement::VariableDeclaration(declaration) => declaration,
+            Statement::ExportDeclaration(export) => match &export.declaration {
+                Declaration::VariableDeclaration(declaration) => declaration,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let [declarator] = declaration.declarations.as_slice() else { return None };
+        matches!(&declarator.id, BindingPattern::BindingIdentifier(id) if id.span.start == inlined.binding)
+            .then_some((statement.span(), &**declaration))
+    })?;
+    let declarator = &declaration.declarations[0];
+    let BindingPattern::BindingIdentifier(id) = &declarator.id else { return None };
+    facts
+        .removed_declarations
+        .insert(declaration.span.start, removal(program.source_text, statement, true));
+    for &reference in scoping.get_resolved_reference_ids(id.symbol_id()) {
+        if let AstKind::ExportSpecifier(specifier) =
+            nodes.parent_kind(scoping.get_reference(reference).node_id())
+        {
+            facts.program.removed_specifiers.insert(specifier.span.start);
+        }
+    }
+    let name = id.name.as_str();
+    let mut report = Report::new(
+        Code::ComputedInlined,
+        declarator.span,
+        format!(
+            "`{name}` is read only once, by `{name}()` in a reactive JSX expression of another \
+             module, so the declaration and its exports were removed and its expression inlined \
+             there."
+        ),
+    )
+    .data("computed", name)
+    .data("scope", "program");
+    for related in &inlined.related {
+        report = report.related(related.clone());
+    }
+    reports.push(report);
+    Some(())
+}
+
+fn inline_read(
+    facts: &mut Facts,
+    program: &Program<'_>,
+    scoping: &Scoping,
+    nodes: &AstNodes<'_>,
+    read: &ComputedRead,
+) -> Option<()> {
+    let (computed, source) = import_binding(program, read.import)?;
+    let scope = scoping
+        .get_resolved_reference_ids(computed)
+        .iter()
+        .map(|&reference| scoping.get_reference(reference).node_id())
+        .find(|&node| nodes.kind(node).span().start == read.callee)
+        .map(|node| nodes.get_node(node).scope_id())?;
+    let mut imported: Vec<ImportedName> = Vec::new();
+    let mut references = Vec::with_capacity(read.references.len());
+    for reference in &read.references {
+        let in_scope = reference
+            .import
+            .and_then(|binding| import_binding(program, binding))
+            .map(|(symbol, _)| symbol)
+            .filter(|&symbol| {
+                scoping.find_binding(scope, scoping.symbol_name(symbol).into()) == Some(symbol)
+            });
+        let name = match in_scope {
+            Some(symbol) => ReadName::Local(scoping.symbol_name(symbol).to_string()),
+            None => {
+                let base = read.body.get(reference.start as usize..reference.end as usize)?;
+                let name = ImportedName {
+                    source: source.to_string(),
+                    export: reference.export.clone(),
+                    base: base.to_string(),
+                };
+                if !imported.contains(&name) {
+                    imported.push(name.clone());
+                }
+                ReadName::Imported(name)
+            }
+        };
+        references.push(ReadReference { start: reference.start, end: reference.end, name });
+    }
+    facts
+        .program
+        .computed_reads
+        .insert(read.callee, InlinedRead { body: read.body.clone(), references });
+    facts.program.computed_imports.insert(read.import, imported);
+    Some(())
+}
+
+/// The symbol of the import binding whose local identifier starts at `binding`, with the module
+/// it is imported from.
+fn import_binding<'p>(program: &'p Program<'_>, binding: u32) -> Option<(SymbolId, &'p str)> {
+    program.body.iter().find_map(|statement| {
+        let Statement::ImportDeclaration(import) = statement else { return None };
+        import.specifiers.iter().flatten().find_map(|specifier| {
+            let local = specifier.local();
+            (local.span.start == binding).then(|| (local.symbol_id(), import.source.value.as_str()))
+        })
+    })
 }
 
 /// The node whose body runs `node`: the nearest function, class member or the program.

@@ -1,0 +1,32 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+assertion_line: 191
+expression: "import { store } from \"reze-js\";\nconst [bare, setBare] = store({ items: [1] });\nconst kept = bare.items;\nconst [compared, setCompared] = store({ items: [1] });\nconst same = compared.items === compared.items;\nconst [called, setCalled] = store({ items: [1] });\nuse(called.items);\nconst [spread, setSpread] = store({ items: [{ v: 1 }] });\nconst copy = { ...spread.items[0] };\nconst [deleted, setDeleted] = store({ items: [1] });\nsetDeleted((d) => { delete d.items[0]; });\nconst [shaped, setShaped] = store({ form: { a: 1, b: 2 } });\nsetShaped((d) => { d.form = other(); });\nconst [valued, setValued] = store({ items: [1] });\nsetValued((d) => { log(d.items.push(1)); });\nconst [jsx, setJsx] = store({ items: [0] });\nsetJsx((d) => { d.items[<b />] = 1; });\nexport const view = <ul>{kept.length}{same}{copy.v}</ul>;"
+---
+import { store } from "reze-js";
+import { template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<b></b>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<ul></ul>");
+const [bare, setBare] = store({ items: [1] });
+const kept = bare.items;
+const [compared, setCompared] = store({ items: [1] });
+const same = compared.items === compared.items;
+const [called, setCalled] = store({ items: [1] });
+use(called.items);
+const [spread, setSpread] = store({ items: [{ v: 1 }] });
+const copy = { ...spread.items[0] };
+const [deleted, setDeleted] = store({ items: [1] });
+setDeleted((d) => { delete d.items[0]; });
+const [shaped, setShaped] = store({ form: { a: 1, b: 2 } });
+setShaped((d) => { d.form = other(); });
+const [valued, setValued] = store({ items: [1] });
+setValued((d) => { log(d.items.push(1)); });
+const [jsx, setJsx] = store({ items: [0] });
+setJsx((d) => { d.items[_tmpl$()] = 1; });
+export const view = (() => {
+  var _el$ = _tmpl$2();
+  _$insert(_el$, () => kept.length, null);
+  _$insert(_el$, same, null);
+  _$insert(_el$, () => copy.v, null);
+  return _el$;
+})();

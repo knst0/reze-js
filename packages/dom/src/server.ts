@@ -1,8 +1,30 @@
-import { root, untrack } from "@rezejs/signals";
+import { flushSync, root, untrack } from "@rezejs/signals";
 
-import { IslandClose, IslandOpen, Properties, classTokens, createComponent } from "./dom";
-import { nextComponentScope, nextHydrationKey, withKeyScope } from "./hydration";
+import {
+  IslandClose,
+  IslandOpen,
+  Properties,
+  SlotClose,
+  SlotOpen,
+  classTokens,
+  createComponent,
+  mergeProps,
+} from "./dom";
+import {
+  nextComponentScope,
+  nextHydrationKey,
+  resumeKeyScope,
+  withKeyScope,
+  withServerRender,
+} from "./hydration";
 import type { JSX } from "./jsx";
+import {
+  StreamClose,
+  StreamOpen,
+  withActiveStream,
+  type BoundaryStream,
+  type StreamBoundary,
+} from "./stream";
 
 // oxlint-disable-next-line typescript/no-explicit-any
 type Any = any;
@@ -26,14 +48,16 @@ export function renderToString(code: () => JSX.Element, islands?: boolean): stri
   const wasStaticArea = isStaticArea;
   isStaticArea = islands === true;
   try {
-    return withKeyScope("", () =>
-      root((dispose) => {
-        try {
-          return ssrChild(code());
-        } finally {
-          dispose();
-        }
-      }),
+    return withServerRender(() =>
+      withKeyScope("", () =>
+        root((dispose) => {
+          try {
+            return ssrChild(code());
+          } finally {
+            dispose();
+          }
+        }),
+      ),
     );
   } finally {
     isStaticArea = wasStaticArea;
@@ -42,27 +66,55 @@ export function renderToString(code: () => JSX.Element, islands?: boolean): stri
 
 /**
  * `createComponent` for an island boundary. In the static area it renders the island between
- * `<!--$id:scope:props-->` and `<!--/$-->`, `scope` being the key scope it opens and `props`
- * JSON, and the island itself renders in the client area. Throws `[ISLAND_PROPS]` when `props`
- * is not JSON: `null`, booleans, strings, finite numbers other than `-0`, dense arrays and
- * plain objects, without cycles.
+ * `<!--$id:scope:props:mode-->` and `<!--/$-->`, `scope` being the key scope it opens, `props`
+ * JSON and `mode` the `island:load` mode (`eager` by default). Each slot renders first, in the
+ * parent scope, wrapped as `<!--$slot:name-->…<!--/$slot-->`; the island itself renders in the
+ * client area, reading its props and its slot HTML. Throws `[ISLAND_PROPS]` when `props` is
+ * not JSON: `null`, booleans, strings, finite numbers other than `-0`, dense arrays and plain
+ * objects, without cycles.
  */
-export function ssrIsland<P>(id: string, Comp: (props: P) => JSX.Element, props: P): JSX.Element {
-  if (!isStaticArea) return createComponent(Comp, props);
-  const json = islandJSON(id, props, "props", []);
+export function ssrIsland<P>(
+  id: string,
+  Comp: (props: P) => JSX.Element,
+  props: P,
+  slots?: Props | null,
+  mode?: string,
+): JSX.Element {
+  if (!isStaticArea) return createComponent(Comp, (slots ? mergeProps(props, slots) : props) as P);
+  const rendered = slots ? renderSlots(slots) : undefined;
+  const json = islandJSON(props, "props", [], (path, found) => islandPropsError(id, path, found));
   const scope = nextComponentScope()!;
   isStaticArea = false;
   try {
-    const html = withKeyScope(scope, () => ssrChild(untrack(() => Comp(props))));
+    const html = withKeyScope(scope, () =>
+      ssrChild(untrack(() => Comp({ ...(props as object), ...rendered } as P))),
+    );
     return new RenderedHTML(
-      `<!--${IslandOpen}${id}:${scope}:${json}-->${html}<!--${IslandClose}-->`,
+      `<!--${IslandOpen}${id}:${scope}:${json}:${mode ?? "eager"}-->${html}<!--${IslandClose}-->`,
     ) as unknown as JSX.Element;
   } finally {
     isStaticArea = true;
   }
 }
 
-function islandJSON(id: string, value: unknown, path: string, ancestors: object[]): string {
+/** Each slot as HTML in the parent scope, wrapped in its `<!--$slot:name-->` range. */
+function renderSlots(slots: Props): Record<string, RenderedHTML> {
+  const rendered: Record<string, RenderedHTML> = {};
+  for (const key of Object.keys(slots)) {
+    const html = ssrChild(slots[key]);
+    rendered[key] = new RenderedHTML(
+      `<!--${SlotOpen}${encodeURIComponent(key)}-->${html}<!--${SlotClose}-->`,
+    );
+  }
+  return rendered;
+}
+
+function islandJSON(
+  value: unknown,
+  path: string,
+  ancestors: object[],
+  fail: (path: string, found: string) => Error,
+): string {
   if (value === null) return "null";
   switch (typeof value) {
     case "boolean":
@@ -71,36 +123,36 @@ function islandJSON(id: string, value: unknown, path: string, ancestors: object[
       return JSON.stringify(value).replace(/[<>-]/g, (c) => IslandJSONEscapes[c]!);
     case "number":
       if (!Number.isFinite(value) || Object.is(value, -0)) {
-        throw islandPropsError(id, path, Object.is(value, -0) ? "-0" : String(value));
+        throw fail(path, Object.is(value, -0) ? "-0" : String(value));
       }
       return String(value);
     case "object": {
-      if (ancestors.includes(value)) throw islandPropsError(id, path, "a cycle");
+      if (ancestors.includes(value)) throw fail(path, "a cycle");
       ancestors.push(value);
       let json: string;
       if (Array.isArray(value)) {
         json = "[";
         for (let i = 0; i < value.length; i++) {
-          if (!(i in value)) throw islandPropsError(id, path, "a sparse array");
-          json += (i ? "," : "") + islandJSON(id, value[i], `${path}[${i}]`, ancestors);
+          if (!(i in value)) throw fail(path, "a sparse array");
+          json += (i ? "," : "") + islandJSON(value[i], `${path}[${i}]`, ancestors, fail);
         }
         json += "]";
       } else {
         const proto = Object.getPrototypeOf(value);
         if (proto !== Object.prototype && proto !== null) {
-          throw islandPropsError(id, path, `a ${proto?.constructor?.name ?? "non-plain"} object`);
+          throw fail(path, `a ${proto?.constructor?.name ?? "non-plain"} object`);
         }
         json = "{";
         for (const key of Reflect.ownKeys(value)) {
           const keyPath = `${path}.${String(key)}`;
           if (typeof key === "symbol" || !Object.prototype.propertyIsEnumerable.call(value, key)) {
-            throw islandPropsError(id, keyPath, "a symbol or non-enumerable key");
+            throw fail(keyPath, "a symbol or non-enumerable key");
           }
           json +=
             (json.length > 1 ? "," : "") +
-            islandJSON(id, key, keyPath, ancestors) +
+            islandJSON(key, keyPath, ancestors, fail) +
             ":" +
-            islandJSON(id, (value as Record<string, unknown>)[key], keyPath, ancestors);
+            islandJSON((value as Record<string, unknown>)[key], keyPath, ancestors, fail);
         }
         json += "}";
       }
@@ -108,7 +160,7 @@ function islandJSON(id: string, value: unknown, path: string, ancestors: object[
       return json;
     }
     default:
-      throw islandPropsError(id, path, value === undefined ? "undefined" : `a ${typeof value}`);
+      throw fail(path, value === undefined ? "undefined" : `a ${typeof value}`);
   }
 }
 
@@ -204,4 +256,181 @@ export function ssrSpread(props: Props, isSVG?: boolean): string {
     } else html += ssrAttribute(name, value);
   }
   return html;
+}
+
+/**
+ * Streams `code()` as HTML for `hydrate`. The shell comes at once, rendered like
+ * `renderToString`; an async component with a pending await is a placeholder
+ * `<!--$s:<id>-->…<!--/$s-->` around its pre-load HTML, `id` being its key scope plus the index
+ * of the await. As an await settles, the component renders again with the settled values and
+ * `<template data-reze-chunk="<id>" data-reze-values="<json>">…</template>` follows, the value
+ * serialized like island props (`[STREAM_VALUES]` errors the stream otherwise; `undefined`
+ * omits the attribute). The stream closes once every await settled or after `timeoutMs`;
+ * placeholders of pending or rejected awaits stay. Cancelling the stream stops the rendering.
+ */
+export function renderToStream(
+  code: () => JSX.Element,
+  options?: { timeoutMs?: number },
+): ReadableStream<Uint8Array> {
+  let stream!: ServerStream;
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      stream = new ServerStream(controller);
+      stream.start(code, options?.timeoutMs ?? 30000);
+    },
+    cancel() {
+      stream.stop();
+    },
+  });
+}
+
+/**
+ * Await `index` of an async component: registers `load()` with the stream rendering the
+ * component, which waits for it and streams the component again once it settled. Outside a
+ * stream it is `load()`.
+ */
+export function ssrAwait<T>(
+  boundary: StreamBoundary | undefined,
+  index: number,
+  load: () => T,
+): T | Promise<Awaited<T>> {
+  const stream = boundary?.stream;
+  return stream instanceof ServerStream ? stream.await(boundary!, index, load()) : load();
+}
+
+interface ServerBoundary {
+  content: (() => JSX.Element) | undefined;
+  /** The index of the pending await, while there is one. */
+  awaiting: number | undefined;
+}
+
+class ServerStream implements BoundaryStream {
+  private readonly encoder = new TextEncoder();
+  private readonly boundaries = new Map<StreamBoundary, ServerBoundary>();
+  private pending = 0;
+  private isClosed = false;
+  private cancelTimeout: (() => void) | undefined;
+  private dispose: (() => void) | undefined;
+
+  constructor(private readonly controller: ReadableStreamDefaultController<Uint8Array>) {}
+
+  start(code: () => JSX.Element, timeoutMs: number): void {
+    let shell: string;
+    try {
+      shell = this.render(() =>
+        withKeyScope("", () =>
+          root((dispose) => {
+            this.dispose = dispose;
+            return ssrChild(code());
+          }),
+        ),
+      );
+    } catch (error) {
+      this.dispose?.();
+      throw error;
+    }
+    this.controller.enqueue(this.encoder.encode(shell));
+    if (!this.pending) {
+      this.close();
+      return;
+    }
+    const timeout = setTimeout(() => this.close(), timeoutMs);
+    this.cancelTimeout = () => clearTimeout(timeout);
+  }
+
+  stop(): void {
+    this.isClosed = true;
+    this.cancelTimeout?.();
+    this.dispose?.();
+  }
+
+  output(boundary: StreamBoundary, content: () => JSX.Element): JSX.Element {
+    this.state(boundary).content = content;
+    return (() => new RenderedHTML(this.boundaryHTML(boundary))) as unknown as JSX.Element;
+  }
+
+  await<T>(boundary: StreamBoundary, index: number, value: T): Promise<Awaited<T>> {
+    const promise = Promise.resolve(value);
+    this.pending++;
+    this.state(boundary).awaiting = index;
+    promise.then(
+      (settled) => queueMicrotask(() => this.resolve(boundary, index, settled)),
+      () => queueMicrotask(() => this.reject()),
+    );
+    return promise;
+  }
+
+  /**
+   * Runs after `trackAsync` applied `value` (its callbacks were registered after this one's),
+   * so flushing runs the component's next await step before its content renders again.
+   */
+  private resolve(boundary: StreamBoundary, index: number, value: unknown): void {
+    if (this.isClosed) return;
+    this.pending--;
+    this.state(boundary).awaiting = undefined;
+    const id = boundary.scope.id + index;
+    try {
+      const values =
+        value === undefined
+          ? ""
+          : ssrAttribute(
+              "data-reze-values",
+              islandJSON(
+                value,
+                "value",
+                [],
+                (path, found) =>
+                  new Error(
+                    `[STREAM_VALUES] chunk "${id}": ${path} is ${found}, which is not JSON`,
+                  ),
+              ),
+            );
+      const html = this.render(() => {
+        flushSync();
+        return this.boundaryHTML(boundary);
+      });
+      this.controller.enqueue(
+        this.encoder.encode(`<template data-reze-chunk="${id}"${values}>${html}</template>`),
+      );
+    } catch (error) {
+      this.stop();
+      this.controller.error(error);
+      return;
+    }
+    if (!this.pending) this.close();
+  }
+
+  private reject(): void {
+    if (this.isClosed) return;
+    this.pending--;
+    if (!this.pending) this.close();
+  }
+
+  private close(): void {
+    this.stop();
+    this.controller.close();
+  }
+
+  private state(boundary: StreamBoundary): ServerBoundary {
+    let state = this.boundaries.get(boundary);
+    if (!state)
+      this.boundaries.set(boundary, (state = { content: undefined, awaiting: undefined }));
+    return state;
+  }
+
+  private boundaryHTML(boundary: StreamBoundary): string {
+    const { content, awaiting } = this.state(boundary);
+    const html = resumeKeyScope(boundary.scope, () => ssrChild(content));
+    if (awaiting === undefined) return html;
+    return `<!--${StreamOpen}${boundary.scope.id}${awaiting}-->${html}<!--${StreamClose}-->`;
+  }
+  private render<T>(fn: () => T): T {
+    const wasStaticArea = isStaticArea;
+    isStaticArea = false;
+    try {
+      return withServerRender(() => withActiveStream(this, fn));
+    } finally {
+      isStaticArea = wasStaticArea;
+    }
+  }
 }

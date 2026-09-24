@@ -4,6 +4,8 @@
 use oxc_allocator::{Box, Vec};
 use oxc_span::Span;
 
+use crate::facts::IslandMode;
+
 /// A slice of the source with sub-spans replaced by compiled holes.
 pub struct Embed<'a> {
     pub span: Span,
@@ -42,6 +44,11 @@ pub enum HoleKind<'a> {
     StoreRead {
         getter: &'a str,
     },
+    /// `state.a[i].p`, `state.a.length` → `s$a()[i].p`, `s$a().length` (§16.6).
+    ArrayRead {
+        getter: &'a str,
+        suffix: Vec<'a, ArraySuffix<'a>>,
+    },
     /// `setState((d) => E)` → `void untrack(() => E')`; `body` is the expression or the block.
     StoreSet {
         body: Embed<'a>,
@@ -51,6 +58,11 @@ pub enum HoleKind<'a> {
         setter: &'a str,
         write: StoreWriteKind<'a>,
     },
+    /// An indexed or method draft write, or a literal write to a form path (§16.6).
+    ArrayWrite {
+        setter: &'a str,
+        write: ArrayWriteKind<'a>,
+    },
     /// The named specifiers of an import or export declaration, joined with `, `.
     Specifiers {
         specifiers: Vec<'a, Specifier<'a>>,
@@ -58,6 +70,12 @@ pub enum HoleKind<'a> {
     /// `d()` of an inlined computed → `(expr)` (O4).
     ComputedInline {
         body: Embed<'a>,
+    },
+    /// `d()` of a computed another module declares → `(body)`, the text of its expression with
+    /// each reference renamed to a binding of this module (SPEC §16.5).
+    ImportedComputed {
+        body: &'a str,
+        names: Vec<'a, BodyName<'a>>,
     },
     /// Source dropped without replacement: the declaration of an inlined computed (O4).
     Remove,
@@ -75,22 +93,40 @@ pub enum HoleKind<'a> {
     PropsParam {
         name: &'a str,
     },
-    /// A rewritten binding → `props.k₁…kₙ`, `(p === undefined ? default : p)` with a default,
+    /// A rewritten binding → `props.k₁…kₙ`, `(p === undefined ? fallback : p)` with a default,
     /// prefixed with `key: ` when `shorthand`.
     PropsRead {
         props: &'a str,
         path: Vec<'a, &'a str>,
-        default: Option<Embed<'a>>,
+        fallback: Option<PropsFallback<'a>>,
         shorthand: bool,
     },
-    /// `const binding = splitProps(props, [keys])[1];`, wrapping `body` as
-    /// `{ …; return (body); }` for an expression-bodied arrow.
-    PropsRest {
+    /// The statements rewritten props start the body with: the rest
+    /// `const binding = splitProps(props, [keys])[1];`, then `const name = value;` per hoisted
+    /// default, wrapping `body` as `{ …; return (body); }` for an expression-bodied arrow.
+    PropsEntry {
         props: &'a str,
-        binding: Span,
-        keys: Vec<'a, &'a str>,
+        rest: Option<PropsSplit<'a>>,
+        defaults: Vec<'a, PropsTemporary<'a>>,
         body: Option<Embed<'a>>,
     },
+}
+
+pub enum PropsFallback<'a> {
+    /// A literal default (SPEC §15.7), repeated at each read.
+    Literal(Embed<'a>),
+    /// The temporary holding a default evaluated once at the component's start (SPEC §16.7).
+    Temporary(&'a str),
+}
+
+pub struct PropsSplit<'a> {
+    pub binding: Span,
+    pub keys: Vec<'a, &'a str>,
+}
+
+pub struct PropsTemporary<'a> {
+    pub name: &'a str,
+    pub value: Embed<'a>,
 }
 
 pub struct StoreLeaf<'a> {
@@ -109,11 +145,55 @@ pub enum StoreWriteKind<'a> {
     Update { parameter: &'a str, operator: &'static str },
 }
 
+pub enum ArraySuffix<'a> {
+    /// `.p` or `["p"]`.
+    Key(&'a str),
+    /// `[e]`.
+    Index(Embed<'a>),
+}
+
+pub enum ArrayWriteKind<'a> {
+    /// `d.a[i] = e` → `set$a((v) => { const c = v.slice(); c[i] = e; return c; })`;
+    /// with a tail, the element is replaced by a clone chain and the index hoisted:
+    /// `d.a[i].p = e` → `set$a((v) => { const c = v.slice(); const t = i; c[t] = { ...c[t], p: e }; return c; })`.
+    Index { index: Embed<'a>, tail: Vec<'a, &'a str>, op: IndexOp<'a>, temp: Option<&'a str> },
+    /// `d.a.push(e)` → `set$a((v) => { const c = v.slice(); c.push(e); return c; })`.
+    Method { name: &'a str, args: Vec<'a, Embed<'a>> },
+    /// `d.a.b = {…}` → `{ const _t0 = v0; …; set$l0(() => _t0); … }`.
+    Form { temps: Vec<'a, FormTemp<'a>>, sets: Vec<'a, FormSet<'a>> },
+}
+
+pub enum IndexOp<'a> {
+    /// `c[i].p = e`.
+    Assign { value: Embed<'a> },
+    /// `c[i].p op= e`.
+    Compound { operator: &'static str, value: Embed<'a> },
+    /// `++c[i].p` or `--c[i].p`.
+    Update { operator: &'static str },
+}
+
+pub struct FormTemp<'a> {
+    pub name: &'a str,
+    pub value: Embed<'a>,
+}
+
+pub struct FormSet<'a> {
+    pub setter: &'a str,
+    pub temp: &'a str,
+}
+
 pub enum Specifier<'a> {
     /// Kept as written.
     Source(Span),
     /// `name as alias`, or `name` when both are equal.
     Alias { name: &'a str, alias: &'a str },
+}
+
+/// `name` in place of `body[start..end]`.
+pub struct BodyName<'a> {
+    pub start: u32,
+    pub end: u32,
+    pub name: &'a str,
 }
 
 pub enum Jsx<'a> {
@@ -344,8 +424,15 @@ pub struct Conditional<'a> {
 pub struct Component<'a> {
     pub callee: Embed<'a>,
     pub props: Props<'a>,
-    /// Island id when this is a boundary position (SPEC §15.9): the server renders `ssrIsland`.
-    pub island: Option<&'a str>,
+    /// Set on a boundary position (SPEC §15.9): the server renders `ssrIsland`.
+    pub island: Option<Island<'a>>,
+}
+
+pub struct Island<'a> {
+    pub id: &'a str,
+    pub mode: IslandMode,
+    /// Keys of `props` the server passes as slots, not as serialized props (§16.4).
+    pub slots: Vec<'a, &'a str>,
 }
 
 pub struct Props<'a> {
@@ -405,8 +492,8 @@ pub enum MemberKey<'a> {
 pub struct AsyncComponent<'a> {
     pub head: AsyncHead,
     pub params: Embed<'a>,
-    /// The rest declaration of rewritten props (`PropsRest`), first in the body.
-    pub props_rest: Option<Embed<'a>>,
+    /// The entry statements of rewritten props (`PropsEntry`), first in the body.
+    pub props_entry: Option<Embed<'a>>,
     pub return_type: ReturnType,
     pub steps: Vec<'a, AsyncStep<'a>>,
     /// Statements between the last `await` and the `return`.
@@ -442,9 +529,11 @@ pub enum RootKind {
     Hydrate,
 }
 
-/// `import { export as <alias> } from "specifier"` for an island of a hydrate root.
+/// An island of a hydrate root: `import { export as <alias> } from "specifier"` when eager,
+/// otherwise `{ load: () => import("specifier"), mode, export }` (§16.3).
 pub struct IslandImport<'a> {
     pub id: &'a str,
     pub specifier: &'a str,
     pub export: &'a str,
+    pub mode: IslandMode,
 }

@@ -22,7 +22,7 @@ const I = ({ a: [b] }) => _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(b));
     |            ^^^^^^^^^^^^
   2 | function B({ a = f() }) { return <p>{a}</p>; }
 // warn
-[PROPS_DESTRUCTURED] `B` destructures its props with a default that is not a literal, which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
+[PROPS_DESTRUCTURED] `B` destructures its props with a default that cannot run once at the component's start (a call, `new`, a tagged template, or a name declared later or in the body), which cannot be rewritten: each value is read once when the component runs and never updates. Take `props` and read `props.x` where it is used.
   in <B>
   at case.tsx:2:12
   1 | function A({ [key]: a }) { return <p>{a}</p>; }

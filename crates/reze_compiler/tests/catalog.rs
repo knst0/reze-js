@@ -35,10 +35,8 @@ enum Trigger {
     Outside { closed: bool, suspense: bool },
 }
 
-const PAGE: &str = "import { Counter } from \"./counter\";\nexport function Page() { return <main><Counter start={1} /></main>; }";
-const COUNTER: &str =
-    "export function Counter(props) { return <button onClick={() => alert(props.start)} />; }";
-
+const PAGE: &str = "import { Counter } from \"./counter\";\nexport function Page() { return <main><Counter start={1} island:load=\"visible\" /></main>; }";
+const COUNTER: &str = "export function Counter(props) { return <button island:load=\"idle\" onClick={() => alert(props.start)} />; }";
 fn trigger(code: Code) -> Trigger {
     let source = match code {
         Code::ParseError => "const a = <div>;",
@@ -68,7 +66,10 @@ fn trigger(code: Code) -> Trigger {
         Code::StoreUnproxied => {
             "import { store } from \"reze-js\";\nconst [s] = store({ a: 1 });\nconst a = <p>{s.a}</p>;"
         }
-        Code::StaticComponent | Code::Island => return Trigger::Program { file: "/page.tsx" },
+        Code::StaticComponent | Code::Island | Code::LazyIsland => {
+            return Trigger::Program { file: "/page.tsx" };
+        }
+        Code::IslandDirectiveIgnored => return Trigger::Program { file: "/counter.tsx" },
         Code::ClientComponent => return Trigger::Program { file: "/counter.tsx" },
         Code::FactsStale => return Trigger::StaleFacts,
         Code::ProgramOpenImport => return Trigger::Outside { closed: true, suspense: true },

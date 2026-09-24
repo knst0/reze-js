@@ -144,6 +144,7 @@ impl<'a> Lowerer<'a, '_> {
         let attrs = &el.opening_element.attributes;
         let mut items = self.items(&el.children, true);
         self.children_attribute(attrs, &mut items);
+        self.native_island_directives(attrs, tag);
 
         builder.html.push('<');
         builder.html.push_str(tag);

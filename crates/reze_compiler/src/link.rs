@@ -7,12 +7,15 @@ use oxc_span::Span;
 
 use crate::diagnostic::{Code, Related};
 use crate::facts::{
-    self, ComponentFact, FoldedImport, FoldedSignal, ImportRef, IslandFact, LeafNames, ModuleFacts,
-    Primitive, PrimitiveImport, Reason, RootFact, RootIsland, StoreExport, StoreImport, StoreRole,
+    self, BodyExport, ComponentFact, ComputedRead, FoldedImport, FoldedSignal, ImportRef,
+    InlinedComputed, IslandFact, IslandMode, LeafNames, ModuleFacts, Primitive, PrimitiveImport,
+    Reason, RootFact, RootIsland, StoreExport, StoreImport, StoreRole,
 };
 use crate::features::{self, Features};
+use crate::lower::store::ARRAY_METHODS;
 use crate::summary::{
-    DeclarationKind, Dep, DepKind, Export, ImportName, ModuleSummary, Ref, UseClass, Violation,
+    ArraySite, ArrayTail, ArrayUse, BodyReference, Boundary, ComputedSummary, DeclarationKind, Dep,
+    DepKind, DraftUse, Export, ImportName, LeafShape, ModuleSummary, Ref, UseClass, Violation,
 };
 
 pub struct ModuleInput {
@@ -133,6 +136,7 @@ impl<'m, 'o> Linker<'m, 'o> {
             .map(|m| ModuleFacts {
                 version: facts::VERSION.to_string(),
                 source_hash: m.summary.source_hash.clone(),
+                islands_enabled: options.islands,
                 ..ModuleFacts::default()
             })
             .collect();
@@ -168,6 +172,7 @@ impl<'m, 'o> Linker<'m, 'o> {
         if self.options.optimize {
             self.signals();
             self.stores();
+            self.computeds();
         }
         self.module_folds();
         self.classify_components();
@@ -633,7 +638,9 @@ impl<'m, 'o> Linker<'m, 'o> {
                 {
                     continue;
                 }
-                let is_leaf = |path: &Vec<String>| leaves.contains(path);
+                let is_leaf = |path: &Vec<String>| leaves.iter().any(|l| l.path == *path);
+                let is_array_leaf =
+                    |path: &Vec<String>| leaves.iter().any(|l| l.is_array && l.path == *path);
                 let mut plan: HashMap<(ModuleIndex, u32), LeafUses> = HashMap::new();
                 let mut is_valid = true;
                 for (&binding, role) in bindings.iter().zip([StoreRole::State, StoreRole::Setter]) {
@@ -655,21 +662,41 @@ impl<'m, 'o> Linker<'m, 'o> {
                             .entry((used.module, summary_use.target.binding))
                             .or_insert_with(|| (role, BTreeSet::new(), BTreeSet::new()));
                         match (&summary_use.class, role) {
-                            (UseClass::Path(path), StoreRole::State) if is_leaf(path) => {
+                            (UseClass::Path(path), StoreRole::State)
+                                if is_leaf(path) && !is_array_leaf(path) =>
+                            {
                                 entry.1.insert(path.clone());
                             }
+                            (UseClass::Array(use_), StoreRole::State) => {
+                                let Some((leaf, write)) = array_leaf_use(use_, leaves) else {
+                                    is_valid = false;
+                                    break;
+                                };
+                                if write {
+                                    entry.2.insert(leaf);
+                                } else {
+                                    entry.1.insert(leaf);
+                                }
+                            }
                             (UseClass::StoreSet(accesses), StoreRole::Setter)
-                                if accesses.iter().all(|a| is_leaf(&a.path)) =>
+                                if accesses.iter().all(|a| draft_leaves(a, leaves).is_some()) =>
                             {
                                 for access in accesses {
-                                    if access.is_write {
-                                        entry.2.insert(access.path.clone());
-                                    } else {
-                                        entry.1.insert(access.path.clone());
+                                    for (leaf, write) in
+                                        draft_leaves(access, leaves).expect("checked above")
+                                    {
+                                        if write {
+                                            entry.2.insert(leaf);
+                                        } else {
+                                            entry.1.insert(leaf);
+                                        }
                                     }
                                 }
                             }
-                            _ => is_valid = false,
+                            _ => {
+                                is_valid = false;
+                                break;
+                            }
                         }
                     }
                 }
@@ -690,6 +717,7 @@ impl<'m, 'o> Linker<'m, 'o> {
                                     path: path.clone(),
                                     getter: None,
                                     setter: None,
+                                    is_array: leaves.iter().any(|l| l.path == *path && l.is_array),
                                 });
                                 exported.len() - 1
                             }
@@ -717,18 +745,25 @@ impl<'m, 'o> Linker<'m, 'o> {
                 importer_plans.sort_by_key(|((m, b), _)| (*m, *b));
                 for ((importer, binding), (role, reads, writes)) in importer_plans {
                     let mut used_leaves: Vec<LeafNames> = Vec::new();
-                    for path in leaves.iter() {
-                        let getter =
-                            reads.contains(path).then(|| leaf_names(path, false, &mut exported));
-                        let setter =
-                            writes.contains(path).then(|| leaf_names(path, true, &mut exported));
+                    for leaf in leaves.iter() {
+                        let getter = reads
+                            .contains(&leaf.path)
+                            .then(|| leaf_names(&leaf.path, false, &mut exported));
+                        let setter = writes
+                            .contains(&leaf.path)
+                            .then(|| leaf_names(&leaf.path, true, &mut exported));
                         if getter.is_some() || setter.is_some() {
-                            used_leaves.push(LeafNames { path: path.clone(), getter, setter });
+                            used_leaves.push(LeafNames {
+                                path: leaf.path.clone(),
+                                getter,
+                                setter,
+                                is_array: leaf.is_array,
+                            });
                         }
                     }
                     imports.push((importer, StoreImport { binding, role, leaves: used_leaves }));
                 }
-                exported.sort_by_key(|l| leaves.iter().position(|p| *p == l.path));
+                exported.sort_by_key(|l| leaves.iter().position(|leaf| leaf.path == l.path));
                 let all_uses: Vec<usize> = bindings
                     .iter()
                     .flat_map(|&b| self.uses_of(module, b).iter().copied())
@@ -745,6 +780,122 @@ impl<'m, 'o> Linker<'m, 'o> {
                 self.closed.insert(module);
             }
         }
+    }
+
+    /// Computeds read once, by a reactive JSX expression of another module, move into that read
+    /// (§16.5).
+    fn computeds(&mut self) {
+        for module in 0..self.program.modules.len() {
+            for computed in &self.summary(module).computeds {
+                let Some((reader, read, related)) = self.computed_read(module, computed) else {
+                    continue;
+                };
+                self.facts[module]
+                    .inlined_computeds
+                    .push(InlinedComputed { binding: computed.binding, related: vec![related] });
+                self.facts[reader].computed_reads.push(read);
+                self.closed.insert(module);
+            }
+        }
+    }
+
+    fn computed_read(
+        &self,
+        module: ModuleIndex,
+        computed: &ComputedSummary,
+    ) -> Option<(ModuleIndex, ComputedRead, Related)> {
+        let binding = computed.binding;
+        let is_computed = self.summary(module).declarations.iter().any(|d| {
+            matches!(d.kind, DeclarationKind::Single { binding: b } if b == binding)
+                && self.primitive_of(module, &d.callee) == Some(Primitive::Computed)
+        });
+        if !is_computed
+            || self.escaping.contains(&(module, binding))
+            || self.exporters(module, binding) != [module]
+        {
+            return None;
+        }
+        let &[only_use] = self.uses_of(module, binding) else { return None };
+        let used = &self.uses[only_use];
+        let reader = used.module;
+        let read = &self.summary(reader).uses[used.index];
+        let import = read.target.binding;
+        let is_inlinable_read = reader != module
+            && !used.via_namespace
+            && read.class == UseClass::Call0
+            && self.summary(reader).reactive_reads.binary_search(&read.start).is_ok()
+            && self.is_direct_import(reader, import, module)
+            && self.importers(module, binding) == [(reader, import)]
+            && !self.reaches(module, reader);
+        if !is_inlinable_read {
+            return None;
+        }
+        let references = computed
+            .references
+            .iter()
+            .map(|reference| self.body_export(module, reader, reference))
+            .collect::<Option<Vec<_>>>()?;
+        let related = Related {
+            file: self.id(reader).to_string(),
+            start: read.start,
+            end: read.end,
+            message: "inlined here".to_string(),
+        };
+        let read =
+            ComputedRead { callee: read.start, import, body: computed.body.clone(), references };
+        Some((reader, read, related))
+    }
+
+    /// The export of `module` a computed body reference reads, when `reader` can import it: a
+    /// local export of a binding no other program decision rewrites, with an import of `reader`
+    /// that already names the binding.
+    fn body_export(
+        &self,
+        module: ModuleIndex,
+        reader: ModuleIndex,
+        reference: &BodyReference,
+    ) -> Option<BodyExport> {
+        let binding = reference.binding;
+        let is_store = self.summary(module).declarations.iter().any(|d| {
+            matches!(d.kind, DeclarationKind::Pair { first, second, .. }
+                if first == binding || second == Some(binding))
+                && self.primitive_of(module, &d.callee) == Some(Primitive::Store)
+        });
+        if is_store || self.folded.contains_key(&(module, binding)) {
+            return None;
+        }
+        let export = self.summary(module).exports.iter().find_map(|e| match e {
+            Export::Local { name, binding: b } if *b == binding && is_identifier_name(name) => {
+                Some(name.clone())
+            }
+            _ => None,
+        })?;
+        let import = self
+            .summary(reader)
+            .imports
+            .iter()
+            .find(|i| {
+                i.name != ImportName::Namespace
+                    && self.resolve_binding(reader, i.binding) == Target::Binding(module, binding)
+            })
+            .map(|i| i.binding);
+        Some(BodyExport { start: reference.start, end: reference.end, export, import })
+    }
+
+    /// Whether `to` is reachable from `from` through resolved imports, re-exports and `import()`.
+    fn reaches(&self, from: ModuleIndex, to: ModuleIndex) -> bool {
+        let mut seen = vec![false; self.program.modules.len()];
+        let mut stack = vec![from];
+        while let Some(module) = stack.pop() {
+            if module == to {
+                return true;
+            }
+            if std::mem::replace(&mut seen[module], true) {
+                continue;
+            }
+            stack.extend(self.program.resolved[module].iter().flatten());
+        }
+        false
     }
 
     /// The import `binding` of `importer` names an export of `module` directly (no re-export).
@@ -928,22 +1079,30 @@ impl<'m, 'o> Linker<'m, 'o> {
         module: ModuleIndex,
         owner: ModuleIndex,
         binding: u32,
-        boundary: &Result<Vec<Dep>, Violation>,
+        boundary: &Result<Boundary, Violation>,
     ) -> Option<String> {
         if !self.options.islands {
             return Some("islands are off".to_string());
         }
-        let deps = match boundary {
-            Ok(deps) => deps,
+        let boundary = match boundary {
+            Ok(boundary) => boundary,
             Err(violation) => return Some(violation.message.clone()),
         };
-        if let Some(dep) = deps.iter().find(|d| self.dep_failure(module, d).is_some()) {
+        if let Some(dep) = boundary.deps.iter().find(|d| self.dep_failure(module, d).is_some()) {
             return Some(format!("`{}` is not an inert constant", dep.label));
         }
         if self.island_export(owner, binding).is_none() {
             return Some("the component is not exported from its module".to_string());
         }
-        None
+        let slot_uses = &self.component_at(owner, binding)?.slot_uses;
+        boundary.slots.iter().find_map(|slot| {
+            let violation = slot_uses.failure(slot)?;
+            Some(format!(
+                "`{slot}` is passed as a slot, but {} in {}",
+                violation.message,
+                self.id(owner)
+            ))
+        })
     }
 
     /// The name the declaring module exports the component under (§15.9: no re-exports).
@@ -1028,7 +1187,11 @@ impl<'m, 'o> Linker<'m, 'o> {
     }
 
     /// For an element of a static component: the island it is, if its callee is client.
-    fn island_at(&self, module: ModuleIndex, dep: &Dep) -> Option<(ModuleIndex, u32, &'m str)> {
+    fn island_at(
+        &self,
+        module: ModuleIndex,
+        dep: &'m Dep,
+    ) -> Option<(ModuleIndex, u32, &'m str, &'m Boundary)> {
         let DepKind::Element { callee, boundary, .. } = &dep.kind else { return None };
         let Target::Binding(owner, binding) = self.resolve_ref(module, callee) else { return None };
         if self.component_at(owner, binding).is_none()
@@ -1039,7 +1202,8 @@ impl<'m, 'o> Linker<'m, 'o> {
         if self.boundary_failure(module, owner, binding, boundary).is_some() {
             return None;
         }
-        Some((owner, binding, self.island_export(owner, binding)?))
+        let boundary = boundary.as_ref().ok()?;
+        Some((owner, binding, self.island_export(owner, binding)?, boundary))
     }
 
     fn component_features(
@@ -1080,7 +1244,8 @@ impl<'m, 'o> Linker<'m, 'o> {
                 }
                 for dep in &component.deps {
                     let DepKind::Element { element, .. } = &dep.kind else { continue };
-                    let Some((owner, binding, export)) = self.island_at(module, dep) else {
+                    let Some((owner, binding, export, boundary)) = self.island_at(module, dep)
+                    else {
                         continue;
                     };
                     let mut features = BTreeSet::new();
@@ -1089,6 +1254,8 @@ impl<'m, 'o> Linker<'m, 'o> {
                         element: *element,
                         id: self.island_id(owner, export),
                         features: features.into_iter().collect(),
+                        mode: boundary.mode,
+                        slots: boundary.slots.clone(),
                     });
                 }
             }
@@ -1137,14 +1304,19 @@ impl<'m, 'o> Linker<'m, 'o> {
         let Some(component) = self.component_at(module, binding) else { return };
         for dep in &component.deps {
             let DepKind::Element { callee, .. } = &dep.kind else { continue };
-            if let Some((owner, _, export)) = self.island_at(module, dep) {
+            if let Some((owner, _, export, boundary)) = self.island_at(module, dep) {
                 let id = self.island_id(owner, export);
-                if !islands.iter().any(|i| i.id == id) {
-                    islands.push(RootIsland {
+                match islands.iter_mut().find(|i| i.id == id) {
+                    Some(island) if boundary.mode == IslandMode::Eager => {
+                        island.mode = IslandMode::Eager;
+                    }
+                    Some(_) => {}
+                    None => islands.push(RootIsland {
                         id,
                         specifier: relative_specifier(self.id(root_module), self.id(owner)),
                         export: export.to_string(),
-                    });
+                        mode: boundary.mode,
+                    }),
                 }
                 continue;
             }
@@ -1154,6 +1326,112 @@ impl<'m, 'o> Linker<'m, 'o> {
                 self.collect_islands(root_module, owner, child, islands, seen);
             }
         }
+    }
+}
+
+fn is_identifier_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+/// The array leaf an `Array` use reads or writes, with whether it writes: `None` when the
+/// position is not one §16.6 allows.
+fn array_leaf_use(use_: &ArrayUse, leaves: &[LeafShape]) -> Option<(Vec<String>, bool)> {
+    let array = |path: &[String]| leaves.iter().find(|l| l.is_array && l.path == path);
+    match &use_.site {
+        ArraySite::Each(tag) if tag == "For" && use_.tail.is_empty() => {
+            let leaf = array(&use_.path)?;
+            Some((leaf.path.clone(), false))
+        }
+        ArraySite::Spread if use_.tail.is_empty() => {
+            let leaf = array(&use_.path)?;
+            Some((leaf.path.clone(), false))
+        }
+        ArraySite::Read if use_.tail.is_empty() => match use_.path.split_last() {
+            Some((last, prefix)) if last == "length" => {
+                let leaf = array(&prefix.to_vec())?;
+                Some((leaf.path.clone(), false))
+            }
+            _ => None,
+        },
+        ArraySite::Read => {
+            let leaf = array(&use_.path)?;
+            let mut tail = use_.tail.iter();
+            match tail.next()? {
+                ArrayTail::Index => tail
+                    .all(|step| matches!(step, ArrayTail::Key(_)))
+                    .then(|| (leaf.path.clone(), false)),
+                ArrayTail::Key(_) => None,
+            }
+        }
+        ArraySite::Call { statement: true } if use_.tail.is_empty() => {
+            match use_.path.split_last() {
+                Some((method, prefix)) => {
+                    let leaf = array(&prefix.to_vec())?;
+                    (ARRAY_METHODS.contains(&method.as_str())).then(|| (leaf.path.clone(), true))
+                }
+                _ => None,
+            }
+        }
+        ArraySite::Each(_) | ArraySite::Spread | ArraySite::Call { .. } => None,
+    }
+}
+
+/// Leaves a draft access reads and writes: `None` when the shape is not unproxyable (§16.6).
+fn draft_leaves(access: &DraftUse, leaves: &[LeafShape]) -> Option<Vec<(Vec<String>, bool)>> {
+    if let Some(method) = &access.method {
+        if access.index || access.form.is_some() {
+            return None;
+        }
+        if !ARRAY_METHODS.contains(&method.as_str()) {
+            return None;
+        }
+        if !leaves.iter().any(|l| l.is_array && l.path == access.path) {
+            return None;
+        }
+        return Some(vec![(access.path.clone(), true)]);
+    }
+    if access.index {
+        if access.form.is_some() {
+            return None;
+        }
+        if !leaves.iter().any(|l| l.is_array && l.path == access.path) {
+            return None;
+        }
+        return Some(vec![(access.path.clone(), access.is_write)]);
+    }
+    if let Some(shape) = &access.form {
+        if leaves.iter().any(|l| l.path == access.path) {
+            return Some(vec![(access.path.clone(), true)]);
+        }
+        let mut out = Vec::new();
+        for relative in shape {
+            let mut full = access.path.clone();
+            full.extend(relative.iter().cloned());
+            if !leaves.iter().any(|l| l.path == full) {
+                return None;
+            }
+            out.push((full, true));
+        }
+        return Some(out);
+    }
+    match leaves.iter().find(|l| l.path == access.path) {
+        Some(leaf) => {
+            if !access.is_write && leaf.is_array && !access.array_site {
+                return None;
+            }
+            Some(vec![(access.path.clone(), access.is_write)])
+        }
+        None if !access.is_write => {
+            let (last, prefix) = access.path.split_last()?;
+            if *last != "length" || prefix.is_empty() {
+                return None;
+            }
+            let leaf = leaves.iter().find(|l| l.is_array && l.path == prefix)?;
+            Some(vec![(leaf.path.clone(), false)])
+        }
+        None => None,
     }
 }
 

@@ -1,5 +1,6 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
 expression: render(&dir)
 ---
 closed: []
@@ -15,9 +16,10 @@ features: {"suspense": false}
 <unchanged>
 
 // ==== /main.tsx [client] ====
+import * as R from "reze-js";
+
 import { s, store } from "./lib";
 import * as lib from "./lib";
-import * as R from "reze-js";
 import { signal as _$signal, template as _$template, untrack as _$untrack, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<h1 title=\"x\">Reze 2 </h1>");
 
@@ -29,7 +31,10 @@ const [todo$done, setTodo$done] = _$signal(false);
 export const App = () => (
   (() => {
   var _el$ = _tmpl$();
-  _el$.$$click = () => void _$untrack(() => { setTodo$done(() => !todo$done()); });
+  _el$.$$click = () =>
+      void _$untrack(() => {
+        setTodo$done(() => !todo$done());
+      });
   _$insert(_el$, () => todo$done() ? "yes" : "no", null);
   return _el$;
 })()
@@ -39,44 +44,45 @@ _$delegateEvents(["click"]);
 
 // info
 [SIGNAL_FOLDED] `title` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
-  at /main.tsx:5:7
-  4 | 
-> 5 | const [title] = s("Reze");
+  at /main.tsx:6:7
+  5 | 
+> 6 | const [title] = s("Reze");
     |       ^^^^^^^^^^^^^^^^^^^
-  6 | const [count] = lib.s(2);
+  7 | const [count] = lib.s(2);
 // info
 [SIGNAL_FOLDED] `count` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
-  at /main.tsx:6:7
-  5 | const [title] = s("Reze");
-> 6 | const [count] = lib.s(2);
+  at /main.tsx:7:7
+  6 | const [title] = s("Reze");
+> 7 | const [count] = lib.s(2);
     |       ^^^^^^^^^^^^^^^^^^
-  7 | const [label] = R.signal("x");
+  8 | const [label] = R.signal("x");
 // info
 [SIGNAL_FOLDED] `label` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
-  at /main.tsx:7:7
-  6 | const [count] = lib.s(2);
-> 7 | const [label] = R.signal("x");
+  at /main.tsx:8:7
+  7 | const [count] = lib.s(2);
+> 8 | const [label] = R.signal("x");
     |       ^^^^^^^^^^^^^^^^^^^^^^^
-  8 | const [todo, setTodo] = store({ done: false });
+  9 | const [todo, setTodo] = store({ done: false });
 // info
 [STORE_UNPROXIED] Every use of `todo` reads one of its fields and every write goes through a `setTodo` draft, so the store compiled to one signal per field.
-  at /main.tsx:8:7
-  7 | const [label] = R.signal("x");
-> 8 | const [todo, setTodo] = store({ done: false });
-    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  9 | 
+  at /main.tsx:9:7
+   8 | const [label] = R.signal("x");
+>  9 | const [todo, setTodo] = store({ done: false });
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  10 | 
 // info
 [CLIENT_COMPONENT] `App` runs on the client: `onClick` attaches an event handler.
-  at /main.tsx:10:14
-   9 | 
-> 10 | export const App = () => (
+  at /main.tsx:11:14
+  10 | 
+> 11 | export const App = () => (
      |              ^^^
-  11 |   <h1 title={label()} onClick={() => setTodo((d) => { d.done = !d.done; })}>
-  note: first client-only part (/main.tsx:11:23)
+  12 |   <h1
+  note: first client-only part (/main.tsx:14:5)
 // ==== /main.tsx [server] ====
+import * as R from "reze-js";
+
 import { s, store } from "./lib";
 import * as lib from "./lib";
-import * as R from "reze-js";
 import { signal as _$signal, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
 const _tmpl$ = ["<h1 title=\"x\"", ">Reze 2 <!--[-->", "<!--]--></h1>"];
 
@@ -90,9 +96,10 @@ export const App = () => (
 );
 
 // ==== /main.tsx [hydrate] ====
+import * as R from "reze-js";
+
 import { s, store } from "./lib";
 import * as lib from "./lib";
-import * as R from "reze-js";
 import { signal as _$signal, template as _$template, claim as _$claim, untrack as _$untrack, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<h1 title=\"x\">Reze 2 </h1>");
 
@@ -104,7 +111,10 @@ const [todo$done, setTodo$done] = _$signal(false);
 export const App = () => (
   (() => {
   var _el$ = _$claim(_tmpl$, "h1");
-  _el$.$$click = () => void _$untrack(() => { setTodo$done(() => !todo$done()); });
+  _el$.$$click = () =>
+      void _$untrack(() => {
+        setTodo$done(() => !todo$done());
+      });
   _$claimInsert(_el$, () => todo$done() ? "yes" : "no", null);
   return _el$;
 })()

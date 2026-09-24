@@ -7,6 +7,7 @@ use oxc_span::Span;
 
 use super::children::Item;
 use super::constant::is_dynamic;
+use super::island::DirectiveSite;
 use super::{Lowerer, attribute_name, is_function};
 use crate::diagnostic::{Code, Report};
 use crate::html::decode_entities;
@@ -57,6 +58,7 @@ impl<'a> Lowerer<'a, '_> {
             self.check_inline_each(el);
         }
         let items = self.items(&el.children, false);
+        let is_boundary = self.facts.program.islands.contains_key(&el.span.start);
         let mut props = PropsBuilder::new(self.alloc);
         for attr in &el.opening_element.attributes {
             match attr {
@@ -66,12 +68,16 @@ impl<'a> Lowerer<'a, '_> {
                     props.spread(value, is_reactive);
                 }
                 JSXAttributeItem::Attribute(a) => {
-                    let name = attribute_name(self, a);
-                    if name == "children" && !items.is_empty() {
+                    let key = attribute_name(self, a);
+                    let site = DirectiveSite::Component { name, is_boundary };
+                    if key.starts_with("island:") && self.island_directive(a, key, site) {
+                        continue;
+                    }
+                    if key == "children" && !items.is_empty() {
                         self.children_ignored(a.span);
                         continue;
                     }
-                    if let Some(prop) = self.prop(name, a, true) {
+                    if let Some(prop) = self.prop(key, a, true) {
                         props.push(prop);
                     }
                 }

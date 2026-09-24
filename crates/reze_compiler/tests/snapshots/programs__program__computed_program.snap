@@ -1,0 +1,244 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
+expression: render(&dir)
+---
+closed: ["/state.ts"]
+features: {"suspense": false}
+
+// ==== /badge.tsx [client] ====
+import { Label } from "./label";
+import { count as count2, step } from "./state";
+import { template as _$template, setAttribute as _$setAttribute, insert as _$insert, createComponent as _$createComponent, bind as _$bind, className as _$className } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<span></span>");
+
+export function Badge() {
+  const count = "shadowed";
+  return (
+    (() => {
+  var _el$ = _tmpl$();
+  _$setAttribute(_el$, "title", count);
+  _$insert(_el$, _$createComponent(Label, { get text() { return (count2() + step); } }));
+  _$bind(() => _$className(_el$, (count2() % 2 === 0 ? "even" : "odd")));
+  return _el$;
+})()
+  );
+}
+
+// info
+[CLIENT_COMPONENT] `Badge` runs on the client: `parity()` calls a function that is not a folded signal.
+  at /badge.tsx:4:17
+  3 | 
+> 4 | export function Badge() {
+    |                 ^^^^^
+  5 |   const count = "shadowed";
+  note: first client-only part (/badge.tsx:7:18)
+// ==== /badge.tsx [server] ====
+import { Label } from "./label";
+import { count as count2, step } from "./state";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute, ssrClass as _$ssrClass, ssrChild as _$ssrChild, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = ["<span", "", "", ">", "</span>"];
+
+export function Badge() {
+  const count = "shadowed";
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("title", count), _$ssrClass((count2() % 2 === 0 ? "even" : "odd")), _$ssrChild(_$createComponent(Label, { get text() { return (count2() + step); } })))
+  );
+}
+
+// ==== /badge.tsx [hydrate] ====
+import { Label } from "./label";
+import { count as count2, step } from "./state";
+import { template as _$template, claim as _$claim, setAttribute as _$setAttribute, claimInsert as _$claimInsert, createComponent as _$createComponent, bind as _$bind, className as _$className } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<span></span>");
+
+export function Badge() {
+  const count = "shadowed";
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "span");
+  _$setAttribute(_el$, "title", count);
+  _$claimInsert(_el$, _$createComponent(Label, { get text() { return (count2() + step); } }));
+  _$bind(() => _$className(_el$, (count2() % 2 === 0 ? "even" : "odd")));
+  return _el$;
+})()
+  );
+}
+
+// ==== /label.tsx [client] ====
+import { template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<b></b>");
+export function Label(props: { text: number }) {
+  return (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, () => props.text);
+  return _el$;
+})();
+}
+
+// info
+[STATIC_COMPONENT] `Label` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /label.tsx:1:17
+> 1 | export function Label(props: { text: number }) {
+    |                 ^^^^^
+  2 |   return <b>{props.text}</b>;
+// ==== /label.tsx [server] ====
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<b", ">", "</b>"];
+export function Label(props: { text: number }) {
+  return _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(props.text));
+}
+
+// ==== /label.tsx [hydrate] ====
+import { template as _$template, claim as _$claim, claimInsert as _$claimInsert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<b></b>");
+export function Label(props: { text: number }) {
+  return (() => {
+  var _el$ = _$claim(_tmpl$, "b");
+  _$claimInsert(_el$, () => props.text);
+  return _el$;
+})();
+}
+
+// ==== /main.tsx [client] ====
+import { render } from "reze-js";
+
+import { Badge } from "./badge";
+import { View } from "./view";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(
+  () => (
+    [_$createComponent(View, {}), _$createComponent(Badge, {})]
+  ),
+  document.body,
+);
+
+// ==== /main.tsx [server] ====
+import { render } from "reze-js";
+
+import { Badge } from "./badge";
+import { View } from "./view";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(
+  () => (
+    [_$createComponent(View, {}), _$createComponent(Badge, {})]
+  ),
+  document.body,
+);
+
+// ==== /main.tsx [hydrate] ====
+import { render } from "reze-js";
+
+import { Badge } from "./badge";
+import { View } from "./view";
+import { createComponent as _$createComponent } from "reze-js";
+
+render(
+  () => (
+    [_$createComponent(View, {}), _$createComponent(Badge, {})]
+  ),
+  document.body,
+);
+
+// ==== /state.ts [client] ====
+import { computed, signal } from "reze-js";
+
+export const [count, setCount] = signal(1);
+export const step = 2;
+
+// info
+[COMPUTED_INLINED] `doubled` is read only once, by `doubled()` in a reactive JSX expression of another module, so the declaration and its exports were removed and its expression inlined there.
+  at /state.ts:5:14
+  4 | export const step = 2;
+> 5 | export const doubled = computed(() => count() * step);
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 | export const parity = computed(() => (count() % 2 === 0 ? "even" : "odd"));
+  related: inlined here (/view.tsx:171)
+// info
+[COMPUTED_INLINED] `parity` is read only once, by `parity()` in a reactive JSX expression of another module, so the declaration and its exports were removed and its expression inlined there.
+  at /state.ts:6:14
+  5 | export const doubled = computed(() => count() * step);
+> 6 | export const parity = computed(() => (count() % 2 === 0 ? "even" : "odd"));
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 | const total = computed(() => count() + step);
+  related: inlined here (/badge.tsx:157)
+// info
+[COMPUTED_INLINED] `total` is read only once, by `total()` in a reactive JSX expression of another module, so the declaration and its exports were removed and its expression inlined there.
+  at /state.ts:7:7
+  6 | export const parity = computed(() => (count() % 2 === 0 ? "even" : "odd"));
+> 7 | const total = computed(() => count() + step);
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  8 | export { total };
+  related: inlined here (/badge.tsx:201)
+// ==== /state.ts [server] ====
+import { computed, signal } from "reze-js";
+
+export const [count, setCount] = signal(1);
+export const step = 2;
+
+// ==== /state.ts [hydrate] ====
+import { computed, signal } from "reze-js";
+
+export const [count, setCount] = signal(1);
+export const step = 2;
+
+// ==== /view.tsx [client] ====
+import { count, step, setCount } from "./state";
+import { template as _$template, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<button> x2 = </button>");
+
+export function View() {
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
+  _el$.$$click = () => setCount(count() + 1);
+  _$insert(_el$, count, _el$2);
+  _$insert(_el$, () => (count() * step), null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `View` runs on the client: `onClick` attaches an event handler.
+  at /view.tsx:3:17
+  2 | 
+> 3 | export function View() {
+    |                 ^^^^
+  4 |   return (
+  note: first client-only part (/view.tsx:5:13)
+// ==== /view.tsx [server] ====
+import { count, step, setCount } from "./state";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<button", "><!--[-->", "<!--]--> x2 = <!--[-->", "<!--]--></button>"];
+
+export function View() {
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(count()), _$ssrChild((count() * step)))
+  );
+}
+
+// ==== /view.tsx [hydrate] ====
+import { count, step, setCount } from "./state";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<button> x2 = </button>");
+
+export function View() {
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "button"),
+    _el$2 = _$claimChild(_el$, 0);
+  _el$.$$click = () => setCount(count() + 1);
+  _$claimInsert(_el$, count, _el$2);
+  _$claimInsert(_el$, () => (count() * step), null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);

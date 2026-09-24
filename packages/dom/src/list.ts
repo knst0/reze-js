@@ -49,7 +49,8 @@ class Row<T> {
 
 /**
  * Keyed list. A row whose key survives an update keeps its DOM and owner; `item()` and `index()`
- * update in place. Each row owns its own root, disposed when the row leaves the list.
+ * update in place. Each row owns its own root, disposed when the row leaves the list. `each`, its
+ * `length` and every item are read tracked, so an array mutated in place (a store array) updates too.
  */
 export function For<T>(props: ForProps<T>): JSX.Element {
   const key = props.key;
@@ -75,8 +76,9 @@ export function For<T>(props: ForProps<T>): JSX.Element {
 
   return computed(() => {
     const items = props.each || [];
+    const n = items.length;
+    for (let i = 0; i < n; i++) void items[i];
     return untrack(() => {
-      const n = items.length;
       if (n === 0) {
         for (const row of rows) row.dispose();
         rows = [];

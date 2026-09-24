@@ -5,29 +5,99 @@ use std::fmt::Write;
 use super::{Emitter, Helper};
 use crate::Target;
 use crate::code::Code;
+use crate::facts::IslandMode;
 use crate::html::push_property_key;
-use crate::ir::{AssignTarget, Component, Prop, PropValue, Props, PropsPart};
+use crate::ir::{AssignTarget, Component, Island, Prop, PropValue, Props, PropsPart};
 
 impl<'a> Emitter<'a, '_> {
     pub(super) fn component(&mut self, out: &mut Code, component: &Component<'a>) {
-        match component.island.filter(|_| self.target == Target::Server) {
-            Some(id) => {
-                let island = self.helper(Helper::SsrIsland);
-                out.push(island);
+        match component.island.as_ref().filter(|_| self.target == Target::Server) {
+            Some(island) => {
+                let ssr = self.helper(Helper::SsrIsland);
+                out.push(ssr);
                 out.push("(");
-                crate::html::push_js_string(&mut out.text, id);
+                crate::html::push_js_string(&mut out.text, island.id);
                 out.push(", ");
+                self.embed(out, &component.callee);
+                out.push(", ");
+                self.island_props(out, &component.props, island);
+                if !island.slots.is_empty() || island.mode != IslandMode::Eager {
+                    out.push(", ");
+                    self.island_slots(out, &component.props, island);
+                }
+                if island.mode != IslandMode::Eager {
+                    out.push(", ");
+                    crate::html::push_js_string(&mut out.text, island.mode.as_str());
+                }
+                out.push(")");
+                return;
             }
             None => {
                 let create = self.helper(Helper::CreateComponent);
                 out.push(create);
                 out.push("(");
+                self.embed(out, &component.callee);
+                out.push(", ");
+                self.props(out, &component.props);
+                out.push(")");
             }
         }
-        self.embed(out, &component.callee);
-        out.push(", ");
-        self.props(out, &component.props);
-        out.push(")");
+    }
+
+    fn island_props(&mut self, out: &mut Code, props: &Props<'a>, island: &Island<'a>) {
+        let entries: Vec<&Prop<'a>> = props
+            .parts
+            .iter()
+            .flat_map(|part| match part {
+                PropsPart::Object(entries) => entries.iter().collect::<Vec<_>>(),
+                PropsPart::Spread { .. } => Vec::new(),
+            })
+            .filter(|entry| !island.slots.contains(&Self::prop_key(entry)))
+            .collect();
+        self.object_refs(out, &entries);
+    }
+
+    fn island_slots(&mut self, out: &mut Code, props: &Props<'a>, island: &Island<'a>) {
+        let mut slots: Vec<&Prop<'a>> = Vec::new();
+        for part in props.parts.iter() {
+            if let PropsPart::Object(entries) = part {
+                for entry in entries.iter() {
+                    if island.slots.contains(&Self::prop_key(entry)) {
+                        slots.push(entry);
+                    }
+                }
+            }
+        }
+        if slots.is_empty() {
+            out.push("null");
+            return;
+        }
+        out.push("{ ");
+        for (i, entry) in slots.iter().enumerate() {
+            if i > 0 {
+                out.push(", ");
+            }
+            out.push("get ");
+            push_property_key(&mut out.text, Self::prop_key(entry));
+            out.push("() { return ");
+            self.slot_value(out, entry);
+            out.push("; }");
+        }
+        out.push(" }");
+    }
+
+    fn slot_value(&mut self, out: &mut Code, entry: &Prop<'a>) {
+        match entry {
+            Prop::Value { value, .. } => self.prop_value(out, value),
+            Prop::Getter { value, .. } => self.prop_value(out, value),
+            Prop::ForwardRef(target) => self.forward_ref(out, target),
+        }
+    }
+    fn prop_key<'p, 'b>(entry: &'p Prop<'b>) -> &'p str {
+        match entry {
+            Prop::Value { key, .. } | Prop::Getter { key, .. } => key,
+            Prop::ForwardRef(_) => "ref",
+        }
     }
 
     /// An object literal, a single static spread value, or `mergeProps` over every part.
@@ -60,6 +130,11 @@ impl<'a> Emitter<'a, '_> {
     }
 
     fn object(&mut self, out: &mut Code, entries: &[Prop<'a>]) {
+        let refs: Vec<&Prop<'a>> = entries.iter().collect();
+        self.object_refs(out, &refs);
+    }
+
+    fn object_refs(&mut self, out: &mut Code, entries: &[&Prop<'a>]) {
         out.push("{ ");
         for (i, entry) in entries.iter().enumerate() {
             if i > 0 {

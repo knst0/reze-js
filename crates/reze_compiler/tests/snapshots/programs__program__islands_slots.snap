@@ -1,0 +1,437 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
+expression: render(&dir)
+---
+closed: []
+features: {"suspense": false}
+
+// ==== /Badge.tsx [client] ====
+import { signal } from "reze-js";
+import { template as _$template, memo as _$memo, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<button> </button>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<b></b>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<button></button>");
+
+export function Badge(props) {
+  const [count, setCount] = signal(props.start);
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
+  _el$.$$click = () => setCount(count() + 1);
+  var _c$ = _$memo(() => !!(props.icon));
+  _$insert(_el$, () => _c$() ? (() => {
+  var _el$3 = _tmpl$2();
+  _$insert(_el$3, () => props.icon);
+  return _el$3;
+})() : null, _el$2);
+  _$insert(_el$, count, null);
+  return _el$;
+})()
+  );
+}
+
+export function Toggler(props) {
+  const [on, setOn] = signal(false);
+  return (() => {
+  var _el$4 = _tmpl$3();
+  _el$4.$$click = () => setOn(!on());
+  _$insert(_el$4, () => props.render(on()));
+  return _el$4;
+})();
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `Badge` runs on the client: `[count, setCount] = signal(props.start)` destructures a value.
+  at /Badge.tsx:3:17
+  2 | 
+> 3 | export function Badge(props) {
+    |                 ^^^^^
+  4 |   const [count, setCount] = signal(props.start);
+  note: first client-only part (/Badge.tsx:4:9)
+// info
+[CLIENT_COMPONENT] `Toggler` runs on the client: `[on, setOn] = signal(false)` destructures a value.
+  at /Badge.tsx:12:17
+  11 | 
+> 12 | export function Toggler(props) {
+     |                 ^^^^^^^
+  13 |   const [on, setOn] = signal(false);
+  note: first client-only part (/Badge.tsx:13:9)
+// ==== /Badge.tsx [server] ====
+import { signal } from "reze-js";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<button", "><!--[-->", "<!--]--> <!--[-->", "<!--]--></button>"],
+  _tmpl$2 = ["<b", ">", "</b>"],
+  _tmpl$3 = ["<button", ">", "</button>"];
+
+export function Badge(props) {
+  const [count, setCount] = signal(props.start);
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild((props.icon) ? _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(props.icon)) : null), _$ssrChild(count()))
+  );
+}
+
+export function Toggler(props) {
+  const [on, setOn] = signal(false);
+  return _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(props.render(on())));
+}
+
+// ==== /Badge.tsx [hydrate] ====
+import { signal } from "reze-js";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, memo as _$memo, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<button> </button>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<b></b>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<button></button>");
+
+export function Badge(props) {
+  const [count, setCount] = signal(props.start);
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "button"),
+    _el$2 = _$claimChild(_el$, 0);
+  _el$.$$click = () => setCount(count() + 1);
+  var _c$ = _$memo(() => !!(props.icon));
+  _$claimInsert(_el$, () => _c$() ? (() => {
+  var _el$3 = _$claim(_tmpl$2, "b");
+  _$claimInsert(_el$3, () => props.icon);
+  return _el$3;
+})() : null, _el$2);
+  _$claimInsert(_el$, count, null);
+  return _el$;
+})()
+  );
+}
+
+export function Toggler(props) {
+  const [on, setOn] = signal(false);
+  return (() => {
+  var _el$4 = _$claim(_tmpl$3, "button");
+  _el$4.$$click = () => setOn(!on());
+  _$claimInsert(_el$4, () => props.render(on()));
+  return _el$4;
+})();
+}
+
+_$delegateEvents(["click"]);
+
+// ==== /Card.tsx [client] ====
+import { signal } from "reze-js";
+import { template as _$template, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<section><h2></h2><button></button><footer></footer></section>");
+
+export function Card(props) {
+  const [open, setOpen] = signal(false);
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild,
+    _el$3 = _el$2.nextSibling,
+    _el$4 = _el$3.nextSibling;
+  _$insert(_el$2, () => props.title);
+  _el$3.$$click = () => setOpen(!open());
+  _$insert(_el$3, () => props.children);
+  _$insert(_el$4, () => props.footer);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `Card` runs on the client: `[open, setOpen] = signal(false)` destructures a value.
+  at /Card.tsx:3:17
+  2 | 
+> 3 | export function Card(props) {
+    |                 ^^^^
+  4 |   const [open, setOpen] = signal(false);
+  note: first client-only part (/Card.tsx:4:9)
+// ==== /Card.tsx [server] ====
+import { signal } from "reze-js";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<section", "><h2>", "</h2><button>", "</button><footer>", "</footer></section>"];
+
+export function Card(props) {
+  const [open, setOpen] = signal(false);
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(props.title), _$ssrChild(props.children), _$ssrChild(props.footer))
+  );
+}
+
+// ==== /Card.tsx [hydrate] ====
+import { signal } from "reze-js";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimSibling as _$claimSibling, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<section><h2></h2><button></button><footer></footer></section>");
+
+export function Card(props) {
+  const [open, setOpen] = signal(false);
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "section"),
+    _el$2 = _$claimChild(_el$, 0),
+    _el$3 = _$claimSibling(_el$2, 1),
+    _el$4 = _$claimSibling(_el$3, 1);
+  _$claimInsert(_el$2, () => props.title);
+  _el$3.$$click = () => setOpen(!open());
+  _$claimInsert(_el$3, () => props.children);
+  _$claimInsert(_el$4, () => props.footer);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// ==== /Counter.tsx [client] ====
+import { signal } from "reze-js";
+import { template as _$template, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<button>: </button>");
+
+export function Counter(props) {
+  const [count, setCount] = signal(props.start);
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
+  _el$.$$click = () => setCount(count() + 1);
+  _$insert(_el$, () => props.label, _el$2);
+  _$insert(_el$, count, null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `Counter` runs on the client: `[count, setCount] = signal(props.start)` destructures a value.
+  at /Counter.tsx:3:17
+  2 | 
+> 3 | export function Counter(props) {
+    |                 ^^^^^^^
+  4 |   const [count, setCount] = signal(props.start);
+  note: first client-only part (/Counter.tsx:4:9)
+// ==== /Counter.tsx [server] ====
+import { signal } from "reze-js";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<button", "><!--[-->", "<!--]-->: <!--[-->", "<!--]--></button>"];
+
+export function Counter(props) {
+  const [count, setCount] = signal(props.start);
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(props.label), _$ssrChild(count()))
+  );
+}
+
+// ==== /Counter.tsx [hydrate] ====
+import { signal } from "reze-js";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<button>: </button>");
+
+export function Counter(props) {
+  const [count, setCount] = signal(props.start);
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "button"),
+    _el$2 = _$claimChild(_el$, 0);
+  _el$.$$click = () => setCount(count() + 1);
+  _$claimInsert(_el$, () => props.label, _el$2);
+  _$claimInsert(_el$, count, null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// ==== /Page.tsx [client] ====
+import { Badge, Toggler } from "./Badge";
+import { Card } from "./Card";
+import { Counter } from "./Counter";
+import { template as _$template, insert as _$insert, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main></main>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<i></i>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<b>x</b>"),
+  _tmpl$4 = /*#__PURE__*/ _$template("<b></b>");
+
+const NOTE = "static";
+
+export function Page(props) {
+  return (
+    (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, _$createComponent(Card, { get title() { return props.title; }, get footer() { return (() => {
+  var _el$2 = _tmpl$2();
+  _$insert(_el$2, NOTE);
+  return _el$2;
+})(); }, get children() { return _$createComponent(Counter, { start: 1, label: "nested island" }); } }));
+  return _el$;
+})()
+  );
+}
+
+export function Showcase() {
+  return (
+    (() => {
+  var _el$3 = _tmpl$();
+  _$insert(_el$3, _$createComponent(Badge, { start: 1, get icon() { return _tmpl$3(); } }), null);
+  _$insert(_el$3, _$createComponent(Toggler, { render: (on) => (() => {
+  var _el$4 = _tmpl$4();
+  _$insert(_el$4, on);
+  return _el$4;
+})() }), null);
+  return _el$3;
+})()
+  );
+}
+
+// info
+[STATIC_COMPONENT] `Page` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Page.tsx:7:17
+  6 | 
+> 7 | export function Page(props) {
+    |                 ^^^^
+  8 |   return (
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,claimSibling,delegateEvents,signal,template.
+  in <Page> › main
+  at /Page.tsx:10:8
+   9 |     <main>
+> 10 |       <Card title={props.title} footer={<i>{NOTE}</i>}>
+     |        ^^^^
+  11 |         <Counter start={1} label="nested island" />
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
+  in <Page> › main › <Card>
+  at /Page.tsx:11:10
+  10 |       <Card title={props.title} footer={<i>{NOTE}</i>}>
+> 11 |         <Counter start={1} label="nested island" />
+     |          ^^^^^^^
+  12 |       </Card>
+// info
+[CLIENT_COMPONENT] `Showcase` runs on the client: `<Badge>` is a client component in a position that cannot be an island: `icon` is passed as a slot, but `props.icon ? <b>{props.icon}</b> : null` uses `icon` outside a JSX insert in /Badge.tsx.
+  at /Page.tsx:17:17
+  16 | 
+> 17 | export function Showcase() {
+     |                 ^^^^^^^^
+  18 |   return (
+  note: first client-only part (/Page.tsx:20:8)
+  related: `[count, setCount] = signal(props.start)` destructures a value (/Badge.tsx:74)
+// ==== /Page.tsx [server] ====
+import { Badge, Toggler } from "./Badge";
+import { Card } from "./Card";
+import { Counter } from "./Counter";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, ssrIsland as _$ssrIsland, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = ["<main", ">", "</main>"],
+  _tmpl$2 = ["<i", ">", "</i>"],
+  _tmpl$3 = ["<main", "><!--[-->", "<!--]--><!--[-->", "<!--]--></main>"],
+  _tmpl$4 = ["<b", ">x</b>"],
+  _tmpl$5 = ["<b", ">", "</b>"];
+
+const NOTE = "static";
+
+export function Page(props) {
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$ssrIsland("1h24kww1xpio1", Card, { get title() { return props.title; } }, { get footer() { return _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(NOTE)); }, get children() { return _$ssrIsland("qggwslvd5as5", Counter, { start: 1, label: "nested island" }); } })))
+  );
+}
+
+export function Showcase() {
+  return (
+    _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Badge, { start: 1, get icon() { return _$ssr(_tmpl$4, _$ssrHydrationKey()); } })), _$ssrChild(_$createComponent(Toggler, { render: (on) => _$ssr(_tmpl$5, _$ssrHydrationKey(), _$ssrChild(on)) })))
+  );
+}
+
+// ==== /Page.tsx [hydrate] ====
+import { Badge, Toggler } from "./Badge";
+import { Card } from "./Card";
+import { Counter } from "./Counter";
+import { template as _$template, claim as _$claim, claimInsert as _$claimInsert, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main></main>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<i></i>"),
+  _tmpl$3 = /*#__PURE__*/ _$template("<b>x</b>"),
+  _tmpl$4 = /*#__PURE__*/ _$template("<b></b>");
+
+const NOTE = "static";
+
+export function Page(props) {
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "main");
+  _$claimInsert(_el$, _$createComponent(Card, { get title() { return props.title; }, get footer() { return (() => {
+  var _el$2 = _$claim(_tmpl$2, "i");
+  _$claimInsert(_el$2, NOTE);
+  return _el$2;
+})(); }, get children() { return _$createComponent(Counter, { start: 1, label: "nested island" }); } }));
+  return _el$;
+})()
+  );
+}
+
+export function Showcase() {
+  return (
+    (() => {
+  var _el$3 = _$claim(_tmpl$, "main");
+  _$claimInsert(_el$3, _$createComponent(Badge, { start: 1, get icon() { return _$claim(_tmpl$3, "b"); } }), null, 1);
+  _$claimInsert(_el$3, _$createComponent(Toggler, { render: (on) => (() => {
+  var _el$4 = _$claim(_tmpl$4, "b");
+  _$claimInsert(_el$4, on);
+  return _el$4;
+})() }), null);
+  return _el$3;
+})()
+  );
+}
+
+// ==== /client.tsx [client] ====
+import { hydrate } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+hydrate(() => _$createComponent(Page, { title: "Docs" }), document.getElementById("app"));
+
+// ==== /client.tsx [server] ====
+import { hydrate } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+hydrate(() => _$createComponent(Page, { title: "Docs" }), document.getElementById("app"));
+
+// ==== /client.tsx [hydrate] ====
+import { hydrate } from "reze-js";
+
+import { Page } from "./Page";
+import { hydrateIslands as _$hydrateIslands } from "reze-js";
+import { Card as _$island0 } from "./Card.tsx";
+import { Counter as _$island1 } from "./Counter.tsx";
+
+_$hydrateIslands(document.getElementById("app"), { "1h24kww1xpio1": _$island0, "qggwslvd5as5": _$island1 });
+
+// ==== /server.tsx [client] ====
+import { renderToString } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+export const html = renderToString(() => _$createComponent(Page, { title: "Docs" }));
+
+// ==== /server.tsx [server] ====
+import { renderToString } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+export const html = renderToString(() => _$createComponent(Page, { title: "Docs" }), true);
+
+// ==== /server.tsx [hydrate] ====
+import { renderToString } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+export const html = renderToString(() => _$createComponent(Page, { title: "Docs" }));

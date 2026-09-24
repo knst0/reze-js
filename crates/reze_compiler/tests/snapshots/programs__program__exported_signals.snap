@@ -1,5 +1,6 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
 expression: render(&dir)
 ---
 closed: ["/state.ts"]
@@ -7,6 +8,7 @@ features: {"suspense": false}
 
 // ==== /main.tsx [client] ====
 import { render } from "reze-js";
+
 import { View } from "./view";
 import { createComponent as _$createComponent } from "reze-js";
 
@@ -14,6 +16,7 @@ render(() => _$createComponent(View, {}), document.body);
 
 // ==== /main.tsx [server] ====
 import { render } from "reze-js";
+
 import { View } from "./view";
 import { createComponent as _$createComponent } from "reze-js";
 
@@ -21,6 +24,7 @@ render(() => _$createComponent(View, {}), document.body);
 
 // ==== /main.tsx [hydrate] ====
 import { render } from "reze-js";
+
 import { View } from "./view";
 import { createComponent as _$createComponent } from "reze-js";
 

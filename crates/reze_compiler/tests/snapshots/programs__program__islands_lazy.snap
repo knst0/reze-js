@@ -1,0 +1,251 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
+expression: render(&dir)
+---
+closed: []
+features: {"suspense": false}
+
+// ==== /Counter.tsx [client] ====
+import { signal } from "reze-js";
+import { template as _$template, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<button>: </button>");
+
+export function Counter(props) {
+  const [count, setCount] = signal(props.start);
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
+  _el$.$$click = () => setCount(count() + 1);
+  _$insert(_el$, () => props.label, _el$2);
+  _$insert(_el$, count, null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `Counter` runs on the client: `[count, setCount] = signal(props.start)` destructures a value.
+  at /Counter.tsx:3:17
+  2 | 
+> 3 | export function Counter(props) {
+    |                 ^^^^^^^
+  4 |   const [count, setCount] = signal(props.start);
+  note: first client-only part (/Counter.tsx:4:9)
+// ==== /Counter.tsx [server] ====
+import { signal } from "reze-js";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<button", "><!--[-->", "<!--]-->: <!--[-->", "<!--]--></button>"];
+
+export function Counter(props) {
+  const [count, setCount] = signal(props.start);
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(props.label), _$ssrChild(count()))
+  );
+}
+
+// ==== /Counter.tsx [hydrate] ====
+import { signal } from "reze-js";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<button>: </button>");
+
+export function Counter(props) {
+  const [count, setCount] = signal(props.start);
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "button"),
+    _el$2 = _$claimChild(_el$, 0);
+  _el$.$$click = () => setCount(count() + 1);
+  _$claimInsert(_el$, () => props.label, _el$2);
+  _$claimInsert(_el$, count, null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// ==== /Page.tsx [client] ====
+import { Counter } from "./Counter";
+import { template as _$template, insert as _$insert, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main><h1></h1></main>");
+
+export function Page(props) {
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
+  _$insert(_el$2, () => props.title);
+  _$insert(_el$, _$createComponent(Counter, { start: 1, label: "eager" }), null);
+  _$insert(_el$, _$createComponent(Counter, { start: 2, label: "idle" }), null);
+  _$insert(_el$, _$createComponent(Counter, { start: 3, label: "visible" }), null);
+  _$insert(_el$, _$createComponent(Counter, { start: 4, label: "click" }), null);
+  _$insert(_el$, _$createComponent(Counter, { start: 5, label: "soon", "island:load": "soon" }), null);
+  return _el$;
+})()
+  );
+}
+
+// info
+[STATIC_COMPONENT] `Page` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
+  at /Page.tsx:3:17
+  2 | 
+> 3 | export function Page(props) {
+    |                 ^^^^
+  4 |   return (
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
+  in <Page> › main
+  at /Page.tsx:7:8
+  6 |       <h1>{props.title}</h1>
+> 7 |       <Counter start={1} label="eager" />
+    |        ^^^^^^^
+  8 |       <Counter start={2} label="idle" island:load="idle" />
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
+  in <Page> › main
+  at /Page.tsx:8:8
+  7 |       <Counter start={1} label="eager" />
+> 8 |       <Counter start={2} label="idle" island:load="idle" />
+    |        ^^^^^^^
+  9 |       <Counter start={3} label="visible" island:load="visible" />
+// info
+[LAZY_ISLAND] A lazy island: the browser loads its module in a separate chunk on `idle` and hydrates it then; events that reach it before its code has loaded are dropped.
+  in <Page> › main
+  at /Page.tsx:8:8
+  7 |       <Counter start={1} label="eager" />
+> 8 |       <Counter start={2} label="idle" island:load="idle" />
+    |        ^^^^^^^
+  9 |       <Counter start={3} label="visible" island:load="visible" />
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
+  in <Page> › main
+  at /Page.tsx:9:8
+   8 |       <Counter start={2} label="idle" island:load="idle" />
+>  9 |       <Counter start={3} label="visible" island:load="visible" />
+     |        ^^^^^^^
+  10 |       <Counter start={4} label="click" island:load="interaction" />
+// info
+[LAZY_ISLAND] A lazy island: the browser loads its module in a separate chunk on `visible` and hydrates it then; events that reach it before its code has loaded are dropped.
+  in <Page> › main
+  at /Page.tsx:9:8
+   8 |       <Counter start={2} label="idle" island:load="idle" />
+>  9 |       <Counter start={3} label="visible" island:load="visible" />
+     |        ^^^^^^^
+  10 |       <Counter start={4} label="click" island:load="interaction" />
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
+  in <Page> › main
+  at /Page.tsx:10:8
+   9 |       <Counter start={3} label="visible" island:load="visible" />
+> 10 |       <Counter start={4} label="click" island:load="interaction" />
+     |        ^^^^^^^
+  11 |       <Counter start={5} label="soon" island:load="soon" />
+// info
+[LAZY_ISLAND] A lazy island: the browser loads its module in a separate chunk on `interaction` and hydrates it then; events that reach it before its code has loaded are dropped.
+  in <Page> › main
+  at /Page.tsx:10:8
+   9 |       <Counter start={3} label="visible" island:load="visible" />
+> 10 |       <Counter start={4} label="click" island:load="interaction" />
+     |        ^^^^^^^
+  11 |       <Counter start={5} label="soon" island:load="soon" />
+// info
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features claim,claimChild,claimInsert,delegateEvents,signal,template.
+  in <Page> › main
+  at /Page.tsx:11:8
+  10 |       <Counter start={4} label="click" island:load="interaction" />
+> 11 |       <Counter start={5} label="soon" island:load="soon" />
+     |        ^^^^^^^
+  12 |     </main>
+// warn
+[ISLAND_DIRECTIVE_IGNORED] `island:load` has no effect: its value is not one of "eager", "idle", "visible", "interaction", so the island loads eagerly. It was compiled as a plain prop; remove it.
+  in <Page> › main › <Counter>
+  at /Page.tsx:11:39
+  10 |       <Counter start={4} label="click" island:load="interaction" />
+> 11 |       <Counter start={5} label="soon" island:load="soon" />
+     |                                       ^^^^^^^^^^^^^^^^^^
+  12 |     </main>
+  fix: remove `island:load`
+// ==== /Page.tsx [server] ====
+import { Counter } from "./Counter";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, ssrIsland as _$ssrIsland } from "reze-js";
+const _tmpl$ = ["<main", "><h1>", "</h1><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></main>"];
+
+export function Page(props) {
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(props.title), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 1, label: "eager" })), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 2, label: "idle" }, null, "idle")), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 3, label: "visible" }, null, "visible")), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 4, label: "click" }, null, "interaction")), _$ssrChild(_$ssrIsland("qggwslvd5as5", Counter, { start: 5, label: "soon", "island:load": "soon" })))
+  );
+}
+
+// ==== /Page.tsx [hydrate] ====
+import { Counter } from "./Counter";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<main><h1></h1></main>");
+
+export function Page(props) {
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "main"),
+    _el$2 = _$claimChild(_el$, 0);
+  _$claimInsert(_el$2, () => props.title);
+  _$claimInsert(_el$, _$createComponent(Counter, { start: 1, label: "eager" }), null, 4);
+  _$claimInsert(_el$, _$createComponent(Counter, { start: 2, label: "idle" }), null, 3);
+  _$claimInsert(_el$, _$createComponent(Counter, { start: 3, label: "visible" }), null, 2);
+  _$claimInsert(_el$, _$createComponent(Counter, { start: 4, label: "click" }), null, 1);
+  _$claimInsert(_el$, _$createComponent(Counter, { start: 5, label: "soon", "island:load": "soon" }), null);
+  return _el$;
+})()
+  );
+}
+
+// ==== /client.tsx [client] ====
+import { hydrate } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+hydrate(() => _$createComponent(Page, { title: "Docs" }), document.getElementById("app"));
+
+// ==== /client.tsx [server] ====
+import { hydrate } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+hydrate(() => _$createComponent(Page, { title: "Docs" }), document.getElementById("app"));
+
+// ==== /client.tsx [hydrate] ====
+import { hydrate } from "reze-js";
+
+import { Page } from "./Page";
+import { hydrateIslands as _$hydrateIslands } from "reze-js";
+import { Counter as _$island0 } from "./Counter.tsx";
+
+_$hydrateIslands(document.getElementById("app"), { "qggwslvd5as5": _$island0 });
+
+// ==== /server.tsx [client] ====
+import { renderToString } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+export const html = renderToString(() => _$createComponent(Page, { title: "Docs" }));
+
+// ==== /server.tsx [server] ====
+import { renderToString } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+export const html = renderToString(() => _$createComponent(Page, { title: "Docs" }), true);
+
+// ==== /server.tsx [hydrate] ====
+import { renderToString } from "reze-js";
+
+import { Page } from "./Page";
+import { createComponent as _$createComponent } from "reze-js";
+
+export const html = renderToString(() => _$createComponent(Page, { title: "Docs" }));

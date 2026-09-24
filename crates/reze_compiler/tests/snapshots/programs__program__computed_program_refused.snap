@@ -1,0 +1,244 @@
+---
+source: crates/reze_compiler/tests/programs.rs
+assertion_line: 254
+expression: render(&dir)
+---
+closed: []
+features: {"suspense": false}
+
+// ==== /a.tsx [client] ====
+import { viaBarrel } from "./barrel";
+import { count, outsideJsx, setCount, twoReaders, usesGlobal, usesHidden } from "./state";
+import { template as _$template, setAttribute as _$setAttribute, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p> <!> <!> </p>");
+
+export function A() {
+  const snapshot = outsideJsx();
+  return (
+    (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild,
+    _el$3 = _el$2.nextSibling,
+    _el$4 = _el$3.nextSibling.nextSibling;
+  _el$.$$click = () => setCount(count() + 1);
+  _$setAttribute(_el$, "title", snapshot);
+  _$insert(_el$, twoReaders, _el$2);
+  _$insert(_el$, usesHidden, _el$3);
+  _$insert(_el$, viaBarrel, _el$4);
+  _$insert(_el$, usesGlobal, null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// info
+[CLIENT_COMPONENT] `A` runs on the client: `outsideJsx()` calls a function that is not a folded signal.
+  at /a.tsx:4:17
+  3 | 
+> 4 | export function A() {
+    |                 ^
+  5 |   const snapshot = outsideJsx();
+  note: first client-only part (/a.tsx:5:20)
+// ==== /a.tsx [server] ====
+import { viaBarrel } from "./barrel";
+import { count, outsideJsx, setCount, twoReaders, usesGlobal, usesHidden } from "./state";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrAttribute as _$ssrAttribute, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<p", "", "><!--[-->", "<!--]--> <!--[-->", "<!--]--><!> <!--[-->", "<!--]--><!> <!--[-->", "<!--]--></p>"];
+
+export function A() {
+  const snapshot = outsideJsx();
+  return (
+    _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrAttribute("title", snapshot), _$ssrChild(twoReaders()), _$ssrChild(usesHidden()), _$ssrChild(viaBarrel()), _$ssrChild(usesGlobal()))
+  );
+}
+
+// ==== /a.tsx [hydrate] ====
+import { viaBarrel } from "./barrel";
+import { count, outsideJsx, setCount, twoReaders, usesGlobal, usesHidden } from "./state";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimSibling as _$claimSibling, setAttribute as _$setAttribute, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p> <!> <!> </p>");
+
+export function A() {
+  const snapshot = outsideJsx();
+  return (
+    (() => {
+  var _el$ = _$claim(_tmpl$, "p"),
+    _el$2 = _$claimChild(_el$, 0),
+    _el$3 = _$claimSibling(_el$2, 1),
+    _el$4 = _$claimSibling(_el$3, 2);
+  _el$.$$click = () => setCount(count() + 1);
+  _$setAttribute(_el$, "title", snapshot);
+  _$claimInsert(_el$, twoReaders, _el$2);
+  _$claimInsert(_el$, usesHidden, _el$3);
+  _$claimInsert(_el$, viaBarrel, _el$4);
+  _$claimInsert(_el$, usesGlobal, null);
+  return _el$;
+})()
+  );
+}
+
+_$delegateEvents(["click"]);
+
+// ==== /b.tsx [client] ====
+import { escapes, twoReaders } from "./state";
+import { template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p> </p>");
+
+export const B = () => (
+  (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
+  _$insert(_el$, twoReaders, _el$2);
+  _$insert(_el$, escapes, null);
+  return _el$;
+})()
+);
+
+// info
+[CLIENT_COMPONENT] `B` runs on the client: `twoReaders()` calls a function that is not a folded signal.
+  at /b.tsx:3:14
+  2 | 
+> 3 | export const B = () => (
+    |              ^
+  4 |   <p>
+  note: first client-only part (/b.tsx:5:6)
+// ==== /b.tsx [server] ====
+import { escapes, twoReaders } from "./state";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<p", "><!--[-->", "<!--]--> <!--[-->", "<!--]--></p>"];
+
+export const B = () => (
+  _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(twoReaders()), _$ssrChild(escapes()))
+);
+
+// ==== /b.tsx [hydrate] ====
+import { escapes, twoReaders } from "./state";
+import { template as _$template, claim as _$claim, claimChild as _$claimChild, claimInsert as _$claimInsert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p> </p>");
+
+export const B = () => (
+  (() => {
+  var _el$ = _$claim(_tmpl$, "p"),
+    _el$2 = _$claimChild(_el$, 0);
+  _$claimInsert(_el$, twoReaders, _el$2);
+  _$claimInsert(_el$, escapes, null);
+  return _el$;
+})()
+);
+
+// ==== /barrel.ts [client] ====
+<unchanged>
+
+// ==== /barrel.ts [server] ====
+<unchanged>
+
+// ==== /barrel.ts [hydrate] ====
+<unchanged>
+
+// ==== /cycle-reader.tsx [client] ====
+import { looped } from "./cycle";
+import { template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<i></i>");
+
+export const Looped = () => (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, looped);
+  return _el$;
+})();
+
+// info
+[CLIENT_COMPONENT] `Looped` runs on the client: `looped()` calls a function that is not a folded signal.
+  at /cycle-reader.tsx:3:14
+  2 | 
+> 3 | export const Looped = () => <i>{looped()}</i>;
+    |              ^^^^^^
+  4 | 
+  note: first client-only part (/cycle-reader.tsx:3:33)
+// ==== /cycle-reader.tsx [server] ====
+import { looped } from "./cycle";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<i", ">", "</i>"];
+
+export const Looped = () => _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(looped()));
+
+// ==== /cycle-reader.tsx [hydrate] ====
+import { looped } from "./cycle";
+import { template as _$template, claim as _$claim, claimInsert as _$claimInsert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<i></i>");
+
+export const Looped = () => (() => {
+  var _el$ = _$claim(_tmpl$, "i");
+  _$claimInsert(_el$, looped);
+  return _el$;
+})();
+
+// ==== /cycle.ts [client] ====
+<unchanged>
+
+// ==== /cycle.ts [server] ====
+<unchanged>
+
+// ==== /cycle.ts [hydrate] ====
+<unchanged>
+
+// ==== /main.tsx [client] ====
+import { render } from "reze-js";
+
+import { A } from "./a";
+import { B } from "./b";
+import { Looped } from "./cycle-reader";
+import { createComponent as _$createComponent } from "reze-js";
+
+export { escapes } from "./state";
+
+render(
+  () => (
+    [_$createComponent(A, {}), _$createComponent(B, {}), _$createComponent(Looped, {})]
+  ),
+  document.body,
+);
+
+// ==== /main.tsx [server] ====
+import { render } from "reze-js";
+
+import { A } from "./a";
+import { B } from "./b";
+import { Looped } from "./cycle-reader";
+import { createComponent as _$createComponent } from "reze-js";
+
+export { escapes } from "./state";
+
+render(
+  () => (
+    [_$createComponent(A, {}), _$createComponent(B, {}), _$createComponent(Looped, {})]
+  ),
+  document.body,
+);
+
+// ==== /main.tsx [hydrate] ====
+import { render } from "reze-js";
+
+import { A } from "./a";
+import { B } from "./b";
+import { Looped } from "./cycle-reader";
+import { createComponent as _$createComponent } from "reze-js";
+
+export { escapes } from "./state";
+
+render(
+  () => (
+    [_$createComponent(A, {}), _$createComponent(B, {}), _$createComponent(Looped, {})]
+  ),
+  document.body,
+);
+
+// ==== /state.ts [client] ====
+<unchanged>
+
+// ==== /state.ts [server] ====
+<unchanged>
+
+// ==== /state.ts [hydrate] ====
+<unchanged>

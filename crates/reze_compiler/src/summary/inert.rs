@@ -10,6 +10,7 @@ use oxc_syntax::symbol::SymbolId;
 use serde::{Deserialize, Serialize};
 
 use super::{Ref, TopLevel, is_blank_text};
+use crate::facts::IslandMode;
 use crate::lower::props::props_plan;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -17,6 +18,26 @@ pub struct Violation {
     pub start: u32,
     pub end: u32,
     pub message: String,
+}
+
+impl Violation {
+    /// `` `<source of span>` what ``.
+    pub(super) fn at(source: &str, span: Span, what: &str) -> Violation {
+        Violation {
+            start: span.start,
+            end: span.end,
+            message: format!("`{}` {what}", label(source, span)),
+        }
+    }
+}
+
+/// The source of `span`, shortened to 40 characters.
+fn label(source: &str, span: Span) -> String {
+    let text = &source[span.start as usize..span.end as usize];
+    match text.char_indices().nth(40) {
+        Some((cut, _)) => format!("{}…", &text[..cut]),
+        None => text.to_string(),
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -42,8 +63,19 @@ pub enum DepKind {
         element: u32,
         callee: Ref,
         /// Whether the position can be an island boundary, with what that needs.
-        boundary: Result<Vec<Dep>, Violation>,
+        boundary: Result<Boundary, Violation>,
     },
+}
+
+/// A position that can be an island boundary (§15.9, §16.3, §16.4).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Boundary {
+    /// Reads of program bindings among the props: each must be an inert constant.
+    pub deps: Vec<Dep>,
+    pub mode: IslandMode,
+    /// Props the parent renders to HTML, in source order; `children` for nested children. The
+    /// island may use each only as a JSX insert.
+    pub slots: Vec<String>,
 }
 
 pub struct Checked {
@@ -112,19 +144,11 @@ impl<'s, 'a> Checker<'s, 'a> {
     }
 
     fn label(&self, span: Span) -> String {
-        let text = &self.source[span.start as usize..span.end as usize];
-        match text.char_indices().nth(40) {
-            Some((cut, _)) => format!("{}…", &text[..cut]),
-            None => text.to_string(),
-        }
+        label(self.source, span)
     }
 
     fn violation(&self, span: Span, what: &str) -> Violation {
-        Violation {
-            start: span.start,
-            end: span.end,
-            message: format!("`{}` {what}", self.label(span)),
-        }
+        Violation::at(self.source, span, what)
     }
 
     fn check_function(
@@ -155,8 +179,11 @@ impl<'s, 'a> Checker<'s, 'a> {
                 BindingPattern::ObjectPattern(_) => {
                     match props_plan(params, function_body, is_generator, self.scoping) {
                         Ok(Some(plan)) if plan.rest.is_none() => {
-                            for binding in plan.bindings {
+                            for binding in &plan.bindings {
                                 self.props.insert(binding.symbol, binding.path.len());
+                            }
+                            for default in plan.bindings.iter().filter_map(|b| b.default) {
+                                self.expr(default)?;
                             }
                         }
                         Ok(Some(_)) => {
@@ -554,15 +581,14 @@ impl<'s, 'a> Checker<'s, 'a> {
         }
     }
 
-    /// Whether `<C …/>` can be an island boundary (§15.9): no children, spread or ref, and
-    /// every value a JSON form or an inert read of `p.k`, a constant or a `map` parameter.
-    fn boundary(&self, element: &JSXElement<'a>) -> Result<Vec<Dep>, Violation> {
-        if let Some(child) = element.children.iter().find(|c| !is_blank_text(c)) {
-            return Err(
-                self.violation(child.span(), "passes children, which an island cannot take")
-            );
-        }
-        let mut deps = Vec::new();
+    /// Whether `<C …/>` can be an island boundary (§15.9, §16.3, §16.4): no spread or ref;
+    /// nested children and JSX-form values are slots, `island:load` with a mode name is the
+    /// load mode, and every other value is a JSON form or an inert read of `p.k`, a constant or
+    /// a `map` parameter.
+    fn boundary(&self, element: &JSXElement<'a>) -> Result<Boundary, Violation> {
+        let has_children = element.children.iter().any(|c| !is_blank_text(c));
+        let mut boundary =
+            Boundary { deps: Vec::new(), mode: IslandMode::Eager, slots: Vec::new() };
         for attribute in &element.opening_element.attributes {
             let a = match attribute {
                 JSXAttributeItem::SpreadAttribute(s) => {
@@ -571,10 +597,23 @@ impl<'s, 'a> Checker<'s, 'a> {
                 JSXAttributeItem::Attribute(a) => a,
             };
             let name = attribute_name(a);
-            if name == "ref" || name == "children" {
+            if name == "ref" {
                 return Err(self.violation(a.span, "cannot cross an island boundary"));
             }
+            if name == "children" && has_children {
+                continue;
+            }
+            if let Some(mode) = island_load_mode(a) {
+                boundary.mode = mode;
+                continue;
+            }
             if is_json_attribute(a) {
+                continue;
+            }
+            if is_slot_value(a) {
+                if !boundary.slots.contains(&name) {
+                    boundary.slots.push(name);
+                }
                 continue;
             }
             let Some(JSXAttributeValue::ExpressionContainer(c)) = &a.value else {
@@ -582,12 +621,15 @@ impl<'s, 'a> Checker<'s, 'a> {
             };
             let Some(e) = c.expression.as_expression() else { continue };
             match self.serializable_read(e) {
-                Some(Some(dep)) => deps.push(dep),
+                Some(Some(dep)) => boundary.deps.push(dep),
                 Some(None) => {}
                 None => return Err(self.violation(e.span(), "is not serializable to an island")),
             }
         }
-        Ok(deps)
+        if has_children {
+            boundary.slots.push("children".to_string());
+        }
+        Ok(boundary)
     }
 
     /// `Some(None)` for `p.k` and `map` parameter reads, `Some(Some(dep))` for a constant read.
@@ -650,6 +692,54 @@ fn tag_name(name: &JSXElementName<'_>) -> String {
         JSXElementName::NamespacedName(n) => format!("{}:{}", n.namespace.name, n.name.name),
         JSXElementName::MemberExpression(m) => m.property.name.to_string(),
         JSXElementName::ThisExpression(_) => "this".to_string(),
+    }
+}
+
+/// The mode of `island:load="eager" | "idle" | "visible" | "interaction"` (§16.3); `None` for
+/// any other attribute or value.
+pub fn island_load_mode(a: &JSXAttribute<'_>) -> Option<IslandMode> {
+    let JSXAttributeName::NamespacedName(name) = &a.name else { return None };
+    if name.namespace.name != "island" || name.name.name != "load" {
+        return None;
+    }
+    let value = match &a.value {
+        Some(JSXAttributeValue::StringLiteral(s)) => s.value.as_str(),
+        Some(JSXAttributeValue::ExpressionContainer(c)) => {
+            match c.expression.as_expression()?.without_parentheses() {
+                Expression::StringLiteral(s) => s.value.as_str(),
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    IslandMode::from_directive(value)
+}
+
+/// A JSX element, a fragment, or an array literal of those and text: an island slot (§16.4).
+fn is_slot_value(a: &JSXAttribute<'_>) -> bool {
+    match &a.value {
+        Some(JSXAttributeValue::Element(_) | JSXAttributeValue::Fragment(_)) => true,
+        Some(JSXAttributeValue::ExpressionContainer(c)) => {
+            c.expression.as_expression().is_some_and(is_jsx_form)
+        }
+        None | Some(JSXAttributeValue::StringLiteral(_)) => false,
+    }
+}
+
+fn is_jsx_form(e: &Expression<'_>) -> bool {
+    match e.without_parentheses() {
+        Expression::JSXElement(_) | Expression::JSXFragment(_) => true,
+        Expression::ArrayExpression(array) => array.elements.iter().all(|element| {
+            !matches!(
+                element,
+                ArrayExpressionElement::SpreadElement(_) | ArrayExpressionElement::Elision(_)
+            ) && match element.to_expression().without_parentheses() {
+                Expression::StringLiteral(_) => true,
+                Expression::TemplateLiteral(t) => t.expressions.is_empty(),
+                other => is_jsx_form(other),
+            }
+        }),
+        _ => false,
     }
 }
 
