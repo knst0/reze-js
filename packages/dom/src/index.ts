@@ -29,7 +29,7 @@ export {
   toggleClass,
   use,
 } from "./dom";
-export type { ClassValue } from "./dom";
+export type { ClassValue, IslandValue, LazyIsland } from "./dom";
 export {
   renderToStream,
   renderToString,
@@ -62,6 +62,7 @@ export { createContext } from "./context";
 export { isServerRender } from "./hydration";
 export { createUniqueId, lazy } from "./lazy";
 export type { LazyComponent } from "./lazy";
+export { lazyIsland } from "./islands-lazy";
 export type { Context } from "./context";
 export { Errored } from "./flow";
 export type { ErroredProps } from "./flow";

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-24T23:27:07.823Z",
+  "recordedAt": "2026-09-24T23:32:01.308Z",
   "results": {
     "@rezejs/example-async js": {
       "raw": 12859,
@@ -11,12 +11,12 @@
       "gzip": 3570
     },
     "@rezejs/example-islands js": {
-      "raw": 13919,
-      "gzip": 5393
+      "raw": 11373,
+      "gzip": 4465
     },
     "@rezejs/example-islands-lazy js": {
-      "raw": 15852,
-      "gzip": 6330
+      "raw": 15825,
+      "gzip": 6333
     },
     "@rezejs/example-router js": {
       "raw": 23533,

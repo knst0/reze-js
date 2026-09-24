@@ -1194,9 +1194,10 @@ props не попадает. Вне граничной позиции и в сб
 - Server: режим пишется в маркер острова: `<!--$<id>:<ключ>:<json>:<mode>-->`, где `mode` — `eager`, `idle`,
   `visible` или `interaction`.
 - Hydrate: корень → `hydrateIslands(el, islands)`, где значение — компонент (eager, импорт статически, как
-  в §15.9) или дескриптор `{ load: () => import("<путь>"), mode, export: "<E>" }`. Путь — относительный путь
+  в §15.9) или `lazyIsland(() => import("<путь>"), "<mode>", "<E>")` из рантайма. Путь — относительный путь
   к модулю C от импортёра, литерал: Rolldown делит чанк по `import()`. `load()` резолвит namespace модуля,
-  компонент берётся по `export`.
+  компонент берётся по `export`. Код ленивой загрузки живёт в `lazyIsland`, так что страница без ленивых
+  островов его не тянет.
 - Загрузка: `idle` — `requestIdleCallback` (fallback `setTimeout(…, 1)`); `visible` — `IntersectionObserver`
   за ближайшим элементным соседом открывающего маркера, иначе за родителем, disconnect после срабатывания;
   `interaction` — `pointerdown`/`focusin`/`keydown` (capture) на родителе открывающего маркера. Первое
