@@ -838,3 +838,30 @@ fn verify_reports_only_real_closed_world_and_flag_breaks() {
         []
     );
 }
+
+const ROW_SELECTION: &str = "import { For, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nsetSelected(1);\nexport const list = <For each={rows()}>{(row) => <li class={selected() === row().id ? \"on\" : \"\"} />}</For>;";
+
+#[test]
+fn row_comparison_reads_a_selector() {
+    let code = run(ROW_SELECTION);
+    assert!(code.contains("(_$selector(selected))"), "{code}");
+    assert!(code.contains("_sel$(row().id) ? \"on\" : \"\""), "{code}");
+}
+
+#[test]
+fn row_comparison_stays_plain_without_optimize() {
+    let options = Options { optimize: false, ..Options::default() };
+    let code = compile(ROW_SELECTION, "test.tsx", &options).unwrap().unwrap().code;
+    assert!(!code.contains("selector"), "{code}");
+    assert!(code.contains("selected() === row().id"), "{code}");
+}
+
+#[test]
+fn row_comparison_stays_plain_for_a_for_outside_the_runtime() {
+    let source = ROW_SELECTION.replace(
+        "import { For, signal } from \"reze-js\";",
+        "import { signal } from \"reze-js\";\nimport { For } from \"./list\";",
+    );
+    let code = run(&source);
+    assert!(!code.contains("selector"), "{code}");
+}

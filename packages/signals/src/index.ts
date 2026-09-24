@@ -5,6 +5,7 @@ export { effect, isEffect } from "./effect";
 export { effectScope, isEffectScope } from "./effectScope";
 export { onCleanup, root, runWithOwner, untrack, type Owner } from "./owner";
 export { flush } from "./scheduler";
+export { selector } from "./selector";
 export {
   isSignal,
   signal,

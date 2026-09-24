@@ -53,6 +53,7 @@ pub enum Primitive {
     RenderToString,
     Hydrate,
     Suspense,
+    For,
 }
 
 impl Primitive {
@@ -64,6 +65,7 @@ impl Primitive {
             "renderToString" => Primitive::RenderToString,
             "hydrate" => Primitive::Hydrate,
             "Suspense" => Primitive::Suspense,
+            "For" => Primitive::For,
             _ => return None,
         })
     }

@@ -315,6 +315,20 @@ const doubled = computed(() => count() * 2);
 <p>{doubled()}</p>
 ```
 
+## AUTO_SELECTOR
+
+**Row comparison compiled to a selector** · severity `info`
+
+A `<For>` row compares a `signal`/`computed` declared outside the list with a key read from the row (`selected() === row().id`). Every row would subscribe to that signal and re-run on each change. The compiler creates one `selector` per `<For>` and each row reads `isSelected(key)` instead, so a change re-runs only the rows whose result flips (optimization O6). `data.source` is the getter's name.
+
+**Repair:** Nothing to repair. Move the comparison into a function nested in the row, or compare with something other than the row's key, and it stays a plain comparison.
+
+Example:
+
+```tsx
+<For each={rows()}>{(row) => <tr class={selected() === row().id ? "on" : ""} />}</For>
+```
+
 ## PROPS_REWRITTEN
 
 **Destructured props rewritten to lazy reads** · severity `info`

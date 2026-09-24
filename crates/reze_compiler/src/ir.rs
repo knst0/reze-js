@@ -79,6 +79,14 @@ pub enum HoleKind<'a> {
     },
     /// Source dropped without replacement: the declaration of an inlined computed (O4).
     Remove,
+    /// `S() === key` in a `<For>` row → `selector(key)`, `!==` → `!selector(key)` (O6).
+    /// The server keeps `original`.
+    SelectorRead {
+        selector: &'a str,
+        key: Embed<'a>,
+        original: Embed<'a>,
+        is_negated: bool,
+    },
     /// `renderToString(() => <R/>)` / `hydrate(() => <R/>, el)` of a static root (SPEC §15.9):
     /// server `renderToString(code, true)`, hydrate `hydrateIslands(el, { id: E, … })`, client
     /// as written.
@@ -426,6 +434,14 @@ pub struct Component<'a> {
     pub props: Props<'a>,
     /// Set on a boundary position (SPEC §15.9): the server renders `ssrIsland`.
     pub island: Option<Island<'a>>,
+    /// Selectors the rows of a `<For>` read (O6): created once per `<For>`, before it.
+    pub selectors: Vec<'a, SelectorSource<'a>>,
+}
+
+/// `const selector = selector(source)`, where `source` is the span of a getter identifier.
+pub struct SelectorSource<'a> {
+    pub selector: &'a str,
+    pub source: Span,
 }
 
 pub struct Island<'a> {

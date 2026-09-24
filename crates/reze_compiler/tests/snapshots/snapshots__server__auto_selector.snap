@@ -1,0 +1,62 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { For, computed, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nconst [hovered, setHovered] = signal(0);\nconst active = computed(() => selected() + 1);\nexport const list = (\n  <For each={rows()}>\n    {(row, index) => {\n      const [local, setLocal] = signal(0);\n      return (\n        <tr class={selected() === row().id ? \"danger\" : \"\"} title={row().id !== selected() ? \"a\" : \"b\"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>\n          {selected() === row().id && <b>on</b>}\n          <td onInput={() => setLocal(1)} data-local={local() === row().id} data-other={selected() === other()} data-loose={selected() == row().id} />\n        </tr>\n      );\n    }}\n  </For>\n);\nexport const unrelated = <p>{selected() === 1}</p>;\nsetHovered(1);"
+---
+import { For, computed, signal } from "reze-js";
+import { createComponent as _$createComponent, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrClass as _$ssrClass, ssrAttribute as _$ssrAttribute, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<tr", "", "", "", "", "><!--[-->", "<!--]--><td", "", "", "></td></tr>"],
+  _tmpl$2 = ["<b", ">on</b>"],
+  _tmpl$3 = ["<p", ">", "</p>"];
+const [selected, setSelected] = signal(0);
+const [hovered, setHovered] = signal(0);
+const active = computed(() => selected() + 1);
+export const list = (
+  _$createComponent(For, { get each() { return rows(); }, children: (row, index) => {
+      const [local, setLocal] = signal(0);
+      return (
+        _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrClass(selected() === row().id ? "danger" : ""), _$ssrAttribute("title", row().id !== selected() ? "a" : "b"), _$ssrAttribute("data-hover", hovered() === index()), _$ssrAttribute("data-active", active() === row().meta.id), _$ssrChild((selected() === row().id) ? _$ssr(_tmpl$2, _$ssrHydrationKey()) : null), _$ssrAttribute("data-local", local() === row().id), _$ssrAttribute("data-other", selected() === other()), _$ssrAttribute("data-loose", selected() == row().id))
+      );
+    } })
+);
+export const unrelated = _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(selected() === 1));
+setHovered(1);
+// info
+[AUTO_SELECTOR] Each row compares `selected()` with its own key, so a change of `selected` would re-run every row. In the browser the comparison reads a selector created once for this `<For>` instead: only the rows whose result flips re-run. The server keeps the comparison.
+  in <For> › tr
+  at case.tsx:10:20
+   9 |       return (
+> 10 |         <tr class={selected() === row().id ? "danger" : ""} title={row().id !== selected() ? "a" : "b"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>
+     |                    ^^^^^^^^^^^^^^^^^^^^^^^
+  11 |           {selected() === row().id && <b>on</b>}
+// info
+[AUTO_SELECTOR] Each row compares `selected()` with its own key, so a change of `selected` would re-run every row. In the browser the comparison reads a selector created once for this `<For>` instead: only the rows whose result flips re-run. The server keeps the comparison.
+  in <For> › tr
+  at case.tsx:10:68
+   9 |       return (
+> 10 |         <tr class={selected() === row().id ? "danger" : ""} title={row().id !== selected() ? "a" : "b"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>
+     |                                                                    ^^^^^^^^^^^^^^^^^^^^^^^
+  11 |           {selected() === row().id && <b>on</b>}
+// info
+[AUTO_SELECTOR] Each row compares `hovered()` with its own key, so a change of `hovered` would re-run every row. In the browser the comparison reads a selector created once for this `<For>` instead: only the rows whose result flips re-run. The server keeps the comparison.
+  in <For> › tr
+  at case.tsx:10:117
+   9 |       return (
+> 10 |         <tr class={selected() === row().id ? "danger" : ""} title={row().id !== selected() ? "a" : "b"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>
+     |                                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+  11 |           {selected() === row().id && <b>on</b>}
+// info
+[AUTO_SELECTOR] Each row compares `active()` with its own key, so a change of `active` would re-run every row. In the browser the comparison reads a selector created once for this `<For>` instead: only the rows whose result flips re-run. The server keeps the comparison.
+  in <For> › tr
+  at case.tsx:10:153
+   9 |       return (
+> 10 |         <tr class={selected() === row().id ? "danger" : ""} title={row().id !== selected() ? "a" : "b"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>
+     |                                                                                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  11 |           {selected() === row().id && <b>on</b>}
+// info
+[AUTO_SELECTOR] Each row compares `selected()` with its own key, so a change of `selected` would re-run every row. In the browser the comparison reads a selector created once for this `<For>` instead: only the rows whose result flips re-run. The server keeps the comparison.
+  in <For> › tr
+  at case.tsx:11:12
+  10 |         <tr class={selected() === row().id ? "danger" : ""} title={row().id !== selected() ? "a" : "b"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>
+> 11 |           {selected() === row().id && <b>on</b>}
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+  12 |           <td onInput={() => setLocal(1)} data-local={local() === row().id} data-other={selected() === other()} data-loose={selected() == row().id} />

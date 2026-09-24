@@ -22,7 +22,8 @@ use crate::lower::constant::static_text;
 use crate::lower::props::PropsFacts;
 use crate::lower::store::{self, Stores};
 
-pub const RUNTIME_MODULES: [&str; 3] = ["reze-js", "@rezejs/signals", "@rezejs/dom"];
+pub const RUNTIME_MODULES: [&str; 5] =
+    ["reze-js", "@rezejs/signals", "@rezejs/dom", "@rezejs/dom/flow", "@rezejs/dom/list"];
 
 pub fn is_runtime_module(specifier: &str, module_name: &str) -> bool {
     specifier == module_name || RUNTIME_MODULES.contains(&specifier)
@@ -202,6 +203,16 @@ impl Primitives {
         self.named.is_empty()
             && self.runtime_namespaces.is_empty()
             && self.program_namespaces.is_empty()
+    }
+
+    /// The primitive a JSX tag or a bare identifier names.
+    pub fn of_reference(
+        &self,
+        id: &IdentifierReference<'_>,
+        scoping: &Scoping,
+    ) -> Option<Primitive> {
+        let symbol = scoping.get_reference(id.reference_id.get()?).symbol_id()?;
+        self.named.get(&symbol).copied()
     }
 
     /// The primitive `callee` names: `signal`, `s` re-exported as `signal`, or `R.signal`.
