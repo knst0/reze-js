@@ -1,3 +1,4 @@
+import { debugHook } from "./devtools";
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
 import { FlagHasChildEffect, FlagRecursedCheck } from "./flags";
 import { link, purgeDeps, type ReactiveNode } from "./graph";
@@ -99,6 +100,9 @@ export function enterOwner(sub: ReactiveNode): ReactiveNode | undefined {
 
 /** Starts a tracked re-run of `sub`; pair with `endTracking` in a `finally`. */
 export function startTracking(sub: ReactiveNode, flags: number): ReactiveNode | undefined {
+  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+    debugHook.rerunning(sub);
+  }
   ++version;
   sub.depsTail = undefined;
   sub.flags = flags | FlagRecursedCheck;

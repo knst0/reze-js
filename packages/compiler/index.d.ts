@@ -28,6 +28,8 @@ export interface CompileOptions {
    * `"hydrate"` claims that HTML in the browser. Default: `"client"`.
    */
   target?: "client" | "server" | "hydrate"
+  /** Passes `{ name }` to `signal`/`computed` after the declared variable, for devtools. Default: `false`. */
+  debugNames?: boolean
   /** This module's facts from `link`, as returned there. */
   facts?: string
 }

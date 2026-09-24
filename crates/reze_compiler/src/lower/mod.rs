@@ -4,6 +4,7 @@ mod children;
 mod component;
 mod computed;
 pub mod constant;
+mod debug_name;
 mod element;
 mod island;
 pub mod props;
@@ -40,6 +41,8 @@ pub struct Lowerer<'a, 'f> {
     scoping: &'f Scoping,
     nodes: &'f AstNodes<'a>,
     optimize: bool,
+    /// Passes `{ name }` to `signal` and `computed` for devtools (dev builds).
+    debug_names: bool,
     namer: Namer<'f>,
     reports: std::vec::Vec<Report>,
     /// Enclosing components (`<Name>`) and elements, for diagnostics.
@@ -63,6 +66,7 @@ impl<'a, 'f> Lowerer<'a, 'f> {
         scoping: &'f Scoping,
         nodes: &'f AstNodes<'a>,
         optimize: bool,
+        debug_names: bool,
         namer: Namer<'f>,
         reports: std::vec::Vec<Report>,
     ) -> Self {
@@ -73,6 +77,7 @@ impl<'a, 'f> Lowerer<'a, 'f> {
             scoping,
             nodes,
             optimize,
+            debug_names,
             namer,
             reports,
             path: std::vec::Vec::new(),
@@ -392,6 +397,9 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
             }
             walk::walk_variable_declarator(finder, it);
         });
+        if let Some(hole) = self.lowerer.debug_name(it) {
+            self.holes.push(hole);
+        }
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {

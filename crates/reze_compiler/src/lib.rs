@@ -53,6 +53,9 @@ pub struct Options {
     /// unproxying; O1 and O2 always run.
     pub optimize: bool,
     pub target: Target,
+    /// Names `signal` and `computed` nodes after the variables they are declared into, for
+    /// devtools; meant for dev builds only.
+    pub debug_names: bool,
     /// Program decisions from `link` (SPEC §15); `None` compiles the module on its own.
     pub facts: Option<ModuleFacts>,
 }
@@ -64,6 +67,7 @@ impl Default for Options {
             source_map: true,
             optimize: true,
             target: Target::Client,
+            debug_names: false,
             facts: None,
         }
     }
@@ -140,6 +144,7 @@ pub fn compile(
         &scoping,
         &nodes,
         options.optimize,
+        options.debug_names,
         Namer::new(&scoping),
         reports,
     );

@@ -52,3 +52,9 @@ test("production bundles drop dev-only cycle detection", async () => {
   const production = await bundle(imports, "production");
   expect(production).not.toMatch(/Cycle detected|isOnCheckPath|process\.env/);
 });
+
+test("production bundles drop the devtools hook", async () => {
+  const imports = "signal, computed, effect, root";
+  expect(await bundle(imports, "development")).toMatch(/debugHook/);
+  expect(await bundle(imports, "production")).not.toMatch(/debugHook|rerunning|written/);
+});

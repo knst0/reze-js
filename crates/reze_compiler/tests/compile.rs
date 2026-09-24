@@ -930,3 +930,23 @@ fn a_shadowed_string_function_is_not_the_global() {
     let code = run("function f(String) { return <i class={String(x())} />; }");
     assert!(code.contains("_$className"), "{code}");
 }
+
+#[test]
+fn debug_names_name_signals_and_computeds_after_their_variables() {
+    let source = "import { signal, computed } from \"reze-js\";\n\
+                  const [count, setCount] = signal(0); setCount(1);\n\
+                  const [empty, setEmpty] = signal(); setEmpty(1);\n\
+                  const [kept, setKept] = signal(1, { equals: false }); setKept(2);\n\
+                  const doubled = computed(() => count() * 2,);\n\
+                  const x = <p>{doubled()}{empty()}{kept()}</p>;";
+    let options = Options { debug_names: true, optimize: false, ..Options::default() };
+    let code = compile(source, "a.tsx", &options).unwrap().unwrap().code;
+    assert!(code.contains("signal(0, { name: \"count\" })"), "{code}");
+    assert!(code.contains("signal(undefined, { name: \"empty\" })"), "{code}");
+    assert!(code.contains("signal(1, { equals: false });"), "{code}");
+    assert!(code.contains("computed(() => count() * 2, { name: \"doubled\" },)"), "{code}");
+    assert_valid(&code, SourceType::tsx());
+
+    let plain = compile(source, "a.tsx", &Options { optimize: false, ..Options::default() });
+    assert!(!plain.unwrap().unwrap().code.contains("name:"));
+}

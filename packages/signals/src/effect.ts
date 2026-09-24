@@ -8,6 +8,7 @@ import {
   setActiveSub,
   startTracking,
 } from "./context";
+import { debugHook } from "./devtools";
 import {
   FlagDirty,
   FlagHasChildEffect,
@@ -77,6 +78,9 @@ class EffectNode implements ReactiveNode {
 
 export function effect(fn: () => void | (() => void)): () => void {
   const e = new EffectNode(fn);
+  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+    debugHook.created(e, "effect", undefined, () => undefined);
+  }
   const prevSub = enterOwner(e);
   try {
     enterEffect();

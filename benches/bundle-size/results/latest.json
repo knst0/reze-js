@@ -1,14 +1,14 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-24T23:32:01.308Z",
+  "recordedAt": "2026-09-24T23:40:22.012Z",
   "results": {
     "@rezejs/example-async js": {
-      "raw": 12859,
-      "gzip": 4887
+      "raw": 12861,
+      "gzip": 4888
     },
     "@rezejs/example-counter js": {
-      "raw": 9212,
-      "gzip": 3570
+      "raw": 9214,
+      "gzip": 3568
     },
     "@rezejs/example-islands js": {
       "raw": 11373,
@@ -19,8 +19,8 @@
       "gzip": 6333
     },
     "@rezejs/example-router js": {
-      "raw": 23533,
-      "gzip": 8642
+      "raw": 23535,
+      "gzip": 8639
     }
   }
 }

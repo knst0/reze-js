@@ -14,6 +14,8 @@ pub struct CompileOptions {
     /// `"hydrate"` claims that HTML in the browser. Default: `"client"`.
     #[napi(ts_type = "\"client\" | \"server\" | \"hydrate\"")]
     pub target: Option<String>,
+    /// Passes `{ name }` to `signal`/`computed` after the declared variable, for devtools. Default: `false`.
+    pub debug_names: Option<bool>,
     /// This module's facts from `link`, as returned there.
     pub facts: Option<String>,
 }
@@ -141,6 +143,9 @@ pub fn compile(
                     )));
                 }
             };
+        }
+        if let Some(debug_names) = o.debug_names {
+            opts.debug_names = debug_names;
         }
         if let Some(facts) = o.facts {
             opts.facts = Some(parse_versioned(&facts, "facts")?);

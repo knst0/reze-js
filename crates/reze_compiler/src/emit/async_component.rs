@@ -111,7 +111,17 @@ impl<'a> Emitter<'a, '_> {
         let unknown = if self.is_typescript { "undefined as any" } else { "undefined" };
         let untrack = self.helper(Helper::Untrack);
         let Names {
-            owner, error, set_error, epoch, promise, mine, thrown, signal, done, set_done, ..
+            owner,
+            error,
+            set_error,
+            epoch,
+            promise,
+            mine,
+            thrown,
+            signal,
+            done,
+            set_done,
+            ..
         } = names;
 
         let _ = writeln!(out, "{{\nconst {owner} = {get_owner}();");
