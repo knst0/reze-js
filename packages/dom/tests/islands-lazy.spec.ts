@@ -6,6 +6,7 @@ import { cleanup, fire, tick } from "@rezejs/test-utils";
 import { afterEach, expect, test } from "vitest";
 
 import { hydrateIslands, renderToString } from "../src";
+import type { IslandValue } from "../src/dom";
 import type { JSX } from "../src/jsx";
 
 afterEach(cleanup);
@@ -160,13 +161,14 @@ test("lazy markers carry the mode and hydrate on their trigger", async () => {
   visible!.fire(true);
   await sleep(20);
   tick();
+  expect(buttons(el)[1]).toBe("11");
   fire(el.querySelectorAll("button")[1]!, "click");
   tick();
-  expect(buttons(el)[1]).toBe("11");
+  expect(buttons(el)[1]).toBe("12");
   dispose();
 });
 
-test("events that arrive before the load are lost", async () => {
+test("events that arrive before the load are replayed once the island hydrated", async () => {
   const server = await build("server");
   const html = renderToString(
     () => (server["/page.tsx"]!.Page as () => JSX.Element)(),
@@ -182,9 +184,63 @@ test("events that arrive before the load are lost", async () => {
   expect(idle.textContent).toBe("100");
   await sleep(20);
   tick();
+  expect(idle.textContent).toBe("101");
   fire(idle, "click");
   tick();
-  expect(idle.textContent).toBe("101");
+  expect(idle.textContent).toBe("102");
+  dispose();
+});
+
+async function islandsOf(html: string, load: () => Promise<Record<string, unknown>>) {
+  const client = await build("hydrate");
+  const counter = client["/counter.tsx"] as unknown as Record<string, IslandValue>;
+  const exports = ["Eager", "Visible", "Idle", "Click"];
+  const ids = [...html.matchAll(/<!--\$([^:]+):/g)].map((match) => match[1]!);
+  return Object.fromEntries(
+    ids.map((id, index) => {
+      const name = exports[index]!;
+      const value: IslandValue =
+        name === "Idle" ? { load, mode: "idle", export: name } : counter[name]!;
+      return [id, value];
+    }),
+  );
+}
+
+test("replay: false drops events that arrive before the load", async () => {
+  const server = await build("server");
+  const html = renderToString(
+    () => (server["/page.tsx"]!.Page as () => JSX.Element)(),
+    true,
+  ) as string;
+  const client = await build("hydrate");
+  const el = attach(html);
+  const islands = await islandsOf(html, () => Promise.resolve(client["/counter.tsx"]!));
+  const dispose = hydrateIslands(el, islands, { replay: false });
+  const idle = el.querySelectorAll("button")[2]!;
+  fire(idle, "click");
+  await sleep(20);
+  tick();
+  expect(idle.textContent).toBe("100");
+  dispose();
+});
+
+test("a click that would navigate is held until the island handles it", async () => {
+  const server = await build("server");
+  const html = renderToString(
+    () => (server["/page.tsx"]!.Page as () => JSX.Element)(),
+    true,
+  ) as string;
+  const el = attach(html);
+  const gate = Promise.withResolvers<Record<string, unknown>>();
+  const islands = await islandsOf(html, () => gate.promise);
+  const dispose = hydrateIslands(el, islands);
+  const idle = el.querySelectorAll("button")[2]!;
+  const link = document.createElement("a");
+  link.href = "#elsewhere";
+  idle.append(link);
+  const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+  link.dispatchEvent(click);
+  expect(click.defaultPrevented).toBe(true);
   dispose();
 });
 
