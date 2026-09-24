@@ -32,7 +32,7 @@ export function setup() {
       <h1 title={name()}>Hello {name()}!</h1>
       <Badge label="count" count={count()} />
       <Card title="list" attrs={{ "data-n": count() }}>
-        <ul>
+        <ul class={{ many: items().length > 2 }}>
           <For each={items()}>{(item) => <li>{item()}</li>}</For>
         </ul>
         <Show when={count() > 2} fallback={<p>small</p>}>

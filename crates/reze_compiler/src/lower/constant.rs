@@ -97,7 +97,7 @@ pub fn static_style(e: &Expression<'_>, facts: &Facts) -> Option<String> {
     Some(out)
 }
 
-fn static_property<'b, 'a>(
+pub fn static_property<'b, 'a>(
     property: &'b ObjectPropertyKind<'a>,
 ) -> Option<(&'a str, &'b Expression<'a>)> {
     let ObjectPropertyKind::ObjectProperty(p) = property else { return None };

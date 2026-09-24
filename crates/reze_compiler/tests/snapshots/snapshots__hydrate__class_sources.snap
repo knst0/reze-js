@@ -2,11 +2,11 @@
 source: crates/reze_compiler/tests/snapshots.rs
 expression: "const a = <i class=\"a\" className=\"b\" classList={{ on: on() }} />;"
 ---
-import { template as _$template, claim as _$claim, bind as _$bind, className as _$className } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<i></i>");
+import { template as _$template, claim as _$claim, bind as _$bind, toggleClass as _$toggleClass } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<i class=\"a b\"></i>");
 const a = (() => {
   var _el$ = _$claim(_tmpl$, "i");
-  _$bind(() => _$className(_el$, ["a", "b", { on: on() }]));
+  _$bind(_p$ => _$toggleClass(_el$, "on", !!(on()), _p$));
   return _el$;
 })();
 // warn

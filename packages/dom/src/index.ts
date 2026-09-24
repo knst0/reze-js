@@ -25,6 +25,7 @@ export {
   template,
   templateMathML,
   templateSVG,
+  toggleClass,
   use,
 } from "./dom";
 export type { ClassValue } from "./dom";
@@ -37,6 +38,7 @@ export {
   ssrBoolAttribute,
   ssrChild,
   ssrClass,
+  ssrClassTokens,
   ssrHydrationKey,
   ssrIsland,
   ssrRaw,

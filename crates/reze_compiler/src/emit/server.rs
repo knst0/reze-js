@@ -34,6 +34,10 @@ enum Part<'t, 'a> {
         value: &'t Child<'a>,
         is_bracketed: bool,
     },
+    ClassToggles {
+        toggles: &'t Value<'a>,
+        is_inside_static_class: bool,
+    },
 }
 
 struct Placed<'t, 'a> {
@@ -56,6 +60,7 @@ fn placement(target: BindTarget<'_>) -> Option<Placement> {
         | BindTarget::Prop { html: PropHtml::Attr | PropHtml::Bool, .. } => {
             Some(Placement::Attributes)
         }
+        BindTarget::ClassToggle(_) => None,
         BindTarget::Prop { html: PropHtml::Text | PropHtml::Html, .. } => Some(Placement::Content),
         BindTarget::Prop { html: PropHtml::None, .. } => None,
     }
@@ -108,6 +113,10 @@ impl<'a> Emitter<'a, '_> {
                     }
                 }
                 Op::Memo { id, test } => memo_tests[id.0 as usize] = Some(test),
+                Op::ServerClass { node: id, toggles, inside } => parts.push(Placed {
+                    at: inside.unwrap_or_else(|| node(*id).attributes_end()),
+                    part: Part::ClassToggles { toggles, is_inside_static_class: inside.is_some() },
+                }),
                 Op::Insert { parent, value, anchor, .. } => {
                     let (at, is_bracketed) = match anchor {
                         Anchor::Only => (node(*parent).content_end(), false),
@@ -185,6 +194,17 @@ impl<'a> Emitter<'a, '_> {
                 let _ = write!(out, "{key}()");
             }
             Part::Set { target, value } => self.server_set(out, *target, value),
+            Part::ClassToggles { toggles, is_inside_static_class } => {
+                let helper = self.helper(if *is_inside_static_class {
+                    Helper::SsrClassTokens
+                } else {
+                    Helper::SsrClass
+                });
+                out.push(helper);
+                out.push("(");
+                self.value(out, toggles);
+                out.push(")");
+            }
             Part::Spread { props, is_svg, spread_temp } => {
                 let spread = self.helper(Helper::SsrSpread);
                 let _ = write!(out, "{spread}(");
@@ -219,7 +239,7 @@ impl<'a> Emitter<'a, '_> {
             BindTarget::Style => (Helper::SsrStyle, None),
             BindTarget::Prop { html: PropHtml::Text, .. } => (Helper::SsrChild, None),
             BindTarget::Prop { html: PropHtml::Html, .. } => (Helper::SsrRaw, None),
-            BindTarget::Prop { html: PropHtml::None, .. } => return,
+            BindTarget::Prop { html: PropHtml::None, .. } | BindTarget::ClassToggle(_) => return,
         };
         let helper = self.helper(helper);
         out.push(helper);

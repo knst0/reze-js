@@ -329,6 +329,14 @@ pub enum Op<'a> {
         id: MemoId,
         test: Embed<'a>,
     },
+    /// The server's part of a class compiled to toggles (SPEC §7.3): `ssrClassTokens(toggles)`
+    /// at `inside`, the end of the static `class` value in the template, or `ssrClass(toggles)`
+    /// after the attributes when the template has no static `class`. The client ignores it.
+    ServerClass {
+        node: NodeId,
+        toggles: Value<'a>,
+        inside: Option<u32>,
+    },
     /// `inserts_after`: later inserts of the same parent that share `anchor`.
     Insert {
         parent: NodeId,
@@ -356,15 +364,20 @@ pub enum BindTarget<'a> {
     Attr(&'a str),
     AttrNs(&'static str, &'a str),
     Bool(&'a str),
-    Prop { name: &'a str, html: PropHtml },
+    Prop {
+        name: &'a str,
+        html: PropHtml,
+    },
     Class,
+    /// `toggleClass(el, token, value, prev)` (SPEC §7.3); the server renders `Op::ServerClass`.
+    ClassToggle(&'a str),
     Style,
 }
 
 impl BindTarget<'_> {
     /// Setters that diff against the previous value they returned.
     pub fn threads_prev(self) -> bool {
-        matches!(self, BindTarget::Style)
+        matches!(self, BindTarget::Style | BindTarget::ClassToggle(_))
     }
 }
 
@@ -390,6 +403,10 @@ pub enum Value<'a> {
     Jsx(Jsx<'a>),
     /// Several class sources merged into one array, in source order.
     ClassParts(Vec<'a, Value<'a>>),
+    /// `!!(expr)`: the state of one toggled class token.
+    Truthy(Embed<'a>),
+    /// `{ "token": expr, … }`: the toggled class tokens the server renders.
+    ClassToggles(Vec<'a, (&'a str, Embed<'a>)>),
 }
 
 pub enum Handler<'a> {

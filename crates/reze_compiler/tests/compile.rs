@@ -166,7 +166,12 @@ fn literal_style_and_class_values_fold_into_the_template() {
     let code = run(r#"const a = <i class={["a", { a: false }, "b"]} />;"#);
     assert_eq!(templates(&code), [r#"<i class="b"></i>"#]);
     let code = run("const a = <div style={{color: c}} class={{on: on()}} />;");
-    assert!(code.contains("_$style") && code.contains("_$className"), "{code}");
+    assert!(
+        code.contains("_$style") && code.contains(r#"_$toggleClass(_el$, "on", !!(on()), _p$)"#),
+        "{code}"
+    );
+    let code = run("const a = <div class={cls()} />;");
+    assert!(code.contains("_$className"), "{code}");
 }
 
 #[test]
@@ -220,8 +225,8 @@ fn textarea_and_select_values_are_properties_set_after_their_children() {
 #[test]
 fn class_sources_merge_and_duplicates_keep_the_last() {
     let out =
-        output("const a = <i class=\"a\" classList={{ on: on() }} title=\"x\" title={t()} />;");
-    assert!(out.code.contains(r#"["a", { on: on() }]"#), "{}", out.code);
+        output("const a = <i class={cls()} classList={{ on: on() }} title=\"x\" title={t()} />;");
+    assert!(out.code.contains(r#"[cls(), { on: on() }]"#), "{}", out.code);
     assert!(!out.code.contains("title=\\\"x"), "{}", out.code);
     assert_eq!(codes(&out.diagnostics), [Code::ClassAlias, Code::DuplicateAttribute]);
 }

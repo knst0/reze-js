@@ -1,30 +1,30 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-24T22:15:39.370Z",
+  "recordedAt": "2026-09-24T22:24:09.624Z",
   "results": {
     "create 1k": {
-      "medianMs": 33.3
+      "medianMs": 32.8
     },
     "update every 10th": {
-      "medianMs": 9.1
+      "medianMs": 10.3
     },
     "swap rows": {
-      "medianMs": 3
+      "medianMs": 3.4
     },
     "select row": {
       "medianMs": 0.1
     },
     "remove row": {
-      "medianMs": 2.8
+      "medianMs": 3.1
     },
     "append 1k": {
-      "medianMs": 44.3
+      "medianMs": 45.3
     },
     "create 10k": {
-      "medianMs": 416.8
+      "medianMs": 410.7
     },
     "clear 10k": {
-      "medianMs": 38.2
+      "medianMs": 41.3
     }
   }
 }
