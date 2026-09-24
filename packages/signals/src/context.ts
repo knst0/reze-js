@@ -67,19 +67,23 @@ export function lookupOwner<T>(pick: (owner: ReactiveNode) => T | undefined): T 
   return undefined;
 }
 
-let errorHook: ((node: ReactiveNode, error: unknown) => void) | undefined;
+let errorHook: ((node: ReactiveNode, error: unknown) => boolean) | undefined;
 
-/** Installs where errors thrown by scheduled effect and binding runs go (`catchError`). */
-export function setErrorHook(hook: (node: ReactiveNode, error: unknown) => void): void {
+/** Installs where errors thrown by computations go (`catchError`); it returns whether it handled one. */
+export function setErrorHook(hook: (node: ReactiveNode, error: unknown) => boolean): void {
   errorHook = hook;
+}
+
+/** Whether the error hook handled an error `node` threw. */
+export function isErrorHandled(node: ReactiveNode, error: unknown): boolean {
+  return errorHook !== undefined && errorHook(node, error);
 }
 
 /** Hands an error a scheduled run of `node` threw to the error hook, or rethrows it. */
 export function reportError(node: ReactiveNode, error: unknown): void {
-  if (errorHook === undefined) {
+  if (!isErrorHandled(node, error)) {
     throw error;
   }
-  errorHook(node, error);
 }
 
 /** Makes `sub` active and records it as owned by the current owner. */

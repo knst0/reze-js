@@ -30,20 +30,20 @@ class ErrorHandlerNode implements ReactiveNode {
   }
 }
 
-function handleError(node: ReactiveNode, error: unknown): void {
+function handleError(node: ReactiveNode, error: unknown): boolean {
   for (let owner = parentOwner(node); owner !== undefined; owner = parentOwner(owner)) {
     if (owner instanceof ErrorHandlerNode) {
       owner.handler(error);
-      return;
+      return true;
     }
   }
-  throw error;
+  return false;
 }
 
 /**
  * Runs `fn` untracked under an owner that catches errors: a throw from `fn` itself returns
- * `undefined`, and a throw from any effect or binding created inside, when it re-runs later,
- * goes to `handler` too. Nested `catchError`s catch first; errors a handler throws go outward.
+ * `undefined`, and a throw from any effect, binding or computed created inside goes to `handler`
+ * too (a computed then keeps its previous value). Nested `catchError`s catch first; errors a handler throws go outward.
  * Lives as long as the current owner.
  */
 export function catchError<T>(fn: () => T, handler: (error: unknown) => void): T | undefined {

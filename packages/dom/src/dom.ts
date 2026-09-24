@@ -812,6 +812,34 @@ export function mergeProps(...sources: Any[]): Props {
   return target;
 }
 
+/**
+ * A live view of `props` without `keys` (or without the keys `hidden` accepts): nothing is read
+ * until a key is used, and getters stay reactive. Spreading the view skips the hidden keys.
+ */
+export function omit<T extends Props, K extends readonly (keyof T)[]>(
+  props: T,
+  ...keys: K
+): Omit<T, K[number]>;
+export function omit<T extends Props>(
+  props: T,
+  hidden: (key: keyof T & (string | symbol)) => boolean,
+): Partial<T>;
+export function omit(props: Props, ...keys: unknown[]): Props {
+  const first = keys[0];
+  const isHidden: (key: PropertyKey) => boolean =
+    typeof first === "function"
+      ? (first as (key: PropertyKey) => boolean)
+      : (key) => keys.includes(key);
+  return new Proxy(props, {
+    get: (target, key, receiver) =>
+      isHidden(key) ? undefined : Reflect.get(target, key, receiver),
+    has: (target, key) => !isHidden(key) && Reflect.has(target, key),
+    ownKeys: (target) => Reflect.ownKeys(target).filter((key) => !isHidden(key)),
+    getOwnPropertyDescriptor: (target, key) =>
+      isHidden(key) ? undefined : Reflect.getOwnPropertyDescriptor(target, key),
+  });
+}
+
 /** Splits props by key groups into lazy views: one per group plus the rest. */
 export function splitProps<T extends Props>(props: T, ...groups: (keyof T)[][]): Props[] {
   const out: Props[] = groups.map(() => ({}));
