@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./context": "./src/context.ts",
+    "./devtools": "./src/devtools.ts",
     "./flags": "./src/flags.ts",
     "./graph": "./src/graph.ts",
     "./render": "./src/render.ts",

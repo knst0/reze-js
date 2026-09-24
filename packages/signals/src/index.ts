@@ -1,5 +1,5 @@
 export { trackAsync } from "./async";
-export { computed, isComputed } from "./computed";
+export { computed, isComputed, type ComputedOptions } from "./computed";
 export { getOwner } from "./context";
 export { effect, isEffect } from "./effect";
 export { effectScope, isEffectScope } from "./effectScope";

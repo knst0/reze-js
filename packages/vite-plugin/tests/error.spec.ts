@@ -93,6 +93,7 @@ test("options reach the compiler and the query is stripped from the filename", (
     sourceMap: false,
     optimize: true,
     target: "client",
+    debugNames: false,
   });
 });
 

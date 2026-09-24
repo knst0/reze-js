@@ -7,6 +7,7 @@ import {
   startTracking,
   track,
 } from "./context";
+import { debugHook } from "./devtools";
 import {
   FlagDirty,
   FlagHasChildEffect,
@@ -63,7 +64,17 @@ class ComputedNode<T = unknown> implements ReactiveNode {
   }
 }
 
-export function computed<T>(getter: (previousValue?: T) => T): () => T {
+export interface ComputedOptions {
+  /** The name devtools show; ignored in production builds. */
+  name?: string;
+}
+
+export function computed<T>(getter: (previousValue?: T) => T, options?: ComputedOptions): () => T {
+  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+    const node = new ComputedNode(getter, getOwner());
+    debugHook.created(node, "computed", options?.name, () => node.value);
+    return (computedOper<T>).bind(node);
+  }
   return (computedOper<T>).bind(new ComputedNode(getter, getOwner()));
 }
 

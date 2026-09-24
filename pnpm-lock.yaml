@@ -290,6 +290,25 @@ importers:
         specifier: ^3.10.5
         version: 3.10.5(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@26.6.2)
 
+  packages/devtools:
+    dependencies:
+      '@rezejs/signals':
+        specifier: workspace:*
+        version: link:../signals
+    devDependencies:
+      '@rezejs/dom':
+        specifier: workspace:*
+        version: link:../dom
+      '@rezejs/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+      '@rezejs/vite-plugin':
+        specifier: workspace:*
+        version: link:../vite-plugin
+      happy-dom:
+        specifier: ^20.14.5
+        version: 20.14.5
+
   packages/dom:
     dependencies:
       '@rezejs/signals':

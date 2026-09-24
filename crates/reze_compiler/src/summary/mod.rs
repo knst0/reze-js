@@ -938,6 +938,7 @@ impl<'a> Builder<'_, 'a> {
                 self.scoping,
                 self.nodes,
                 false,
+                false,
                 Namer::new(self.scoping),
                 Vec::new(),
             );

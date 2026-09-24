@@ -33,6 +33,7 @@
  * only contains the kinds it actually constructs.
  */
 
+import { debugHook } from "./devtools";
 import {
   FlagDirty,
   FlagMutable,
@@ -93,6 +94,9 @@ export function disposeChildren(sub: ReactiveNode): void {
 
 /** Detaches `node` from its deps and its owner. */
 export function disposeNode(node: ReactiveNode): void {
+  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+    debugHook.disposed(node);
+  }
   node.flags = FlagNone;
   disposeAllDepsInReverse(node);
   const sub = node.subs;

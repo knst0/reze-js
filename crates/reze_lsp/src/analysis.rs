@@ -34,6 +34,7 @@ pub fn compile_single(source: &str, filename: &str, config: &Config) -> Vec<Diag
         source_map: false,
         optimize: config.optimize,
         target: Target::Client,
+        debug_names: false,
         facts: None,
     };
     match compile(source, filename, &options) {
@@ -93,6 +94,7 @@ pub fn analyze_program(
             source_map: false,
             optimize: config.optimize,
             target: Target::Client,
+            debug_names: false,
             facts: Some(facts.clone()),
         };
         match compile(text, id, &options) {

@@ -252,7 +252,14 @@ export default function reze(options: Options = {}): Plugin {
     const isCompiled = facts !== undefined || (include.test(id) && !exclude.test(id));
     const target = ssr ? "server" : hydratable ? "hydrate" : "client";
     const out = isCompiled
-      ? compile(code, filename, { moduleName, sourceMap: sourcemap, optimize, target, facts })
+      ? compile(code, filename, {
+          moduleName,
+          sourceMap: sourcemap,
+          optimize,
+          target,
+          facts,
+          debugNames: config?.command === "serve",
+        })
       : null;
     if (out === null) {
       const flagged = replaceFlags(code, ssr);

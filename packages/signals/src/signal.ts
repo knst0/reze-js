@@ -1,5 +1,6 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
 import { effectDepth, track } from "./context";
+import { debugHook } from "./devtools";
 import { FlagDirty, FlagMutable } from "./flags";
 import { propagate, type Link, type ReactiveNode, shallowPropagate } from "./graph";
 import { batchDepth, scheduleFlush } from "./scheduler";
@@ -13,6 +14,8 @@ export type Equals<T> = false | ((prev: T, next: T) => boolean);
 export interface SignalOptions<T> {
   /** Suppresses notification when it returns `true`; `false` always notifies. Default `Object.is`. */
   equals?: Equals<T>;
+  /** The name devtools show; ignored in production builds. */
+  name?: string;
 }
 
 class SignalNode<T = unknown> implements ReactiveNode {
@@ -48,6 +51,9 @@ export function signal<T>(
   options?: SignalOptions<T | undefined>,
 ): [Getter<T | undefined>, Setter<T | undefined>] {
   const node = new SignalNode(initialValue, options?.equals ?? Object.is);
+  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+    debugHook.created(node, "signal", options?.name, () => node.pendingValue);
+  }
   return [(signalGet<T | undefined>).bind(node), (signalSet<T | undefined>).bind(node)];
 }
 
@@ -75,6 +81,9 @@ function signalSet<T>(this: SignalNode<T>, next: T | ((prev: T) => T)): T {
   if (differs(this.equals, prev, next)) {
     this.pendingValue = next;
     this.flags = FlagMutable | FlagDirty;
+    if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+      debugHook.written(this);
+    }
     const subs = this.subs;
     if (subs !== undefined) {
       propagate(subs, effectDepth !== 0);

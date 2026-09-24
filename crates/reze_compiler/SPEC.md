@@ -47,6 +47,7 @@ pub struct Options {
     pub source_map: bool,    // true
     pub optimize: bool,      // true: O3, O5 (§8); O1, O2 работают всегда
     pub target: Target,      // Client | Server | Hydrate (§14); Client
+    pub debug_names: bool,   // false: имена `signal`/`computed` для devtools (§7.13)
 }
 pub struct Output { pub code: String, pub map: Option<String>, pub diagnostics: Vec<Diagnostic> }
 ```
@@ -58,7 +59,7 @@ pub struct Output { pub code: String, pub map: Option<String>, pub diagnostics: 
 - Диалект (`.tsx`, `.jsx`, `.ts`, `.js`) определяется по `filename`. Неизвестное расширение парсится как TSX.
   Синтаксис TypeScript (`as any`, аннотации) генерируется только для TS-диалектов.
 - Каждый байт исходника вне заменяемых участков (§4, «дыры») копируется без изменений, TypeScript тоже.
-- `reze_napi`: `compile(source, filename, { moduleName, sourceMap, optimize, target }) → { code?, map?, diagnostics } | null`,
+- `reze_napi`: `compile(source, filename, { moduleName, sourceMap, optimize, target, debugNames }) → { code?, map?, diagnostics } | null`,
   `target: "client" | "server" | "hydrate"`.
   Ошибки компиляции не бросаются: при `Err` возвращается `{ diagnostics }` без `code` и `map`, где есть
   хотя бы одна `error`. Бросается только сбой самого вызова (неверные аргументы).
@@ -394,6 +395,17 @@ tagged template или доступ к члену вне вложенных фу
 
 Применение: `class` из единственного выражения вида `String` компилируется в `setAttribute(el, "class", v)`
 (server — `ssrAttribute("class", v)`), без `className`.
+
+### 7.13 Отладочные имена (`debug_names`)
+
+Для devtools (`@rezejs/devtools`). Vite-плагин включает их только в `vite serve`, в сборке они выключены.
+
+- `const [count, setCount] = signal(init)` → `signal(init, { name: "count" })`: имя — первый элемент
+  деструктуризации-массива. `signal()` без аргументов → `signal(undefined, { name: "count" })`.
+- `const doubled = computed(fn)` → `computed(fn, { name: "doubled" })`.
+- Только вызовы примитивов (§8.0) с не более чем одним аргументом без spread: вызов с опциями не меняется.
+  Имя вставляется сразу после первого аргумента, висячая запятая остаётся на месте.
+- Объявления, которые переписывает оптимизация (O3, O4, store), остаются как есть: без имени.
 
 ## 8. Оптимизации
 

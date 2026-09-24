@@ -79,6 +79,8 @@ pub enum HoleKind<'a> {
     },
     /// Source dropped without replacement: the declaration of an inlined computed (O4).
     Remove,
+    /// Text inserted at an empty span: the `{ name }` option of a named `signal`/`computed`.
+    Insert(&'a str),
     /// A read of a folded prop → `(literal)`, `key: (literal)` for a shorthand property (§15.16).
     FoldedProp {
         source: &'a str,

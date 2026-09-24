@@ -1,4 +1,5 @@
 import { root, untrack } from "@rezejs/signals";
+import { debugHook } from "@rezejs/signals/devtools";
 import { renderEffect as bind } from "@rezejs/signals/render";
 
 import { Hydration } from "./features";
@@ -85,6 +86,11 @@ export function templateMathML(html: string): () => Node {
 
 /** Calls a component once, untracked: its reads never re-run the parent binding. */
 export function createComponent<P>(Comp: (props: P) => JSX.Element, props: P): JSX.Element {
+  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+    return debugHook.component(Comp.name, () =>
+      Hydration ? withComponentKeys(() => untrack(() => Comp(props))) : untrack(() => Comp(props)),
+    );
+  }
   if (!Hydration) return untrack(() => Comp(props));
   return withComponentKeys(() => untrack(() => Comp(props)));
 }

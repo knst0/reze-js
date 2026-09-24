@@ -1,4 +1,5 @@
 import { adopt, getOwner, setActiveOwner, setActiveSub } from "./context";
+import { debugHook } from "./devtools";
 import { FlagNone } from "./flags";
 import { disposeNode, type Link, type ReactiveNode } from "./graph";
 import { endBatch, startBatch } from "./scheduler";
@@ -48,6 +49,9 @@ class CleanupNode implements ReactiveNode {
  */
 export function root<T>(fn: (dispose: () => void) => T): T {
   const node = new RootNode(getOwner());
+  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+    debugHook.created(node, "root", undefined, () => undefined);
+  }
   const prevSub = setActiveSub(undefined);
   const prevOwner = setActiveOwner(node);
   try {

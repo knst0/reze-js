@@ -420,6 +420,7 @@ impl<'a, 's> Emitter<'a, 's> {
                     out.push(")");
                 }
                 HoleKind::Remove => {}
+                HoleKind::Insert(text) => out.push(text),
                 HoleKind::FoldedProp { source, shorthand_key } => {
                     if let Some(key) = shorthand_key {
                         out.push(key);
