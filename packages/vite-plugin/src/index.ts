@@ -77,7 +77,7 @@ export interface Options {
    */
   modulePreloadPolyfill?: boolean;
   /** Forces runtime features on regardless of what the program uses. */
-  features?: Partial<Record<"hydration" | "suspense", true>>;
+  features?: Partial<Record<"hydration" | "loading", true>>;
   diagnostics?: {
     /** File every diagnostic (all severities, including `info`) is appended to as one JSON line. */
     jsonl?: string;
@@ -102,7 +102,7 @@ export interface CompileError extends Error {
 
 const SkillGuide = "node_modules/@rezejs/compiler/skills/compiler-diagnostics/SKILL.md";
 const RuntimePackages = ["reze-js", "@rezejs/dom", "@rezejs/signals"];
-const Flags = { hydration: "__REZE_HYDRATION__", suspense: "__REZE_SUSPENSE__" } as const;
+const Flags = { hydration: "__REZE_HYDRATION__", loading: "__REZE_LOADING__" } as const;
 const FlagPattern = /\b__REZE_([A-Z]+)__\b/g;
 const ProgramFiles = /\.[cm]?[jt]sx?$/;
 const ScriptTag = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;

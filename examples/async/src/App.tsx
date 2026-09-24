@@ -1,4 +1,4 @@
-import { Show, Suspense, signal } from "reze-js";
+import { Show, Loading, signal } from "reze-js";
 
 import { UserCard } from "./UserCard";
 
@@ -19,9 +19,9 @@ export function App() {
       <Show when={id() === 1}>
         <p class="note">Click “user 1” then “user 2” fast: 1 resolves last but never paints.</p>
       </Show>
-      <Suspense fallback={<p class="note">loading…</p>}>
+      <Loading fallback={<p class="note">loading…</p>}>
         <UserCard id={id()} />
-      </Suspense>
+      </Loading>
     </section>
   );
 }

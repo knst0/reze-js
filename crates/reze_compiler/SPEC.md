@@ -358,6 +358,9 @@ Async-компонент переписывается в синхронную ф
 
 Форма вывода (на каждый `await` `i`: сигналы `_val{i}$`/`_settled{i}$`, один `effect`-шаг загрузки,
 связанный по epoch, и финальный `memo`, который бросает ошибку или возвращает хвост) такая же, как в v0.
+Финальный `memo` читает счётчик `_done$`, который увеличивается, когда осела последняя загрузка, а значения
+шагов — через `untrack`: пока идёт новая загрузка, он не пересчитывается и сохраняет прежнее содержимое (его
+удерживают переходы и `on` у `Loading`). `trackPending` считает компонент ожидающим, пока не осел любой шаг.
 `as any` на начальных значениях сигналов генерируется только для TS-диалектов. Аннотация `Promise<T>`
 разворачивается в `T`. Любая другая аннотация `Promise…` даёт `ASYNC_RETURN_TYPE`. Кандидат, не прошедший
 план, даёт `ASYNC_COMPONENT_SHAPE` (с `data.reason`) и остаётся как написан. Async-компоненты без
@@ -686,7 +689,7 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path, relat
 ### 14.4 Границы M2
 
 - `renderToString` синхронный: effects не выполняются, async-компоненты рендерят состояние до загрузки.
-  Стриминг и Suspense на сервере — вне M2; `Suspense`, `Portal` и `Dynamic` со строковым тегом обращаются к
+  Стриминг и Loading на сервере — вне M2; `Loading`, `Portal` и `Dynamic` со строковым тегом обращаются к
   `document` и на сервере не работают.
 - `<select value>` сервер не отражает в HTML; клиент выставляет свойство при гидратации. `value`, `checked`,
   `selected` сервер пишет атрибутами.
@@ -771,7 +774,7 @@ compile(source, filename, { …, facts?: string })
 ```ts
 program?: boolean | { include?: RegExp; exclude?: RegExp }; // build: true; в serve игнорируется
 islands?: boolean;                                           // требует hydratable; по умолчанию false
-features?: Partial<Record<"hydration" | "suspense", true>>;  // принудительно включает флаг (§15.11)
+features?: Partial<Record<"hydration" | "loading", true>>;  // принудительно включает флаг (§15.11)
 ```
 
 - `buildStart`: программа — все файлы под `config.root` (рекурсивно, кроме `node_modules`, каталогов на `.`
@@ -806,7 +809,7 @@ features?: Partial<Record<"hydration" | "suspense", true>>;  // принудит
 - Примитивы (§8.0) распознаются и через реэкспорты программы (`lib.ts: export { signal as s } from "reze-js"`),
   и через namespace: `R.signal(…)`, где `R` — namespace-импорт модуля рантайма или модуля программы,
   реэкспортирующего примитив. Namespace модуля рантайма распознаётся и в модульном режиме. Примитивы:
-  `signal`, `computed`, `store` (§15.6); для §15.9 и §15.11 — `renderToString`, `hydrate`, `Suspense`.
+  `signal`, `computed`, `store` (§15.6); для §15.9 и §15.11 — `renderToString`, `hydrate`, `Loading`.
 - Использование привязки B — reference в модуле программы на B или на импорт, разрешённый в B, либо
   `ns.name`, разрешённое в B. Классы:
   - `Call0` — callee вызова без аргументов, не опционального, без type arguments (`x()`, `ns.x()`);
@@ -1044,7 +1047,7 @@ JSX (`summarize` выполняет lower и собирает их), плюс э
 | Флаг                 | Значение                                                                   | Что убирает рантайм                        |
 | -------------------- | -------------------------------------------------------------------------- | ------------------------------------------ |
 | `__REZE_HYDRATION__` | target сборки `server` или `hydrate` (плагин: SSR-сборка или `hydratable`) | области ключей в `createComponent` (§14.3) |
-| `__REZE_SUSPENSE__`  | в программе есть использование (§15.4) экспорта рантайма `Suspense`        | тело `trackPending`                        |
+| `__REZE_LOADING__`   | в программе есть использование (§15.4) экспорта рантайма `Loading`         | тело `trackPending`                        |
 
 - Рантайм читает флаг только через `packages/dom/src/features.ts`:
   `export const Hydration = typeof __REZE_HYDRATION__ === "boolean" ? __REZE_HYDRATION__ : true;`. Без
@@ -1053,7 +1056,7 @@ JSX (`summarize` выполняет lower и собирает их), плюс э
   содержит (`transform` с фильтром по коду). В serve и без программы все флаги `true`; `features` из опций
   включает флаг принудительно.
 - `FEATURE_FLAG_MISMATCH` (`verify`): модуль вне программы использует экспорт рантайма, чья фича выключена
-  флагом (например, `Suspense` при `__REZE_SUSPENSE__ = false`).
+  флагом (например, `Loading` при `__REZE_LOADING__ = false`).
 - Флаг добавляется только вместе со строкой этой таблицы и местом в рантайме. Флаг, который не уменьшает
   бандл в `benches/bundle-size`, не добавляется. Контекстов в рантайме нет, поэтому `__REZE_CONTEXT__` появится
   только вместе с ними.
@@ -1282,7 +1285,7 @@ export function renderToStream(
 
 - Шелл стримится сразу, синхронно: async-компоненты дают состояние до загрузки (как `renderToString`, §14.4).
   Каждый незавершённый async-компонент — плейсхолдер `<!--$s:<id>--><!--/$s-->`, где `id` — ключ области
-  компонента (§14.3) плюс индекс await. `Suspense` на сервере всегда показывает children; стрим дополняет их
+  компонента (§14.3) плюс индекс await. `Loading` на сервере всегда показывает children; стрим дополняет их
   чанками.
 - Как промис резолвится, сервер перерендеривает границу с закешированными значениями await и стримит чанк
   `<template data-reze-chunk="<id>" data-reze-values="<json>">…html…</template>`. Значения сериализуются тем

@@ -1,10 +1,10 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
-assertion_line: 254
+assertion_line: 259
 expression: render(&dir)
 ---
 closed: ["/state.ts"]
-features: {"suspense": false}
+features: {"loading": false}
 
 // ==== /main.tsx [client] ====
 import { render } from "reze-js";

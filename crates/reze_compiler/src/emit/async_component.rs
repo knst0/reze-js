@@ -27,6 +27,9 @@ struct Names<'a> {
     mine: &'a str,
     thrown: &'a str,
     signal: &'a str,
+    /// Bumped each time every step settled: the result memo re-runs only then.
+    done: &'a str,
+    set_done: &'a str,
     steps: std::vec::Vec<StepNames<'a>>,
 }
 
@@ -82,6 +85,8 @@ impl<'a> Emitter<'a, '_> {
             mine: self.fresh("_my$"),
             thrown: self.fresh("_ex$"),
             signal: self.helper(Helper::Signal),
+            done: self.fresh("_done$"),
+            set_done: self.fresh("_setDone$"),
             steps: (0..steps)
                 .map(|_| StepNames {
                     value: self.fresh("_val$"),
@@ -104,7 +109,10 @@ impl<'a> Emitter<'a, '_> {
         let track_async = self.helper(Helper::TrackAsync);
         let memo = self.helper(Helper::Memo);
         let unknown = if self.is_typescript { "undefined as any" } else { "undefined" };
-        let Names { owner, error, set_error, epoch, promise, mine, thrown, signal, .. } = names;
+        let untrack = self.helper(Helper::Untrack);
+        let Names {
+            owner, error, set_error, epoch, promise, mine, thrown, signal, done, set_done, ..
+        } = names;
 
         let _ = writeln!(out, "{{\nconst {owner} = {get_owner}();");
         if let Some(streaming) = &streaming {
@@ -121,10 +129,18 @@ impl<'a> Emitter<'a, '_> {
                 writeln!(out, "const [{}, {}] = {signal}(false);", step.settled, step.set_settled);
         }
         let _ = writeln!(out, "const [{error}, {set_error}] = {signal}({unknown});");
+        let _ = writeln!(out, "const [{done}, {set_done}] = {signal}(0);");
         let _ = writeln!(out, "let {epoch} = 0;");
         let _ = writeln!(out, "{on_cleanup}(() => {{ {epoch}++; }});");
-        let last = names.steps.last().map_or("", |step| step.settled);
-        let _ = writeln!(out, "{track_pending}(() => !{last}() && {error}() === undefined);");
+        let _ = write!(out, "{track_pending}(() => (");
+        for (index, step) in names.steps.iter().enumerate() {
+            if index > 0 {
+                out.push(" || ");
+            }
+            let _ = write!(out, "!{}()", step.settled);
+        }
+        let _ = writeln!(out, ") && {error}() === undefined);");
+        let last_index = component.steps.len() - 1;
         for (index, step) in component.steps.iter().enumerate() {
             let _ = writeln!(out, "{effect}(() => {{");
             if index > 0 {
@@ -155,9 +171,14 @@ impl<'a> Emitter<'a, '_> {
             }
             out.push(";\n");
             let _ = writeln!(out, "const {mine} = ++{epoch};");
+            let bump = if index == last_index {
+                format!(" {set_done}((n) => n + 1);")
+            } else {
+                String::new()
+            };
             let _ = writeln!(
                 out,
-                "{track_async}({owner}, {promise}, () => {mine} === {epoch}, (_v) => {{ {}(_v); {}(true); }}, {set_error});",
+                "{track_async}({owner}, {promise}, () => {mine} === {epoch}, (_v) => {{ {}(_v); {}(true);{bump} }}, {set_error});",
                 own.set_value, own.set_settled,
             );
             out.push("});\n");
@@ -178,7 +199,15 @@ impl<'a> Emitter<'a, '_> {
             out,
             "const {thrown} = {error}();\nif ({thrown} !== undefined) throw {thrown};"
         );
-        self.await_prelude(out, &component.steps, &names.steps, "return undefined;");
+        let _ = writeln!(out, "if ({done}() === 0) return undefined;");
+        for (step, name) in component.steps.iter().zip(&names.steps) {
+            let _ = write!(out, "const {} = {untrack}({});\n{} ", name.read, name.value, step.kind);
+            self.src(out, step.pattern);
+            if let Some(annotation) = step.annotation {
+                self.src(out, annotation);
+            }
+            let _ = writeln!(out, " = {};", name.read);
+        }
         for statement in &component.tail {
             self.embed(out, statement);
             out.push("\n");

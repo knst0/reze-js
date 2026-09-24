@@ -4,17 +4,17 @@ assertion_line: 259
 expression: render(&dir)
 ---
 closed: []
-features: {"suspense": true}
+features: {"loading": true}
 
 // ==== /Loader.tsx [client] ====
-import { Suspense } from "reze-js";
+import { Loading } from "reze-js";
 import { createComponent as _$createComponent, template as _$template, insert as _$insert } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<p>loading</p>"),
   _tmpl$2 = /*#__PURE__*/ _$template("<p></p>");
 
 export function Loader(props) {
   return (
-    _$createComponent(Suspense, { get fallback() { return _tmpl$(); }, get children() { return (() => {
+    _$createComponent(Loading, { get fallback() { return _tmpl$(); }, get children() { return (() => {
   var _el$ = _tmpl$2();
   _$insert(_el$, () => props.label);
   return _el$;
@@ -23,7 +23,7 @@ export function Loader(props) {
 }
 
 // info
-[CLIENT_COMPONENT] `Loader` runs on the client: `<Suspense>` is a runtime component, which runs on the client.
+[CLIENT_COMPONENT] `Loader` runs on the client: `<Loading>` is a runtime component, which runs on the client.
   at /Loader.tsx:3:17
   2 | 
 > 3 | export function Loader(props) {
@@ -31,26 +31,26 @@ export function Loader(props) {
   4 |   return (
   note: first client-only part (/Loader.tsx:5:6)
 // ==== /Loader.tsx [server] ====
-import { Suspense } from "reze-js";
+import { Loading } from "reze-js";
 import { createComponent as _$createComponent, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
 const _tmpl$ = ["<p", ">loading</p>"],
   _tmpl$2 = ["<p", ">", "</p>"];
 
 export function Loader(props) {
   return (
-    _$createComponent(Suspense, { get fallback() { return _$ssr(_tmpl$, _$ssrHydrationKey()); }, get children() { return _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(props.label)); } })
+    _$createComponent(Loading, { get fallback() { return _$ssr(_tmpl$, _$ssrHydrationKey()); }, get children() { return _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(props.label)); } })
   );
 }
 
 // ==== /Loader.tsx [hydrate] ====
-import { Suspense } from "reze-js";
+import { Loading } from "reze-js";
 import { createComponent as _$createComponent, template as _$template, claim as _$claim, claimInsert as _$claimInsert } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<p>loading</p>"),
   _tmpl$2 = /*#__PURE__*/ _$template("<p></p>");
 
 export function Loader(props) {
   return (
-    _$createComponent(Suspense, { get fallback() { return _$claim(_tmpl$, "p"); }, get children() { return (() => {
+    _$createComponent(Loading, { get fallback() { return _$claim(_tmpl$, "p"); }, get children() { return (() => {
   var _el$ = _$claim(_tmpl$2, "p");
   _$claimInsert(_el$, () => props.label);
   return _el$;
@@ -81,7 +81,7 @@ export function Page() {
     |                 ^^^^
   4 |   return (
 // info
-[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features Suspense,claim,claimInsert,createComponent,delegateEvents,signal,template.
+[ISLAND] An island boundary: the server serializes the props and the browser hydrates only this component, with the runtime features Loading,claim,claimInsert,createComponent,delegateEvents,signal,template.
   in <Page> › main
   at /Page.tsx:7:8
   6 |       <h1>Docs</h1>

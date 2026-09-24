@@ -1,10 +1,10 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
-assertion_line: 254
+assertion_line: 259
 expression: render(&dir)
 ---
 closed: ["/store.ts"]
-features: {"suspense": false}
+features: {"loading": false}
 
 // ==== /app.tsx [client] ====
 import { setState$todos as _setState$todos, state$todos as _state$todos } from "./store";

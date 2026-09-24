@@ -59,7 +59,9 @@ export {
 } from "@rezejs/signals";
 export { createContext } from "./context";
 export type { Context } from "./context";
-export { Errored, Suspense, trackPending } from "./flow";
-export type { ErroredProps, SuspenseProps } from "./flow";
+export { Errored } from "./flow";
+export type { ErroredProps } from "./flow";
+export { Loading, startTransition, trackPending, useTransition } from "./loading";
+export type { LoadingProps } from "./loading";
 export { applyStreamChunks, streamBoundary, streamOutput, streamValue } from "./stream";
 export type { StreamBoundary } from "./stream";

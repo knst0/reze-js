@@ -268,5 +268,5 @@ fn an_island_needs_the_features_of_the_components_it_renders() {
     let [island] = linked.facts["/Page.tsx"].islands.as_slice() else {
         panic!("Page renders one island: {:?}", linked.facts["/Page.tsx"].islands);
     };
-    assert!(island.features.iter().any(|f| f == "Suspense"), "{:?}", island.features);
+    assert!(island.features.iter().any(|f| f == "Loading"), "{:?}", island.features);
 }
