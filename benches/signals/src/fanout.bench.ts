@@ -1,4 +1,4 @@
-import { effect, root, signal } from "@rezejs/signals";
+import { effect, flushSync, root, signal } from "@rezejs/signals";
 import { test } from "vitest";
 
 import { logResult } from "./_log";
@@ -22,6 +22,7 @@ test("fanout", async ({ bench }) => {
         for (let i = 0; i < ITERS; i++) {
           next += 1;
           set(next);
+          flushSync();
         }
       }).run(),
     );

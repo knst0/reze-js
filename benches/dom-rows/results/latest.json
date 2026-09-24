@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-09-24T22:05:10.681Z",
+  "results": {
+    "create 1k": {
+      "medianMs": 32.7
+    },
+    "update every 10th": {
+      "medianMs": 9.1
+    },
+    "swap rows": {
+      "medianMs": 3.1
+    },
+    "select row": {
+      "medianMs": 0.4
+    },
+    "remove row": {
+      "medianMs": 3
+    },
+    "append 1k": {
+      "medianMs": 41.6
+    },
+    "create 10k": {
+      "medianMs": 411.2
+    },
+    "clear 10k": {
+      "medianMs": 39.4
+    }
+  }
+}
