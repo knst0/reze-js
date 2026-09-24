@@ -19,6 +19,26 @@ test("should support custom recurse effect", () => {
   expect(triggers).toBe(6);
 });
 
+test("a microtask flush left over after flushSync is a no-op (P03)", async () => {
+  const [src, setSrc] = signal(0);
+  let runs = 0;
+  effect(() => {
+    src();
+    runs++;
+  });
+  flushSync();
+  runs = 0;
+  // The write queues a microtask flush; flushSync drains the queue first, so the
+  // leftover microtask must find an empty queue and re-run nothing.
+  setSrc(1);
+  flushSync();
+  expect(runs).toBe(1);
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, 0);
+  await promise;
+  expect(runs).toBe(1);
+});
+
 test("cleanup order on outer re-run: inner before outer, before new run", () => {
   const log: string[] = [];
   const [a, setA] = signal(0);

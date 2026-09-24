@@ -28,6 +28,25 @@ test("default equality is Object.is: NaN writes do not notify", () => {
   expect(runs).toBe(1);
 });
 
+test("default equality is Object.is: +0 and -0 notify each other (P06)", () => {
+  const [n, setN] = signal(0);
+  let runs = 0;
+  effect(() => {
+    n();
+    runs++;
+  });
+  flushSync();
+  setN(-0);
+  flushSync();
+  expect(runs).toBe(2);
+  setN(-0);
+  flushSync();
+  expect(runs).toBe(2);
+  setN(0);
+  flushSync();
+  expect(runs).toBe(3);
+});
+
 test("equals: false notifies on every write, even with the same value", () => {
   const [items, setItems] = signal<number[]>([], { equals: false });
   const length = computed(() => items().length);
@@ -60,4 +79,10 @@ test("custom equals suppresses notification when it reports equality", () => {
   setPoint({ x: 1, y: 0 });
   flushSync();
   expect(runs).toBe(2);
+});
+
+test("ReadonlySignal names the getter half for read-only consumers (D08)", () => {
+  const [count] = signal(1);
+  const read: import("../src").ReadonlySignal<number> = count;
+  expect(read()).toBe(1);
 });

@@ -70,10 +70,12 @@ export interface Link {
   nextDep: Link | undefined;
 }
 
-interface Stack<T> {
-  value: T;
-  prev: Stack<T> | undefined;
-}
+/**
+ * Pending traversal forks. `propagate`/`checkDirty` keep these in function-local
+ * arrays (P01): one allocation per call instead of one linked record per fork,
+ * and locals stay correct when user getters re-enter the graph mid-traversal.
+ */
+type ForkStack = Array<Link | undefined>;
 
 /** Unlinks owned nodes from `sub` (triggering their disposal), newest first. */
 export function disposeChildren(sub: ReactiveNode): void {
@@ -180,10 +182,9 @@ export function unlink(link: Link, sub = link.sub): Link | undefined {
   }
   return nextDep;
 }
-
 export function propagate(link: Link, innerWrite: boolean): void {
   let next = link.nextSub;
-  let stack: Stack<Link | undefined> | undefined;
+  const stack: ForkStack = [];
 
   top: for (;;) {
     const sub = link.sub;
@@ -214,7 +215,7 @@ export function propagate(link: Link, innerWrite: boolean): void {
       if (subSubs !== undefined) {
         const nextSub = (link = subSubs).nextSub;
         if (nextSub !== undefined) {
-          stack = { value: next, prev: stack };
+          stack.push(next);
           next = nextSub;
         }
         continue;
@@ -226,9 +227,8 @@ export function propagate(link: Link, innerWrite: boolean): void {
       continue;
     }
 
-    while (stack !== undefined) {
-      link = stack.value!;
-      stack = stack.prev;
+    while (stack.length > 0) {
+      link = stack.pop()!;
       if (link !== undefined) {
         next = link.nextSub;
         continue top;
@@ -240,7 +240,8 @@ export function propagate(link: Link, innerWrite: boolean): void {
 }
 
 export function checkDirty(link: Link, sub: ReactiveNode): boolean {
-  let stack: Stack<Link> | undefined;
+  // Only `Link` is ever pushed here (unlike `propagate`), so pops stay typed.
+  const stack: Link[] = [];
   let checkDepth = 0;
   let dirty = false;
 
@@ -267,7 +268,7 @@ export function checkDirty(link: Link, sub: ReactiveNode): boolean {
             "in production this does not terminate.",
         );
       } else {
-        stack = { value: link, prev: stack };
+        stack.push(link);
         link = dep.deps!;
         sub = dep;
         ++checkDepth;
@@ -284,8 +285,7 @@ export function checkDirty(link: Link, sub: ReactiveNode): boolean {
     }
 
     while (checkDepth--) {
-      link = stack!.value;
-      stack = stack!.prev;
+      link = stack.pop()!;
       if (dirty) {
         const subs = sub.subs!;
         if (sub.update!()) {
@@ -312,16 +312,12 @@ export function checkDirty(link: Link, sub: ReactiveNode): boolean {
 }
 
 /** Dev only: whether `dep` is `sub` or one of the nodes `checkDirty` descended through to reach it. */
-function isOnCheckPath(
-  dep: ReactiveNode,
-  sub: ReactiveNode,
-  stack: Stack<Link> | undefined,
-): boolean {
+function isOnCheckPath(dep: ReactiveNode, sub: ReactiveNode, stack: Link[]): boolean {
   if (dep === sub) {
     return true;
   }
-  for (; stack !== undefined; stack = stack.prev) {
-    if (stack.value.sub === dep) {
+  for (const link of stack) {
+    if (link.sub === dep) {
       return true;
     }
   }

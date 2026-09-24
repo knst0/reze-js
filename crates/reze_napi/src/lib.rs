@@ -9,10 +9,21 @@ pub struct CompileOptions {
 }
 
 #[napi(object)]
+pub struct CompileWarning {
+    pub message: String,
+    /// 1-based.
+    pub line: u32,
+    /// 0-based, in UTF-16 code units.
+    pub column: u32,
+}
+
+#[napi(object)]
 pub struct CompileResult {
     pub code: String,
     /// Source map v3 JSON.
     pub map: Option<String>,
+    /// Non-fatal diagnostics.
+    pub warnings: Vec<CompileWarning>,
 }
 
 /// Compiles the JSX in `source` to DOM code. Returns `null` when the file has no JSX.
@@ -33,7 +44,15 @@ pub fn compile(
         }
     }
     match reze_compiler::compile(&source, &filename, &opts) {
-        Ok(out) => Ok(out.map(|o| CompileResult { code: o.code, map: o.map })),
+        Ok(out) => Ok(out.map(|o| CompileResult {
+            code: o.code,
+            map: o.map,
+            warnings: o
+                .warnings
+                .into_iter()
+                .map(|w| CompileWarning { message: w.message, line: w.line, column: w.column })
+                .collect(),
+        })),
         Err(errors) => {
             let message: Vec<String> = errors.iter().map(|e| format!("{filename}:{e}")).collect();
             Err(napi::Error::from_reason(message.join("\n")))

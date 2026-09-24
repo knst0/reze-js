@@ -27,6 +27,17 @@ pub struct Output {
     pub code: String,
     /// Source map v3 JSON.
     pub map: Option<String>,
+    /// Non-fatal diagnostics (unknown props, ambiguous children, …).
+    pub warnings: Vec<Warning>,
+}
+
+#[derive(Debug)]
+pub struct Warning {
+    pub message: String,
+    /// 1-based.
+    pub line: u32,
+    /// 0-based, in UTF-16 code units.
+    pub column: u32,
 }
 
 #[derive(Debug)]
@@ -67,9 +78,16 @@ pub fn compile(
     }
 
     let transformer = transform::Transformer::new(source, &options.module_name, &parsed.program);
-    let Some(code) = transformer.program(&parsed.program) else { return Ok(None) };
+    let Some((code, diagnostics)) = transformer.program(&parsed.program) else { return Ok(None) };
     let map = options.source_map.then(|| code.source_map(filename, source));
-    Ok(Some(Output { code: code.s, map }))
+    let warnings = diagnostics
+        .into_iter()
+        .map(|(offset, message)| {
+            let (line, column) = position(source, offset as usize);
+            Warning { message, line, column }
+        })
+        .collect();
+    Ok(Some(Output { code: code.s, map, warnings }))
 }
 
 fn position(source: &str, offset: usize) -> (u32, u32) {

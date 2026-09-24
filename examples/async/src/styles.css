@@ -1,0 +1,66 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+.app {
+  max-width: 420px;
+  margin: 3rem auto;
+  display: grid;
+  gap: 1rem;
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+button {
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.note {
+  opacity: 0.7;
+  font-size: 0.85rem;
+  margin: 0;
+  min-height: 2.2em;
+}
+
+.card {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  border: 1px solid currentcolor;
+  border-radius: 0.6rem;
+  padding: 1rem;
+  min-height: 5.5rem;
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.card p {
+  margin: 0.2rem 0 0;
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+.avatar {
+  width: 2.6rem;
+  height: 2.6rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #646cff;
+  color: white;
+  font-weight: 700;
+}

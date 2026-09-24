@@ -1,3 +1,4 @@
+export { trackAsync } from "./async";
 export { computed, isComputed } from "./computed";
 export { getOwner } from "./context";
 export { effect, isEffect } from "./effect";
@@ -9,6 +10,7 @@ export {
   signal,
   type Equals,
   type Getter,
+  type ReadonlySignal,
   type Setter,
   type SignalOptions,
 } from "./signal";

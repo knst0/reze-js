@@ -44,25 +44,40 @@ const Properties: Record<string, 1> = {
 
 /**
  * Parses `html` once (lazily, on first use) and returns a factory that deep-clones it.
- * SVG fragments arrive wrapped in `<svg>` and MathML ones need a MathML-namespaced parser.
+ * One flavor per namespace (B02): the compiler picks by the template root, so an
+ * HTML-only app never ships the SVG/MathML parser branches.
  */
-export function template(
-  html: string,
-  isImportNode?: boolean,
-  isSVG?: boolean,
-  isMathML?: boolean,
-): () => Node {
+export function template(html: string): () => Node {
   let node: Node | undefined;
   const create = (): Node => {
-    const t = isMathML
-      ? (document.createElementNS("http://www.w3.org/1998/Math/MathML", "template") as Any)
-      : document.createElement("template");
+    const t = document.createElement("template");
     t.innerHTML = html;
-    return isSVG ? t.content.firstChild.firstChild : isMathML ? t.firstChild : t.content.firstChild;
+    return t.content.firstChild as Node;
   };
-  return isImportNode
-    ? () => document.importNode((node ??= create()), true)
-    : () => (node ??= create()).cloneNode(true);
+  return () => (node ??= create()).cloneNode(true) as Node;
+}
+
+/** `template` for `<svg>` roots: `html` arrives wrapped in `<svg>`. */
+export function templateSVG(html: string): () => Node {
+  let node: Node | undefined;
+  const create = (): Node => {
+    const t = document.createElement("template");
+    t.innerHTML = html;
+    const root = t.content.firstChild;
+    return (root && root.firstChild) as Node;
+  };
+  return () => (node ??= create()).cloneNode(true) as Node;
+}
+
+/** `template` for `<math>` roots: parses under the MathML namespace. */
+export function templateMathML(html: string): () => Node {
+  let node: Node | undefined;
+  const create = (): Node => {
+    const t = document.createElementNS("http://www.w3.org/1998/Math/MathML", "template");
+    t.innerHTML = html;
+    return t.firstChild as Node;
+  };
+  return () => (node ??= create()).cloneNode(true) as Node;
 }
 
 /** Calls a component once, untracked: its reads never re-run the parent binding. */
@@ -237,8 +252,8 @@ export function setStyleProperty(node: HTMLElement, name: string, value: unknown
   else node.style.setProperty(name, value as string);
 }
 
-/** Runs a `ref` callback, untracked. */
-export function use<T>(fn: (el: Element, arg?: T) => void, el: Element, arg?: T): void {
+/** Runs a `ref` callback, untracked. The element type infers from the callback (D10). */
+export function use<E extends Element, T>(fn: (el: E, arg?: T) => void, el: E, arg?: T): void {
   untrack(() => fn(el, arg));
 }
 

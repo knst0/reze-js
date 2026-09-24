@@ -5,13 +5,7 @@
   "@rezejs/example-counter-solid": {
     "dir": "examples/counter-solid"
   },
-  "@rezejs/example-counter-solid-textcontent": {
-    "dir": "examples/counter-solid-textcontent"
-  },
   "@rezejs/example-counter-solid-v2": {
     "dir": "examples/counter-solid-v2"
-  },
-  "@rezejs/example-counter-solid-v2-textcontent": {
-    "dir": "examples/counter-solid-v2-textcontent"
   }
 }

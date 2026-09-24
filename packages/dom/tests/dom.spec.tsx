@@ -1,23 +1,14 @@
 import { effect, flushSync, onCleanup, signal } from "@rezejs/signals";
+import { cleanup, mount } from "@rezejs/test-utils";
 import { afterEach, expect, test } from "vitest";
 
-import { type ClassValue, classList, className, mergeProps, render } from "../src";
+import { type ClassValue, classList, className, mergeProps, use } from "../src";
 
-let dispose: (() => void) | undefined;
-function mount(code: () => unknown): HTMLElement {
-  const el = document.createElement("div");
-  document.body.appendChild(el);
-  dispose = render(code as () => Element, el);
-  return el;
-}
-afterEach(() => {
-  dispose?.();
-  document.body.textContent = "";
-});
+afterEach(cleanup);
 
 test("text and attribute bindings update in place", () => {
   const [name, setName] = signal("a");
-  const el = mount(() => <p title={name()}>hi {name()}!</p>);
+  const { el } = mount(() => <p title={name()}>hi {name()}!</p>);
   const p = el.firstChild as HTMLElement;
   const text = p.childNodes[1];
   setName("b");
@@ -30,7 +21,7 @@ test("text and attribute bindings update in place", () => {
 
 test("null, undefined and false remove the attribute", () => {
   const [v, setV] = signal<string | false | null>("x");
-  const el = mount(() => <i data-v={v()} />);
+  const { el } = mount(() => <i data-v={v()} />);
   const i = el.firstChild as HTMLElement;
   expect(i.getAttribute("data-v")).toBe("x");
   setV(false);
@@ -46,7 +37,7 @@ test("null, undefined and false remove the attribute", () => {
 test("class accepts a string or a toggle object", () => {
   const [on, setOn] = signal(true);
   const [cls, setCls] = signal<string | Record<string, boolean>>("a b");
-  const el = mount(() => <i class={cls()} classList={{ on: on() }} />);
+  const { el } = mount(() => <i class={cls()} classList={{ on: on() }} />);
   const i = el.firstChild as HTMLElement;
   expect(i.className).toBe("a b on");
   setOn(false);
@@ -62,13 +53,23 @@ test("style objects set, update and drop properties", () => {
     color: "red",
     "margin-top": "1px",
   });
-  const el = mount(() => <i style={s()} />);
+  const { el } = mount(() => <i style={s()} />);
   const i = el.firstChild as HTMLElement;
   expect(i.style.color).toBe("red");
   setS({ color: "blue" });
   flushSync();
   expect(i.style.color).toBe("blue");
   expect(i.style.marginTop).toBe("");
+});
+
+test("all-literal style and classList objects compile to static attributes", () => {
+  // The compiler folds these into the template (C09/C10): no runtime call,
+  // so the parsed attributes must already carry the values.
+  const { el } = mount(() => <i style={{ color: "red", "margin-top": "1px" }} classList={{ a: true, b: false }} />);
+  const i = el.firstChild as HTMLElement;
+  expect(i.style.color).toBe("red");
+  expect(i.style.marginTop).toBe("1px");
+  expect(i.className).toBe("a");
 });
 
 test("delegated handlers coalesce writes and see the declaring element as currentTarget", () => {
@@ -79,7 +80,7 @@ test("delegated handlers coalesce writes and see the declaring element as curren
   effect(() => {
     runs.push(a() + b());
   });
-  const el = mount(() => (
+  const { el } = mount(() => (
     <div
       onClick={(e: MouseEvent) => {
         targets.push(e.currentTarget!);
@@ -106,7 +107,7 @@ test("delegated handlers coalesce writes and see the declaring element as curren
 
 test("stopPropagation stops delegated bubbling", () => {
   const log: string[] = [];
-  const el = mount(() => (
+  const { el } = mount(() => (
     <div onClick={() => log.push("outer")}>
       <button
         onClick={(e: MouseEvent) => {
@@ -122,7 +123,7 @@ test("stopPropagation stops delegated bubbling", () => {
 
 test("on: attaches a direct listener; [handler, options] passes listener options", () => {
   const log: string[] = [];
-  const el = mount(() => (
+  const { el } = mount(() => (
     <i on:custom={[() => log.push("once"), { once: true }]} on:other={() => log.push("other")} />
   ));
   const i = el.firstChild as HTMLElement;
@@ -139,7 +140,7 @@ test("components run once; props read lazily keep reactivity", () => {
     return <b>{props.text}</b>;
   }
   const [t, setT] = signal("a");
-  const el = mount(() => <Label text={t()} />);
+  const { el } = mount(() => <Label text={t()} />);
   setT("b");
   flushSync();
   setT("c");
@@ -155,21 +156,20 @@ test("a conditional branch is disposed when it switches out", () => {
     return <em>{props.name}</em>;
   }
   const [on, setOn] = signal(true);
-  const el = mount(() => <div>{on() ? <Child name="a" /> : <Child name="b" />}</div>);
+  const { el, dispose } = mount(() => <div>{on() ? <Child name="a" /> : <Child name="b" />}</div>);
   expect(el.innerHTML).toBe("<div><em>a</em></div>");
   setOn(false);
   flushSync();
   expect(el.innerHTML).toBe("<div><em>b</em></div>");
   expect(log).toEqual(["cleanup a"]);
-  dispose!();
-  dispose = undefined;
+  dispose();
   expect(log).toEqual(["cleanup a", "cleanup b"]);
   expect(el.innerHTML).toBe("");
 });
 
 test("arrays, fragments and nested getters render in order between static siblings", () => {
   const [items, setItems] = signal(["x", "y"]);
-  const el = mount(() => (
+  const { el } = mount(() => (
     <ul>
       <li>first</li>
       {items().map((s) => (
@@ -194,7 +194,7 @@ test("arrays, fragments and nested getters render in order between static siblin
 test("spread applies reactive props, including ones from a function source", () => {
   const [title, setTitle] = signal("a");
   const [extra, setExtra] = signal<Record<string, string>>({ "data-x": "1" });
-  const el = mount(() => (
+  const { el } = mount(() => (
     <i
       {...mergeProps(
         {
@@ -219,7 +219,7 @@ test("spread applies reactive props, including ones from a function source", () 
 });
 
 test("class accepts arrays mixing strings, objects and nested arrays", () => {
-  const el = mount(() => (
+  const { el } = mount(() => (
     <i
       class={[
         "a",
@@ -240,7 +240,7 @@ test("class accepts arrays mixing strings, objects and nested arrays", () => {
 
 test("reactive class arrays and objects drop stale classes", () => {
   const [cls, setCls] = signal<ClassValue>(["a", "b"]);
-  const el = mount(() => <i class={cls()} />);
+  const { el } = mount(() => <i class={cls()} />);
   const i = el.firstChild as HTMLElement;
   expect([...i.classList].sort()).toEqual(["a", "b"]);
   setCls(["b", "c"]);
@@ -284,4 +284,13 @@ test("classList accepts arrays and drops stale keys on update", () => {
   expect([...i.classList].sort()).toEqual(["a", "b"]);
   classList(i, ["b", "d"], first);
   expect([...i.classList].sort()).toEqual(["b", "d"]);
+});
+
+test("use() infers the element type from ref callbacks (D10)", () => {
+  const div = document.createElement("div");
+  let tagged = "";
+  use((el: HTMLDivElement) => {
+    tagged = el.tagName;
+  }, div);
+  expect(tagged).toBe("DIV");
 });

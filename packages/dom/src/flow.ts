@@ -1,7 +1,7 @@
-import { computed, onCleanup, untrack, type Getter } from "@rezejs/signals";
+import { computed, effect, onCleanup, signal, untrack, type Getter } from "@rezejs/signals";
 import { renderEffect as bind } from "@rezejs/signals/render";
 
-import { insertExpression, splitProps, spread } from "./dom";
+import { createComponent, insert, insertExpression, splitProps, spread } from "./dom";
 import type { JSX } from "./jsx";
 
 type Falsy = false | 0 | "" | null | undefined;
@@ -105,4 +105,59 @@ export function Portal(props: PortalProps): JSX.Element {
     marker.remove();
   });
   return null;
+}
+
+export interface SuspenseProps {
+  fallback?: JSX.Element;
+  children: JSX.Element;
+}
+
+interface SuspenseBoundary {
+  retain: () => void;
+  release: () => void;
+}
+
+let activeBoundary: SuspenseBoundary | undefined;
+
+function withBoundary<T>(boundary: SuspenseBoundary, create: () => T): T {
+  const prev = activeBoundary;
+  activeBoundary = boundary;
+  try {
+    return create();
+  } finally {
+    activeBoundary = prev;
+  }
+}
+
+export function trackPending(isPending: () => boolean): void {
+  const boundary = activeBoundary;
+  if (boundary === undefined) return;
+  effect(() => {
+    if (!isPending()) return;
+    boundary.retain();
+    onCleanup(() => boundary.release());
+  });
+}
+
+export function Suspense(props: SuspenseProps): JSX.Element {
+  const [pendingCount, setPendingCount] = signal(0);
+  const boundary: SuspenseBoundary = {
+    retain: () => setPendingCount((count) => count + 1),
+    release: () => setPendingCount((count) => count - 1),
+  };
+  const children = untrack(() => withBoundary(boundary, () => props.children));
+  const fallback = createComponent(Show, {
+    get when() {
+      return pendingCount() > 0;
+    },
+    get children() {
+      return props.fallback;
+    },
+  });
+  const wrap = document.createElement("div");
+  insert(wrap, children);
+  bind(() => {
+    wrap.hidden = pendingCount() > 0;
+  });
+  return [fallback, wrap];
 }

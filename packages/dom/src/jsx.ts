@@ -15,10 +15,16 @@ interface DOMAttributes<E> {
 type Intrinsic<M> = { [K in keyof M]: DOMAttributes<M[K]> };
 
 export namespace JSX {
+  // `Promise<unknown>`: async components. The compiler rewrites them into sync components
+  // with a `trackAsync` subscription, so by runtime they return `Element`; the source-level
+  // `Promise` must stay a valid component return or `<AsyncComp />` fails with TS2786.
+  // `unknown` (not `Element`) keeps the union non-recursive: `Promise<JSX.Element>` as an
+  // annotation would otherwise trip TS1062 on itself.
   export type Element =
     | Node
     | ArrayElement
     | FunctionElement
+    | Promise<unknown>
     | (string & {})
     | number
     | bigint

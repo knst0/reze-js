@@ -27,10 +27,14 @@ pub struct Transformer<'s> {
     next_suffix: HashMap<String, u32>,
     /// Runtime imports in first-use order: (export, local alias).
     helpers: Vec<(&'static str, String)>,
-    /// (variable, `template()` arguments), deduplicated by HTML and namespace.
-    templates: Vec<(String, String)>,
-    template_ids: HashMap<(String, bool), String>,
+    /// (variable, `template*` factory, factory arguments), deduplicated by HTML and namespace.
+    templates: Vec<(String, &'static str, String)>,
+    /// Template variables by HTML, then namespace slot (`svg + 2*math`): the hot
+    /// lookup borrows `html` instead of cloning it for the probe (C01).
+    template_ids: HashMap<String, [Option<String>; 4]>,
     events: Vec<String>,
+    /// Non-fatal diagnostics: (source offset, message), surfaced as `Warning`s (D03/D04/D05).
+    warnings: Vec<(u32, String)>,
 }
 
 impl<'s> Transformer<'s> {
@@ -46,11 +50,13 @@ impl<'s> Transformer<'s> {
             templates: Vec::new(),
             template_ids: HashMap::new(),
             events: Vec::new(),
+            warnings: Vec::new(),
         }
     }
 
-    /// Compiles every JSX expression in `program`; `None` when there is none.
-    pub fn program(mut self, program: &Program<'_>) -> Option<Code> {
+    /// Compiles every JSX expression in `program`: the code plus `(offset, message)`
+    /// diagnostics. `None` when there is no JSX.
+    pub fn program(mut self, program: &Program<'_>) -> Option<(Code, Vec<(u32, String)>)> {
         let mut finder = Finder { t: &mut self, found: Vec::new() };
         finder.visit_program(program);
         let found = finder.found;
@@ -86,16 +92,27 @@ impl<'s> Transformer<'s> {
         }
         code.append(self.splice(at, end, after));
         if let Some(delegate) = delegate {
-            let names: Vec<String> = self.events.iter().map(|e| js_string(e)).collect();
+            // Canonical order: identical event sets emit identical trailers (C12).
+            let mut names: Vec<String> = self.events.iter().map(|e| js_string(e)).collect();
+            names.sort();
             let _ = write!(code, "\n{delegate}([{}]);\n", names.join(", "));
         }
-        Some(code)
+        Some((code, std::mem::take(&mut self.warnings)))
+    }
+
+    /// Records a non-fatal diagnostic at a source offset (D03/D04/D05).
+    fn warn(&mut self, offset: u32, message: impl Into<String>) {
+        self.warnings.push((offset, message.into()));
     }
 
     fn header(&mut self) -> String {
         let mut out = String::new();
         let templates = std::mem::take(&mut self.templates);
-        let template = if templates.is_empty() { None } else { Some(self.helper("template")) };
+        let mut decls = Vec::new();
+        for (var, factory, args) in &templates {
+            let alias = self.helper(factory);
+            decls.push(format!("{var} = /*#__PURE__*/ {alias}({args})"));
+        }
         let specifiers: Vec<String> =
             self.helpers.iter().map(|(name, alias)| format!("{name} as {alias}")).collect();
         let _ = write!(
@@ -104,11 +121,7 @@ impl<'s> Transformer<'s> {
             specifiers.join(", "),
             js_string(self.module_name)
         );
-        if let Some(template) = template {
-            let decls: Vec<String> = templates
-                .iter()
-                .map(|(var, args)| format!("{var} = /*#__PURE__*/ {template}({args})"))
-                .collect();
+        if !decls.is_empty() {
             let _ = write!(out, "\nconst {};", decls.join(",\n  "));
         }
         out
@@ -138,18 +151,23 @@ impl<'s> Transformer<'s> {
         alias
     }
 
-    fn template(&mut self, html: String, svg: bool) -> String {
-        if let Some(var) = self.template_ids.get(&(html.clone(), svg)) {
+    fn template(&mut self, html: String, svg: bool, math: bool) -> String {
+        let slot = usize::from(svg) + 2 * usize::from(math);
+        if let Some(var) = self.template_ids.get(&html).and_then(|v| v[slot].as_ref()) {
             return var.clone();
         }
         let var = self.uid("_tmpl$");
-        let args = if svg {
-            format!("{}, false, true", js_string(&format!("<svg>{html}</svg>")))
+        // One factory per namespace (B02): HTML-only apps never import the
+        // SVG/MathML parser branches.
+        let (factory, args) = if svg {
+            ("templateSVG", js_string(&format!("<svg>{html}</svg>")))
+        } else if math {
+            ("templateMathML", js_string(&html))
         } else {
-            js_string(&html)
+            ("template", js_string(&html))
         };
-        self.templates.push((var.clone(), args));
-        self.template_ids.insert((html, svg), var.clone());
+        self.templates.push((var.clone(), factory, args));
+        self.template_ids.entry(html).or_default()[slot] = Some(var.clone());
         var
     }
 
@@ -177,6 +195,237 @@ impl<'s> Transformer<'s> {
         finder.visit_expression(e);
         let found = finder.found;
         self.splice(span.start, span.end, found)
+    }
+
+    /// A statement slice with nested JSX compiled and nested single-await
+    /// `async` functions rewritten.
+    fn stmt_code<'a>(&mut self, stmt: &Statement<'a>) -> Code {
+        let span = stmt.span();
+        let mut finder = Finder { t: self, found: Vec::new() };
+        finder.visit_statement(stmt);
+        let found = finder.found;
+        self.splice(span.start, span.end, found)
+    }
+
+    /// Parameter list with nested JSX compiled (defaults may hold elements).
+    fn params_code<'a>(&mut self, params: &FormalParameters<'a>) -> Code {
+        let span = params.span;
+        let mut finder = Finder { t: self, found: Vec::new() };
+        finder.visit_formal_parameters(params);
+        let found = finder.found;
+        self.splice(span.start, span.end, found)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Async components
+
+    /// Rewrites `async function` with a single top-level `await` into its sync shape;
+    /// `None` leaves the function for the ordinary JSX walk (warning on D06 when the
+    /// function is component-like but outside first-support scope).
+    fn async_function<'a>(&mut self, func: &Function<'a>) -> Option<Code> {
+        if !func.r#async || func.generator {
+            return None;
+        }
+        let Some(body) = func.body.as_ref() else { return None };
+        let plan = match async_plan(body) {
+            Ok(plan) => plan,
+            Err(reason) => {
+                if reason != NO_TOP_AWAIT && has_jsx(body) {
+                    self.warn(
+                        func.span.start,
+                        format!(
+                            "async components support one top-level `const x = await …` \
+                             followed by `return …` ({reason}); leaving `async` as written."
+                        ),
+                    );
+                }
+                return None;
+            }
+        };
+        let mut code = Code::new();
+        code.push("function ");
+        if let Some(id) = &func.id {
+            code.mark(id.span.start);
+            code.src(self.source, id.span.start, id.span.end);
+        }
+        if let Some(params) = &func.type_parameters {
+            code.src(self.source, params.span.start, params.span.end);
+        }
+        code.append(self.params_code(&func.params));
+        if let Some(ret) = &func.return_type {
+            code.append(self.return_type_code(ret));
+        }
+        code.push(" ");
+        code.append(self.async_body_code(body, &plan));
+        Some(code)
+    }
+
+    /// Same rewrite for `async (params) => { … }`; concise bodies have no statements.
+    fn async_arrow<'a>(&mut self, arrow: &ArrowFunctionExpression<'a>) -> Option<Code> {
+        if !arrow.r#async {
+            return None;
+        }
+        let ArrowFunctionBody::FunctionBody(body) = &arrow.body else { return None };
+        let plan = match async_plan(body) {
+            Ok(plan) => plan,
+            Err(reason) => {
+                if reason != NO_TOP_AWAIT && has_jsx(body) {
+                    self.warn(
+                        arrow.span.start,
+                        format!(
+                            "async components support one top-level `const x = await …` \
+                             followed by `return …` ({reason}); leaving `async` as written."
+                        ),
+                    );
+                }
+                return None;
+            }
+        };
+        let mut code = Code::new();
+        if let Some(params) = &arrow.type_parameters {
+            code.src(self.source, params.span.start, params.span.end);
+        }
+        code.append(self.params_code(&arrow.params));
+        if let Some(ret) = &arrow.return_type {
+            code.append(self.return_type_code(ret));
+        }
+        code.push(" => ");
+        code.append(self.async_body_code(body, &plan));
+        Some(code)
+    }
+
+    /// Emitted return type of an async rewrite: `Promise<X>` unwraps to `X` because the
+    /// output is sync, anything else passes through verbatim. An unrecognised `Promise`
+    /// shape warns; other annotations are the author's own and stay silent.
+    fn return_type_code(&mut self, ret: &TSTypeAnnotation<'_>) -> Code {
+        let mut code = Code::new();
+        if let Some(inner) = promise_inner(ret) {
+            code.push(": ");
+            code.mark(inner.start);
+            code.src(self.source, inner.start, inner.end);
+            return code;
+        }
+        code.push(" ");
+        code.src(self.source, ret.span.start, ret.span.end);
+        if is_promise_ref(ret) {
+            self.warn(ret.span.start, "could not unwrap `Promise<…>` return type; kept as written.");
+        }
+        code
+    }
+
+    /// Sync body shared by both function shapes: one fetch `effect` per `await` plus a `memo`
+    /// running the suffix once every step settles.
+    fn async_body_code<'a>(&mut self, body: &FunctionBody<'a>, plan: &AsyncPlan<'a>) -> Code {
+        let get_owner = self.helper("getOwner");
+        let signal = self.helper("signal");
+        let on_cleanup = self.helper("onCleanup");
+        let effect = self.helper("effect");
+        let memo = self.helper("memo");
+        let track_async = self.helper("trackAsync");
+        let track_pending = self.helper("trackPending");
+        let owner = self.uid("_owner$");
+        let err = self.uid("_err$");
+        let set_err = self.uid("_setErr$");
+        let epoch = self.uid("_epoch$");
+        let prom = self.uid("_p$");
+        let my = self.uid("_my$");
+        let ex = self.uid("_ex$");
+        let mut steps = Vec::with_capacity(plan.awaits.len());
+        for (step, _) in plan.awaits.iter().enumerate() {
+            steps.push(AsyncStep {
+                val: self.uid(&format!("_val{step}$")),
+                set_val: self.uid(&format!("_setVal{step}$")),
+                settled: self.uid(&format!("_settled{step}$")),
+                set_settled: self.uid(&format!("_setSettled{step}$")),
+                tmp: self.uid(&format!("_t{step}$")),
+            });
+        }
+
+        let mut code = Code::new();
+        code.push("{\n");
+        let _ = write!(code, "const {owner} = {get_owner}();\n");
+        for step in &steps {
+            let _ = write!(code, "const [{}, {}] = {signal}(undefined as any);\n", step.val, step.set_val);
+            let _ = write!(code, "const [{}, {}] = {signal}(false);\n", step.settled, step.set_settled);
+        }
+        let _ = write!(code, "const [{err}, {set_err}] = {signal}(undefined as any);\n");
+        let _ = write!(code, "let {epoch} = 0;\n");
+        let _ = write!(code, "{on_cleanup}(() => {{ {epoch}++; }});\n");
+        let last = steps.last().unwrap();
+        let _ = write!(code, "{track_pending}(() => !{}() && {err}() === undefined);\n", last.settled);
+        let mut seg_start = 0;
+        for (step, awaited) in plan.awaits.iter().enumerate() {
+            let _ = write!(code, "{effect}(() => {{\n");
+            if step > 0 {
+                self.await_prelude(&mut code, plan, &steps, step, "return;");
+            }
+            for stmt in &body.statements[seg_start..awaited.stmt_index] {
+                code.mark(stmt.span().start);
+                code.append(self.stmt_code(stmt));
+                code.push("\n");
+            }
+            let _ = write!(code, "{set_err}(undefined);\n");
+            let _ = write!(code, "{}({});\n", steps[step].set_settled, "false");
+            let _ = write!(code, "const {prom} = Promise.resolve(");
+            code.append(self.expr(awaited.argument));
+            code.push(");\n");
+            let _ = write!(code, "const {my} = ++{epoch};\n");
+            let _ = write!(
+                code,
+                "{track_async}({owner}, {prom}, () => {my} === {epoch}, (_v) => {{ {}(_v); {}(true); }}, {set_err});\n",
+                steps[step].set_val,
+                steps[step].set_settled,
+            );
+            code.push("});\n");
+            seg_start = awaited.stmt_index + 1;
+        }
+        let _ = write!(code, "return {memo}(() => {{\n");
+        let _ = write!(code, "const {ex} = {err}();\n");
+        let _ = write!(code, "if ({ex} !== undefined) throw {ex};\n");
+        self.await_prelude(&mut code, plan, &steps, plan.awaits.len(), "return undefined;");
+        for stmt in &body.statements[seg_start..plan.ret_index] {
+            code.mark(stmt.span().start);
+            code.append(self.stmt_code(stmt));
+            code.push("\n");
+        }
+        let Statement::ReturnStatement(ret) = &body.statements[plan.ret_index] else {
+            unreachable!("planned return statement")
+        };
+        code.push("return ");
+        code.append(self.expr(ret.argument.as_ref().unwrap()));
+        code.push(";\n");
+        code.push("});\n}");
+        code
+    }
+
+    fn await_prelude(
+        &mut self,
+        code: &mut Code,
+        plan: &AsyncPlan<'_>,
+        steps: &[AsyncStep],
+        upto: usize,
+        exit: &str,
+    ) {
+        let mut gate = String::new();
+        for (step, _) in plan.awaits[..upto].iter().enumerate() {
+            if step > 0 {
+                gate.push_str(" || ");
+            }
+            gate.push('!');
+            gate.push_str(&steps[step].settled);
+            gate.push_str("()");
+        }
+        let _ = write!(code, "if ({gate}) {exit}\n");
+        for (step, awaited) in plan.awaits[..upto].iter().enumerate() {
+            let _ = write!(code, "const {} = {}();\n", steps[step].tmp, steps[step].val);
+            let _ = write!(code, "{} ", awaited.kind);
+            code.mark(awaited.pattern.start);
+            code.src(self.source, awaited.pattern.start, awaited.pattern.end);
+            if let Some(ann) = awaited.annotation {
+                code.src(self.source, ann.start, ann.end);
+            }
+            let _ = write!(code, " = {};\n", steps[step].tmp);
+        }
     }
 
     // -----------------------------------------------------------------------------------------
@@ -232,13 +481,15 @@ impl<'s> Transformer<'s> {
             }
         }
     }
-
     fn template_root<'a>(&mut self, el: &JSXElement<'a>, tag: &str) -> Code {
         let svg_root = is_svg_element(tag);
+        // A `<math>` root needs the MathML-namespaced parser (runtime `isMathML`);
+        // nested `<math>` is already handled by the HTML parser itself (C23).
+        let math_root = tag == "math";
         let mut tpl = Template::default();
         let root_var = self.uid("_el$");
         let root = self.native(&mut tpl, el, tag, root_var.clone(), svg_root);
-        let tmpl = self.template(tpl.html, svg_root);
+        let tmpl = self.template(tpl.html, svg_root, math_root);
 
         let mut decls = vec![format!("{root_var} = {tmpl}()")];
         collect_decls(&root_var, &root.children, &mut decls);
@@ -274,21 +525,28 @@ impl<'s> Transformer<'s> {
         let svg = in_svg || tag == "svg";
         let attrs = &el.opening_element.attributes;
         let mut items = self.child_items(&el.children, true);
-        if items.is_empty() {
-            // `children` as an attribute stands in for JSX children.
-            if let Some(e) = attrs.iter().find_map(|a| match a {
-                JSXAttributeItem::Attribute(a) if attribute_name(a) == "children" => {
-                    match &a.value {
-                        Some(JSXAttributeValue::ExpressionContainer(c)) => {
-                            c.expression.as_expression()
-                        }
-                        _ => None,
+        // `children` as an attribute stands in for JSX children — but when both are
+        // present the nested children win and the attribute is ignored (D05).
+        let children_attr = attrs.iter().find_map(|a| match a {
+            JSXAttributeItem::Attribute(a) if attribute_name(a) == "children" => {
+                match &a.value {
+                    Some(JSXAttributeValue::ExpressionContainer(c)) => {
+                        c.expression.as_expression().map(|e| (e, a.span))
                     }
+                    _ => None,
                 }
-                _ => None,
-            }) {
+            }
+            _ => None,
+        });
+        if items.is_empty() {
+            if let Some((e, _)) = children_attr {
                 items.push(Item::Expr(e));
             }
+        } else if let Some((_, span)) = children_attr {
+            self.warn(
+                span.start,
+                "`children` attribute is ignored because the element also has nested children.",
+            );
         }
 
         let mut needs_ref = false;
@@ -516,9 +774,47 @@ impl<'s> Transformer<'s> {
                 "value" | "checked" | "selected" => Kind::InlineProp(name.clone()),
                 _ => Kind::Prop(name.clone()),
             }
+        } else if name == "key" {
+            // `key` only identifies `<For>` rows and component instances (D03).
+            self.warn(
+                attr.span().start,
+                "`key` does nothing on a plain element; it renders as a plain attribute.",
+            );
+            Kind::Attr(name.clone())
         } else {
+            // Possible typo of a known attribute (D02); namespaced, `data-*`,
+            // `aria-*` and hyphenated names are custom by design and stay quiet.
+            if !name.contains(['-', ':']) && let Some(suggestion) = suggest_attribute(&name) {
+                self.warn(
+                    attr.span().start,
+                    format!("unknown attribute `{name}`; did you mean `{suggestion}`?"),
+                );
+            }
             Kind::Attr(name.clone())
         };
+
+        // All-literal `style`/`classList` objects fold to static attributes (C09/C10),
+        // dropping the runtime `style`/`classList` import when nothing else needs it.
+        if matches!(kind, Kind::Style)
+            && let Value::Expr(e) = &value
+            && let Some(s) = static_style_object(e)
+        {
+            let _ = write!(tpl.html, " style=\"");
+            escape_attribute(&mut tpl.html, &s);
+            tpl.html.push('"');
+            return false;
+        }
+        if matches!(kind, Kind::ClassList)
+            && let Value::Expr(e) = &value
+            && let Some(c) = static_class_list(e)
+        {
+            if !c.is_empty() {
+                let _ = write!(tpl.html, " class=\"");
+                escape_attribute(&mut tpl.html, &c);
+                tpl.html.push('"');
+            }
+            return false;
+        }
 
         // Literal values go straight into the template.
         let literal = match &value {
@@ -800,6 +1096,23 @@ impl<'s> Transformer<'s> {
     // Components
 
     fn component<'a>(&mut self, el: &JSXElement<'a>, tag: Span) -> Code {
+        // An inline array literal as `each` gets a fresh identity on every evaluation,
+        // rebuilding all rows each time; hoist it or memoize it (D04).
+        if &self.source[tag.start as usize..tag.end as usize] == "For" {
+            for attr in &el.opening_element.attributes {
+                if let JSXAttributeItem::Attribute(a) = attr
+                    && attribute_name(a) == "each"
+                    && let Some(JSXAttributeValue::ExpressionContainer(c)) = &a.value
+                    && let Some(Expression::ArrayExpression(_)) = c.expression.as_expression()
+                {
+                    self.warn(
+                        a.span.start,
+                        "`<For each={...}>` holds an inline array literal; hoist it so rows survive re-renders.",
+                    );
+                }
+            }
+        }
+
         let create = self.helper("createComponent");
         let items = self.child_items(&el.children, false);
         let mut props = Props::default();
@@ -1211,6 +1524,239 @@ fn is_assignable(e: &Expression<'_>) -> bool {
     )
 }
 
+// ---------------------------------------------------------------------------------------------
+
+/// Inner span of a `Promise<X>` return annotation; `None` for anything else.
+fn promise_inner(ret: &TSTypeAnnotation<'_>) -> Option<Span> {
+    let TSType::TSTypeReference(r) = &ret.type_annotation else { return None };
+    if !is_promise_ref(ret) {
+        return None;
+    }
+    let args = r.type_arguments.as_ref()?;
+    if args.params.len() != 1 {
+        return None;
+    }
+    Some(args.params[0].span())
+}
+
+/// Whether the annotation names the global `Promise` type (whatever its arguments).
+fn is_promise_ref(ret: &TSTypeAnnotation<'_>) -> bool {
+    let TSType::TSTypeReference(r) = &ret.type_annotation else { return false };
+    match &r.type_name {
+        TSTypeName::IdentifierReference(id) => id.name.as_str() == "Promise",
+        _ => false,
+    }
+}
+
+/// Marker for the one `async_plan` failure that stays silent (ordinary async helpers).
+const NO_TOP_AWAIT: &str = "no top-level `await`";
+
+struct AsyncAwait<'a> {
+    stmt_index: usize,
+    kind: &'static str,
+    pattern: Span,
+    annotation: Option<Span>,
+    argument: &'a Expression<'a>,
+}
+
+struct AsyncPlan<'a> {
+    awaits: Vec<AsyncAwait<'a>>,
+    ret_index: usize,
+}
+
+struct AsyncStep {
+    val: String,
+    set_val: String,
+    settled: String,
+    set_settled: String,
+    tmp: String,
+}
+
+fn async_plan<'a>(body: &'a FunctionBody<'a>) -> Result<AsyncPlan<'a>, &'static str> {
+    if !body.directives.is_empty() {
+        return Err("function directives");
+    }
+    let mut awaits = Vec::new();
+    for (stmt_index, stmt) in body.statements.iter().enumerate() {
+        if let Statement::VariableDeclaration(decl) = stmt
+            && decl.declarations.len() == 1
+            && let Some(init) = &decl.declarations[0].init
+            && let Expression::AwaitExpression(awaited) = unparen(init)
+        {
+            let declarator = &decl.declarations[0];
+            let kind = match decl.kind {
+                VariableDeclarationKind::Const => "const",
+                VariableDeclarationKind::Let => "let",
+                VariableDeclarationKind::Var => "var",
+                VariableDeclarationKind::Using | VariableDeclarationKind::AwaitUsing => {
+                    return Err("`using` declaration");
+                }
+            };
+            awaits.push(AsyncAwait {
+                stmt_index,
+                kind,
+                pattern: declarator.id.span(),
+                annotation: declarator.type_annotation.as_ref().map(|ann| ann.span()),
+                argument: &awaited.argument,
+            });
+            continue;
+        }
+        let mut found_await = AwaitCheck { found: false };
+        found_await.visit_statement(stmt);
+        if found_await.found {
+            return Err("`await` outside a top-level declarator");
+        }
+    }
+    if awaits.is_empty() {
+        return Err(NO_TOP_AWAIT);
+    }
+    let last_await = awaits.last().unwrap().stmt_index;
+    for (stmt_index, stmt) in body.statements.iter().enumerate() {
+        if stmt_index > last_await {
+            break;
+        }
+        if awaits.iter().any(|awaited| awaited.stmt_index == stmt_index) {
+            continue;
+        }
+        let mut found_exit = RetCheck { found: false };
+        found_exit.visit_statement(stmt);
+        if found_exit.found {
+            return Err("early `return`/`throw` before `await`");
+        }
+    }
+    let mut ret_index = body.statements.len();
+    while ret_index > last_await + 1 {
+        if matches!(body.statements[ret_index - 1], Statement::EmptyStatement(_)) {
+            ret_index -= 1;
+        } else {
+            break;
+        }
+    }
+    let Statement::ReturnStatement(ret) = &body.statements[ret_index - 1] else {
+        return Err("suffix does not end with `return …`");
+    };
+    if ret.argument.is_none() {
+        return Err("suffix does not end with `return …`");
+    }
+    let mut awaited_names = NameDecls::default();
+    for awaited in &awaits {
+        let Statement::VariableDeclaration(decl) = &body.statements[awaited.stmt_index] else {
+            unreachable!("await statement shape")
+        };
+        awaited_names.visit_binding_pattern(&decl.declarations[0].id);
+    }
+    let mut seg_start = 0;
+    for awaited in &awaits {
+        let mut declared = NameDecls::default();
+        for stmt in &body.statements[seg_start..awaited.stmt_index] {
+            declared.visit_statement(stmt);
+        }
+        let mut refs = NameRefs::default();
+        for stmt in &body.statements[awaited.stmt_index + 1..] {
+            refs.visit_statement(stmt);
+        }
+        for name in &awaited_names.names {
+            refs.names.remove(name);
+        }
+        if refs.names.iter().any(|name| declared.names.contains(name)) {
+            return Err("segment locals used after `await`");
+        }
+        seg_start = awaited.stmt_index + 1;
+    }
+    Ok(AsyncPlan { awaits, ret_index: ret_index - 1 })
+}
+
+/// Whether `body` contains any JSX: only component-like functions warn or rewrite.
+fn has_jsx(body: &FunctionBody<'_>) -> bool {
+    let mut check = HasJsx { found: false };
+    check.visit_function_body(body);
+    check.found
+}
+
+struct HasJsx {
+    found: bool,
+}
+
+impl<'a> Visit<'a> for HasJsx {
+    fn visit_jsx_element(&mut self, _: &JSXElement<'a>) {
+        self.found = true;
+    }
+
+    fn visit_jsx_fragment(&mut self, _: &JSXFragment<'a>) {
+        self.found = true;
+    }
+}
+
+/// Any `await` outside nested function boundaries.
+struct AwaitCheck {
+    found: bool,
+}
+
+impl<'a> Visit<'a> for AwaitCheck {
+    fn visit_await_expression(&mut self, _: &AwaitExpression<'a>) {
+        self.found = true;
+    }
+
+    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
+
+    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
+}
+
+/// Any `return`/`throw` outside nested function boundaries.
+struct RetCheck {
+    found: bool,
+}
+
+impl<'a> Visit<'a> for RetCheck {
+    fn visit_return_statement(&mut self, _: &ReturnStatement<'a>) {
+        self.found = true;
+    }
+
+    fn visit_throw_statement(&mut self, _: &ThrowStatement<'a>) {
+        self.found = true;
+    }
+
+    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
+
+    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
+}
+
+/// Binding names a statement list declares; nested function bodies are their own scope.
+#[derive(Default)]
+struct NameDecls {
+    names: HashSet<String>,
+}
+
+impl<'a> Visit<'a> for NameDecls {
+    fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
+        self.names.insert(it.name.to_string());
+    }
+
+    fn visit_function(&mut self, it: &Function<'a>, _: ScopeFlags) {
+        if let Some(id) = &it.id {
+            self.names.insert(id.name.to_string());
+        }
+        self.visit_formal_parameters(&it.params);
+    }
+
+    fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
+        self.visit_formal_parameters(&it.params);
+    }
+}
+
+/// Every identifier a statement list reads (closures included: they capture suffix scope).
+#[derive(Default)]
+struct NameRefs {
+    names: HashSet<String>,
+}
+
+impl<'a> Visit<'a> for NameRefs {
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        self.names.insert(it.name.to_string());
+    }
+}
+
+
 /// The text a literal child renders as.
 fn static_text(e: &Expression<'_>) -> Option<String> {
     match unparen(e) {
@@ -1219,7 +1765,167 @@ fn static_text(e: &Expression<'_>) -> Option<String> {
         Expression::TemplateLiteral(t) if t.expressions.is_empty() => {
             t.quasis.first().and_then(|q| q.value.cooked.as_ref()).map(|c| c.to_string())
         }
+        // `"a" + "b"` and mixes with static numbers fold (C08). `+` concatenates
+        // only when an operand is a string, so both-numbers bail: `1 + 2` must
+        // stay dynamic rather than fold to the wrong `"12"`.
+        Expression::BinaryExpression(b) if b.operator == BinaryOperator::Addition => {
+            match (string_value(&b.left), string_value(&b.right)) {
+                (Some(l), Some(r)) => Some(format!("{l}{r}")),
+                (Some(l), None) => static_text(&b.right).map(|r| format!("{l}{r}")),
+                (None, Some(r)) => static_text(&b.left).map(|l| format!("{l}{r}")),
+                (None, None) => None,
+            }
+        }
         _ => None,
+    }
+}
+
+/// A statically known string: literals, expression-free templates, and `+`
+/// chains of those (C08). Numbers are deliberately excluded — see above.
+fn string_value(e: &Expression<'_>) -> Option<String> {
+    match unparen(e) {
+        Expression::StringLiteral(s) => Some(s.value.to_string()),
+        Expression::TemplateLiteral(t) if t.expressions.is_empty() => {
+            t.quasis.first().and_then(|q| q.value.cooked.as_ref()).map(|c| c.to_string())
+        }
+        Expression::BinaryExpression(b) if b.operator == BinaryOperator::Addition => {
+            Some(format!("{}{}", string_value(&b.left)?, string_value(&b.right)?))
+        }
+        _ => None,
+    }
+}
+
+/// Common HTML/SVG attributes plus the framework's own, for near-miss suggestions (D02).
+/// Anything absent here simply never suggests — including `data-*`/`aria-*`, which are
+/// filtered before lookup.
+const KNOWN_ATTRIBUTES: &[&str] = &[
+    "abbr", "accept", "action", "align", "alt", "as", "async", "autoplay", "charset", "checked",
+    "cite", "class", "className", "classList", "cols", "colspan", "content", "controls", "coords",
+    "crossorigin", "cx", "cy", "d", "datetime", "decoding", "default", "defer", "disabled", "download",
+    "draggable", "enctype", "fill", "for", "form", "formaction", "headers", "height", "hidden", "href",
+    "hreflang", "id", "ismap", "kind", "label", "lang", "loading", "loop", "max", "maxlength",
+    "media", "method", "min", "minlength", "multiple", "muted", "name", "nonce", "open", "pattern",
+    "ping", "placeholder", "playsinline", "poster", "preload", "r", "readonly", "referrerpolicy", "rel",
+    "required", "rev", "rows", "rowspan", "rx", "ry", "sandbox", "scope", "selected", "shape", "size",
+    "sizes", "slot", "span", "spellcheck", "src", "srcdoc", "srclang", "srcset", "start", "step",
+    "style", "tabindex", "target", "title", "translate", "type", "usemap", "value", "viewBox",
+    "width", "wrap", "x", "x1", "x2", "y", "y1", "y2",
+];
+
+/// The closest known attribute within edit distance 2, if any (D02).
+fn suggest_attribute(name: &str) -> Option<&'static str> {
+    if name.is_empty() || KNOWN_ATTRIBUTES.contains(&name) {
+        return None;
+    }
+    let mut best: Option<(&'static str, usize)> = None;
+    for candidate in KNOWN_ATTRIBUTES {
+        let distance = edit_distance(name, candidate, 2);
+        if distance <= 2 && best.is_none_or(|(_, d)| distance < d) {
+            best = Some((candidate, distance));
+        }
+    }
+    best.map(|(candidate, _)| candidate)
+}
+
+/// Levenshtein distance capped at `limit + 1`: anything costlier reports `limit + 1`.
+fn edit_distance(a: &str, b: &str, limit: usize) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    if a.len().abs_diff(b.len()) > limit {
+        return limit + 1;
+    }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0; b.len() + 1];
+    for (i, &ca) in a.iter().enumerate() {
+        curr[0] = i + 1;
+        let mut row_min = curr[0];
+        for (j, &cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+            row_min = row_min.min(curr[j + 1]);
+        }
+        if row_min > limit {
+            return limit + 1;
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b.len()]
+}
+
+/// `style={{...}}` with all-static values folds to a static `style` attribute (C09).
+/// Keys serialize verbatim: the runtime object path hands them to
+/// `CSSStyleDeclaration.setProperty` unchanged, so this matches exactly.
+/// Empty objects and anything dynamic fall through to the runtime (`None`).
+fn static_style_object(e: &Expression<'_>) -> Option<String> {
+    let Expression::ObjectExpression(obj) = unparen(e) else { return None };
+    if obj.properties.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    for prop in &obj.properties {
+        let ObjectPropertyKind::ObjectProperty(p) = prop else { return None };
+        if p.computed || !matches!(p.kind, PropertyKind::Init) {
+            return None;
+        }
+        let key = match &p.key {
+            PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+            PropertyKey::StringLiteral(s) => s.value.to_string(),
+            _ => return None,
+        };
+        let value = static_text(&p.value)?;
+        if !out.is_empty() {
+            out.push(';');
+        }
+        out.push_str(&key);
+        out.push(':');
+        out.push_str(&value);
+    }
+    Some(out)
+}
+
+/// `classList={{...}}` with all-literal values folds to a static `class`
+/// attribute (C10), mirroring `classListToObject`: truthy values keep the key's
+/// whitespace-separated tokens, falsy ones drop them. An all-falsy object folds
+/// to no attribute; anything dynamic falls through (`None`).
+fn static_class_list(e: &Expression<'_>) -> Option<String> {
+    let Expression::ObjectExpression(obj) = unparen(e) else { return None };
+    if obj.properties.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    for prop in &obj.properties {
+        let ObjectPropertyKind::ObjectProperty(p) = prop else { return None };
+        if p.computed || !matches!(p.kind, PropertyKind::Init) {
+            return None;
+        }
+        let key = match &p.key {
+            PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+            PropertyKey::StringLiteral(s) => s.value.to_string(),
+            _ => return None,
+        };
+        if !literal_truthy(&p.value)? {
+            continue;
+        }
+        for token in key.split_whitespace() {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(token);
+        }
+    }
+    Some(out)
+}
+
+/// Whether a `classList` value is statically truthy; `None` when not statically
+/// known. Mirrors JS truthiness for the literal shapes `literal()`/`static_text()`
+/// cover — note `0` is falsy while `"0"` and `" "` are truthy (C10).
+fn literal_truthy(e: &Expression<'_>) -> Option<bool> {
+    match unparen(e) {
+        Expression::BooleanLiteral(b) => Some(b.value),
+        Expression::NullLiteral(_) => Some(false),
+        Expression::Identifier(id) if id.name.as_str() == "undefined" => Some(false),
+        Expression::NumericLiteral(n) => Some(n.value != 0.0 && !n.value.is_nan()),
+        _ => static_text(e).map(|s| !s.is_empty()),
     }
 }
 
@@ -1315,6 +2021,24 @@ impl<'a> Visit<'a> for Finder<'_, '_> {
     fn visit_jsx_fragment(&mut self, it: &JSXFragment<'a>) {
         let code = self.t.fragment(it);
         self.found.push((it.span, code));
+    }
+
+    /// Single-await `async` functions rewrite whole; anything else walks through so
+    /// nested JSX still compiles. Skipping the descent on rewrite keeps spans disjoint.
+    fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
+        if let Some(code) = self.t.async_function(it) {
+            self.found.push((it.span, code));
+        } else {
+            walk::walk_function(self, it, flags);
+        }
+    }
+
+    fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
+        if let Some(code) = self.t.async_arrow(it) {
+            self.found.push((it.span, code));
+        } else {
+            walk::walk_arrow_function_expression(self, it);
+        }
     }
 }
 

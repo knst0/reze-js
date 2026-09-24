@@ -200,6 +200,19 @@ importers:
         specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.2)(happy-dom@20.14.5)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.2))
 
+  examples/async:
+    dependencies:
+      reze-js:
+        specifier: workspace:*
+        version: link:../../packages/reze-js
+    devDependencies:
+      '@rezejs/vite-plugin':
+        specifier: workspace:*
+        version: link:../../packages/vite-plugin
+      vite:
+        specifier: ^8.3.0
+        version: 8.3.0(@types/node@26.6.2)(esbuild@0.28.2)
+
   examples/counter:
     dependencies:
       reze-js:
@@ -214,32 +227,6 @@ importers:
         version: 8.3.0(@types/node@26.6.2)(esbuild@0.28.2)
 
   examples/counter-solid:
-    dependencies:
-      solid-js:
-        specifier: ^1.9.7
-        version: 1.9.15
-    devDependencies:
-      vite:
-        specifier: ^8.3.0
-        version: 8.3.0(@types/node@26.6.2)(esbuild@0.28.2)
-      vite-plugin-solid:
-        specifier: ^2.11.2
-        version: 2.11.14(solid-js@1.9.15)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.2))
-
-  examples/counter-solid-text:
-    dependencies:
-      solid-js:
-        specifier: ^1.9.7
-        version: 1.9.15
-    devDependencies:
-      vite:
-        specifier: ^8.3.0
-        version: 8.3.0(@types/node@26.6.2)(esbuild@0.28.2)
-      vite-plugin-solid:
-        specifier: ^2.11.2
-        version: 2.11.14(solid-js@1.9.15)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.2))
-
-  examples/counter-solid-textcontent:
     dependencies:
       solid-js:
         specifier: ^1.9.7
@@ -268,22 +255,6 @@ importers:
         specifier: ^8.3.0
         version: 8.3.0(@types/node@26.6.2)(esbuild@0.28.2)
 
-  examples/counter-solid-v2-textcontent:
-    dependencies:
-      '@solidjs/web':
-        specifier: 2.0.0-rc.9
-        version: 2.0.0-rc.9(solid-js@2.0.0-rc.9)
-      solid-js:
-        specifier: 2.0.0-rc.9
-        version: 2.0.0-rc.9
-    devDependencies:
-      '@solidjs/vite-plugin':
-        specifier: 3.0.0-next.44
-        version: 3.0.0-next.44(@solidjs/web@2.0.0-rc.9(solid-js@2.0.0-rc.9))(solid-js@2.0.0-rc.9)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.2))
-      vite:
-        specifier: ^8.3.0
-        version: 8.3.0(@types/node@26.6.2)(esbuild@0.28.2)
-
   packages/compiler:
     devDependencies:
       '@napi-rs/cli':
@@ -296,6 +267,9 @@ importers:
         specifier: workspace:*
         version: link:../signals
     devDependencies:
+      '@rezejs/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
       '@rezejs/vite-plugin':
         specifier: workspace:*
         version: link:../vite-plugin
@@ -323,6 +297,22 @@ importers:
       reactive-framework-test-suite:
         specifier: 0.0.2
         version: 0.0.2
+
+  packages/test-utils:
+    dependencies:
+      '@rezejs/dom':
+        specifier: workspace:*
+        version: link:../dom
+      '@rezejs/signals':
+        specifier: workspace:*
+        version: link:../signals
+    devDependencies:
+      '@rezejs/vite-plugin':
+        specifier: workspace:*
+        version: link:../vite-plugin
+      happy-dom:
+        specifier: ^20.14.5
+        version: 20.14.5
 
   packages/vite-plugin:
     dependencies:

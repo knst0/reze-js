@@ -7,6 +7,8 @@ import { batchDepth, scheduleFlush } from "./scheduler";
 export type Getter<T> = () => T;
 /** Writes `next` (or the result of calling it with the current value) and returns the new value. */
 export type Setter<T> = (next: T | ((prev: T) => T)) => T;
+/** A signal's read end on its own: the `Getter` half of `signal()` (D08). */
+export type ReadonlySignal<T> = Getter<T>;
 export type Equals<T> = false | ((prev: T, next: T) => boolean);
 export interface SignalOptions<T> {
   /** Suppresses notification when it returns `true`; `false` always notifies. Default `Object.is`. */
@@ -31,7 +33,7 @@ class SignalNode<T = unknown> implements ReactiveNode {
     this.flags = FlagMutable;
     const prev = this.currentValue;
     const next = (this.currentValue = this.pendingValue);
-    return this.equals === false || !this.equals(prev, next);
+    return differs(this.equals, prev, next);
   }
 }
 
@@ -70,7 +72,7 @@ function signalSet<T>(this: SignalNode<T>, next: T | ((prev: T) => T)): T {
   if (typeof next === "function") {
     next = (next as (prev: T) => T)(prev);
   }
-  if (this.equals === false || !this.equals(prev, next)) {
+  if (differs(this.equals, prev, next)) {
     this.pendingValue = next;
     this.flags = FlagMutable | FlagDirty;
     const subs = this.subs;
@@ -82,4 +84,19 @@ function signalSet<T>(this: SignalNode<T>, next: T | ((prev: T) => T)): T {
     }
   }
   return next;
+}
+
+/** `!equals(prev, next)` with the default `Object.is` intrinsic inlined (P06). */
+function differs<T>(equals: Equals<T>, prev: T, next: T): boolean {
+  if (equals === false) {
+    return true;
+  }
+  if (equals !== Object.is) {
+    return !equals(prev, next);
+  }
+  // `Object.is`: `+0`/`-0` differ, `NaN` equals itself. The division only runs
+  // when both are `±0`.
+  return !(prev === next
+    ? (prev as number) !== 0 || 1 / (prev as number) === 1 / (next as number)
+    : (prev as unknown) !== (prev as unknown) && (next as unknown) !== (next as unknown));
 }

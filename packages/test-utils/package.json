@@ -1,5 +1,5 @@
 {
-  "name": "@rezejs/vite-plugin",
+  "name": "@rezejs/test-utils",
   "version": "0.0.0",
   "type": "module",
   "sideEffects": false,
@@ -10,12 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@rezejs/compiler": "workspace:*"
+    "@rezejs/dom": "workspace:*",
+    "@rezejs/signals": "workspace:*"
   },
   "devDependencies": {
-    "vite": "^8.3.0"
-  },
-  "peerDependencies": {
-    "vite": "^6.4.0 || ^7.0.0 || ^8.0.0"
+    "@rezejs/vite-plugin": "workspace:*",
+    "happy-dom": "^20.14.5"
   }
 }

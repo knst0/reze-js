@@ -26,4 +26,14 @@ export interface CompileResult {
   code: string
   /** Source map v3 JSON. */
   map?: string
+  /** Non-fatal diagnostics. */
+  warnings: Array<CompileWarning>
+}
+
+export interface CompileWarning {
+  message: string
+  /** 1-based. */
+  line: number
+  /** 0-based, in UTF-16 code units. */
+  column: number
 }

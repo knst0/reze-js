@@ -23,6 +23,13 @@ export function endBatch(): void {
 }
 
 export function flush(): void {
+  // Fast path (P03): `flushSync` after every write plus one microtask per
+  // unbatched write means most `flush()` calls find an empty queue — the
+  // `try/finally` setup alone is the cost. Outside `flush()` both indices are
+  // always 0 (the `finally` below restores that), so this is a pure no-op skip.
+  if (notifyIndex >= queuedLength) {
+    return;
+  }
   try {
     while (notifyIndex < queuedLength) {
       const node = queued[notifyIndex]!;

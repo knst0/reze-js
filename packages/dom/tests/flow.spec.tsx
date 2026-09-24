@@ -1,26 +1,15 @@
 import { flushSync, onCleanup, signal } from "@rezejs/signals";
+import { cleanup, mount } from "@rezejs/test-utils";
 import { afterEach, expect, test } from "vitest";
 
-import { render } from "../src";
 import { Dynamic, Match, Portal, Show, Switch } from "../src/flow";
 
-let dispose: (() => void) | undefined;
-function mount(code: () => unknown): HTMLElement {
-  const el = document.createElement("div");
-  document.body.appendChild(el);
-  dispose = render(code as () => Element, el);
-  return el;
-}
-afterEach(() => {
-  dispose?.();
-  dispose = undefined;
-  document.body.textContent = "";
-});
+afterEach(cleanup);
 
 test("Show keeps its branch while `when` stays truthy and passes the value as a getter", () => {
   let builds = 0;
   const [user, setUser] = signal<{ name: string } | null>({ name: "a" });
-  const el = mount(() => (
+  const { el } = mount(() => (
     <Show when={user()} fallback={<i>none</i>}>
       {(u: () => { name: string }) => {
         builds++;
@@ -63,7 +52,7 @@ test("Show disposes the branch it switches away from", () => {
 test("Switch renders the first truthy Match and rebuilds only when the choice changes", () => {
   let builds = 0;
   const [n, setN] = signal(1);
-  const el = mount(() => (
+  const { el } = mount(() => (
     <Switch fallback={<i>zero</i>}>
       <Match when={n() > 10}>
         <b>big</b>
@@ -92,7 +81,7 @@ test("Dynamic renders a tag name or a component with the remaining props", () =>
   const Comp = (props: { title?: string }) => <em>{props.title}</em>;
   const [c, setC] = signal<string | typeof Comp>("section");
   const [title, setTitle] = signal("t");
-  const el = mount(() => <Dynamic component={c()} title={title()} />);
+  const { el } = mount(() => <Dynamic component={c()} title={title()} />);
   expect(el.innerHTML).toBe('<section title="t"></section>');
   setTitle("u");
   flushSync();
@@ -107,7 +96,7 @@ test("Portal renders into mount and is removed with its owner", () => {
   document.body.appendChild(target);
   const [on, setOn] = signal(true);
   const [text, setText] = signal("a");
-  const el = mount(() => (
+  const { el } = mount(() => (
     <div>
       <Show when={on()}>
         <Portal mount={target}>
