@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-24T22:24:09.624Z",
+  "recordedAt": "2026-09-24T22:28:36.574Z",
   "results": {
     "create 1k": {
-      "medianMs": 32.8
+      "medianMs": 32.4
     },
     "update every 10th": {
-      "medianMs": 10.3
+      "medianMs": 9.6
     },
     "swap rows": {
-      "medianMs": 3.4
+      "medianMs": 3
     },
     "select row": {
       "medianMs": 0.1
@@ -18,13 +18,13 @@
       "medianMs": 3.1
     },
     "append 1k": {
-      "medianMs": 45.3
+      "medianMs": 44.1
     },
     "create 10k": {
-      "medianMs": 410.7
+      "medianMs": 413.4
     },
     "clear 10k": {
-      "medianMs": 41.3
+      "medianMs": 38.5
     }
   }
 }

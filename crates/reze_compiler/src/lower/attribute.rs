@@ -10,6 +10,7 @@ use super::constant::{
     ClassKeys, Literal, is_dynamic, literal, literal_truthy, static_property, static_style,
 };
 use super::element::TemplateBuilder;
+use super::types::{StaticKind, static_kind};
 use super::{Lowerer, attribute_name, is_function};
 use crate::diagnostic::{Code, Edit, Report};
 use crate::html::{
@@ -278,6 +279,11 @@ impl<'a> Lowerer<'a, '_> {
             AttrValue::Expr(e) => is_dynamic(e, false, self.facts),
             _ => false,
         });
+        let is_string = matches!(
+            values.as_slice(),
+            [AttrValue::Expr(only)]
+                if static_kind(only, self.facts, self.scoping) == Some(StaticKind::String)
+        );
         let mut parts = self.vec();
         for value in values {
             parts.push(match value {
@@ -286,6 +292,7 @@ impl<'a> Lowerer<'a, '_> {
                 AttrValue::Bare | AttrValue::Jsx(_) => continue,
             });
         }
+        let target = if is_string { BindTarget::Attr("class") } else { BindTarget::Class };
         let value = if parts.len() == 1 {
             parts.pop().expect("one part")
         } else {
@@ -293,9 +300,9 @@ impl<'a> Lowerer<'a, '_> {
         };
         builder.reference(node);
         if is_reactive {
-            builder.binds.push(Bind { node, target: BindTarget::Class, value });
+            builder.binds.push(Bind { node, target, value });
         } else {
-            builder.ops.push(Op::Set { node, target: BindTarget::Class, value });
+            builder.ops.push(Op::Set { node, target, value });
         }
     }
 

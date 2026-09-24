@@ -9,6 +9,7 @@ mod island;
 pub mod props;
 mod selector;
 pub mod store;
+pub mod types;
 
 use oxc_allocator::{Allocator, Box, Vec};
 use oxc_ast::ast::*;

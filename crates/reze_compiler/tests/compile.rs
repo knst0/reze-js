@@ -870,3 +870,55 @@ fn row_comparison_stays_plain_for_a_for_outside_the_runtime() {
     let code = run(&source);
     assert!(!code.contains("selector"), "{code}");
 }
+
+fn class_setter(expression: &str) -> &'static str {
+    let code = run(&format!(
+        "import {{ signal }} from \"reze-js\";\nconst [label] = signal(\"x\");\nconst [n] = signal(1);\nconst a = <i class={{{expression}}} />;"
+    ));
+    if code.contains("_$setAttribute(_el$, \"class\"") {
+        "setAttribute"
+    } else if code.contains("_$className") {
+        "className"
+    } else {
+        panic!("no class setter in {code}")
+    }
+}
+
+#[test]
+fn provably_string_class_values_use_set_attribute() {
+    for expression in [
+        "on() ? \"danger\" : \"\"",
+        "`row ${kind()}`",
+        "\"row-\" + kind()",
+        "kind() + \"-row\"",
+        "String(kind())",
+        "kind().toString()",
+        "price().toFixed(2)",
+        "parts().join(\" \")",
+        "on() ? `a${x()}` : \"b\"",
+    ] {
+        assert_eq!(class_setter(expression), "setAttribute", "{expression}");
+    }
+}
+
+#[test]
+fn class_values_of_unknown_kind_keep_class_name() {
+    for expression in [
+        "cls()",
+        "a() + b()",
+        "on() ? \"a\" : 1",
+        "on() && \"a\"",
+        "props.cls",
+        "on() ? \"a\" : cls()",
+        "obj?.toString()",
+        "a() === b()",
+    ] {
+        assert_eq!(class_setter(expression), "className", "{expression}");
+    }
+}
+
+#[test]
+fn a_shadowed_string_function_is_not_the_global() {
+    let code = run("function f(String) { return <i class={String(x())} />; }");
+    assert!(code.contains("_$className"), "{code}");
+}
