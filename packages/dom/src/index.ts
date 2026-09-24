@@ -59,6 +59,7 @@ export {
   useContext,
 } from "@rezejs/signals";
 export { createContext } from "./context";
+export { isServerRender } from "./hydration";
 export { createUniqueId, lazy } from "./lazy";
 export type { LazyComponent } from "./lazy";
 export type { Context } from "./context";

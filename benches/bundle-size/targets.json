@@ -10,5 +10,8 @@
   },
   "@rezejs/example-islands-lazy": {
     "dir": "examples/islands-lazy"
+  },
+  "@rezejs/example-router": {
+    "dir": "examples/router"
   }
 }
