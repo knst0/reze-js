@@ -137,17 +137,25 @@ export function hydrate(code: () => JSX.Element, element: Element): () => void {
 function addClaimable(node: Element): void {
   claimable!.set(node.getAttribute("data-hk")!, node);
 }
-/** A component or a lazy descriptor in the `hydrateIslands` map. */
-export type IslandValue =
-  | ((props: Any) => JSX.Element)
-  | { load: () => Promise<Record<string, Any>>; mode: string; export: string };
+/** Hydrates an island itself once its trigger fires; see `lazyIsland`. */
+export interface LazyIsland {
+  hydrate(
+    island: ServerIsland,
+    props: Props,
+    state: IslandsState,
+    onPending: (cancel: () => void) => void,
+  ): void;
+}
+
+/** A component or a `lazyIsland(...)` in the `hydrateIslands` map. */
+export type IslandValue = ((props: Any) => JSX.Element) | LazyIsland;
 
 interface SlotRange {
   name: string;
   nodes: Node[];
 }
 
-interface ServerIsland {
+export interface ServerIsland {
   open: Comment;
   close: Comment;
   value: IslandValue;
@@ -163,7 +171,7 @@ interface ServerIsland {
  * `<!--$slot:name-->…<!--/$slot-->` becomes an array of the nodes of its first range
  * (`undefined` when empty); every insert of the slot moves those nodes, like one value
  * inserted twice. Eager islands hydrate at once, in document order;
- * lazy ones (`{ load, mode, export }`) load their module first: `idle` waits for
+ * lazy ones (`lazyIsland(load, mode, export)`) load their module first: `idle` waits for
  * `requestIdleCallback` (`setTimeout` fallback), `visible` for an `IntersectionObserver` on the
  * first element after the opening marker (else the parent), `interaction` for a capture
  * `pointerdown`/`focusin`/`keydown` on the parent — and any of those events inside the island
@@ -261,7 +269,7 @@ function parseIslandMarker(
   };
 }
 
-interface IslandsState {
+export interface IslandsState {
   cancelled: boolean;
   replay: boolean;
 }
@@ -279,14 +287,14 @@ function hydrateFound(
     hydrateNow(island, island.value, props);
     return;
   }
-  hydrateLazy(island, props, island.value, state, onPending);
+  island.value.hydrate(island, props, state, onPending);
 }
 
-function islandValueMode(value: IslandValue): string {
-  return typeof value === "function" ? "eager" : value.mode;
-}
-
-function hydrateNow(island: ServerIsland, render: (props: Any) => JSX.Element, props: Props): void {
+export function hydrateNow(
+  island: ServerIsland,
+  render: (props: Any) => JSX.Element,
+  props: Props,
+): void {
   const { open, close, scope } = island;
   const current: Node[] = [];
   claimable = new Map();
@@ -310,214 +318,6 @@ function hydrateNow(island: ServerIsland, render: (props: Any) => JSX.Element, p
   }
 }
 
-/** Loads a lazy island on its trigger and hydrates it; cancelled islands never load. */
-function hydrateLazy(
-  island: ServerIsland,
-  props: Props,
-  descriptor: { load: () => Promise<Record<string, Any>>; export: string },
-  state: IslandsState,
-  onPending: (cancel: () => void) => void,
-): void {
-  let settled = false;
-  const cancels: (() => void)[] = [];
-  const recorder = state.replay ? recordEvents(island) : undefined;
-  const load = (): void => {
-    if (settled || state.cancelled) return;
-    settled = true;
-    for (const cancel of cancels) cancel();
-    void descriptor.load().then(
-      (namespace) => {
-        if (state.cancelled) return;
-        const render = namespace[descriptor.export];
-        if (typeof render !== "function") {
-          throw new Error(`hydrateIslands: no export "${descriptor.export}" for island`);
-        }
-        hydrateNow(island, render, props);
-        recorder?.replay();
-      },
-      () => recorder?.stop(),
-    );
-  };
-  const mode = islandValueMode(descriptor as IslandValue);
-  if (mode === "eager") {
-    load();
-    return;
-  }
-  cancels.push(watchInteraction(island, load));
-  if (mode === "idle") {
-    const idle = (window as Any).requestIdleCallback as
-      | ((callback: () => void) => number)
-      | undefined;
-    if (idle) {
-      const id = idle.call(window, load);
-      const cancelIdle = (window as Any).cancelIdleCallback as ((id: number) => void) | undefined;
-      cancels.push(() => (cancelIdle ? cancelIdle.call(window, id) : undefined));
-    } else {
-      const id = setTimeout(load, 1);
-      cancels.push(() => clearTimeout(id));
-    }
-  } else if (mode === "visible") {
-    cancels.push(watchVisible(island, load));
-  } else if (mode !== "interaction") {
-    const id = setTimeout(load, 1);
-    cancels.push(() => clearTimeout(id));
-  }
-  onPending(() => {
-    for (const cancel of cancels) cancel();
-    recorder?.stop();
-  });
-}
-
-/** The first element after the opening marker inside the island, else its parent. */
-function visibleTarget(island: ServerIsland): Element | null {
-  for (let n = island.open.nextSibling; n && n !== island.close; n = n.nextSibling) {
-    if (n.nodeType === 1) return n as Element;
-  }
-  return island.open.parentNode as Element | null;
-}
-
-function watchVisible(island: ServerIsland, load: () => void): () => void {
-  const Observer = (window as Any).IntersectionObserver as
-    | (new (callback: (entries: { isIntersecting: boolean }[]) => void) => {
-        observe(target: Element): void;
-        disconnect(): void;
-      })
-    | undefined;
-  if (!Observer) {
-    const id = setTimeout(load, 1);
-    return () => clearTimeout(id);
-  }
-  const observer = new Observer((entries) => {
-    if (entries.some((entry) => entry.isIntersecting)) {
-      observer.disconnect();
-      load();
-    }
-  });
-  const target = visibleTarget(island);
-  if (target) observer.observe(target);
-  else load();
-  return () => observer.disconnect();
-}
-
-const ReplayedEvents = [
-  "click",
-  "input",
-  "change",
-  "submit",
-  "keydown",
-  "keyup",
-  "pointerdown",
-  "pointerup",
-  "focusin",
-  "focusout",
-];
-const ReplayedFields = [
-  "bubbles",
-  "cancelable",
-  "composed",
-  "detail",
-  "view",
-  "key",
-  "code",
-  "location",
-  "repeat",
-  "isComposing",
-  "button",
-  "buttons",
-  "clientX",
-  "clientY",
-  "screenX",
-  "screenY",
-  "relatedTarget",
-  "shiftKey",
-  "ctrlKey",
-  "altKey",
-  "metaKey",
-  "pointerId",
-  "pointerType",
-  "width",
-  "height",
-  "pressure",
-  "isPrimary",
-  "inputType",
-  "data",
-];
-const MaxReplayedEvents = 32;
-
-/** Whether the default action of `event` would leave the page before the island can handle it. */
-function leavesPage(event: Event): boolean {
-  if (event.type === "submit") return true;
-  if (event.type !== "click") return false;
-  const target = event.target as Element | null;
-  return !!target?.closest?.('a[href], button[type="submit"], input[type="submit"]');
-}
-
-function replayed(event: Event): Event {
-  const init: Record<string, unknown> = {};
-  for (const field of ReplayedFields) {
-    if (field in event) init[field] = (event as Any)[field];
-  }
-  return new (event.constructor as typeof Event)(event.type, init);
-}
-
-/** Records the delegated events inside `island` until `replay` dispatches them again or `stop`. */
-function recordEvents(island: ServerIsland): { replay: () => void; stop: () => void } {
-  const parent = island.open.parentNode as Element | null;
-  const recorded: { event: Event; target: Element }[] = [];
-  const onEvent = (event: Event): void => {
-    const target = event.target as Element | null;
-    if (!target || !inIslandRange(island, target)) return;
-    if (leavesPage(event)) event.preventDefault();
-    if (recorded.length === MaxReplayedEvents) recorded.shift();
-    recorded.push({ event, target });
-  };
-  for (const name of ReplayedEvents) parent?.addEventListener(name, onEvent, true);
-  const stop = (): void => {
-    for (const name of ReplayedEvents) parent?.removeEventListener(name, onEvent, true);
-  };
-  const replay = (): void => {
-    stop();
-    for (const { event, target } of recorded.splice(0)) {
-      if (!target.isConnected) continue;
-      if (
-        event.type === "submit" &&
-        typeof (target as HTMLFormElement).requestSubmit === "function"
-      ) {
-        (target as HTMLFormElement).requestSubmit();
-      } else {
-        target.dispatchEvent(replayed(event));
-      }
-    }
-  };
-  return { replay, stop };
-}
-
-/**
- * Capture `pointerdown`/`focusin`/`keydown` on the opening marker's parent: an event inside the
- * island range loads it at once, in every lazy mode.
- */
-function watchInteraction(island: ServerIsland, load: () => void): () => void {
-  const parent = island.open.parentNode as Element | null;
-  if (!parent) return () => {};
-  const onEvent = (event: Event): void => {
-    if (inIslandRange(island, event.target as Node | null)) load();
-  };
-  for (const name of ["pointerdown", "focusin", "keydown"]) {
-    parent.addEventListener(name, onEvent, true);
-  }
-  return () => {
-    for (const name of ["pointerdown", "focusin", "keydown"]) {
-      parent.removeEventListener(name, onEvent, true);
-    }
-  };
-}
-
-function inIslandRange(island: ServerIsland, target: Node | null): boolean {
-  for (let n = island.open.nextSibling; n && n !== island.close; n = n.nextSibling) {
-    if (n === target || (n.nodeType === 1 && (n as Element).contains(target))) return true;
-  }
-  return false;
-}
 /** The server-rendered root of this template, or a fresh clone when there is none to claim. */
 export function claim(template: () => Node, tag: string): Node {
   const key = claimable && nextHydrationKey();

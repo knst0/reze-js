@@ -55,21 +55,22 @@ impl<'a> Emitter<'a, '_> {
         }
     }
     /// The value of an island in the `hydrateIslands` map: the statically imported component
-    /// when some position is eager, otherwise a lazy descriptor the bundler splits per island
-    /// (`load()` resolves the module namespace, the component is read off `export`).
+    /// when some position is eager, otherwise `lazyIsland(load, mode, export)`, whose `load()`
+    /// the bundler splits per island.
     fn island_value(&mut self, out: &mut Code, island: &IslandImport<'a>, index: usize) {
         if island.mode == IslandMode::Eager {
             let alias = self.island_import(island, index);
             out.push(alias);
             return;
         }
-        out.push("{ load: () => import(");
+        out.push(self.helper(Helper::LazyIsland));
+        out.push("(() => import(");
         push_js_string(&mut out.text, island.specifier);
-        out.push("), mode: ");
+        out.push("), ");
         push_js_string(&mut out.text, island.mode.as_str());
-        out.push(", export: ");
+        out.push(", ");
         push_js_string(&mut out.text, island.export);
-        out.push(" }");
+        out.push(")");
     }
     /// The local name of an island's component, imported once per module.
     fn island_import(&mut self, island: &IslandImport<'a>, index: usize) -> &'a str {

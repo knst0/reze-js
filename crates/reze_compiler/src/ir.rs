@@ -584,7 +584,7 @@ pub enum RootKind {
 }
 
 /// An island of a hydrate root: `import { export as <alias> } from "specifier"` when eager,
-/// otherwise `{ load: () => import("specifier"), mode, export }` (§16.3).
+/// otherwise `lazyIsland(() => import("specifier"), mode, export)` (§16.3).
 pub struct IslandImport<'a> {
     pub id: &'a str,
     pub specifier: &'a str,

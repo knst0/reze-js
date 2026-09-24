@@ -5,7 +5,7 @@ import { compile, link, summarize } from "@rezejs/compiler";
 import { cleanup, fire, tick } from "@rezejs/test-utils";
 import { afterEach, expect, test } from "vitest";
 
-import { hydrateIslands, renderToString } from "../src";
+import { hydrateIslands, lazyIsland, renderToString } from "../src";
 import type { IslandValue } from "../src/dom";
 import type { JSX } from "../src/jsx";
 
@@ -199,8 +199,7 @@ async function islandsOf(html: string, load: () => Promise<Record<string, unknow
   return Object.fromEntries(
     ids.map((id, index) => {
       const name = exports[index]!;
-      const value: IslandValue =
-        name === "Idle" ? { load, mode: "idle", export: name } : counter[name]!;
+      const value: IslandValue = name === "Idle" ? lazyIsland(load, "idle", name) : counter[name]!;
       return [id, value];
     }),
   );
@@ -299,7 +298,7 @@ test("hydrateIslands accepts a descriptor directly", async () => {
     Object.fromEntries(
       (["Eager", "Visible", "Idle", "Click"] as const).map((name, index) => [
         ids[index]!,
-        { load: () => Promise.resolve(counter), mode: "eager", export: name },
+        lazyIsland(() => Promise.resolve(counter), "eager", name),
       ]),
     ),
   );
