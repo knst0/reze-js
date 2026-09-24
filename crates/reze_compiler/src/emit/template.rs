@@ -277,6 +277,10 @@ impl<'a> Emitter<'a, '_> {
 
     fn set_open(&mut self, out: &mut Code, element: &str, target: BindTarget<'a>) {
         let helper = match target {
+            BindTarget::Text { .. } => {
+                let _ = write!(out, "{element}.data = ");
+                return;
+            }
             BindTarget::Attr(_) => Helper::SetAttribute,
             BindTarget::AttrNs(..) => Helper::SetAttributeNs,
             BindTarget::Bool(_) => Helper::SetBoolAttribute,
@@ -302,12 +306,15 @@ impl<'a> Emitter<'a, '_> {
                 push_js_string(&mut out.text, name);
                 out.push(", ");
             }
-            BindTarget::Class | BindTarget::Style | BindTarget::Prop { .. } => {}
+            BindTarget::Class
+            | BindTarget::Style
+            | BindTarget::Prop { .. }
+            | BindTarget::Text { .. } => {}
         }
     }
 
     fn set_close(&mut self, out: &mut Code, target: BindTarget<'a>, previous: Option<&str>) {
-        if matches!(target, BindTarget::Prop { .. }) {
+        if matches!(target, BindTarget::Prop { .. } | BindTarget::Text { .. }) {
             return;
         }
         if let Some(previous) = previous {

@@ -6,16 +6,31 @@ use oxc_span::{GetSpan, Span};
 
 use super::constant::{is_dynamic, literal_truthy, static_text};
 use super::element::TemplateBuilder;
+use super::types::{StaticKind, static_kind};
 use super::{Lowerer, is_function};
 use crate::diagnostic::{Code, Report};
 use crate::html::{clean_jsx_text, decode_entities};
-use crate::ir::{Anchor, Child, Conditional, Embed, ExprChild, MemoId, NodeId, Op};
+use crate::ir::{
+    Anchor, Bind, BindTarget, Child, Conditional, Embed, ExprChild, MemoId, NodeId, Op, TextPart,
+    Value,
+};
 
 pub enum Item<'b, 'a> {
     Text(String),
     Element(&'b JSXElement<'a>),
     Fragment(&'b JSXFragment<'a>),
     Expr(&'b Expression<'a>),
+}
+
+enum RunPart<'b, 'a> {
+    Text(String),
+    Expr(&'b Expression<'a>),
+}
+
+enum Segment<'b, 'a> {
+    Item(Item<'b, 'a>),
+    /// Adjacent text and expressions of a known kind, rendered as one text node (SPEC §7.5).
+    TextRun(std::vec::Vec<RunPart<'b, 'a>>),
 }
 
 /// An insert op, pushed in document order, waiting for its anchor: the `next_static`-th static
@@ -127,12 +142,28 @@ impl<'a> Lowerer<'a, '_> {
         items: std::vec::Vec<Item<'_, 'a>>,
         in_svg: bool,
     ) {
-        let is_sole = items.len() == 1;
+        let segments = self.segments(items);
+        let is_sole = segments.len() == 1;
         let mut pending: std::vec::Vec<PendingInsert> = std::vec::Vec::new();
         let mut last_is_text = false;
         let mut after_dynamic = false;
         let mut static_count = 0;
-        for item in items {
+        for segment in segments {
+            let item = match segment {
+                Segment::Item(item) => item,
+                Segment::TextRun(parts) => {
+                    if after_dynamic && last_is_text {
+                        builder.node(parent);
+                        builder.html.push_str("<!>");
+                        static_count += 1;
+                    }
+                    self.text_run(builder, parent, parts);
+                    static_count += 1;
+                    last_is_text = true;
+                    after_dynamic = false;
+                    continue;
+                }
+            };
             let value = match item {
                 Item::Text(text) => {
                     if after_dynamic && last_is_text {
@@ -192,6 +223,89 @@ impl<'a> Lowerer<'a, '_> {
                 *anchor = resolved;
                 *inserts_after = shared.count() as u32;
             }
+        }
+    }
+
+    fn text_kind(&self, e: &Expression<'a>) -> Option<StaticKind> {
+        if self.conditional_parts(e).is_some() {
+            return None;
+        }
+        static_kind(e, self.facts, self.scoping, self.nodes)
+    }
+
+    /// Groups adjacent text and expressions of a known kind into text runs; a run needs an
+    /// expression and text that is never empty: static text, or only numeric expressions.
+    fn segments<'b>(&self, items: std::vec::Vec<Item<'b, 'a>>) -> std::vec::Vec<Segment<'b, 'a>> {
+        let mut segments = std::vec::Vec::new();
+        let mut run: std::vec::Vec<RunPart<'b, 'a>> = std::vec::Vec::new();
+        let flush = |run: &mut std::vec::Vec<RunPart<'b, 'a>>,
+                     segments: &mut std::vec::Vec<Segment<'b, 'a>>,
+                     lowerer: &Self| {
+            let has_expression = run.iter().any(|part| matches!(part, RunPart::Expr(_)));
+            let has_text = run.iter().any(|part| matches!(part, RunPart::Text(t) if !t.is_empty()));
+            let is_numeric = run.iter().all(|part| match part {
+                RunPart::Text(_) => true,
+                RunPart::Expr(e) => lowerer.text_kind(e) == Some(StaticKind::Numeric),
+            });
+            if has_expression && (has_text || is_numeric) {
+                segments.push(Segment::TextRun(std::mem::take(run)));
+                return;
+            }
+            for part in run.drain(..) {
+                segments.push(Segment::Item(match part {
+                    RunPart::Text(text) => Item::Text(text),
+                    RunPart::Expr(e) => Item::Expr(e),
+                }));
+            }
+        };
+        for item in items {
+            match item {
+                Item::Text(text) => run.push(RunPart::Text(text)),
+                Item::Expr(e) if self.text_kind(e).is_some() => run.push(RunPart::Expr(e)),
+                item => {
+                    flush(&mut run, &mut segments, self);
+                    segments.push(Segment::Item(item));
+                }
+            }
+        }
+        flush(&mut run, &mut segments, self);
+        segments
+    }
+
+    fn text_run(
+        &mut self,
+        builder: &mut TemplateBuilder<'a>,
+        parent: NodeId,
+        parts: std::vec::Vec<RunPart<'_, 'a>>,
+    ) {
+        let node = builder.node(parent);
+        let start = builder.html.len() as u32;
+        let mut is_reactive = false;
+        let mut lowered = self.vec();
+        for part in parts {
+            match part {
+                RunPart::Text(text) => {
+                    crate::html::escape_text(&mut builder.html, &text);
+                    lowered.push(TextPart::Static(self.str(&text)));
+                }
+                RunPart::Expr(e) => {
+                    is_reactive |= is_dynamic(e, false, self.facts);
+                    let at = builder.html.len() as u32;
+                    lowered.push(TextPart::Dynamic { value: self.expr(e), at });
+                }
+            }
+        }
+        let placeholder = (builder.html.len() as u32 == start).then(|| {
+            builder.html.push(' ');
+            start
+        });
+        builder.reference(node);
+        let target = BindTarget::Text { placeholder };
+        let value = Value::Text(lowered);
+        if is_reactive {
+            builder.binds.push(Bind { node, target, value });
+        } else {
+            builder.ops.push(Op::Set { node, target, value });
         }
     }
 

@@ -41,6 +41,10 @@ export function setup() {
       </Card>
       {count() % 2 === 0 ? <em>even</em> : "odd"}
       <>{name()}<b>!</b>{count()}</>
+      <p>total: {count() * 3}</p>
+      <p>{count() * 3}{-count()}</p>
+      <p>name: {\`\${name()}\`}</p>
+      <p>{\`\${count()}!\`}</p>
       <input value={name()} checked={count() > 1} />
       <button onClick={() => setCount(count() + 1)}>+</button>
     </main>

@@ -282,7 +282,7 @@ impl<'a> Lowerer<'a, '_> {
         let is_string = matches!(
             values.as_slice(),
             [AttrValue::Expr(only)]
-                if static_kind(only, self.facts, self.scoping) == Some(StaticKind::String)
+                if static_kind(only, self.facts, self.scoping, self.nodes) == Some(StaticKind::String)
         );
         let mut parts = self.vec();
         for value in values {

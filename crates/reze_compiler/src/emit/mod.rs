@@ -17,7 +17,7 @@ use oxc_allocator::Allocator;
 use crate::Target;
 use crate::code::Code;
 use crate::html::push_js_string;
-use crate::ir::{Child, Embed, ExprChild, Getter, HoleKind, Jsx, Namespace, Value};
+use crate::ir::{Child, Embed, ExprChild, Getter, HoleKind, Jsx, Namespace, TextPart, Value};
 use crate::namer::Namer;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -569,6 +569,25 @@ impl<'a, 's> Emitter<'a, 's> {
                     self.embed(out, embed);
                 }
                 out.push(" }");
+            }
+            Value::Text(parts) => {
+                let starts_static = matches!(parts.first(), Some(TextPart::Static(_)));
+                if !starts_static {
+                    out.push("\"\"");
+                }
+                for (i, part) in parts.iter().enumerate() {
+                    if i > 0 || !starts_static {
+                        out.push(" + ");
+                    }
+                    match part {
+                        TextPart::Static(text) => push_js_string(&mut out.text, text),
+                        TextPart::Dynamic { value, .. } => {
+                            out.push("(");
+                            self.embed(out, value);
+                            out.push(")");
+                        }
+                    }
+                }
             }
             Value::ClassParts(parts) => {
                 out.push("[");

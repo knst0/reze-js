@@ -1,0 +1,21 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <p>doubled: {n() * 2}</p>;\nconst b = <p>{n() + 1}</p>;\nconst c = <p>{`${name()}`}</p>;\nconst d = <p>a {\"<\"} b &amp; {n() - 1} items</p>;\nconst e = <div>{n() * 2}<b />{x()}total: {n() % 3}<i />{(n() | 0) + 1}{-n()}</div>;\nconst f = <p>{label()}: {n() / 2}</p>;\nconst g = <p>size {SIZE * 2}</p>;\nconst h = <p>{on() ? \"yes\" : \"no\"}</p>;\nconst i = <p>state: {on() ? \"yes\" : \"no\"}</p>;"
+---
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
+const _tmpl$ = ["<p", ">doubled: ", "</p>"],
+  _tmpl$2 = ["<p", ">", "</p>"],
+  _tmpl$3 = ["<p", ">a &lt; b &amp; ", " items</p>"],
+  _tmpl$4 = ["<div", ">", "<b></b><!--[-->", "<!--]-->total: ", "<i></i>", "", "</div>"],
+  _tmpl$5 = ["<p", "><!--[-->", "<!--]-->: ", "</p>"],
+  _tmpl$6 = ["<p", ">size ", "</p>"],
+  _tmpl$7 = ["<p", ">state: ", "</p>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(n() * 2));
+const b = _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(n() + 1));
+const c = _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(`${name()}`));
+const d = _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild(n() - 1));
+const e = _$ssr(_tmpl$4, _$ssrHydrationKey(), _$ssrChild(n() * 2), _$ssrChild(x()), _$ssrChild(n() % 3), _$ssrChild((n() | 0) + 1), _$ssrChild(-n()));
+const f = _$ssr(_tmpl$5, _$ssrHydrationKey(), _$ssrChild(label()), _$ssrChild(n() / 2));
+const g = _$ssr(_tmpl$6, _$ssrHydrationKey(), _$ssrChild(SIZE * 2));
+const h = _$ssr(_tmpl$2, _$ssrHydrationKey(), _$ssrChild(on() ? "yes" : "no"));
+const i = _$ssr(_tmpl$7, _$ssrHydrationKey(), _$ssrChild(on() ? "yes" : "no"));

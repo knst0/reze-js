@@ -1,6 +1,5 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
-assertion_line: 254
 expression: render(&dir)
 ---
 closed: []
@@ -20,7 +19,7 @@ import * as R from "reze-js";
 
 import { s, store } from "./lib";
 import * as lib from "./lib";
-import { signal as _$signal, template as _$template, untrack as _$untrack, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+import { signal as _$signal, template as _$template, untrack as _$untrack, bind as _$bind, delegateEvents as _$delegateEvents } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<h1 title=\"x\">Reze 2 </h1>");
 
 const title = "Reze";
@@ -30,12 +29,13 @@ const [todo$done, setTodo$done] = _$signal(false);
 
 export const App = () => (
   (() => {
-  var _el$ = _tmpl$();
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
   _el$.$$click = () =>
       void _$untrack(() => {
         setTodo$done(() => !todo$done());
       });
-  _$insert(_el$, () => todo$done() ? "yes" : "no", null);
+  _$bind(() => _el$2.data = "Reze 2 " + (todo$done() ? "yes" : "no"));
   return _el$;
 })()
 );
@@ -84,7 +84,7 @@ import * as R from "reze-js";
 import { s, store } from "./lib";
 import * as lib from "./lib";
 import { signal as _$signal, ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild } from "reze-js";
-const _tmpl$ = ["<h1 title=\"x\"", ">Reze 2 <!--[-->", "<!--]--></h1>"];
+const _tmpl$ = ["<h1 title=\"x\"", ">Reze 2 ", "</h1>"];
 
 const title = "Reze";
 const count = 2;
@@ -100,7 +100,7 @@ import * as R from "reze-js";
 
 import { s, store } from "./lib";
 import * as lib from "./lib";
-import { signal as _$signal, template as _$template, claim as _$claim, untrack as _$untrack, claimInsert as _$claimInsert, delegateEvents as _$delegateEvents } from "reze-js";
+import { signal as _$signal, template as _$template, claim as _$claim, claimChild as _$claimChild, untrack as _$untrack, bind as _$bind, delegateEvents as _$delegateEvents } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<h1 title=\"x\">Reze 2 </h1>");
 
 const title = "Reze";
@@ -110,12 +110,13 @@ const [todo$done, setTodo$done] = _$signal(false);
 
 export const App = () => (
   (() => {
-  var _el$ = _$claim(_tmpl$, "h1");
+  var _el$ = _$claim(_tmpl$, "h1"),
+    _el$2 = _$claimChild(_el$, 0);
   _el$.$$click = () =>
       void _$untrack(() => {
         setTodo$done(() => !todo$done());
       });
-  _$claimInsert(_el$, () => todo$done() ? "yes" : "no", null);
+  _$bind(() => _el$2.data = "Reze 2 " + (todo$done() ? "yes" : "no"));
   return _el$;
 })()
 );

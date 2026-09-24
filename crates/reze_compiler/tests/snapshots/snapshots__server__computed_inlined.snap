@@ -1,12 +1,11 @@
 ---
 source: crates/reze_compiler/tests/snapshots.rs
-assertion_line: 157
 expression: "import { computed, signal } from \"reze-js\";\nconst [name, setName] = signal(\"Reze\");\nconst greeting = computed(() => `Hi ${name()}`);\nexport const hello = <p onInput={() => setName(\"x\")}>{greeting()}</p>;\nfunction Counter() {\n  const [count, setCount] = signal(0);\n  const doubled = computed(() => count() * 2);\n  const label = computed(() => `n${count()}`);\n  const size = computed(() => (count() > 9 ? \"big\" : \"small\"));\n  const view = computed(() => <b>{count()}</b>);\n  return (\n    <div title={label()} onClick={() => setCount(count() + 1)}>\n      <Badge size={size()} />\n      {doubled()}\n      {view()}\n    </div>\n  );\n}"
 ---
 import { computed, signal } from "reze-js";
 import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, ssrAttribute as _$ssrAttribute, createComponent as _$createComponent } from "reze-js";
 const _tmpl$ = ["<p", ">", "</p>"],
-  _tmpl$2 = ["<div", "", "><!--[-->", "<!--]--><!--[-->", "<!--]--><!--[-->", "<!--]--></div>"],
+  _tmpl$2 = ["<div", "", "><!--[-->", "<!--]-->", "<!--[-->", "<!--]--></div>"],
   _tmpl$3 = ["<b", ">", "</b>"];
 const [name, setName] = signal("Reze");
 export const hello = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild((`Hi ${name()}`)));

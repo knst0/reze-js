@@ -1,7 +1,7 @@
 //! What an expression evaluates to when that is provable from its syntax alone (SPEC §7.12).
 
 use oxc_ast::ast::*;
-use oxc_semantic::Scoping;
+use oxc_semantic::{AstNodes, Scoping};
 use oxc_syntax::operator::{BinaryOperator, UnaryOperator};
 
 use crate::analyze::Facts;
@@ -17,7 +17,12 @@ const STRING_METHODS: [&str; 7] =
     ["toString", "toFixed", "join", "toUpperCase", "toLowerCase", "trim", "padStart"];
 
 /// `Some` only when every evaluation of `e` yields a value of that kind; `None` when unsure.
-pub fn static_kind(e: &Expression<'_>, facts: &Facts, scoping: &Scoping) -> Option<StaticKind> {
+pub fn static_kind<'a>(
+    e: &Expression<'a>,
+    facts: &Facts,
+    scoping: &Scoping,
+    nodes: &AstNodes<'a>,
+) -> Option<StaticKind> {
     match e.without_parentheses() {
         Expression::NumericLiteral(_) => Some(StaticKind::Numeric),
         Expression::StringLiteral(_) | Expression::TemplateLiteral(_) => Some(StaticKind::String),
@@ -27,21 +32,22 @@ pub fn static_kind(e: &Expression<'_>, facts: &Facts, scoping: &Scoping) -> Opti
             }
             _ => None,
         },
-        Expression::BinaryExpression(binary) => binary_kind(binary, facts, scoping),
+        Expression::BinaryExpression(binary) => binary_kind(binary, facts, scoping, nodes),
         Expression::ConditionalExpression(conditional) => {
-            let consequent = static_kind(&conditional.consequent, facts, scoping)?;
-            let alternate = static_kind(&conditional.alternate, facts, scoping)?;
+            let consequent = static_kind(&conditional.consequent, facts, scoping, nodes)?;
+            let alternate = static_kind(&conditional.alternate, facts, scoping, nodes)?;
             (consequent == alternate).then_some(consequent)
         }
-        Expression::CallExpression(call) => call_kind(call, facts, scoping),
+        Expression::CallExpression(call) => call_kind(call, facts, scoping, nodes),
         _ => None,
     }
 }
 
-fn binary_kind(
-    binary: &BinaryExpression<'_>,
+fn binary_kind<'a>(
+    binary: &BinaryExpression<'a>,
     facts: &Facts,
     scoping: &Scoping,
+    nodes: &AstNodes<'a>,
 ) -> Option<StaticKind> {
     match binary.operator {
         BinaryOperator::Subtraction
@@ -56,8 +62,8 @@ fn binary_kind(
         | BinaryOperator::ShiftRight
         | BinaryOperator::ShiftRightZeroFill => Some(StaticKind::Numeric),
         BinaryOperator::Addition => {
-            let left = static_kind(&binary.left, facts, scoping);
-            let right = static_kind(&binary.right, facts, scoping);
+            let left = static_kind(&binary.left, facts, scoping, nodes);
+            let right = static_kind(&binary.right, facts, scoping, nodes);
             match (left, right) {
                 (Some(StaticKind::String), _) | (_, Some(StaticKind::String)) => {
                     Some(StaticKind::String)
@@ -70,9 +76,17 @@ fn binary_kind(
     }
 }
 
-fn call_kind(call: &CallExpression<'_>, facts: &Facts, scoping: &Scoping) -> Option<StaticKind> {
+fn call_kind<'a>(
+    call: &CallExpression<'a>,
+    facts: &Facts,
+    scoping: &Scoping,
+    nodes: &AstNodes<'a>,
+) -> Option<StaticKind> {
     if call.optional {
         return None;
+    }
+    if let Some(body) = facts.inlined_body(call, nodes) {
+        return static_kind(body, facts, scoping, nodes);
     }
     if let Some((_, Some(text))) = facts.folded_callee(call) {
         return literal_text_kind(text);

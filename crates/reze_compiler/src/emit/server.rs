@@ -8,7 +8,7 @@ use crate::code::Code;
 use crate::html::push_js_string;
 use crate::ir::{
     Anchor, BindTarget, Child, Embed, ExprChild, Getter, NodeId, Op, PropHtml, Props, Template,
-    Value,
+    TextPart, Value,
 };
 
 /// Brackets what a non-sole insert rendered, so hydration can find it again.
@@ -38,6 +38,11 @@ enum Part<'t, 'a> {
         toggles: &'t Value<'a>,
         is_inside_static_class: bool,
     },
+    /// One value of a text run; `skip` bytes of the template (its placeholder) follow unused.
+    Text {
+        value: &'t Embed<'a>,
+        skip: u32,
+    },
 }
 
 struct Placed<'t, 'a> {
@@ -60,7 +65,7 @@ fn placement(target: BindTarget<'_>) -> Option<Placement> {
         | BindTarget::Prop { html: PropHtml::Attr | PropHtml::Bool, .. } => {
             Some(Placement::Attributes)
         }
-        BindTarget::ClassToggle(_) => None,
+        BindTarget::ClassToggle(_) | BindTarget::Text { .. } => None,
         BindTarget::Prop { html: PropHtml::Text | PropHtml::Html, .. } => Some(Placement::Content),
         BindTarget::Prop { html: PropHtml::None, .. } => None,
     }
@@ -73,6 +78,16 @@ fn place_set<'t, 'a>(
     target: BindTarget<'a>,
     value: &'t Value<'a>,
 ) {
+    if let (BindTarget::Text { placeholder }, Value::Text(text)) = (target, value) {
+        let mut placeholder = placeholder;
+        for part in text.iter() {
+            if let TextPart::Dynamic { value, at } = part {
+                let skip = u32::from(placeholder.take_if(|p| p == at).is_some());
+                parts.push(Placed { at: *at, part: Part::Text { value, skip } });
+            }
+        }
+        return;
+    }
     let node = template.nodes[id.index()];
     let at = match placement(target) {
         Some(Placement::Attributes) => node.attributes_end(),
@@ -164,8 +179,12 @@ impl<'a> Emitter<'a, '_> {
         let mut current = String::new();
         let mut position = 0;
         for placed in parts {
-            current.push_str(&html[position..placed.at as usize]);
-            position = placed.at as usize;
+            let at = (placed.at as usize).max(position);
+            current.push_str(&html[position..at]);
+            position = at;
+            if let Part::Text { skip, .. } = placed.part {
+                position += skip as usize;
+            }
             let is_bracketed = matches!(placed.part, Part::Insert { is_bracketed: true, .. });
             if is_bracketed {
                 current.push_str(INSERT_OPEN);
@@ -194,6 +213,12 @@ impl<'a> Emitter<'a, '_> {
                 let _ = write!(out, "{key}()");
             }
             Part::Set { target, value } => self.server_set(out, *target, value),
+            Part::Text { value, .. } => {
+                let child = self.helper(Helper::SsrChild);
+                let _ = write!(out, "{child}(");
+                self.embed(out, value);
+                out.push(")");
+            }
             Part::ClassToggles { toggles, is_inside_static_class } => {
                 let helper = self.helper(if *is_inside_static_class {
                     Helper::SsrClassTokens
@@ -239,7 +264,9 @@ impl<'a> Emitter<'a, '_> {
             BindTarget::Style => (Helper::SsrStyle, None),
             BindTarget::Prop { html: PropHtml::Text, .. } => (Helper::SsrChild, None),
             BindTarget::Prop { html: PropHtml::Html, .. } => (Helper::SsrRaw, None),
-            BindTarget::Prop { html: PropHtml::None, .. } | BindTarget::ClassToggle(_) => return,
+            BindTarget::Prop { html: PropHtml::None, .. }
+            | BindTarget::ClassToggle(_)
+            | BindTarget::Text { .. } => return,
         };
         let helper = self.helper(helper);
         out.push(helper);

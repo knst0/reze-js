@@ -353,7 +353,7 @@ fn a_computed_read_once_in_reactive_jsx_is_inlined() {
     for inlined in ["(count() * 2)", "(`n${count()}`)", "(count() > 9)"] {
         assert_eq!(out.code.matches(inlined).count(), 1, "{inlined}\n{}", out.code);
     }
-    assert!(out.code.contains("() => (count() * 2)"), "{}", out.code);
+    assert!(out.code.contains(r#""" + ((count() * 2))"#), "{}", out.code);
     let inlined: Vec<_> =
         out.diagnostics.iter().filter(|d| d.code == Code::ComputedInlined).collect();
     assert_eq!(inlined.len(), 3);

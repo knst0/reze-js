@@ -371,6 +371,11 @@ pub enum BindTarget<'a> {
     Class,
     /// `toggleClass(el, token, value, prev)` (SPEC §7.3); the server renders `Op::ServerClass`.
     ClassToggle(&'a str),
+    /// `text.data = value` of a text run (SPEC §7.5). `placeholder` is where the template holds
+    /// the one-space stand-in of a run without static text, which the server leaves out.
+    Text {
+        placeholder: Option<u32>,
+    },
     Style,
 }
 
@@ -407,6 +412,17 @@ pub enum Value<'a> {
     Truthy(Embed<'a>),
     /// `{ "token": expr, … }`: the toggled class tokens the server renders.
     ClassToggles(Vec<'a, (&'a str, Embed<'a>)>),
+    /// The parts of a text run, concatenated in order (SPEC §7.5).
+    Text(Vec<'a, TextPart<'a>>),
+}
+
+pub enum TextPart<'a> {
+    Static(&'a str),
+    /// `at`: where the server renders the value in the template's HTML.
+    Dynamic {
+        value: Embed<'a>,
+        at: u32,
+    },
 }
 
 pub enum Handler<'a> {
