@@ -28,7 +28,12 @@ function Label({ text }) {
 }
 
 export function Varied(props) {
-  return <p>{props.size}{props.name}</p>;
+  return (
+    <p>
+      {props.size}
+      {props.name}
+    </p>
+  );
 }
 
 export function Spread(props) {

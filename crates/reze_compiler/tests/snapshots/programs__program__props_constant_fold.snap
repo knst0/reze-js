@@ -1,6 +1,5 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
-assertion_line: 259
 expression: render(&dir)
 ---
 closed: ["/Counter.tsx"]
@@ -51,12 +50,14 @@ function Label(_props$2) {
 }
 
 export function Varied(props) {
-  return (() => {
+  return (
+    (() => {
   var _el$7 = _tmpl$4(),
     _el$8 = _el$7.firstChild;
   _$insert(_el$7, () => props.size, _el$8);
   return _el$7;
-})();
+})()
+  );
 }
 
 export function Spread(props) {
@@ -164,30 +165,30 @@ _$delegateEvents(["click"]);
   29 | 
 > 30 | export function Varied(props) {
      |                 ^^^^^^
-  31 |   return <p>{props.size}{props.name}</p>;
+  31 |   return (
 // info
 [PROP_FOLDED] Every call site passes `name="a"`, so reads of `name` compiled to that literal.
-  at /Counter.tsx:31:26
-  30 | export function Varied(props) {
-> 31 |   return <p>{props.size}{props.name}</p>;
-     |                          ^^^^^^^^^^
-  32 | }
+  at /Counter.tsx:34:8
+  33 |       {props.size}
+> 34 |       {props.name}
+     |        ^^^^^^^^^^
+  35 |     </p>
   related: passed here (/main.tsx:291)
   related: passed here (/main.tsx:326)
 // info
 [STATIC_COMPONENT] `Spread` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
-  at /Counter.tsx:34:17
-  33 | 
-> 34 | export function Spread(props) {
+  at /Counter.tsx:39:17
+  38 | 
+> 39 | export function Spread(props) {
      |                 ^^^^^^
-  35 |   return <p>{props.size}</p>;
+  40 |   return <p>{props.size}</p>;
 // info
 [STATIC_COMPONENT] `Escaped` is static: it renders HTML and nothing else, so under an islands root it runs on the server only.
-  at /Counter.tsx:38:17
-  37 | 
-> 38 | export function Escaped(props) {
+  at /Counter.tsx:43:17
+  42 | 
+> 43 | export function Escaped(props) {
      |                 ^^^^^^^
-  39 |   return <p>{props.size}</p>;
+  44 |   return <p>{props.size}</p>;
 // ==== /Counter.tsx [server] ====
 import { signal } from "reze-js";
 import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, createComponent as _$createComponent } from "reze-js";
@@ -215,7 +216,9 @@ function Label(_props$2) {
 }
 
 export function Varied(props) {
-  return _$ssr(_tmpl$4, _$ssrHydrationKey(), _$ssrChild(props.size));
+  return (
+    _$ssr(_tmpl$4, _$ssrHydrationKey(), _$ssrChild(props.size))
+  );
 }
 
 export function Spread(props) {
@@ -271,12 +274,14 @@ function Label(_props$2) {
 }
 
 export function Varied(props) {
-  return (() => {
+  return (
+    (() => {
   var _el$7 = _$claim(_tmpl$4, "p"),
     _el$8 = _$claimChild(_el$7, 0);
   _$claimInsert(_el$7, () => props.size, _el$8);
   return _el$7;
-})();
+})()
+  );
 }
 
 export function Spread(props) {

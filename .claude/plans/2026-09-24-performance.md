@@ -4,16 +4,16 @@
 
 Close the few measured gaps between Reze and the fastest peers (Solid 1.9, Solid 2.0 RC, Vue Vapor 3.6) and shrink the runtime shipped to typical apps. Measured baseline (2026-09-24, Chromium headless, median of 12, script + forced layout, 1000-row table):
 
-| op | reze | solid 1.9 | solid 2 rc | vue vapor | react 19.3 | react + compiler |
-|---|---|---|---|---|---|---|
-| create 1k | 29.1 | 30.8 | 31.2 | 31.6 | 34.9 | 45.3 |
-| update every 10th | 8.6 | 9.4 | 9.2 | 8.1 | 11.6 | 10.8 |
-| swap 2 rows | 3.1 | 2.7 | 2.9 | 2.6 | 39.4 | 38.6 |
-| select row | 0.3 | 0.1 | 0.4 | 0.1 | 2.3 | 0.7 |
-| remove row | 2.8 | 2.7 | 2.6 | 2.6 | 5.5 | 3.1 |
-| append 1k | 41.4 | 41.9 | 40.8 | 40.6 | 48.2 | 51.7 |
-| create 10k | 404.9 | 410.1 | 393.4 | 423.2 | 673.7 | 724.5 |
-| clear 10k | 36.6 | 41.6 | 44.6 | 43.5 | 61.5 | 61.6 |
+| op                | reze  | solid 1.9 | solid 2 rc | vue vapor | react 19.3 | react + compiler |
+| ----------------- | ----- | --------- | ---------- | --------- | ---------- | ---------------- |
+| create 1k         | 29.1  | 30.8      | 31.2       | 31.6      | 34.9       | 45.3             |
+| update every 10th | 8.6   | 9.4       | 9.2        | 8.1       | 11.6       | 10.8             |
+| swap 2 rows       | 3.1   | 2.7       | 2.9        | 2.6       | 39.4       | 38.6             |
+| select row        | 0.3   | 0.1       | 0.4        | 0.1       | 2.3        | 0.7              |
+| remove row        | 2.8   | 2.7       | 2.6        | 2.6       | 5.5        | 3.1              |
+| append 1k         | 41.4  | 41.9      | 40.8       | 40.6      | 48.2       | 51.7             |
+| create 10k        | 404.9 | 410.1     | 393.4      | 423.2     | 673.7      | 724.5            |
+| clear 10k         | 36.6  | 41.6      | 44.6       | 43.5      | 61.5       | 61.6             |
 
 Counter app bundle (JS, gzip): reze 3.84 kB (4.14 kB with Vite's modulepreload polyfill), solid 1.9 4.48, solid 2 rc 13.87, vue vapor 17.52, react 68.5.
 
