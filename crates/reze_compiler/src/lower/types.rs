@@ -22,9 +22,9 @@ pub fn static_kind(e: &Expression<'_>, facts: &Facts, scoping: &Scoping) -> Opti
         Expression::NumericLiteral(_) => Some(StaticKind::Numeric),
         Expression::StringLiteral(_) | Expression::TemplateLiteral(_) => Some(StaticKind::String),
         Expression::UnaryExpression(unary) => match unary.operator {
-            UnaryOperator::UnaryNegation
-            | UnaryOperator::UnaryPlus
-            | UnaryOperator::BitwiseNot => Some(StaticKind::Numeric),
+            UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus | UnaryOperator::BitwiseNot => {
+                Some(StaticKind::Numeric)
+            }
             _ => None,
         },
         Expression::BinaryExpression(binary) => binary_kind(binary, facts, scoping),
