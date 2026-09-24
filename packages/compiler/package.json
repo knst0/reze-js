@@ -1,15 +1,15 @@
 {
   "name": "@rezejs/compiler",
   "version": "0.0.0",
-  "type": "module",
-  "main": "./index.js",
-  "types": "./index.d.ts",
   "files": [
     "index.js",
     "index.d.ts",
     "*.node",
     "skills"
   ],
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
   "exports": {
     ".": {
       "types": "./index.d.ts",

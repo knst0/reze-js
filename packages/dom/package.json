@@ -12,14 +12,14 @@
   "scripts": {
     "test": "vitest run"
   },
+  "dependencies": {
+    "@rezejs/signals": "workspace:*"
+  },
   "devDependencies": {
     "@rezejs/compiler": "workspace:*",
     "@rezejs/test-utils": "workspace:*",
     "@rezejs/vite-plugin": "workspace:*",
     "esbuild": "^0.28.2",
     "happy-dom": "^20.14.5"
-  },
-  "dependencies": {
-    "@rezejs/signals": "workspace:*"
   }
 }

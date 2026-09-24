@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
-import { trackAsync } from "../src/async";
 import { getOwner, onCleanup, root, type Owner } from "../src";
+import { trackAsync } from "../src/async";
 
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
@@ -93,9 +93,14 @@ test("component-level cleanup invalidates pending promises (generated pattern)",
   });
   const { promise, resolve } = Promise.withResolvers<string>();
   const my = gen;
-  trackAsync(owner, promise, () => my === gen, () => {
-    log.push("late setter");
-  });
+  trackAsync(
+    owner,
+    promise,
+    () => my === gen,
+    () => {
+      log.push("late setter");
+    },
+  );
   dispose();
   resolve("too late");
   await tick();

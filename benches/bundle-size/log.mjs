@@ -33,11 +33,19 @@ for (const [pkg, target] of Object.entries(targets)) {
   const key = `${pkg} js`;
   const old = prev[key];
   const fmt = (n) => `${n.toLocaleString("en-US")} B`;
-  const delta = (cur, was) => (was === undefined ? "" : `  (was ${fmt(was)}, ${cur === was ? "same" : `${cur > was ? "+" : ""}${cur - was} B`})`);
-  console.log(`${key}: raw ${fmt(raw)}${delta(raw, old?.raw)}, gzip ${fmt(gzip)}${delta(gzip, old?.gzip)}`);
+  const delta = (cur, was) =>
+    was === undefined
+      ? ""
+      : `  (was ${fmt(was)}, ${cur === was ? "same" : `${cur > was ? "+" : ""}${cur - was} B`})`;
+  console.log(
+    `${key}: raw ${fmt(raw)}${delta(raw, old?.raw)}, gzip ${fmt(gzip)}${delta(gzip, old?.gzip)}`,
+  );
   results[key] = { raw, gzip };
 }
 
 const path = join(dir, "latest.json");
-writeFileSync(path, `${JSON.stringify({ schema: 1, recordedAt: new Date().toISOString(), results }, null, 2)}\n`);
+writeFileSync(
+  path,
+  `${JSON.stringify({ schema: 1, recordedAt: new Date().toISOString(), results }, null, 2)}\n`,
+);
 console.log(`wrote ${path}`);

@@ -9,12 +9,14 @@
 ## 1. Задачи и не-задачи
 
 **Задачи:**
+
 1. JSX → прямые DOM-операции (client), захват существующего DOM (hydrate), конкатенация строк (server).
 2. Анализ всей программы: константные сигналы, клиентские и статические компоненты, границы островов,
    набор фич рантайма на каждый остров.
 3. Отдавать результаты анализа в LSP в виде диагностики, подсказок и объяснений.
 
 **Не-задачи:**
+
 - Проверка типов (это делает TypeScript).
 - Бандлинг, минификация, разрешение модулей (это делают Rolldown/Vite; компилятор получает от них граф).
 - Трансформация не-JSX кода моделей данных, кроме удаления константных сигналов, инлайна `computed`
@@ -22,12 +24,12 @@
 
 ## 2. Этапы
 
-| Этап | Содержание | Статус |
-|---|---|---|
-| M1 | Новая архитектура (§4), target `Client`, система диагностики (§9), помодульные оптимизации O1–O3, O5 (§8), исправление багов v0 (§11) | готово |
-| **M2** | Targets `Server` и `Hydrate` на том же IR (§14) | готово |
-| M3 | Анализ программы: `ModuleSummary` → `Facts`, острова, фичи на остров, межмодульная свёртка сигналов, снятие Proxy со store, define-флаги рантайма | потом |
-| M4 | `reze_lsp`: диагностика, inlay hints, «почему остров?» по цепочкам `Reason` | потом |
+| Этап   | Содержание                                                                                                                                        | Статус |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| M1     | Новая архитектура (§4), target `Client`, система диагностики (§9), помодульные оптимизации O1–O3, O5 (§8), исправление багов v0 (§11)             | готово |
+| **M2** | Targets `Server` и `Hydrate` на том же IR (§14)                                                                                                   | готово |
+| M3     | Анализ программы: `ModuleSummary` → `Facts`, острова, фичи на остров, межмодульная свёртка сигналов, снятие Proxy со store, define-флаги рантайма | потом  |
+| M4     | `reze_lsp`: диагностика, inlay hints, «почему остров?» по цепочкам `Reason`                                                                       | потом  |
 
 Требования M1 ради M2–M4: IR не содержит ничего специфичного для client (выбор target делается только в
 `emit`). У каждого решения оптимизатора есть причина `Reason`, которую можно показать как `info`-диагностику
@@ -68,29 +70,30 @@ parse (oxc_parser) ─▶ semantic (oxc_semantic: scopes, symbols, references)
       ─▶ emit (IR → Code для target: никаких решений) ─▶ source map
 ```
 
-| Модуль | Отвечает за |
-|---|---|
-| `lib.rs` | `compile`, `Options`, `Output` |
-| `diagnostic/mod.rs` | `Diagnostic`, `Severity`, `Fix`, `Label`, сбор, рендер в текст и JSON; `LineIndex` |
-| `diagnostic/catalog.rs` | единый каталог кодов (§9.4): severity, заголовок, объяснение, исправление, пример «плохо/хорошо» |
-| `code.rs` | `Code`: буфер вывода + метки `(generated, source)`; source map v3 |
-| `html.rs` | таблицы элементов/атрибутов/событий, экранирование HTML и JS, очистка JSX-текста, сущности |
-| `analyze.rs` | распознавание примитивов рантайма по символу (§8.0), O3, геттеры сигналов для `SIGNAL_NOT_CALLED` |
-| `ir.rs` | IR (§6) |
-| `lower/mod.rs` | `Lowerer`, поиск дыр в JS-участке (`Embed`), путь компонента для диагностики |
-| `lower/element.rs` | нативные элементы → `Template` (HTML, дерево узлов, обходы, операции) |
-| `lower/attribute.rs` | классификация атрибутов (§7.2), статическая свёртка |
-| `lower/component.rs` | компоненты, props, дети компонентов |
-| `lower/children.rs` | списки детей: правила JSX-текста, O5, вставки, условия, массивы детей |
-| `lower/constant.rs` | статическое вычисление (`static_text`, истинность), `is_dynamic` |
-| `lower/async_component.rs` | план async-компонента (§7.9) |
-| `emit/mod.rs` | `Emitter`, склейка дыр, `Namer`, импорты `Helper`, таблица шаблонов (фабрики или строки server), шапка и хвост модуля, выбор эмиттера шаблона по target |
-| `emit/template.rs` | client и hydrate: IIFE шаблона (клон или `claim`), обходы, операции, слитый `bind` |
-| `emit/server.rs` | server: HTML шаблона, разрезанный по динамическим частям, и `ssr` (§14.1) |
-| `emit/component.rs` | `createComponent`, объекты props, `mergeProps`, дети |
-| `emit/async_component.rs` | синхронная форма async-компонентов |
+| Модуль                     | Отвечает за                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib.rs`                   | `compile`, `Options`, `Output`                                                                                                                          |
+| `diagnostic/mod.rs`        | `Diagnostic`, `Severity`, `Fix`, `Label`, сбор, рендер в текст и JSON; `LineIndex`                                                                      |
+| `diagnostic/catalog.rs`    | единый каталог кодов (§9.4): severity, заголовок, объяснение, исправление, пример «плохо/хорошо»                                                        |
+| `code.rs`                  | `Code`: буфер вывода + метки `(generated, source)`; source map v3                                                                                       |
+| `html.rs`                  | таблицы элементов/атрибутов/событий, экранирование HTML и JS, очистка JSX-текста, сущности                                                              |
+| `analyze.rs`               | распознавание примитивов рантайма по символу (§8.0), O3, геттеры сигналов для `SIGNAL_NOT_CALLED`                                                       |
+| `ir.rs`                    | IR (§6)                                                                                                                                                 |
+| `lower/mod.rs`             | `Lowerer`, поиск дыр в JS-участке (`Embed`), путь компонента для диагностики                                                                            |
+| `lower/element.rs`         | нативные элементы → `Template` (HTML, дерево узлов, обходы, операции)                                                                                   |
+| `lower/attribute.rs`       | классификация атрибутов (§7.2), статическая свёртка                                                                                                     |
+| `lower/component.rs`       | компоненты, props, дети компонентов                                                                                                                     |
+| `lower/children.rs`        | списки детей: правила JSX-текста, O5, вставки, условия, массивы детей                                                                                   |
+| `lower/constant.rs`        | статическое вычисление (`static_text`, истинность), `is_dynamic`                                                                                        |
+| `lower/async_component.rs` | план async-компонента (§7.9)                                                                                                                            |
+| `emit/mod.rs`              | `Emitter`, склейка дыр, `Namer`, импорты `Helper`, таблица шаблонов (фабрики или строки server), шапка и хвост модуля, выбор эмиттера шаблона по target |
+| `emit/template.rs`         | client и hydrate: IIFE шаблона (клон или `claim`), обходы, операции, слитый `bind`                                                                      |
+| `emit/server.rs`           | server: HTML шаблона, разрезанный по динамическим частям, и `ssr` (§14.1)                                                                               |
+| `emit/component.rs`        | `createComponent`, объекты props, `mergeProps`, дети                                                                                                    |
+| `emit/async_component.rs`  | синхронная форма async-компонентов                                                                                                                      |
 
 Инварианты:
+
 - `lower` не создаёт JS-текст. `emit` не смотрит в AST и ничего не решает.
 - Каждое выражение исходника опускается один раз и генерируется один раз. Повторное использование
   значения идёт только через временную переменную (§7.6).
@@ -204,6 +207,7 @@ enum AssignTarget<'a> {
 ## 7. Семантика JSX
 
 ### 7.1 Теги
+
 - Нативный элемент: первая буква строчная, или в имени есть `-`, или форма `ns:name`. `Foo`, `a.b`,
   `this` — компоненты.
 - Void-элементы (`html::is_void`, включая `search`) не имеют детей и закрывающего тега.
@@ -211,27 +215,27 @@ enum AssignTarget<'a> {
 
 ### 7.2 Атрибуты нативных элементов (без spread)
 
-Правила проверяются по порядку. Результат зависит от значения: *литерал* (строка, число, `true`,
-`false`, `null`, `undefined` или свёрнутая константа, §7.10), *статическое* (не реактивное по §7.11)
-или *динамическое*.
+Правила проверяются по порядку. Результат зависит от значения: _литерал_ (строка, число, `true`,
+`false`, `null`, `undefined` или свёрнутая константа, §7.10), _статическое_ (не реактивное по §7.11)
+или _динамическое_.
 
-| Атрибут | Литерал | Статическое | Динамическое |
-|---|---|---|---|
-| `ref` | — | `Op::Ref` | `Op::Ref` |
-| `children` | используется как дети, если вложенных детей нет; иначе игнорируется + `CHILDREN_PROP_IGNORED` | | |
-| `on:<name>` | строка → HTML-атрибут `on<name>` | `addEventListener(el, name, h)` | то же |
-| `on<Upper>…` | строка → HTML-атрибут | делегированное или прямое (§7.4) | то же |
-| `on<lower>…` с не-строковым значением | `EVENT_NAME_LOWERCASE`, компилируется как `on<Upper>` | | |
-| `class`, `className`, `classList` | §7.3 | | |
-| `style` | строка → атрибут; объект из одних литералов → свёрнутый `a:b;c:d` | `style(el, v)` | bind `style(el, v, prev)` |
-| `prop:<n>` | `el.n = v` | `el.n = v` | bind |
-| `attr:<n>` | атрибут | `setAttribute` | bind |
-| `bool:<n>` | есть, если истинно | `setBoolAttribute` | bind |
-| `xlink:*`, `xml:*` | атрибут | `setAttributeNS` | bind |
-| `value`, `checked`, `selected` (только HTML) | атрибут шаблона, **кроме** `value` на `<textarea>`/`<select>` — там `Set` свойства | `el.n = v` | bind |
-| `textContent`, `innerHTML` (только HTML) | `el.n = v` | `el.n = v` | bind |
-| `key` | атрибут + `KEY_ON_ELEMENT` | | |
-| остальное | атрибут (`true` → `name="true"`, голый → `name`, `false`/`null`/`undefined` → опущен) | `setAttribute` | bind |
+| Атрибут                                      | Литерал                                                                                       | Статическое                      | Динамическое              |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------- |
+| `ref`                                        | —                                                                                             | `Op::Ref`                        | `Op::Ref`                 |
+| `children`                                   | используется как дети, если вложенных детей нет; иначе игнорируется + `CHILDREN_PROP_IGNORED` |                                  |                           |
+| `on:<name>`                                  | строка → HTML-атрибут `on<name>`                                                              | `addEventListener(el, name, h)`  | то же                     |
+| `on<Upper>…`                                 | строка → HTML-атрибут                                                                         | делегированное или прямое (§7.4) | то же                     |
+| `on<lower>…` с не-строковым значением        | `EVENT_NAME_LOWERCASE`, компилируется как `on<Upper>`                                         |                                  |                           |
+| `class`, `className`, `classList`            | §7.3                                                                                          |                                  |                           |
+| `style`                                      | строка → атрибут; объект из одних литералов → свёрнутый `a:b;c:d`                             | `style(el, v)`                   | bind `style(el, v, prev)` |
+| `prop:<n>`                                   | `el.n = v`                                                                                    | `el.n = v`                       | bind                      |
+| `attr:<n>`                                   | атрибут                                                                                       | `setAttribute`                   | bind                      |
+| `bool:<n>`                                   | есть, если истинно                                                                            | `setBoolAttribute`               | bind                      |
+| `xlink:*`, `xml:*`                           | атрибут                                                                                       | `setAttributeNS`                 | bind                      |
+| `value`, `checked`, `selected` (только HTML) | атрибут шаблона, **кроме** `value` на `<textarea>`/`<select>` — там `Set` свойства            | `el.n = v`                       | bind                      |
+| `textContent`, `innerHTML` (только HTML)     | `el.n = v`                                                                                    | `el.n = v`                       | bind                      |
+| `key`                                        | атрибут + `KEY_ON_ELEMENT`                                                                    |                                  |                           |
+| остальное                                    | атрибут (`true` → `name="true"`, голый → `name`, `false`/`null`/`undefined` → опущен)         | `setAttribute`                   | bind                      |
 
 - Литеральный `true` даёт `name` для bool-целей и inline-свойств.
 - Повтор одного имени: побеждает последний, диагностика `DUPLICATE_ATTRIBUTE`.
@@ -243,8 +247,10 @@ enum AssignTarget<'a> {
   обработчикам событий функция передаётся законно, там диагностики нет.
 
 ### 7.3 `class` (Solid v2)
+
 Единственный источник классов — `class`. Значение имеет тип `ClassValue = string | number | boolean |
 null | undefined | Record<string, unknown> | ClassValue[]`, массивы могут быть вложенными.
+
 - `className` и `classList` — устаревшие псевдонимы. Каждый даёт `CLASS_ALIAS` (warn) с исправлением
   «переименовать в `class`» и компилируется как `class`.
 - Несколько источников класса на одном элементе (`class` + `classList`, `className` + `class`) сливаются
@@ -260,6 +266,7 @@ null | undefined | Record<string, unknown> | ClassValue[]`, массивы мо�
   в прошлый раз (`el.$$class`).
 
 ### 7.4 События
+
 - `onFooBar` → `foobar` в нижнем регистре, с одним псевдонимом: `doubleclick` → `dblclick`. Рантайм
   `spread` применяет то же отображение.
 - Делегируемые (`html::is_delegated_event`, обязано совпадать с `DelegatedEvents` в `@rezejs/dom`):
@@ -270,6 +277,7 @@ null | undefined | Record<string, unknown> | ClassValue[]`, массивы мо�
 - `on:name` и неделегируемые события → `addEventListener(el, name, h)`.
 
 ### 7.5 Дети нативных элементов
+
 - Текст подчиняется правилу пробелов JSX Babel/TS (`html::clean_jsx_text`) после декодирования сущностей.
   Соседние тексты сливаются. Свёрнутые константы (включая O3) становятся текстом. Фрагменты разворачиваются.
 - Динамический ребёнок → `insert(parent, value, anchor)`:
@@ -281,6 +289,7 @@ null | undefined | Record<string, unknown> | ClassValue[]`, массивы мо�
   Вставки выполняются в порядке документа: вставка родителя, стоящая перед дочерним элементом, идёт до
   операций этого элемента. Server вычисляет части в порядке HTML, и порядок создания шаблонов совпадает
   (§14.3).
+
 - Условие: `test ? a : b` или `test && a`, где `test` динамический, а хотя бы одна ветка содержит JSX или
   реактивное чтение. Проверка мемоизируется как `!!test`, чтобы ветки пересоздавались только при смене
   истинности. Memo — поднятая локальная переменная шаблона (`Op::Memo`):
@@ -290,6 +299,7 @@ null | undefined | Record<string, unknown> | ClassValue[]`, массивы мо�
   динамическое выражение — как `() => expr`.
 
 ### 7.6 Refs
+
 - `Callback` → `use(fn, el)`.
 - `Identifier x` → `typeof x === "function" ? use(x, el) : x = el`.
 - `Member` → `var _o$ = <object>[, _k$ = <key>], _r$ = _o$.<key>; typeof _r$ === "function" ? use(_r$, el) : _o$.<key> = el`.
@@ -298,10 +308,12 @@ null | undefined | Record<string, unknown> | ClassValue[]`, массивы мо�
 - На компонентах `ref` пробрасывается методом `ref(r$) { … }` в тех же формах, с `_r$(r$)` вместо `use`.
 
 ### 7.7 Spread на нативных элементах
+
 Если у элемента есть spread, все атрибуты, кроме `ref` (и `children`, когда есть вложенные дети),
 собираются в один `Props` в порядке исходника → `spread(el, props, isSvg, hasChildren)`. Дети всё равно компилируются.
 
 ### 7.8 Компоненты и фрагменты
+
 - `createComponent(Comp, props)`. Props — объектный литерал, либо единственное статическое spread-значение,
   либо `mergeProps(…parts)`, где динамические spread передаются как `() => e`.
 - Значения props: литералы и статические выражения остаются как есть. Динамические выражения и JSX
@@ -315,10 +327,12 @@ null | undefined | Record<string, unknown> | ClassValue[]`, массивы мо�
 - Фрагмент: ноль детей → `[]`, один → сам элемент, несколько → `[ … ]`.
 
 ### 7.9 Async-компоненты
+
 `async function` или `async`-стрелка с блочным телом считается async-компонентом, если её тело где-либо
 содержит JSX. Async-функции без JSX никогда не трогаются: хелпер вроде
 `async function load() { const r = await fetch(u); return r.json(); }` сохраняет семантику `Promise`.
 Async-компонент переписывается в синхронную форму, если:
+
 - каждый `await` вне вложенных функций — это весь инициализатор верхнеуровневого
   `const|let|var x = await e;` с одним декларатором (между ними могут стоять другие инструкции);
 - до последнего `await` нет `return`/`throw`;
@@ -334,11 +348,13 @@ Async-компонент переписывается в синхронную ф
 верхнеуровневого `await` не диагностируются.
 
 ### 7.10 Свёртка констант
+
 `static_text` покрывает строковые литералы, целые `|n| < 1e15`, шаблонные литералы без выражений, цепочки
 `+`, где в каждом `+` хотя бы одна сторона — строка (`1 + 2` не сворачивается), и чтения сигналов,
 свёрнутых O3 с литеральным инициализатором.
 
 ### 7.11 Тест реактивности
+
 Выражение динамическое, если его вычисление может прочитать реактивное состояние: содержит вызов,
 tagged template или доступ к члену вне вложенных функций. Вызов геттера, свёрнутого O3, реактивным не
 считается. Для детей компонента выражение динамическое также, если содержит JSX. Голые идентификаторы и
@@ -350,23 +366,28 @@ tagged template или доступ к члену вне вложенных фу
 применение порождает `info`-диагностику с причиной (§9.5). У каждой есть differential-тест (§10).
 
 ### 8.0 Распознавание примитивов
+
 Примитив распознаётся **по разрешению символа**, а не по имени: reference, чей symbol — import binding
 `signal`/`computed` из одного из модулей рантайма: `options.module_name`, `reze-js`, `@rezejs/signals`,
 `@rezejs/dom`. Переименование при импорте (`import { signal as s }`) поддерживается. Namespace-импорт
 (`import * as R`) и реэкспорты через другие модули — M3.
 
 ### O1. Шаблоны и статическая свёртка (всегда)
+
 Статические поддеревья → одна строка HTML на форму; литеральные атрибуты, `style`, `class` и тексты
 сворачиваются в шаблон (§7.2, §7.3, §7.10). Фабрики шаблонов помечены `/*#__PURE__*/`.
 
 ### O2. Слияние привязок и минимальная поверхность рантайма (всегда)
+
 - Все динамические атрибуты шаблона компилируются в **один** `bind` с поатрибутным сравнением
   `v !== p[i] && (…)`. Один атрибут → `bind` без массива.
 - Импортируются только используемые хелперы. SVG/MathML-парсеры — отдельные фабрики. `delegateEvents`
   генерируется только при наличии делегированных событий.
 
 ### O3. Константные сигналы (`optimize`)
+
 `const [get, set] = signal(init[, options])` сворачивается, если одновременно:
+
 - `signal` — примитив по §8.0; у декларатора нет аннотации типа; паттерн — массив из одного или двух
   идентификаторов без rest, значений по умолчанию и пропусков;
 - у сеттера нет ни одного reference (или его нет в паттерне);
@@ -378,7 +399,9 @@ tagged template или доступ к члену вне вложенных фу
 Пример: `const [title] = signal("Reze"); <h1>{title()}</h1>` → `const title = "Reze";` и шаблон `<h1>Reze</h1>`.
 
 ### O4. Инлайн `computed` (M3, отложено)
+
 `const d = computed(() => expr)` инлайнится в место чтения, если одновременно:
+
 - `computed` — примитив по §8.0; декларатор единственный в своём объявлении; у него нет аннотации типа;
 - геттер — стрелка без параметров с телом-выражением;
 - у `d` ровно один reference, и это вызов `d()` внутри динамического выражения JSX (bind, insert, getter
@@ -390,10 +413,12 @@ tagged template или доступ к члену вне вложенных фу
 напрямую; отличие в числе пересчётов DOM не видно, потому что привязка сама сравнивает значения.
 
 ### O5. Мёртвые ветки JSX (`optimize`)
+
 `{false && <X/>}`, `{true ? <A/> : <B/>}` и `{null}`/`{undefined}`/`{false}`/`{true}` среди детей, где
 условие — литерал: мёртвая ветка не генерируется (включая её шаблон и импорты).
 
 ### Позже (M3)
+
 Межмодульная свёртка сигналов, статические компоненты без клиентского кода, фичи рантайма на остров +
 define-флаги (`__REZE_CONTEXT__`…), снятие Proxy со store, переписывание деструктуризации props, O4.
 
@@ -404,32 +429,36 @@ define-флаги (`__REZE_CONTEXT__`…), снятие Proxy со store, пер
 **машинно-применимыми исправлениями**.
 
 ### 9.1 Правила сообщения
+
 Сообщение начинается с кода в скобках и состоит из трёх частей: что увидели → чем это плохо → что
 сделать. Пример:
 `[CLASS_ALIAS] \`classList\` is a legacy alias: Reze has one \`class\` attribute that takes strings, objects and arrays. Rename it to \`class\`; it was compiled as \`class\`.`
 Сообщения на английском, одно-два предложения, с конкретными именами из кода, без «may»/«possibly».
 
 ### 9.2 Структура
+
 ```ts
 interface Diagnostic {
-  code: string;                         // стабильный SCREAMING_SNAKE, никогда не переиспользуется
+  code: string; // стабильный SCREAMING_SNAKE, никогда не переиспользуется
   severity: "error" | "warn" | "info";
-  message: string;                      // "[CODE] …" по §9.1
+  message: string; // "[CODE] …" по §9.1
   file: string;
-  start: { offset: number; line: number; column: number };   // line 1-based, column 0-based UTF-16
-  end:   { offset: number; line: number; column: number };
-  path: string[];                       // ["<App>", "<TodoList>", "li", "button"]: компоненты и элементы от корня функции
-  labels: { start: number; end: number; message: string }[];   // вторичные спаны (например, первый дубликат)
-  fixes: { title: string; edits: { start: number; end: number; text: string }[] }[];  // применимы как есть
-  data: Record<string, string>;         // структурированные факты (имя атрибута, причина…)
-  docs: string;                         // https://github.com/knst0/reze-js/blob/main/packages/compiler/skills/compiler-diagnostics/SKILL.md#<code в нижнем регистре>
-  rendered: string;                     // текстовый рендер §9.3 без подвала: единственный рендерер — в Rust
+  start: { offset: number; line: number; column: number }; // line 1-based, column 0-based UTF-16
+  end: { offset: number; line: number; column: number };
+  path: string[]; // ["<App>", "<TodoList>", "li", "button"]: компоненты и элементы от корня функции
+  labels: { start: number; end: number; message: string }[]; // вторичные спаны (например, первый дубликат)
+  fixes: { title: string; edits: { start: number; end: number; text: string }[] }[]; // применимы как есть
+  data: Record<string, string>; // структурированные факты (имя атрибута, причина…)
+  docs: string; // https://github.com/knst0/reze-js/blob/main/packages/compiler/skills/compiler-diagnostics/SKILL.md#<code в нижнем регистре>
+  rendered: string; // текстовый рендер §9.3 без подвала: единственный рендерер — в Rust
 }
 ```
+
 Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `Code` — enum каталога. Позиции
 вычисляются одним `LineIndex` в конце компиляции.
 
 ### 9.3 Текстовый рендер (консоль Vite, `Err` из napi)
+
 ```
 [CLASS_ALIAS] `classList` is a legacy alias: … Rename it to `class`.
   in <Counter> › output
@@ -439,14 +468,18 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
      |               ^^^^^^^^^
   fix: rename `classList` to `class`
 ```
+
 Первое появление каждого кода за сборку заканчивается подвалом:
+
 ```
   repair guide: node_modules/@rezejs/compiler/skills/compiler-diagnostics/SKILL.md#class_alias
                 https://github.com/knst0/reze-js/blob/main/packages/compiler/skills/compiler-diagnostics/SKILL.md#class_alias
 ```
+
 `info` в консоль не печатается.
 
 ### 9.4 Каталог и руководство по починке
+
 - `diagnostic/catalog.rs` — единственный источник: для каждого кода severity, заголовок, что наблюдалось,
   почему это дефект, исправление, пример «плохо → хорошо».
 - `packages/compiler/skills/compiler-diagnostics/SKILL.md` генерируется из каталога. Тест сверяет файл
@@ -454,36 +487,40 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
 - Правило для агента в шапке SKILL.md: не подавлять непонятную диагностику; применять `fixes`, если они
   есть; иначе чинить по разделу кода.
 
-| Код | Severity | Триггер | Исправление (`fixes`) |
-|---|---|---|---|
-| `PARSE_ERROR` | error | диагностика `oxc_parser` | — |
-| `CLASS_ALIAS` | warn | `className`/`classList` на нативном элементе или в литеральном атрибуте со spread | переименовать в `class` |
-| `CHILDREN_PROP_IGNORED` | warn | атрибут `children` и вложенные дети одновременно | удалить атрибут |
-| `KEY_ON_ELEMENT` | warn | `key` на нативном элементе | удалить атрибут |
-| `DUPLICATE_ATTRIBUTE` | warn | одно имя дважды на элементе | удалить ранний (label на нём) |
-| `UNKNOWN_ATTRIBUTE` | warn | почти-совпадение с известным атрибутом | переименовать в подсказку |
-| `EVENT_NAME_LOWERCASE` | warn | `onclick={fn}` — не-строковое значение у `on<lower>` | переименовать в `onClick` |
-| `SIGNAL_NOT_CALLED` | warn | геттер сигнала без вызова в атрибуте/свойстве/style | `count` → `count()` |
-| `PROPS_DESTRUCTURED` | warn | деструктуризация props в параметрах компонента | — (описание в SKILL) |
-| `INLINE_EACH` | warn | `<For each={[…]}>` | — |
-| `ASYNC_COMPONENT_SHAPE` | warn | async-компонент вне поддерживаемой формы; `data.reason` | — |
-| `ASYNC_RETURN_TYPE` | warn | аннотация `Promise`, которую нельзя развернуть | — |
-| `SIGNAL_FOLDED` | info | применена O3; `data.signal` | — |
-| `DEAD_BRANCH_REMOVED` | info | применена O5 | — |
+| Код                     | Severity | Триггер                                                                           | Исправление (`fixes`)         |
+| ----------------------- | -------- | --------------------------------------------------------------------------------- | ----------------------------- |
+| `PARSE_ERROR`           | error    | диагностика `oxc_parser`                                                          | —                             |
+| `CLASS_ALIAS`           | warn     | `className`/`classList` на нативном элементе или в литеральном атрибуте со spread | переименовать в `class`       |
+| `CHILDREN_PROP_IGNORED` | warn     | атрибут `children` и вложенные дети одновременно                                  | удалить атрибут               |
+| `KEY_ON_ELEMENT`        | warn     | `key` на нативном элементе                                                        | удалить атрибут               |
+| `DUPLICATE_ATTRIBUTE`   | warn     | одно имя дважды на элементе                                                       | удалить ранний (label на нём) |
+| `UNKNOWN_ATTRIBUTE`     | warn     | почти-совпадение с известным атрибутом                                            | переименовать в подсказку     |
+| `EVENT_NAME_LOWERCASE`  | warn     | `onclick={fn}` — не-строковое значение у `on<lower>`                              | переименовать в `onClick`     |
+| `SIGNAL_NOT_CALLED`     | warn     | геттер сигнала без вызова в атрибуте/свойстве/style                               | `count` → `count()`           |
+| `PROPS_DESTRUCTURED`    | warn     | деструктуризация props в параметрах компонента                                    | — (описание в SKILL)          |
+| `INLINE_EACH`           | warn     | `<For each={[…]}>`                                                                | —                             |
+| `ASYNC_COMPONENT_SHAPE` | warn     | async-компонент вне поддерживаемой формы; `data.reason`                           | —                             |
+| `ASYNC_RETURN_TYPE`     | warn     | аннотация `Promise`, которую нельзя развернуть                                    | —                             |
+| `SIGNAL_FOLDED`         | info     | применена O3; `data.signal`                                                       | —                             |
+| `DEAD_BRANCH_REMOVED`   | info     | применена O5                                                                      | —                             |
 
 ### 9.5 Каналы
+
 - `Output.diagnostics` / napi: полный JSON по §9.2, включая `info` (это объяснения оптимизатора для LSP в M4).
 - Vite-плагин: `warn` → `this.warn` с рендером §9.3; `error` → ошибка с `loc`/`frame`/`id` для оверлея.
   Опция `diagnostics: { jsonl?: string }` дописывает каждую диагностику (все severity) строкой JSON в файл —
   канал для агентов и CI.
 
 ## 10. Source maps
+
 Каждый скопированный участок исходника размечается в начале и в начале каждой строки внутри. Каждая
 замена JSX размечается в начале, каждое встроенное выражение пользователя — как скопированный участок.
 Колонки в UTF-16.
 
 ## 11. Баги v0, исправляемые в M1
+
 Каждому — регрессионный snapshot:
+
 1. `ref={refs[i++]}` вычислял выражение дважды (так же проброс `ref` компоненту).
 2. `<textarea value>`/`<select value>` записывались атрибутом, который браузер игнорирует.
 3. Два `class` на элементе: браузер молча брал первый.
@@ -492,6 +529,7 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
 6. `undefined as any` генерировался в `.jsx`.
 
 ## 12. Тесты
+
 - `tests/snapshots.rs`: `insta`-снапшоты полного вывода, по одному на каждую возможность §5–§8, плюс §11;
   каждый вход — для всех трёх target (`server__…`, `hydrate__…`).
 - `tests/compile.rs`: поведенческие утверждения. Вывод парсится как TSX/JSX без семантических ошибок;
@@ -506,6 +544,7 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
   совпадает с client.
 
 ## 13. Изменения рантайма и пакетов (M1)
+
 - `@rezejs/dom`: удалить экспорт `classList` и обработку `classList`/`className` в `spread`; `className`
   отслеживает только `$$class`; в `spread` события `doubleclick` → `dblclick`.
 - `@rezejs/vite-plugin`: рендер §9.3, подвал раз на код, опции `optimize` и `diagnostics.jsonl`.
@@ -518,6 +557,7 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
 дети компонентов, async-компоненты и O3 генерируются одинаково.
 
 ### 14.1 Server
+
 - Шаблон → `ssr(<tmpl>, …parts)`: `<tmpl>` — строки `html`, разрезанного в точках частей по `TemplateNode`;
   `ssr` склеивает их в `RenderedHTML`, который `ssrChild` выводит без экранирования.
 - Части стоят на своём месте в HTML (при равном месте — порядок ops, затем binds):
@@ -539,6 +579,7 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
   `ssrChild` читает функции, разворачивает массивы, экранирует `&` и `<` в тексте, `null`/`boolean` → `""`.
 
 ### 14.2 Hydrate
+
 - Как client, кроме: корень — `claim(tmpl, "<tag>")`; обходы — `claimChild(parent, k)` и
   `claimSibling(node, k)`, которые перешагивают диапазоны `<!--[-->…<!--]-->`; вставки —
   `claimInsert(parent, value[, anchor[, inserts_after]])`.
@@ -551,6 +592,7 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
   `children` уже отрисованное содержимое элемента.
 
 ### 14.3 Ключи гидратации
+
 - Ключ шаблона — `scope.id + scope.count++`. `createComponent` открывает область
   `parent.id + parent.count++ + "-"`. Области активны во время `renderToString` и `hydrate`.
 - Ключи совпадают, если каждый компонент создаёт шаблоны в одном порядке на сервере и на клиенте. Server
@@ -560,6 +602,7 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
   объекта) и с гидратацией не поддерживается.
 
 ### 14.4 Границы M2
+
 - `renderToString` синхронный: effects не выполняются, async-компоненты рендерят состояние до загрузки.
   Стриминг и Suspense на сервере — вне M2; `Suspense`, `Portal` и `Dynamic` со строковым тегом обращаются к
   `document` и на сервере не работают.
@@ -569,6 +612,7 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path }`. `C
   client реконсиляцией (результат тот же, узлы пересоздаются).
 
 ### 14.5 Изменения рантайма и пакетов (M2)
+
 - `@rezejs/dom`: `hydrate`, `claim`, `claimChild`, `claimSibling`, `claimInsert`, `renderToString`, `ssr`,
   `ssrChild`, `ssrHydrationKey`, `ssrAttribute`, `ssrBoolAttribute`, `ssrClass`, `ssrStyle`, `ssrSpread`,
   `ssrRaw`; области ключей в `createComponent`.

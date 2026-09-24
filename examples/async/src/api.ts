@@ -14,7 +14,10 @@ const LATENCY: Record<number, number> = { 1: 900, 2: 150, 3: 500 };
 
 export function fetchUser(id: number): Promise<User> {
   return new Promise((resolve) => {
-    setTimeout(() => resolve(DB[id] ?? { id, name: `User ${id}`, role: "Unknown" }), LATENCY[id] ?? 400);
+    setTimeout(
+      () => resolve(DB[id] ?? { id, name: `User ${id}`, role: "Unknown" }),
+      LATENCY[id] ?? 400,
+    );
   });
 }
 

@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+
 import type { BenchResult } from "vitest";
 
 // Appends one JSON line per benchmark; scripts/merge.mjs compacts them into

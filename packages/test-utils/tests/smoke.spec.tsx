@@ -7,7 +7,9 @@ afterEach(cleanup);
 
 test("mount renders, fire clicks, tick flushes", () => {
   const [count, setCount] = signal(0);
-  const { el, dispose } = mount(() => <button onClick={() => setCount(count() + 1)}>{count()}</button>);
+  const { el, dispose } = mount(() => (
+    <button onClick={() => setCount(count() + 1)}>{count()}</button>
+  ));
   const button = el.firstChild as HTMLElement;
   expect(button.textContent).toBe("0");
   expect(fire(button, "click")).toBe(true);

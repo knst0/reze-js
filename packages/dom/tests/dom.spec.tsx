@@ -65,7 +65,9 @@ test("style objects set, update and drop properties", () => {
 test("all-literal style and class objects compile to static attributes", () => {
   // The compiler folds these into the template (C09/C10): no runtime call,
   // so the parsed attributes must already carry the values.
-  const { el } = mount(() => <i style={{ color: "red", "margin-top": "1px" }} class={{ a: true, b: false }} />);
+  const { el } = mount(() => (
+    <i style={{ color: "red", "margin-top": "1px" }} class={{ a: true, b: false }} />
+  ));
   const i = el.firstChild as HTMLElement;
   expect(i.style.color).toBe("red");
   expect(i.style.marginTop).toBe("1px");

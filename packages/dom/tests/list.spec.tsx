@@ -21,11 +21,14 @@ test("rows follow items by identity: nodes move instead of being rebuilt", () =>
 test("with key, a kept row updates item() in place", () => {
   type Row = { id: number; label: string };
   const [items, setItems] = signal<Row[]>([{ id: 1, label: "one" }]);
-  const { el } = mount(() => (
-    <For each={items()} key={(r) => r.id}>
-      {(row) => <li>{row().label}</li>}
-    </For>
-  ), "ul");
+  const { el } = mount(
+    () => (
+      <For each={items()} key={(r) => r.id}>
+        {(row) => <li>{row().label}</li>}
+      </For>
+    ),
+    "ul",
+  );
   const li = el.firstChild;
   setItems([{ id: 1, label: "uno" }]);
   flushSync();
@@ -35,15 +38,18 @@ test("with key, a kept row updates item() in place", () => {
 
 test("index() tracks the row position", () => {
   const [items, setItems] = signal(["a", "b"]);
-  const { el } = mount(() => (
-    <For each={items()}>
-      {(item, index) => (
-        <li>
-          {index()}:{item()}
-        </li>
-      )}
-    </For>
-  ), "ul");
+  const { el } = mount(
+    () => (
+      <For each={items()}>
+        {(item, index) => (
+          <li>
+            {index()}:{item()}
+          </li>
+        )}
+      </For>
+    ),
+    "ul",
+  );
   setItems(["b", "a"]);
   flushSync();
   expect(texts(el)).toEqual(["0:b", "1:a"]);
@@ -52,14 +58,17 @@ test("index() tracks the row position", () => {
 test("removed rows are disposed; fallback shows for an empty list", () => {
   const log: string[] = [];
   const [items, setItems] = signal(["a", "b"]);
-  const { el } = mount(() => (
-    <For each={items()} fallback={<li>empty</li>}>
-      {(item) => {
-        onCleanup(() => log.push(item()));
-        return <li>{item()}</li>;
-      }}
-    </For>
-  ), "ul");
+  const { el } = mount(
+    () => (
+      <For each={items()} fallback={<li>empty</li>}>
+        {(item) => {
+          onCleanup(() => log.push(item()));
+          return <li>{item()}</li>;
+        }}
+      </For>
+    ),
+    "ul",
+  );
   setItems(["b"]);
   flushSync();
   expect(log).toEqual(["a"]);
@@ -86,13 +95,16 @@ test("random reorders, inserts and removals keep DOM order and reuse surviving n
   const rand = (n: number) => (seed = (seed * 1103515245 + 12345) % 2 ** 31) % n;
   let next = 0;
   const [items, setItems] = signal<number[]>([]);
-  const { el } = mount(() => (
-    <>
-      <li>head</li>
-      <For each={items()}>{(item) => <li>{item()}</li>}</For>
-      <li>tail</li>
-    </>
-  ), "ul");
+  const { el } = mount(
+    () => (
+      <>
+        <li>head</li>
+        <For each={items()}>{(item) => <li>{item()}</li>}</For>
+        <li>tail</li>
+      </>
+    ),
+    "ul",
+  );
   let current: number[] = [];
   for (let step = 0; step < 300; step++) {
     const list = current.filter(() => rand(4) !== 0);

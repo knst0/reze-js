@@ -120,7 +120,11 @@ test("warnings become Vite warnings with loc; the footer appears once per code p
     id: "src/Counter.tsx",
     loc: { file: "src/Counter.tsx", line: 8, column: 14 },
   });
-  expect(warnings.slice(1).map((w) => w.message)).toEqual([warn.rendered, warn.rendered, warn.rendered]);
+  expect(warnings.slice(1).map((w) => w.message)).toEqual([
+    warn.rendered,
+    warn.rendered,
+    warn.rendered,
+  ]);
 });
 
 test("a fresh plugin instance prints the footer again", () => {

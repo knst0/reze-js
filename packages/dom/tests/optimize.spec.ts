@@ -38,7 +38,11 @@ interface Scenario {
 }
 
 async function load(optimize: boolean): Promise<{ code: string; module: Scenario }> {
-  const out = compile(scenario, "scenario.tsx", { moduleName: "@rezejs/dom", optimize, sourceMap: false });
+  const out = compile(scenario, "scenario.tsx", {
+    moduleName: "@rezejs/dom",
+    optimize,
+    sourceMap: false,
+  });
   if (!out?.code) throw new Error(out?.diagnostics.map((d) => d.rendered).join("\n") ?? "no JSX");
   mkdirSync(generated, { recursive: true });
   const file = join(generated, `scenario-${optimize ? "optimized" : "plain"}.ts`);

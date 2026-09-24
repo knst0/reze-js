@@ -24,13 +24,18 @@ try {
 }
 
 const results = {};
-for (const r of rows) results[`${r.group} / ${r.name}`] = { hz: r.hz, meanMs: r.meanMs, p50Ms: r.p50Ms };
+for (const r of rows)
+  results[`${r.group} / ${r.name}`] = { hz: r.hz, meanMs: r.meanMs, p50Ms: r.p50Ms };
 
 const width = Math.max(...Object.keys(results).map((n) => n.length));
 for (const [name, cur] of Object.entries(results)) {
   const old = prev[name];
-  const delta = old ? `  (was ${old.hz.toLocaleString("en-US", { maximumFractionDigits: 0 })} Hz, ${(cur.hz / old.hz >= 1 ? "+" : "") + ((cur.hz / old.hz - 1) * 100).toFixed(1)}%)` : "  (first run)";
-  console.log(`${name.padEnd(width)}  ${cur.hz.toLocaleString("en-US", { maximumFractionDigits: 0 }).padStart(14)} Hz  p50 ${cur.p50Ms.toFixed(4)} ms${delta}`);
+  const delta = old
+    ? `  (was ${old.hz.toLocaleString("en-US", { maximumFractionDigits: 0 })} Hz, ${(cur.hz / old.hz >= 1 ? "+" : "") + ((cur.hz / old.hz - 1) * 100).toFixed(1)}%)`
+    : "  (first run)";
+  console.log(
+    `${name.padEnd(width)}  ${cur.hz.toLocaleString("en-US", { maximumFractionDigits: 0 }).padStart(14)} Hz  p50 ${cur.p50Ms.toFixed(4)} ms${delta}`,
+  );
 }
 
 const path = join(dir, "latest.json");

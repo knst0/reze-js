@@ -70,13 +70,18 @@ An element has both a `children` attribute and nested JSX children. Nested child
 Before:
 
 ```tsx
-<div children={a()}><b /></div>
+<div children={a()}>
+  <b />
+</div>
 ```
 
 After:
 
 ```tsx
-<div>{a()}<b /></div>
+<div>
+  {a()}
+  <b />
+</div>
 ```
 
 ## KEY_ON_ELEMENT
@@ -90,7 +95,9 @@ After:
 Before:
 
 ```tsx
-{items().map((item) => <li key={item.id}>{item.name}</li>)}
+{
+  items().map((item) => <li key={item.id}>{item.name}</li>);
+}
 ```
 
 After:
@@ -221,7 +228,7 @@ After:
 
 ```tsx
 const numbers = [1, 2, 3];
-<For each={numbers}>{(n) => <li>{n}</li>}</For>
+<For each={numbers}>{(n) => <li>{n}</li>}</For>;
 ```
 
 ## ASYNC_COMPONENT_SHAPE
@@ -238,7 +245,11 @@ Before:
 async function User(props) {
   const label = props.label;
   const user = await fetchUser(props.id);
-  return <p>{label}: {user.name}</p>;
+  return (
+    <p>
+      {label}: {user.name}
+    </p>
+  );
 }
 ```
 
@@ -247,7 +258,11 @@ After:
 ```tsx
 async function User(props) {
   const user = await fetchUser(props.id);
-  return <p>{props.label}: {user.name}</p>;
+  return (
+    <p>
+      {props.label}: {user.name}
+    </p>
+  );
 }
 ```
 
@@ -283,7 +298,7 @@ Example:
 
 ```tsx
 const [title] = signal("Reze");
-<h1>{title()}</h1>
+<h1>{title()}</h1>;
 ```
 
 ## DEAD_BRANCH_REMOVED
@@ -297,5 +312,7 @@ A child's condition is a literal, so one branch can never render. The compiler d
 Example:
 
 ```tsx
-{DEBUG && <DebugPanel />}
+{
+  DEBUG && <DebugPanel />;
+}
 ```
