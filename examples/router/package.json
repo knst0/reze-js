@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@rezejs/meta": "workspace:*",
     "@rezejs/router": "workspace:*",
     "reze-js": "workspace:*"
   },
