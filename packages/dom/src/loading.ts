@@ -183,3 +183,89 @@ export function useTransition(): [
     });
   return [isPending, start];
 }
+
+export type RevealOrder = "sequential" | "together" | "natural";
+
+export interface RevealProps {
+  /** Read once; defaults to `"sequential"`. */
+  order?: RevealOrder;
+  /** With `"sequential"`: boundaries past the first unrevealed one render nothing. Read once. */
+  collapsed?: boolean;
+  children: JSX.Element;
+}
+
+interface RevealSlot {
+  boundary: LoadingBoundary;
+  setReleased: (isReleased: boolean) => void;
+  isRevealed: boolean;
+}
+
+/**
+ * Coordinates when the `Loading` boundaries inside it show their children, in the order they
+ * were created: `"sequential"` reveals each only after every earlier one did; `"together"`
+ * reveals all at once when every one is ready; `"natural"` lets each reveal on its own. A
+ * revealed boundary stays revealed. A nested `Reveal` is one slot of the enclosing one, ready
+ * when all of its own slots are, and applies its order once the enclosing one releases it.
+ */
+export function Reveal(props: RevealProps): JSX.Element {
+  const order = props.order ?? "sequential";
+  const isCollapsed = order === "sequential" && props.collapsed === true;
+  const slots: RevealSlot[] = [];
+  const [frontier, setFrontier] = signal(Number.POSITIVE_INFINITY);
+  const outer = useContext(RevealContext);
+  const [isReleasedByOuter, setReleasedByOuter] = signal(outer === undefined);
+  const group: RevealGroup = {
+    register(boundary, setReleased) {
+      slots.push({ boundary, setReleased, isRevealed: false });
+    },
+    suppressesFallback(boundary) {
+      if (!isCollapsed) return false;
+      return slots.findIndex((slot) => slot.boundary === boundary) > frontier();
+    },
+  };
+  if (outer !== undefined) {
+    outer.register(
+      {
+        retain: () => {},
+        release: () => {},
+        isShowingContent: () => slots.every((slot) => slot.boundary.isShowingContent()),
+        hasShownContent: false,
+        isReleased: isReleasedByOuter,
+        isReady: () => slots.every((slot) => slot.boundary.isReady()),
+      },
+      setReleasedByOuter,
+    );
+  }
+  const children = provideContext(RevealContext, group, () => props.children);
+  effect(() => {
+    if (!isReleasedByOuter()) {
+      for (const slot of slots) slot.setReleased(slot.isRevealed);
+      return;
+    }
+    if (order === "natural") {
+      for (const slot of slots) slot.setReleased(true);
+      return;
+    }
+    if (order === "together") {
+      const isReady = slots.every((slot) => slot.isRevealed || slot.boundary.isReady());
+      for (const slot of slots) {
+        slot.isRevealed ||= isReady;
+        slot.setReleased(slot.isRevealed);
+      }
+      return;
+    }
+    let blockedAt = Number.POSITIVE_INFINITY;
+    slots.forEach((slot, index) => {
+      const isReleased = slot.isRevealed || blockedAt === Number.POSITIVE_INFINITY;
+      slot.setReleased(isReleased);
+      if (slot.isRevealed) return;
+      if (isReleased && slot.boundary.isReady()) {
+        slot.isRevealed = true;
+      } else if (blockedAt === Number.POSITIVE_INFINITY) {
+        blockedAt = index;
+      }
+    });
+    setFrontier(blockedAt);
+  });
+  return children;
+}

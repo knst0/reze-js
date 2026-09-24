@@ -156,3 +156,39 @@ test("random reorders, inserts and removals keep DOM order and reuse surviving n
     current = list;
   }
 });
+
+test("random keyed updates keep DOM order and reuse the nodes of surviving rows", () => {
+  let seed = 7;
+  const random = (n: number) => (seed = (seed * 1103515245 + 12345) % 2 ** 31) % n;
+  let nextId = 0;
+  const [items, setItems] = signal<{ id: number }[]>([]);
+  const { el } = mount(
+    () => (
+      <For each={items()} key={(item) => item.id}>
+        {(item) => <li>{item().id}</li>}
+      </For>
+    ),
+    "ul",
+  );
+  let nodes = new Map<number, Element>();
+  for (let round = 0; round < 500; round++) {
+    const list = items().slice();
+    for (let k = random(4); k-- && list.length;) list.splice(random(list.length), 1);
+    for (let k = random(4); k-- && list.length > 1;) {
+      const [moved] = list.splice(random(list.length), 1);
+      list.splice(random(list.length + 1), 0, moved!);
+    }
+    for (let k = random(4); k-- && list.length < 50;) {
+      list.splice(random(list.length + 1), 0, { id: nextId++ });
+    }
+    setItems(list);
+    flush();
+    expect(texts(el)).toEqual(list.map((item) => String(item.id)));
+    const children = [...el.children];
+    list.forEach((item, i) => {
+      const previous = nodes.get(item.id);
+      if (previous) expect(children[i]).toBe(previous);
+    });
+    nodes = new Map(list.map((item, i) => [item.id, children[i]!]));
+  }
+});
