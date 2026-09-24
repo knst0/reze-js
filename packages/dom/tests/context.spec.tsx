@@ -51,7 +51,7 @@ test("without a provider the default applies, and inner providers win", () => {
 
 test("a getter value shares reactive state", () => {
   const [count, setCount] = signal(1);
-  const Count = createContext(() => 0);
+  const Count = createContext<() => number>(() => 0);
   const Show = () => <b>{useContext(Count)()}</b>;
   const { el } = mount(() => (
     <Count value={count}>

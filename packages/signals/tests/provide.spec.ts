@@ -48,7 +48,7 @@ test("lookups walk through effects, computeds, nested roots and untrack", () => 
       });
       const read = computed(() => (n(), useContext(Theme)));
       seen.push(read());
-      effect(() => untrack(() => seen.push(useContext(Theme))));
+      effect(() => void untrack(() => seen.push(useContext(Theme))));
       setN(1);
       flushSync();
       seen.push(read());
