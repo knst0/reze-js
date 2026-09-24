@@ -27,23 +27,45 @@ function renderBranch<T>(children: Branch<T>, value: Getter<T>): JSX.Element {
   );
 }
 
-export interface ShowProps<T> {
-  when: T | Falsy;
-  fallback?: JSX.Element;
-  children: Branch<T>;
+type KeyedBranch<T> = JSX.Element | ((value: T) => JSX.Element);
+
+/** Builds a keyed branch untracked: a function child receives the value itself. */
+function renderKeyedBranch<T>(children: KeyedBranch<T>, value: T): JSX.Element {
+  return untrack(() =>
+    typeof children === "function" && children.length
+      ? (children as (value: T) => JSX.Element)(value)
+      : (children as JSX.Element),
+  );
 }
+
+export type ShowProps<T> =
+  | { when: T | Falsy; keyed?: false; fallback?: JSX.Element; children: Branch<T> }
+  | { when: T | Falsy; keyed: true; fallback?: JSX.Element; children: KeyedBranch<T> };
 
 /**
  * Renders `children` while `when` is truthy. The branch is rebuilt only when truthiness flips.
  * The value getter a function child receives is a memo created on its first read.
  */
+/**
+ * With `keyed`, the branch is rebuilt whenever `when` changes identity, and a function child
+ * receives the value itself.
+ */
 export function Show<T>(props: ShowProps<T>): JSX.Element {
+  if (props.keyed) {
+    const keyedProps = props;
+    const when = computed(() => keyedProps.when);
+    return computed(() => {
+      const value = when();
+      return value
+        ? renderKeyedBranch(keyedProps.children, value as T)
+        : untrack(() => keyedProps.fallback);
+    });
+  }
   const shown = computed(() => !!props.when);
   let when: Getter<T | Falsy> | undefined;
   const value = (): T => (when ??= computed(() => props.when))() as T;
-  return computed(() =>
-    shown() ? renderBranch(props.children, value) : untrack(() => props.fallback),
-  );
+  const children = props.children as Branch<T>;
+  return computed(() => (shown() ? renderBranch(children, value) : untrack(() => props.fallback)));
 }
 
 export interface ErroredProps {
@@ -104,10 +126,9 @@ export function Errored(props: ErroredProps): JSX.Element {
   });
 }
 
-export interface MatchProps<T> {
-  when: T | Falsy;
-  children: Branch<T>;
-}
+export type MatchProps<T> =
+  | { when: T | Falsy; keyed?: false; children: Branch<T> }
+  | { when: T | Falsy; keyed: true; children: KeyedBranch<T> };
 
 /** A `<Switch>` case; evaluates to its own props, which `<Switch>` reads. */
 export function Match<T>(props: MatchProps<T>): JSX.Element {
@@ -119,7 +140,10 @@ export interface SwitchProps {
   children: JSX.Element;
 }
 
-/** Renders the first `<Match>` whose `when` is truthy; rebuilt only when that choice changes. */
+/**
+ * Renders the first `<Match>` whose `when` is truthy; rebuilt only when that choice changes, or,
+ * for a `keyed` match, when its `when` changes identity.
+ */
 export function Switch(props: SwitchProps): JSX.Element {
   const matches = computed(() => {
     const children = props.children;
@@ -130,7 +154,8 @@ export function Switch(props: SwitchProps): JSX.Element {
     const i = index();
     if (i < 0) return untrack(() => props.fallback);
     const match = matches()[i]!;
-    return renderBranch(match.children, () => match.when);
+    if (match.keyed) return renderKeyedBranch(match.children, match.when);
+    return renderBranch(match.children as Branch<unknown>, () => match.when);
   });
 }
 
