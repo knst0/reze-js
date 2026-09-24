@@ -14,7 +14,7 @@ pub struct Flag {
 /// `hydration` is decided by the build target, not by the program, so `link` leaves it out.
 pub const FLAGS: &[Flag] = &[
     Flag { name: "hydration", define: "__REZE_HYDRATION__", exports: &[] },
-    Flag { name: "suspense", define: "__REZE_SUSPENSE__", exports: &["Suspense"] },
+    Flag { name: "loading", define: "__REZE_LOADING__", exports: &["Loading"] },
 ];
 
 /// Values of the program-decided flags, by `Flag::name`.

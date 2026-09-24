@@ -66,7 +66,7 @@ pub enum Primitive {
     Store,
     RenderToString,
     Hydrate,
-    Suspense,
+    Loading,
     For,
     Show,
 }
@@ -79,7 +79,7 @@ impl Primitive {
             "store" => Primitive::Store,
             "renderToString" => Primitive::RenderToString,
             "hydrate" => Primitive::Hydrate,
-            "Suspense" => Primitive::Suspense,
+            "Loading" => Primitive::Loading,
             "For" => Primitive::For,
             "Show" => Primitive::Show,
             _ => return None,

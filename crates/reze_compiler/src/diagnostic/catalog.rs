@@ -347,7 +347,7 @@ pub const CATALOG: &[Entry] = &[
         observed: "The program does not use a runtime feature, so its define flag was turned off and the runtime dropped it, but a module outside the program uses that feature's export.",
         repair: "Add the module to `program.include`, or force the flag on with the plugin option `features: { <name>: true }`.",
         bad: "",
-        good: "reze({ features: { suspense: true } })",
+        good: "reze({ features: { loading: true } })",
     },
 ];
 

@@ -830,7 +830,7 @@ fn verify_reports_only_real_closed_world_and_flag_breaks() {
         |source: &str| reze_compiler::summarize(source, "/o.ts", &Default::default()).unwrap();
     let linked = reze_compiler::Linked {
         facts: Default::default(),
-        features: [("suspense".to_string(), false)].into_iter().collect(),
+        features: [("loading".to_string(), false)].into_iter().collect(),
         closed: vec!["/state.ts".to_string()],
     };
     let outside = |source: &str, imported: &str| reze_compiler::OutsideModule {
@@ -843,7 +843,7 @@ fn verify_reports_only_real_closed_world_and_flag_breaks() {
     assert_eq!(found(&[outside("export const a = 1;", "/other.ts")]), []);
     assert_eq!(found(&[outside("export const a = 1;", "/state.ts")]), [Code::ProgramOpenImport]);
     assert_eq!(
-        found(&[outside("import * as R from \"reze-js\";\nexport const S = R.Suspense;", "/x.ts")]),
+        found(&[outside("import * as R from \"reze-js\";\nexport const S = R.Loading;", "/x.ts")]),
         [Code::FeatureFlagMismatch]
     );
     assert_eq!(

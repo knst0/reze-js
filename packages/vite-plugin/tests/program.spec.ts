@@ -7,7 +7,7 @@ import { afterEach, expect, test } from "vitest";
 
 import reze, { type Options } from "../src/index";
 
-const Flag = "__REZE_SUSPENSE__";
+const Flag = "__REZE_LOADING__";
 
 type Handler = (this: unknown, code: string, id: string, options?: { ssr?: boolean }) => unknown;
 
@@ -82,7 +82,7 @@ test("without a program every flag stays true", () => {
   expect(code.length).toBe(readFileSync(flags, "utf8").length);
 });
 
-test("a linked program decides the suspense flag without moving columns", async () => {
+test("a linked program decides the loading flag without moving columns", async () => {
   const { widget, flags } = writeFlagsFixture();
   const code = readFileSync(flags, "utf8");
 
@@ -92,7 +92,7 @@ test("a linked program decides the suspense flag without moving columns", async 
   expect(replaced).toContain(padded("false"));
   expect(replaced.length).toBe(code.length);
 
-  const forced = hooksOf({ features: { suspense: true } });
+  const forced = hooksOf({ features: { loading: true } });
   await scanDirectory(forced, dir!, widget);
   expect(transformed(forced, flags)).toContain(padded("true"));
 

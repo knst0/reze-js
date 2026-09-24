@@ -4,7 +4,7 @@ assertion_line: 259
 expression: render(&dir)
 ---
 closed: ["/components.tsx", "/data.ts"]
-features: {"suspense": false}
+features: {"loading": false}
 
 // ==== /components.tsx [client] ====
 import { Show, signal } from "reze-js";

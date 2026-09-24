@@ -1,9 +1,9 @@
-import { Suspense } from "reze-js";
+import { Loading } from "reze-js";
 
 export function Loader(props) {
   return (
-    <Suspense fallback={<p>loading</p>}>
+    <Loading fallback={<p>loading</p>}>
       <p>{props.label}</p>
-    </Suspense>
+    </Loading>
   );
 }

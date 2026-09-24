@@ -4,7 +4,7 @@ assertion_line: 259
 expression: render(&dir)
 ---
 closed: ["/Badge.tsx", "/Counter.tsx", "/Page.tsx"]
-features: {"suspense": false}
+features: {"loading": false}
 
 // ==== /Badge.tsx [client] ====
 import { signal } from "reze-js";

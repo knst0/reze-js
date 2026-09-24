@@ -50,13 +50,18 @@ An element has both a `children` attribute and nested JSX children. Nested child
 Before:
 
 ```tsx
-<div children={a()}><b /></div>
+<div children={a()}>
+  <b />
+</div>
 ```
 
 After:
 
 ```tsx
-<div>{a()}<b /></div>
+<div>
+  {a()}
+  <b />
+</div>
 ```
 
 ## KEY_ON_ELEMENT
@@ -70,7 +75,9 @@ After:
 Before:
 
 ```tsx
-{items().map((item) => <li key={item.id}>{item.name}</li>)}
+{
+  items().map((item) => <li key={item.id}>{item.name}</li>);
+}
 ```
 
 After:
@@ -201,7 +208,7 @@ After:
 
 ```tsx
 const numbers = [1, 2, 3];
-<For each={numbers}>{(n) => <li>{n}</li>}</For>
+<For each={numbers}>{(n) => <li>{n}</li>}</For>;
 ```
 
 ## ASYNC_COMPONENT_SHAPE
@@ -218,7 +225,11 @@ Before:
 async function User(props) {
   const label = props.label;
   const user = await fetchUser(props.id);
-  return <p>{label}: {user.name}</p>;
+  return (
+    <p>
+      {label}: {user.name}
+    </p>
+  );
 }
 ```
 
@@ -227,7 +238,11 @@ After:
 ```tsx
 async function User(props) {
   const user = await fetchUser(props.id);
-  return <p>{props.label}: {user.name}</p>;
+  return (
+    <p>
+      {props.label}: {user.name}
+    </p>
+  );
 }
 ```
 
@@ -263,7 +278,7 @@ Example:
 
 ```tsx
 const [title] = signal("Reze");
-<h1>{title()}</h1>
+<h1>{title()}</h1>;
 ```
 
 ## DEAD_BRANCH_REMOVED
@@ -277,7 +292,9 @@ A child's condition is a literal, so one branch can never render. The compiler d
 Example:
 
 ```tsx
-{DEBUG && <DebugPanel />}
+{
+  DEBUG && <DebugPanel />;
+}
 ```
 
 ## COMPUTED_INLINED
@@ -292,7 +309,7 @@ Example:
 
 ```tsx
 const doubled = computed(() => count() * 2);
-<p>{doubled()}</p>
+<p>{doubled()}</p>;
 ```
 
 ## AUTO_SELECTOR
@@ -320,7 +337,11 @@ A runtime `<Show>` inside a native element has a `when`, an optional `fallback`,
 Example:
 
 ```tsx
-<div><Show when={open()} fallback={<i>closed</i>}><b>open</b></Show></div>
+<div>
+  <Show when={open()} fallback={<i>closed</i>}>
+    <b>open</b>
+  </Show>
+</div>
 ```
 
 ## PROP_FOLDED
@@ -334,8 +355,10 @@ In the whole-program build every JSX use of the component passes this prop as th
 Example:
 
 ```tsx
-<Counter step={1} />
-function Counter(props) { return <b>+{props.step}</b>; }
+<Counter step={1} />;
+function Counter(props) {
+  return <b>+{props.step}</b>;
+}
 ```
 
 ## PROPS_REWRITTEN
@@ -366,7 +389,14 @@ Example:
 
 ```tsx
 const [todo, setTodo] = store({ title: "", done: false });
-<input checked={todo.done} onInput={() => setTodo((d) => { d.done = !d.done; })} />
+<input
+  checked={todo.done}
+  onInput={() =>
+    setTodo((d) => {
+      d.done = !d.done;
+    })
+  }
+/>;
 ```
 
 ## STATIC_COMPONENT
@@ -414,7 +444,12 @@ Example:
 
 ```tsx
 export function Page() {
-  return <main><h1>Docs</h1><Counter start={1} /></main>;
+  return (
+    <main>
+      <h1>Docs</h1>
+      <Counter start={1} />
+    </main>
+  );
 }
 ```
 
@@ -430,7 +465,11 @@ Example:
 
 ```tsx
 export function Page() {
-  return <main><Comments island:load="visible" post={1} /></main>;
+  return (
+    <main>
+      <Comments island:load="visible" post={1} />
+    </main>
+  );
 }
 ```
 
@@ -445,7 +484,7 @@ An `island:load` attribute sits on an element that is not an island boundary: a 
 Before:
 
 ```tsx
-<Counter island:load="idle" start={1} />  // inside a client component
+<Counter island:load="idle" start={1} /> // inside a client component
 ```
 
 After:
@@ -465,7 +504,7 @@ The module was compiled with program facts whose source hash does not match the 
 Example:
 
 ```tsx
-reze({ program: { exclude: /generated/ } })
+reze({ program: { exclude: /generated/ } });
 ```
 
 ## PROGRAM_OPEN_IMPORT
@@ -479,7 +518,7 @@ Program analysis rewrote the exports of a module (a folded signal or an unproxie
 Example:
 
 ```tsx
-reze({ program: { include: /\.(tsx?|jsx?|vue)$/ } })
+reze({ program: { include: /\.(tsx?|jsx?|vue)$/ } });
 ```
 
 ## FEATURE_FLAG_MISMATCH
@@ -493,5 +532,5 @@ The program does not use a runtime feature, so its define flag was turned off an
 Example:
 
 ```tsx
-reze({ features: { suspense: true } })
+reze({ features: { loading: true } });
 ```

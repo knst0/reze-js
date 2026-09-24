@@ -1,9 +1,10 @@
 ---
 source: crates/reze_compiler/tests/programs.rs
+assertion_line: 259
 expression: render(&dir)
 ---
 closed: []
-features: {"suspense": false}
+features: {"loading": false}
 
 // ==== /lib.ts [client] ====
 <unchanged>

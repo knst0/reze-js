@@ -32,7 +32,7 @@ enum Trigger {
     Module(&'static str),
     Program { file: &'static str },
     StaleFacts,
-    Outside { closed: bool, suspense: bool },
+    Outside { closed: bool, loading: bool },
 }
 
 const PAGE: &str = "import { Counter } from \"./counter\";\nexport function Page() { return <main><Counter start={1} island:load=\"visible\" /></main>; }";
@@ -79,8 +79,8 @@ fn trigger(code: Code) -> Trigger {
             return Trigger::Program { file: "/counter.tsx" };
         }
         Code::FactsStale => return Trigger::StaleFacts,
-        Code::ProgramOpenImport => return Trigger::Outside { closed: true, suspense: true },
-        Code::FeatureFlagMismatch => return Trigger::Outside { closed: false, suspense: false },
+        Code::ProgramOpenImport => return Trigger::Outside { closed: true, loading: true },
+        Code::FeatureFlagMismatch => return Trigger::Outside { closed: false, loading: false },
     };
     Trigger::Module(source)
 }
@@ -120,13 +120,13 @@ fn diagnostics(trigger: Trigger) -> Vec<Diagnostic> {
                 &Options { facts: Some(facts), ..Options::default() },
             )
         }
-        Trigger::Outside { closed, suspense } => {
+        Trigger::Outside { closed, loading } => {
             let linked = Linked {
                 facts: Default::default(),
-                features: [("suspense".to_string(), suspense)].into_iter().collect(),
+                features: [("loading".to_string(), loading)].into_iter().collect(),
                 closed: if closed { vec!["/state.ts".to_string()] } else { Vec::new() },
             };
-            let source = "import { Suspense } from \"reze-js\";\nimport { title } from \"./state\";\nexport { Suspense, title };";
+            let source = "import { Loading } from \"reze-js\";\nimport { title } from \"./state\";\nexport { Loading, title };";
             let outside = OutsideModule {
                 id: "/outside.ts".to_string(),
                 summary: Some(

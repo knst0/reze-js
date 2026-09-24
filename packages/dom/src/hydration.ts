@@ -55,7 +55,7 @@ export function isServerRender(): boolean {
   return serverDepth > 0;
 }
 
-/** Runs `fn` as a server render, so `Suspense` shows its children. */
+/** Runs `fn` as a server render, so `Loading` shows its children. */
 export function withServerRender<T>(fn: () => T): T {
   serverDepth++;
   try {
