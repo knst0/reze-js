@@ -4,7 +4,13 @@ import { build } from "esbuild";
 import { expect, test } from "vitest";
 
 const entry = fileURLToPath(new URL("../src/index.ts", import.meta.url));
-const nodeKinds = ["SignalNode", "ComputedNode", "EffectNode", "EffectScopeNode"];
+const nodeKinds = [
+  "SignalNode",
+  "ComputedNode",
+  "EffectNode",
+  "EffectScopeNode",
+  "SelectorKeyNode",
+];
 
 async function bundle(imports: string, nodeEnv = "development"): Promise<string> {
   const result = await build({
@@ -34,6 +40,7 @@ test.each([
   ["effect", ["EffectNode"]],
   ["effectScope", ["EffectScopeNode"]],
   ["trigger", []],
+  ["selector", ["SelectorKeyNode"]],
   ["signal, computed", ["SignalNode", "ComputedNode"]],
 ])("bundling { %s } keeps only %j", async (imports, expected) => {
   expect(await bundledNodeKinds(imports)).toEqual(expected);

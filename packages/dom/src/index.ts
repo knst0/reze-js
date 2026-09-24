@@ -48,6 +48,7 @@ export {
   effect,
   getOwner,
   onCleanup,
+  selector,
   signal,
   store,
   trackAsync,
