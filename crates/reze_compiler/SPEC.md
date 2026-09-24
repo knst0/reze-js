@@ -30,7 +30,7 @@
 | M2     | Targets `Server` и `Hydrate` на том же IR (§14)                                                                                                   | готово |
 | **M3** | Анализ программы: `ModuleSummary` → `Facts`, острова, фичи на остров, межмодульная свёртка сигналов, снятие Proxy со store, define-флаги рантайма | §15    |
 | **M4** | dev-анализ и HMR, ленивые острова, слоты, межмодульный O4, массивы в store, не-литеральные default, стриминг                                      | готово |
-| M99    | `reze_lsp`: диагностика, inlay hints, «почему остров?» по цепочкам `Reason`                                                                       | потом  |
+| M99    | `reze_lsp`: диагностика, inlay hints, «почему остров?» по цепочкам `Reason`                                                                       | §17    |
 
 Требования M1 ради M2–M4 и M99: IR не содержит ничего специфичного для client (выбор target делается только в
 `emit`). У каждого решения оптимизатора есть причина `Reason`, которую можно показать как `info`-диагностику
@@ -1248,3 +1248,54 @@ export function renderToStream(
 Вне M4: replay событий, пришедших до загрузки ленивого острова; слоты-функции (render props через границу);
 межмодульный O4 через циклы; server actions и мутации; глобальный режим ленивости по умолчанию; nonce/CSP для
 стриминга не нужен (скриптов нет) — но это следствие дизайна, а не фича.
+
+## 17. LSP (M99)
+
+Крейт `reze_lsp`, бинарь `reze-lsp`: LSP поверх stdio. Pure-логика (`analysis`, `mapping`) отделена от
+транспортного цикла (`server`) и покрыта тестами; цикл проверяется живой сессией.
+
+### 17.1 Программа
+
+Один открытый документ компилируется в модульном режиме (§15.1). Два и больше — как программа: каждый файл
+проходит `summarize`, спецификаторы разрешаются среди открытых и файлов под корнем workspace (рекурсивно,
+кроме `node_modules` и каталогов на `.`; расширения `.ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs`), затем `link`,
+затем каждый модуль компилируется со своими фактами. Открытые буферы перекрывают диск. `is_entry: false`
+для всех: LSP только объясняет, ничего не переписывает. Инвариант §15.2 сохраняется: один файл линкуется
+в то же, что модульный режим.
+
+Настройки (`initializationOptions`, затем `workspace/didChangeConfiguration`): `moduleName` (по умолчанию
+`"reze-js"`), `optimize` (`true`), `islands` (`true`), `root` (по умолчанию корень workspace).
+
+### 17.2 Диагностика
+
+Каждая диагностика компилятора (§9.2), включая `info`, отдаётся как есть дважды: push
+(`textDocument/publishDiagnostics`) и pull (`textDocument/diagnostic`). Отображение: severity
+`error/warn/info` → `Error/Warning/Information`; `line - 1`, колонка UTF-16 без пересчёта; `code` — имя кода;
+`codeDescription` — `docs` (§9.2); `source` — `"reze"`; `relatedInformation` — `labels` (тот же файл) и
+`related` (цепочка `Reason`, §15.10): спаны чужих файлов разрешаются по открытым текстам, иначе нулевой
+range; `data` — полный JSON `file/path/labels/related/fixes/data/docs/rendered`. `fixes` дополнительно
+отдаются как `textDocument/codeAction` (`quickfix`, `isPreferred: true`, заголовок
+`"<fix> (<CODE>)"`).
+
+### 17.3 Inlay hints
+
+Каждая `info`-диагностика — один hint в конце её спана (`textDocument/inlayHint`): `SIGNAL_FOLDED`
+→ `folded (<scope>)`, `COMPUTED_INLINED` → `inlined (<scope>)`, `STORE_UNPROXIED` → `store: signals (<scope>)`,
+`DEAD_BRANCH_REMOVED` → `dead branch removed`, `PROPS_REWRITTEN` → `props: reactive reads`,
+`STATIC_COMPONENT` → `static`, `CLIENT_COMPONENT` → `client: <reason, 64 символа>`, `ISLAND` →
+`island <id> [<features>] [(<mode>)]`, `LAZY_ISLAND` → `lazy: <mode>`. Tooltip — `message` диагностики.
+Остальные коды hint не дают.
+
+### 17.4 «Почему остров?»
+
+`textDocument/hover` и запрос `reze/whyIsland { uri, offset }` объясняют диагностику под курсором
+(приоритет `ISLAND`/`LAZY_ISLAND`, затем `STATIC`/`CLIENT_COMPONENT`, затем остальные; из нескольких —
+самая узкая). Markdown: сообщение, строка `in`, для острова — `id`, `mode`, `features` и почему позиция
+стала границей; для клиентского — нумерованная цепочка `Reason` (`message` плюс `related` с файлами);
+затем таблица `data`, заголовки `fixes` и ссылка на руководство. `hover` дополнительно возвращает range
+диагностики.
+
+### 17.5 Границы M99
+
+Вне M99: rename/переезд по `related`, replay ленивых событий, workspace-диагностика, семантические токены,
+конфигурация через файлы.
