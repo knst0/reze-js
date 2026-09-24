@@ -1,5 +1,6 @@
 import {
   endTracking,
+  reportError,
   enterEffect,
   enterOwner,
   exitEffect,
@@ -34,6 +35,14 @@ class RenderNode<T> implements ReactiveNode {
   }
 
   run(): void {
+    try {
+      this.runIfDirty();
+    } catch (error) {
+      reportError(this, error);
+    }
+  }
+
+  runIfDirty(): void {
     const flags = this.flags;
     if (flags & FlagDirty || (flags & FlagPending && checkDirty(this.deps!, this))) {
       if (flags & FlagHasChildEffect) {
