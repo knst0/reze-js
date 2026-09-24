@@ -1,0 +1,17 @@
+{
+  "name": "@rezejs/bench-dom-rows",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "vite build && node ./run.mjs"
+  },
+  "dependencies": {
+    "reze-js": "workspace:*"
+  },
+  "devDependencies": {
+    "@rezejs/vite-plugin": "workspace:*",
+    "playwright-core": "^1.63.0",
+    "vite": "^8.3.0"
+  }
+}
