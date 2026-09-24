@@ -790,6 +790,7 @@ impl<'a> Builder<'_, 'a> {
             Context::Call { argument_count: 0 } if keys.is_empty() && access.tail.is_empty() => {
                 UseClass::Call0
             }
+            Context::Tag if keys.is_empty() && access.tail.is_empty() => UseClass::Tag,
             Context::Call { argument_count: 1 } if keys.is_empty() && access.tail.is_empty() => {
                 let AstKind::CallExpression(call) = self.nodes.parent_kind(access.node) else {
                     return UseClass::Other;
