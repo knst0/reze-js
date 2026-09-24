@@ -69,6 +69,13 @@ export interface Options {
    * @default false
    */
   islands?: boolean;
+  /**
+   * Keep Vite's `modulepreload` polyfill. Every browser Reze targets supports `modulepreload`,
+   * so the plugin turns the polyfill off unless this is `true` or `build.modulePreload` is set.
+   *
+   * @default false
+   */
+  modulePreloadPolyfill?: boolean;
   /** Forces runtime features on regardless of what the program uses. */
   features?: Partial<Record<"hydration" | "suspense", true>>;
   diagnostics?: {
@@ -470,6 +477,10 @@ export default function reze(options: Options = {}): Plugin {
   return {
     name: "reze-js",
     enforce: "pre",
+    config(userConfig) {
+      if (options.modulePreloadPolyfill || userConfig.build?.modulePreload !== undefined) return;
+      return { build: { modulePreload: { polyfill: false } } };
+    },
     configResolved(resolved) {
       config = resolved;
     },
