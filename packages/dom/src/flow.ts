@@ -1,4 +1,13 @@
-import { computed, effect, onCleanup, signal, untrack, type Getter } from "@rezejs/signals";
+import {
+  catchError,
+  computed,
+  effect,
+  onCleanup,
+  root,
+  signal,
+  untrack,
+  type Getter,
+} from "@rezejs/signals";
 import { renderEffect as bind } from "@rezejs/signals/render";
 
 import { createComponent, insert, insertExpression, splitProps, spread } from "./dom";
@@ -38,6 +47,64 @@ export function Show<T>(props: ShowProps<T>): JSX.Element {
   return computed(() =>
     shown() ? renderBranch(props.children, value) : untrack(() => props.fallback),
   );
+}
+
+export interface ErroredProps {
+  /** Shown instead of the children after they throw; a function gets the error and `reset`. */
+  fallback: JSX.Element | ((error: Getter<unknown>, reset: () => void) => JSX.Element);
+  children: JSX.Element;
+}
+
+/** `children` after running every getter in it once, so what they throw surfaces here. */
+function evaluated(children: JSX.Element): JSX.Element {
+  let value: unknown = children;
+  while (typeof value === "function") value = value();
+  if (Array.isArray(value)) value.forEach(evaluated);
+  return children;
+}
+
+/**
+ * Renders `children`, or `fallback` once they throw: while being created, or later from an
+ * effect or binding inside them. `reset()` rebuilds the children. A nested `Errored` catches
+ * first; an error the fallback throws reaches the enclosing one.
+ */
+export function Errored(props: ErroredProps): JSX.Element {
+  const [attempt, setAttempt] = signal(0);
+  const [error, setError] = signal<unknown>(undefined, { equals: false });
+  let isFailed = false;
+  const retry = (): void => void setAttempt((n) => n + 1);
+  const reset = (): void => {
+    isFailed = false;
+    retry();
+  };
+  return computed(() => {
+    attempt();
+    if (!isFailed) {
+      let isCreating = true;
+      let dispose!: () => void;
+      const children = root((disposeAttempt) => {
+        dispose = disposeAttempt;
+        return catchError(
+          () => evaluated(props.children),
+          (thrown) => {
+            isFailed = true;
+            setError(thrown);
+            if (!isCreating) retry();
+          },
+        );
+      });
+      isCreating = false;
+      if (!isFailed) {
+        onCleanup(dispose);
+        return children;
+      }
+      dispose();
+    }
+    return untrack(() => {
+      const fallback = props.fallback;
+      return typeof fallback === "function" ? fallback(error, reset) : fallback;
+    });
+  });
 }
 
 export interface MatchProps<T> {

@@ -1,6 +1,7 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
 import {
   endTracking,
+  reportError,
   enterEffect,
   enterOwner,
   exitEffect,
@@ -30,6 +31,14 @@ class EffectNode implements ReactiveNode {
   }
 
   run(): void {
+    try {
+      this.runIfDirty();
+    } catch (error) {
+      reportError(this, error);
+    }
+  }
+
+  runIfDirty(): void {
     const flags = this.flags;
     if (flags & FlagDirty || (flags & FlagPending && checkDirty(this.deps!, this))) {
       if (flags & FlagHasChildEffect) {

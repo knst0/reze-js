@@ -3,7 +3,9 @@ export { computed, isComputed } from "./computed";
 export { getOwner } from "./context";
 export { effect, isEffect } from "./effect";
 export { effectScope, isEffectScope } from "./effectScope";
+export { catchError } from "./error";
 export { onCleanup, root, runWithOwner, untrack, type Owner } from "./owner";
+export { provideContext, useContext, type ContextKey } from "./provide";
 export { flush } from "./scheduler";
 export { selector } from "./selector";
 export {

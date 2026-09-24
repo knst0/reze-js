@@ -45,6 +45,43 @@ export function exitEffect(): void {
   --effectDepth;
 }
 
+/**
+ * The owner `node` was created under: the recorded `parent` of a root or computed, else the
+ * owner an adopted node is linked to.
+ */
+export function parentOwner(node: ReactiveNode): ReactiveNode | undefined {
+  if (node.parent !== undefined) {
+    return node.parent;
+  }
+  return node.dispose !== undefined ? node.subs?.sub : undefined;
+}
+
+/** The first defined `pick(owner)` from the current owner up through its ancestors. */
+export function lookupOwner<T>(pick: (owner: ReactiveNode) => T | undefined): T | undefined {
+  for (let owner = getOwner(); owner !== undefined; owner = parentOwner(owner)) {
+    const found = pick(owner);
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+let errorHook: ((node: ReactiveNode, error: unknown) => void) | undefined;
+
+/** Installs where errors thrown by scheduled effect and binding runs go (`catchError`). */
+export function setErrorHook(hook: (node: ReactiveNode, error: unknown) => void): void {
+  errorHook = hook;
+}
+
+/** Hands an error a scheduled run of `node` threw to the error hook, or rethrows it. */
+export function reportError(node: ReactiveNode, error: unknown): void {
+  if (errorHook === undefined) {
+    throw error;
+  }
+  errorHook(node, error);
+}
+
 /** Makes `sub` active and records it as owned by the current owner. */
 export function enterOwner(sub: ReactiveNode): ReactiveNode | undefined {
   const prevSub = activeSub;

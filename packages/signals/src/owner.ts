@@ -9,6 +9,11 @@ class RootNode implements ReactiveNode {
   deps: Link | undefined = undefined;
   depsTail: Link | undefined = undefined;
   flags: number = FlagNone;
+  parent: ReactiveNode | undefined;
+
+  constructor(parent: ReactiveNode | undefined) {
+    this.parent = parent;
+  }
 }
 
 class CleanupNode implements ReactiveNode {
@@ -40,7 +45,7 @@ class CleanupNode implements ReactiveNode {
  * `dispose` is called.
  */
 export function root<T>(fn: (dispose: () => void) => T): T {
-  const node = new RootNode();
+  const node = new RootNode(getOwner());
   const prevSub = setActiveSub(undefined);
   const prevOwner = setActiveOwner(node);
   try {
