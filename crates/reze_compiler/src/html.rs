@@ -312,6 +312,9 @@ pub fn suggest_attribute(name: &str) -> Option<&'static str> {
     if name.is_empty() || KNOWN_ATTRIBUTES.contains(&name) {
         return None;
     }
+    if matches!(name, "className" | "classList") {
+        return Some("class");
+    }
     let mut best: Option<(&'static str, usize)> = None;
     for candidate in KNOWN_ATTRIBUTES {
         let distance = edit_distance(name, candidate, 2);

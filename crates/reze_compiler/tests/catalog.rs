@@ -40,7 +40,6 @@ const COUNTER: &str = "export function Counter(props) { return <button island:lo
 fn trigger(code: Code) -> Trigger {
     let source = match code {
         Code::ParseError => "const a = <div>;",
-        Code::ClassAlias => "const a = <div className=\"x\" />;",
         Code::ChildrenPropIgnored => "const a = <div children={x()}><b /></div>;",
         Code::KeyOnElement => "const a = <li key={id} />;",
         Code::DuplicateAttribute => "const a = <a href=\"/a\" href={u()} />;",

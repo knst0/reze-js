@@ -1,6 +1,6 @@
 ---
 source: crates/reze_compiler/tests/snapshots.rs
-expression: "const a = <p class={{ negative: n() < 0 }} />;\nconst b = <p class={[\"box\", { on: on(), big: false, wide: true }, [\"x\", { deep: d() }]]} />;\nconst c = <p class=\"btn\" classList={{ active: active() }} />;\nconst d = <p class={{ once: flag }} />;\nconst e = <p class={{ \"a b\": ab() }} />;\nconst f = <p class={[\"on\", { on: on() }]} />;\nconst g = <p class={{ on: on(), off: false }} classList={{ on: other() }} />;\nconst h = <p class={[\"x\", { x: false, y: y() }]} />;\nconst i = <p class={[cls(), { on: on() }]} />;"
+expression: "const a = <p class={{ negative: n() < 0 }} />;\nconst b = <p class={[\"box\", { on: on(), big: false, wide: true }, [\"x\", { deep: d() }]]} />;\nconst c = <p class={[\"btn\", { active: active() }]} />;\nconst d = <p class={{ once: flag }} />;\nconst e = <p class={{ \"a b\": ab() }} />;\nconst f = <p class={[\"on\", { on: on() }]} />;\nconst g = <p class={[{ on: on(), off: false }, { on: other() }]} />;\nconst h = <p class={[\"x\", { x: false, y: y() }]} />;\nconst i = <p class={[cls(), { on: on() }]} />;"
 ---
 import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrClass as _$ssrClass, ssrClassTokens as _$ssrClassTokens } from "reze-js";
 const _tmpl$ = ["<p", "", "></p>"],
@@ -15,21 +15,3 @@ const f = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrClass(["on", { on: on() }]));
 const g = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrClass([{ on: on(), off: false }, { on: other() }]));
 const h = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrClass(["x", { x: false, y: y() }]));
 const i = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrClass([cls(), { on: on() }]));
-// warn
-[CLASS_ALIAS] `classList` is a legacy alias: Reze has one `class` attribute that takes strings, objects and arrays. Rename it to `class`; it was compiled as `class`.
-  in p
-  at case.tsx:3:26
-  2 | const b = <p class={["box", { on: on(), big: false, wide: true }, ["x", { deep: d() }]]} />;
-> 3 | const c = <p class="btn" classList={{ active: active() }} />;
-    |                          ^^^^^^^^^
-  4 | const d = <p class={{ once: flag }} />;
-  fix: rename `classList` to `class`
-// warn
-[CLASS_ALIAS] `classList` is a legacy alias: Reze has one `class` attribute that takes strings, objects and arrays. Rename it to `class`; it was compiled as `class`.
-  in p
-  at case.tsx:7:47
-  6 | const f = <p class={["on", { on: on() }]} />;
-> 7 | const g = <p class={{ on: on(), off: false }} classList={{ on: other() }} />;
-    |                                               ^^^^^^^^^
-  8 | const h = <p class={["x", { x: false, y: y() }]} />;
-  fix: rename `classList` to `class`

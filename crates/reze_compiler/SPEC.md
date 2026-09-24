@@ -228,7 +228,7 @@ enum AssignTarget<'a> {
 | `on:<name>`                                  | строка → HTML-атрибут `on<name>`                                                              | `addEventListener(el, name, h)`  | то же                     |
 | `on<Upper>…`                                 | строка → HTML-атрибут                                                                         | делегированное или прямое (§7.4) | то же                     |
 | `on<lower>…` с не-строковым значением        | `EVENT_NAME_LOWERCASE`, компилируется как `on<Upper>`                                         |                                  |                           |
-| `class`, `className`, `classList`            | §7.3                                                                                          |                                  |                           |
+| `class`                                      | §7.3                                                                                          |                                  |                           |
 | `style`                                      | строка → атрибут; объект из одних литералов → свёрнутый `a:b;c:d`                             | `style(el, v)`                   | bind `style(el, v, prev)` |
 | `prop:<n>`                                   | `el.n = v`                                                                                    | `el.n = v`                       | bind                      |
 | `attr:<n>`                                   | атрибут                                                                                       | `setAttribute`                   | bind                      |
@@ -253,17 +253,12 @@ enum AssignTarget<'a> {
 Единственный источник классов — `class`. Значение имеет тип `ClassValue = string | number | boolean |
 null | undefined | Record<string, unknown> | ClassValue[]`, массивы могут быть вложенными.
 
-- `className` и `classList` — устаревшие псевдонимы. Каждый даёт `CLASS_ALIAS` (warn) с исправлением
-  «переименовать в `class`» и компилируется как `class`.
-- Несколько источников класса на одном элементе (`class` + `classList`, `className` + `class`) сливаются
-  в один массив в порядке исходника: `class="btn" classList={{ on: on() }}` → `className(el, ["btn", { on: on() }])`.
-  Это не `DUPLICATE_ATTRIBUTE`: автор явно хотел оба источника.
+- Псевдонимов нет: `className` и `classList` — обычные неизвестные атрибуты, `UNKNOWN_ATTRIBUTE` предлагает
+  переименовать их в `class`. Несколько источников классов собираются массивом в одном `class`.
 - Свёртка: если все источники — строки или объекты/массивы со статическими ключами и литеральными
   значениями, получается статический `class="…"`. Токены идут в порядке исходника, без повторов, ложные
   отбрасываются (`0` в массиве остаётся как `"0"`, `true` в массиве — как `"true"`, как у рантайма; `0` как
   значение объекта — ложь). Если истинных нет, атрибут опускается.
-- Со spread: ключи `className`/`classList` в литеральных атрибутах переименовываются в `class` (с той же
-  диагностикой). Внутри spread-объектов рантайм их не обрабатывает (§13).
 - Переключатели: если свернуть статически нельзя, но каждый источник — строка, объект со статическими
   ключами или массив из них, то литеральные токены (строки и ключи с литерально истинным значением) идут в
   статический `class="…"` шаблона, а каждый ключ с нелитеральным значением — в
@@ -507,7 +502,7 @@ tagged template или доступ к члену вне вложенных фу
 
 Сообщение начинается с кода в скобках и состоит из трёх частей: что увидели → чем это плохо → что
 сделать. Пример:
-`[CLASS_ALIAS] \`classList\` is a legacy alias: Reze has one \`class\` attribute that takes strings, objects and arrays. Rename it to \`class\`; it was compiled as \`class\`.`
+`[UNKNOWN_ATTRIBUTE] \`classList\` is not a known attribute and renders as written, so the browser ignores it. Did you mean \`class\`?`
 Сообщения на английском, одно-два предложения, с конкретными именами из кода, без «may»/«possibly».
 
 ### 9.2 Структура
@@ -537,13 +532,13 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path, relat
 ### 9.3 Текстовый рендер (консоль Vite, `Err` из napi)
 
 ```
-[CLASS_ALIAS] `classList` is a legacy alias: … Rename it to `class`.
+[UNKNOWN_ATTRIBUTE] `classList` is not a known attribute and renders as written, … Did you mean `class`?
   in <Counter> › output
   at src/Counter.tsx:8:15
    7 |     <section class="counter">
 >  8 |       <output classList={{ negative: count() < 0 }}>{count()}</output>
      |               ^^^^^^^^^
-  fix: rename `classList` to `class`
+  fix: rename to `class`
 ```
 
 Первое появление каждого кода за сборку заканчивается подвалом:
@@ -567,7 +562,6 @@ Rust: `Diagnostic { code: Code, severity, span, labels, fixes, data, path, relat
 | Код                        | Severity | Триггер                                                                           | Исправление (`fixes`)         |
 | -------------------------- | -------- | --------------------------------------------------------------------------------- | ----------------------------- |
 | `PARSE_ERROR`              | error    | диагностика `oxc_parser`                                                          | —                             |
-| `CLASS_ALIAS`              | warn     | `className`/`classList` на нативном элементе или в литеральном атрибуте со spread | переименовать в `class`       |
 | `CHILDREN_PROP_IGNORED`    | warn     | атрибут `children` и вложенные дети одновременно                                  | удалить атрибут               |
 | `KEY_ON_ELEMENT`           | warn     | `key` на нативном элементе                                                        | удалить атрибут               |
 | `DUPLICATE_ATTRIBUTE`      | warn     | одно имя дважды на элементе                                                       | удалить ранний (label на нём) |

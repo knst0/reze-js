@@ -39,26 +39,6 @@ After:
 const a = <div />;
 ```
 
-## CLASS_ALIAS
-
-**`className` / `classList` instead of `class`** · severity `warn`
-
-A native element uses `className` or `classList`. Reze has one class attribute, `class`, which accepts a string, a toggle object, or a (nested) array of both. The compiler compiled the alias as `class` and merged it with any other class sources on the element.
-
-**Repair:** Apply the fix: rename the attribute to `class`. When the element has several class sources, merge them into one array: `class={["btn", { active: on() }]}`.
-
-Before:
-
-```tsx
-<button className="btn" classList={{ active: on() }} />
-```
-
-After:
-
-```tsx
-<button class={["btn", { active: on() }]} />
-```
-
 ## CHILDREN_PROP_IGNORED
 
 **`children` attribute next to nested children** · severity `warn`

@@ -223,12 +223,11 @@ fn textarea_and_select_values_are_properties_set_after_their_children() {
 }
 
 #[test]
-fn class_sources_merge_and_duplicates_keep_the_last() {
-    let out =
-        output("const a = <i class={cls()} classList={{ on: on() }} title=\"x\" title={t()} />;");
-    assert!(out.code.contains(r#"[cls(), { on: on() }]"#), "{}", out.code);
+fn duplicate_attributes_keep_the_last() {
+    let out = output("const a = <i class=\"a\" class={cls()} title=\"x\" title={t()} />;");
+    assert!(out.code.contains("var _v$ = cls(),"), "{}", out.code);
     assert!(!out.code.contains("title=\\\"x"), "{}", out.code);
-    assert_eq!(codes(&out.diagnostics), [Code::ClassAlias, Code::DuplicateAttribute]);
+    assert_eq!(codes(&out.diagnostics), [Code::DuplicateAttribute, Code::DuplicateAttribute]);
 }
 
 #[test]
@@ -414,7 +413,7 @@ fn literal_conditions_drop_dead_branches() {
 #[test]
 fn each_warning_fix_removes_its_warning() {
     let cases = [
-        (Code::ClassAlias, "const a = <div className=\"x\" />;"),
+        (Code::UnknownAttribute, "const a = <div className=\"x\" />;"),
         (Code::ChildrenPropIgnored, "const a = <div children={x()}><b /></div>;"),
         (Code::KeyOnElement, "const a = <li key={id} />;"),
         (Code::DuplicateAttribute, "const a = <a href=\"/a\" href={u()} />;"),
@@ -532,15 +531,24 @@ fn pure_props_defaults_run_once_at_the_start_and_reads_stay_lazy() {
 }
 
 #[test]
+fn class_aliases_are_unknown_attributes() {
+    for alias in ["className", "classList"] {
+        let out = output(&format!("const a = <i {alias}=\"x\" />;"));
+        assert_eq!(codes(&out.diagnostics), [Code::UnknownAttribute], "{alias}");
+        assert_eq!(templates(&out.code), [format!("<i {alias}=\"x\"></i>")], "{alias}");
+    }
+}
+
+#[test]
 fn rendered_diagnostics_carry_code_path_frame_and_fix() {
     let out = output("function App() {\n  return <ul><li classList={{ on: true }} /></ul>;\n}");
     let rendered = &out.diagnostics[0].rendered;
-    assert!(rendered.starts_with("[CLASS_ALIAS] "), "{rendered}");
+    assert!(rendered.starts_with("[UNKNOWN_ATTRIBUTE] "), "{rendered}");
     assert!(rendered.contains("\n  in <App> › ul › li\n"), "{rendered}");
     assert!(rendered.contains("\n  at test.tsx:2:18\n"), "{rendered}");
     assert!(rendered.contains("> 2 |"), "{rendered}");
-    assert!(rendered.contains("\n  fix: rename `classList` to `class`"), "{rendered}");
-    assert!(out.diagnostics[0].docs().ends_with("SKILL.md#class_alias"));
+    assert!(rendered.contains("\n  fix: rename to `class`"), "{rendered}");
+    assert!(out.diagnostics[0].docs().ends_with("SKILL.md#unknown_attribute"));
 }
 
 #[test]

@@ -127,10 +127,6 @@ enum Kind<'a> {
     Style,
 }
 
-fn is_class_like(name: &str) -> bool {
-    matches!(name, "class" | "className" | "classList")
-}
-
 impl<'a> Lowerer<'a, '_> {
     /// Returns the ops that must run after the element's children are inserted.
     pub(super) fn attributes(
@@ -154,22 +150,16 @@ impl<'a> Lowerer<'a, '_> {
             .iter()
             .zip(&names)
             .enumerate()
-            .filter(|&(i, (_, name))| !is_overridden[i] && is_class_like(name))
+            .filter(|&(i, (_, name))| !is_overridden[i] && *name == "class")
             .map(|(_, (a, _))| *a)
             .collect();
-        for (a, name) in attrs.iter().zip(&names) {
-            if *name == "className" || *name == "classList" {
-                self.class_alias(a, name);
-            }
-        }
-
         let mut deferred = std::vec::Vec::new();
         let mut is_class_done = false;
         for (i, (a, name)) in attrs.iter().zip(&names).enumerate() {
             if is_overridden[i] {
                 continue;
             }
-            if is_class_like(name) {
+            if *name == "class" {
                 if !is_class_done {
                     self.class(builder, node, &class_sources);
                     is_class_done = true;
@@ -209,25 +199,6 @@ impl<'a> Lowerer<'a, '_> {
             }
         }
         is_overridden
-    }
-
-    fn class_alias(&mut self, a: &JSXAttribute<'a>, name: &str) {
-        let name_span = a.name.span();
-        self.report(
-            Report::new(
-                Code::ClassAlias,
-                name_span,
-                format!(
-                    "`{name}` is a legacy alias: Reze has one `class` attribute that takes strings, \
-                     objects and arrays. Rename it to `class`; it was compiled as `class`."
-                ),
-            )
-            .fix(
-                format!("rename `{name}` to `class`"),
-                vec![Edit { start: name_span.start, end: name_span.end, text: "class".into() }],
-            )
-            .data("attribute", name),
-        );
     }
 
     /// All class sources of one element as a single `class` (SPEC §7.3).
@@ -703,13 +674,7 @@ impl<'a> Lowerer<'a, '_> {
                     if name == "children" && has_children {
                         continue;
                     }
-                    let key = if name == "className" || name == "classList" {
-                        self.class_alias(a, name);
-                        "class"
-                    } else {
-                        name
-                    };
-                    if let Some(prop) = self.prop(key, a, false) {
+                    if let Some(prop) = self.prop(name, a, false) {
                         props.push(prop);
                     }
                 }

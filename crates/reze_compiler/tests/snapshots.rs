@@ -17,7 +17,7 @@ const CASES: &[(&str, &str)] = &[
         "merged_binds",
         "const a = <input value={v()} checked={c()} style={{ color: color() }} class={cls()} />;",
     ),
-    ("class_sources", "const a = <i class=\"a\" className=\"b\" classList={{ on: on() }} />;"),
+    ("class_sources", "const a = <i class={[\"a\", \"b\", { on: on() }]} />;"),
     (
         "static_class_and_style",
         "const a = <i class={[\"a\", { b: true, c: false }]} style={{ color: \"red\" }} />;",
@@ -35,7 +35,7 @@ const CASES: &[(&str, &str)] = &[
         "const a = <Card title=\"t\" count={n()} static={s} {...rest} onPick={() => pick()} ref={box.el}>body {n()}</Card>;",
     ),
     ("component_dynamic_spread", "const a = <Card {...props()} a={1} />;"),
-    ("native_spread", "const a = <div {...attrs} className=\"x\" ref={el}>{kids()}</div>;"),
+    ("native_spread", "const a = <div {...attrs} class=\"x\" ref={el}>{kids()}</div>;"),
     (
         "conditionals",
         "const a = <div>{ok() ? <b>yes</b> : <i>no</i>}{open() && <p>{text()}</p>}</div>;",
@@ -157,7 +157,7 @@ const CASES: &[(&str, &str)] = &[
     ),
     (
         "class_toggles",
-        "const a = <p class={{ negative: n() < 0 }} />;\nconst b = <p class={[\"box\", { on: on(), big: false, wide: true }, [\"x\", { deep: d() }]]} />;\nconst c = <p class=\"btn\" classList={{ active: active() }} />;\nconst d = <p class={{ once: flag }} />;\nconst e = <p class={{ \"a b\": ab() }} />;\nconst f = <p class={[\"on\", { on: on() }]} />;\nconst g = <p class={{ on: on(), off: false }} classList={{ on: other() }} />;\nconst h = <p class={[\"x\", { x: false, y: y() }]} />;\nconst i = <p class={[cls(), { on: on() }]} />;",
+        "const a = <p class={{ negative: n() < 0 }} />;\nconst b = <p class={[\"box\", { on: on(), big: false, wide: true }, [\"x\", { deep: d() }]]} />;\nconst c = <p class={[\"btn\", { active: active() }]} />;\nconst d = <p class={{ once: flag }} />;\nconst e = <p class={{ \"a b\": ab() }} />;\nconst f = <p class={[\"on\", { on: on() }]} />;\nconst g = <p class={[{ on: on(), off: false }, { on: other() }]} />;\nconst h = <p class={[\"x\", { x: false, y: y() }]} />;\nconst i = <p class={[cls(), { on: on() }]} />;",
     ),
     (
         "text_runs",

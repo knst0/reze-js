@@ -3,7 +3,6 @@ use super::Severity;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Code {
     ParseError,
-    ClassAlias,
     ChildrenPropIgnored,
     KeyOnElement,
     DuplicateAttribute,
@@ -89,16 +88,6 @@ pub const CATALOG: &[Entry] = &[
         repair: "Fix the syntax at the reported position. The message is the parser's own. JSX-specific causes: an unclosed tag, `{` without `}`, or JSX in a `.ts` file (rename it to `.tsx`).",
         bad: "const a = <div>;",
         good: "const a = <div />;",
-    },
-    Entry {
-        code: Code::ClassAlias,
-        name: "CLASS_ALIAS",
-        severity: Severity::Warn,
-        title: "`className` / `classList` instead of `class`",
-        observed: "A native element uses `className` or `classList`. Reze has one class attribute, `class`, which accepts a string, a toggle object, or a (nested) array of both. The compiler compiled the alias as `class` and merged it with any other class sources on the element.",
-        repair: "Apply the fix: rename the attribute to `class`. When the element has several class sources, merge them into one array: `class={[\"btn\", { active: on() }]}`.",
-        bad: "<button className=\"btn\" classList={{ active: on() }} />",
-        good: "<button class={[\"btn\", { active: on() }]} />",
     },
     Entry {
         code: Code::ChildrenPropIgnored,

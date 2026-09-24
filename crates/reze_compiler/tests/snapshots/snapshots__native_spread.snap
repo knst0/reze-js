@@ -1,6 +1,6 @@
 ---
 source: crates/reze_compiler/tests/snapshots.rs
-expression: "const a = <div {...attrs} className=\"x\" ref={el}>{kids()}</div>;"
+expression: "const a = <div {...attrs} class=\"x\" ref={el}>{kids()}</div>;"
 ---
 import { template as _$template, use as _$use, spread as _$spread, mergeProps as _$mergeProps, insert as _$insert } from "reze-js";
 const _tmpl$ = /*#__PURE__*/ _$template("<div></div>");
@@ -11,10 +11,3 @@ const a = (() => {
   _$insert(_el$, kids);
   return _el$;
 })();
-// warn
-[CLASS_ALIAS] `className` is a legacy alias: Reze has one `class` attribute that takes strings, objects and arrays. Rename it to `class`; it was compiled as `class`.
-  in div
-  at case.tsx:1:27
-> 1 | const a = <div {...attrs} className="x" ref={el}>{kids()}</div>;
-    |                           ^^^^^^^^^
-  fix: rename `className` to `class`
