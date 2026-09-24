@@ -1,4 +1,4 @@
-import { flushSync, onCleanup, signal } from "@rezejs/signals";
+import { flush, onCleanup, signal } from "@rezejs/signals";
 import { cleanup, mount } from "@rezejs/test-utils";
 import { afterEach, expect, test } from "vitest";
 
@@ -19,15 +19,15 @@ test("Show keeps its branch while `when` stays truthy and passes the value as a 
   ));
   const b = el.firstChild;
   setUser({ name: "b" });
-  flushSync();
+  flush();
   expect(el.innerHTML).toBe("<b>b</b>");
   expect(el.firstChild).toBe(b);
   expect(builds).toBe(1);
   setUser(null);
-  flushSync();
+  flush();
   expect(el.innerHTML).toBe("<i>none</i>");
   setUser({ name: "c" });
-  flushSync();
+  flush();
   expect(el.innerHTML).toBe("<b>c</b>");
   expect(builds).toBe(2);
 });
@@ -45,7 +45,7 @@ test("Show disposes the branch it switches away from", () => {
     </Show>
   ));
   setOn(false);
-  flushSync();
+  flush();
   expect(log).toEqual(["child"]);
 });
 
@@ -67,13 +67,13 @@ test("Switch renders the first truthy Match and rebuilds only when the choice ch
   ));
   expect(el.innerHTML).toBe("<b>small</b>");
   setN(2);
-  flushSync();
+  flush();
   expect(builds).toBe(1);
   setN(20);
-  flushSync();
+  flush();
   expect(el.innerHTML).toBe("<b>big</b>");
   setN(0);
-  flushSync();
+  flush();
   expect(el.innerHTML).toBe("<i>zero</i>");
 });
 
@@ -84,10 +84,10 @@ test("Dynamic renders a tag name or a component with the remaining props", () =>
   const { el } = mount(() => <Dynamic component={c()} title={title()} />);
   expect(el.innerHTML).toBe('<section title="t"></section>');
   setTitle("u");
-  flushSync();
+  flush();
   expect(el.innerHTML).toBe('<section title="u"></section>');
   setC(() => Comp);
-  flushSync();
+  flush();
   expect(el.innerHTML).toBe("<em>u</em>");
 });
 
@@ -108,9 +108,9 @@ test("Portal renders into mount and is removed with its owner", () => {
   expect(el.innerHTML).toBe("<div></div>");
   expect(target.innerHTML).toBe("<p>a</p>");
   setText("b");
-  flushSync();
+  flush();
   expect(target.innerHTML).toBe("<p>b</p>");
   setOn(false);
-  flushSync();
+  flush();
   expect(target.innerHTML).toBe("");
 });

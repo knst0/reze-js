@@ -2,31 +2,11 @@
 import { FlagRecursed, FlagWatching } from "./flags";
 import type { ReactiveNode } from "./graph";
 
-export let batchDepth = 0;
-
 let notifyIndex = 0;
 let queuedLength = 0;
 const queued: (ReactiveNode | undefined)[] = [];
 
-export function getBatchDepth(): number {
-  return batchDepth;
-}
-
-export function startBatch(): void {
-  ++batchDepth;
-}
-
-export function endBatch(): void {
-  if (!--batchDepth) {
-    flush();
-  }
-}
-
 export function flush(): void {
-  // Fast path (P03): `flushSync` after every write plus one microtask per
-  // unbatched write means most `flush()` calls find an empty queue — the
-  // `try/finally` setup alone is the cost. Outside `flush()` both indices are
-  // always 0 (the `finally` below restores that), so this is a pure no-op skip.
   if (notifyIndex >= queuedLength) {
     return;
   }
@@ -51,7 +31,7 @@ let flushScheduled = false;
 
 /**
  * Defers {@link flush} to a microtask, coalescing every write in this task into one
- * propagation. The scheduled flush is a no-op if an explicit `batch()` (or `flushSync`)
+ * propagation. The scheduled flush is a no-op if an explicit `flush()`
  * already drained the queue. Signal values still update synchronously on write; only
  * subscriber runs are deferred.
  */
@@ -62,16 +42,6 @@ export function scheduleFlush(): void {
       flushScheduled = false;
       flush();
     });
-  }
-}
-
-/**
- * Runs pending effects now, unless inside `batch()` — an open batch owns the flush and
- * drains at its end. A scheduled microtask flush left over from before is a no-op.
- */
-export function flushSync(): void {
-  if (!batchDepth) {
-    flush();
   }
 }
 

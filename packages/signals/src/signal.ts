@@ -2,7 +2,7 @@
 import { effectDepth, track } from "./context";
 import { FlagDirty, FlagMutable } from "./flags";
 import { propagate, type Link, type ReactiveNode, shallowPropagate } from "./graph";
-import { batchDepth, scheduleFlush } from "./scheduler";
+import { scheduleFlush } from "./scheduler";
 
 export type Getter<T> = () => T;
 /** Writes `next` (or the result of calling it with the current value) and returns the new value. */
@@ -78,9 +78,7 @@ function signalSet<T>(this: SignalNode<T>, next: T | ((prev: T) => T)): T {
     const subs = this.subs;
     if (subs !== undefined) {
       propagate(subs, effectDepth !== 0);
-      if (!batchDepth) {
-        scheduleFlush();
-      }
+      scheduleFlush();
     }
   }
   return next;

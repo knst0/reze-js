@@ -1,4 +1,4 @@
-import { flushSync, signal } from "@rezejs/signals";
+import { flush, signal } from "@rezejs/signals";
 import { cleanup, mount } from "@rezejs/test-utils";
 import { afterEach, expect, test } from "vitest";
 
@@ -24,7 +24,7 @@ test("Suspense shows fallback until the async component settles", async () => {
   expect(el.innerHTML).toContain("loading");
   gate.resolve("ada");
   await tick();
-  flushSync();
+  flush();
   expect(el.innerHTML).toContain("<b>ada</b>");
   expect(el.innerHTML).not.toContain("loading");
 });
@@ -46,14 +46,14 @@ test("a stale resolution never paints", async () => {
     </Suspense>
   ));
   setId(2);
-  flushSync();
+  flush();
   fast.resolve("grace");
   await tick();
-  flushSync();
+  flush();
   expect(el.innerHTML).toContain("grace");
   slow.resolve("ada");
   await tick();
-  flushSync();
+  flush();
   expect(el.innerHTML).toContain("grace");
   expect(el.innerHTML).not.toContain("ada");
 });
@@ -73,7 +73,7 @@ test("unmounting while pending drops the late resolve", async () => {
   dispose();
   gate.resolve("ada");
   await tick();
-  flushSync();
+  flush();
   expect(el.innerHTML).not.toContain("ada");
 });
 
@@ -93,11 +93,11 @@ test("chained awaits resolve in order through one boundary", async () => {
   expect(el.innerHTML).toContain("loading");
   first.resolve("x");
   await tick();
-  flushSync();
+  flush();
   expect(el.innerHTML).toContain("loading");
   second.resolve("y");
   await tick();
-  flushSync();
+  flush();
   expect(el.innerHTML).toContain("<b>x/y</b>");
   expect(el.innerHTML).not.toContain("loading");
 });

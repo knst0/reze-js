@@ -2,7 +2,7 @@
 import { effectDepth, setActiveSub } from "./context";
 import { FlagNone, FlagRecursedCheck, FlagWatching } from "./flags";
 import { propagate, type ReactiveNode, shallowPropagate, unlink } from "./graph";
-import { endBatch, startBatch } from "./scheduler";
+import { flush } from "./scheduler";
 
 /** Runs `fn`, then notifies subscribers of every dependency it read. */
 export function trigger(fn: () => void): void {
@@ -12,7 +12,6 @@ export function trigger(fn: () => void): void {
     flags: FlagWatching | FlagRecursedCheck,
   };
   const prevSub = setActiveSub(sub);
-  startBatch();
   try {
     fn();
   } finally {
@@ -28,6 +27,6 @@ export function trigger(fn: () => void): void {
         shallowPropagate(subs);
       }
     }
-    endBatch();
+    flush();
   }
 }

@@ -1,4 +1,4 @@
-import { batch, computed, effect, flushSync, root, signal } from "@rezejs/signals";
+import { computed, effect, flush, root, signal } from "@rezejs/signals";
 import { test } from "vitest";
 
 import { logResult } from "./_log";
@@ -21,19 +21,18 @@ test("counter path", async ({ bench }) => {
         for (let i = 0; i < ITERS; i++) {
           next += 1;
           setCount(next);
-          flushSync();
+          flush();
         }
       }).run(),
     );
     logResult(
       "counter path",
-      await bench("batched writes", () => {
-        batch(() => {
-          for (let i = 0; i < ITERS; i++) {
-            next += 1;
-            setCount(next);
-          }
-        });
+      await bench("coalesced writes", () => {
+        for (let i = 0; i < ITERS; i++) {
+          next += 1;
+          setCount(next);
+        }
+        flush();
       }).run(),
     );
     dispose();

@@ -1,4 +1,4 @@
-import { flushSync, root, untrack } from "@rezejs/signals";
+import { flush, root, untrack } from "@rezejs/signals";
 
 import {
   IslandClose,
@@ -386,7 +386,7 @@ class ServerStream implements BoundaryStream {
               ),
             );
       const html = this.render(() => {
-        flushSync();
+        flush();
         return this.boundaryHTML(boundary);
       });
       this.controller.enqueue(

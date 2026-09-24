@@ -1,7 +1,6 @@
 import { adopt, getOwner, setActiveOwner, setActiveSub } from "./context";
 import { FlagNone } from "./flags";
 import { disposeNode, type Link, type ReactiveNode } from "./graph";
-import { endBatch, startBatch } from "./scheduler";
 
 /** Opaque handle to a node that owns computations (`root`, `effect`, `computed`, render bindings). */
 export type Owner = ReactiveNode;
@@ -38,8 +37,7 @@ class CleanupNode implements ReactiveNode {
 
 /**
  * Runs `fn` in a new owner detached from the current one. Everything created inside lives until
- * `dispose` is called. Not a batch: list rows are roots created mid-flush, and ending a batch
- * there would flush re-entrantly.
+ * `dispose` is called.
  */
 export function root<T>(fn: (dispose: () => void) => T): T {
   const node = new RootNode();
@@ -73,16 +71,6 @@ export function untrack<T>(fn: () => T): T {
   } finally {
     setActiveSub(prevSub);
     setActiveOwner(prevOwner);
-  }
-}
-
-/** Defers effects until the outermost batch exits. */
-export function batch<T>(fn: () => T): T {
-  startBatch();
-  try {
-    return fn();
-  } finally {
-    endBatch();
   }
 }
 

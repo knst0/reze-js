@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { effect, flushSync, store } from "../src";
+import { effect, flush, store } from "../src";
 
 function runs(read: () => unknown): { count: number } {
   const counter = { count: 0 };
@@ -18,7 +18,7 @@ test("reading a nested leaf re-runs only when that leaf changes", () => {
   setState((d) => {
     d.user.name = "b";
   });
-  flushSync();
+  flush();
   expect([name.count, age.count]).toEqual([2, 1]);
   expect(state.user.name).toBe("b");
 });
@@ -30,7 +30,7 @@ test("writing an equal value does not notify, and NaN equals itself", () => {
     d.n = NaN;
     d.s = "a";
   });
-  flushSync();
+  flush();
   expect(reads.count).toBe(1);
 });
 
@@ -47,21 +47,21 @@ test("key set and length are tracked on their own", () => {
   setState((d) => {
     d.map.a = 2;
   });
-  flushSync();
+  flush();
   expect([keys.count, hasB.count]).toEqual([1, 1]);
 
   setState((d) => {
     d.list.push(3);
     d.map.b = 1;
   });
-  flushSync();
+  flush();
   expect([length.count, keys.count, hasB.count, first.count]).toEqual([2, 2, 2, 1]);
 
   setState((d) => {
     delete d.map.a;
     d.list.length = 0;
   });
-  flushSync();
+  flush();
   expect([length.count, keys.count, first.count]).toEqual([3, 3, 2]);
   expect(state.list[0]).toBeUndefined();
   expect(Object.keys(state.map)).toEqual(["b"]);
@@ -73,7 +73,7 @@ test("reading a missing key tracks its later creation", () => {
   setState((d) => {
     d.a = 1;
   });
-  flushSync();
+  flush();
   expect(reads.count).toBe(2);
   expect(state.a).toBe(1);
 });
@@ -113,7 +113,7 @@ test("setState runs untracked: reads inside do not subscribe the caller", () => 
   setState((d) => {
     d.a = 1;
   });
-  flushSync();
+  flush();
   expect(reads.count).toBe(1);
   expect(state.b).toBe(0);
 });
@@ -136,11 +136,11 @@ test("written objects join the tree and are reactive", () => {
   setState((d) => {
     d.item = { label: "a" };
   });
-  flushSync();
+  flush();
   setState((d) => {
     d.item!.label = "b";
   });
-  flushSync();
+  flush();
   expect(label.count).toBe(3);
   expect(state.item!.label).toBe("b");
 });

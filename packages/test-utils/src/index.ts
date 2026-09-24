@@ -1,6 +1,6 @@
 import { render } from "@rezejs/dom";
 import type { JSX } from "@rezejs/dom/jsx-runtime";
-import { flushSync } from "@rezejs/signals";
+import { flush } from "@rezejs/signals";
 
 /** A mounted tree plus its disposer. Register specs with `afterEach(cleanup)`. */
 export interface Mounted {
@@ -40,7 +40,7 @@ export function cleanup(): void {
 
 /** Flushes pending effects now; use after `fire` to read the DOM synchronously. */
 export function tick(): void {
-  flushSync();
+  flush();
 }
 
 const MouseTypes: Record<string, true> = {

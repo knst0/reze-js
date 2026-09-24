@@ -667,7 +667,7 @@ function eventHandler(e: Event): void {
   let node: Any = e.composedPath()[0] ?? e.target;
   // Each handler sees the element it was declared on, as with a direct listener.
   Object.defineProperty(e, "currentTarget", { configurable: true, get: () => node ?? document });
-  // No `batch()`: writes schedule one microtask flush, so multiple handlers in this
+  // Writes schedule one microtask flush, so multiple handlers in this
   // dispatch — and separate dispatches in the same task — coalesce into one propagation.
   while (node) {
     const handler = node[key];
@@ -684,7 +684,7 @@ function eventHandler(e: Event): void {
 /**
  * `delegate`: store the handler as `$$<name>` (an array is `[handler, data]`).
  * Otherwise a direct listener; an array is `[handler, options]` (`on:click={[fn, { passive: true }]}`).
- * Handler writes schedule one microtask flush and coalesce; use `flushSync` to read the DOM now.
+ * Handler writes schedule one microtask flush and coalesce; use `flush` to read the DOM now.
  */
 export function addEventListener(
   node: Element,

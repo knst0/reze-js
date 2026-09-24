@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { computed, effect, flushSync, signal } from "../src";
+import { computed, effect, flush, signal } from "../src";
 
 test("setter applies updater functions to the latest value and returns the result", () => {
   const [count, setCount] = signal(1);
@@ -24,7 +24,7 @@ test("default equality is Object.is: NaN writes do not notify", () => {
     runs++;
   });
   setN(NaN);
-  flushSync();
+  flush();
   expect(runs).toBe(1);
 });
 
@@ -35,15 +35,15 @@ test("default equality is Object.is: +0 and -0 notify each other (P06)", () => {
     n();
     runs++;
   });
-  flushSync();
+  flush();
   setN(-0);
-  flushSync();
+  flush();
   expect(runs).toBe(2);
   setN(-0);
-  flushSync();
+  flush();
   expect(runs).toBe(2);
   setN(0);
-  flushSync();
+  flush();
   expect(runs).toBe(3);
 });
 
@@ -58,7 +58,7 @@ test("equals: false notifies on every write, even with the same value", () => {
   const arr = items();
   arr.push(1);
   setItems(arr);
-  flushSync();
+  flush();
   expect(runs).toBe(2);
   expect(length()).toBe(1);
 });
@@ -74,10 +74,10 @@ test("custom equals suppresses notification when it reports equality", () => {
     runs++;
   });
   setPoint({ x: 0, y: 0 });
-  flushSync();
+  flush();
   expect(runs).toBe(1);
   setPoint({ x: 1, y: 0 });
-  flushSync();
+  flush();
   expect(runs).toBe(2);
 });
 

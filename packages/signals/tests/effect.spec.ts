@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { computed, effect, flushSync, signal } from "../src";
+import { computed, effect, flush, signal } from "../src";
 import { getActiveSub } from "../src/context";
 import { FlagRecursedCheck } from "../src/flags";
 
@@ -14,24 +14,24 @@ test("should support custom recurse effect", () => {
     triggers++;
     setSrc(Math.min(src() + 1, 5));
   });
-  flushSync();
+  flush();
 
   expect(triggers).toBe(6);
 });
 
-test("a microtask flush left over after flushSync is a no-op (P03)", async () => {
+test("a microtask flush left over after flush is a no-op (P03)", async () => {
   const [src, setSrc] = signal(0);
   let runs = 0;
   effect(() => {
     src();
     runs++;
   });
-  flushSync();
+  flush();
   runs = 0;
-  // The write queues a microtask flush; flushSync drains the queue first, so the
+  // The write queues a microtask flush; flush drains the queue first, so the
   // leftover microtask must find an empty queue and re-run nothing.
   setSrc(1);
-  flushSync();
+  flush();
   expect(runs).toBe(1);
   const { promise, resolve } = Promise.withResolvers<void>();
   setTimeout(resolve, 0);
@@ -56,7 +56,7 @@ test("cleanup order on outer re-run: inner before outer, before new run", () => 
 
   log.length = 0;
   setA(1);
-  flushSync();
+  flush();
   expect(log).toEqual(["inner:cleanup", "outer:cleanup", "outer:run", "inner:run"]);
 });
 
@@ -115,7 +115,7 @@ test("sibling cleanup order on outer re-run: reverse creation (LIFO)", () => {
   log.length = 0;
 
   setA(1);
-  flushSync();
+  flush();
   expect(log.slice(0, 4)).toEqual([
     "inner3:cleanup",
     "inner2:cleanup",
@@ -181,7 +181,7 @@ test("effect created inside computed: old inner cleanup runs before new inner se
   log.length = 0;
 
   setA(1);
-  flushSync();
+  flush();
   expect(log).toEqual(["inner:cleanup", "computed:eval", "inner:run"]);
 });
 
@@ -206,11 +206,11 @@ test("cleanup order is correct on outer re-run after a prior inner-only re-run",
   });
 
   setB(1); // inner re-runs alone; outer is touched via notify chain
-  flushSync();
+  flush();
   log.length = 0;
 
   setA(1);
-  flushSync();
+  flush();
   expect(log).toEqual(["inner:cleanup", "outer:cleanup", "outer:run", "inner:run"]);
 });
 
@@ -233,11 +233,11 @@ test("outer effect keeps responding to its own dep after inner re-runs", () => {
   expect(innerRuns).toBe(1);
 
   setB(1);
-  flushSync();
+  flush();
   expect(outerRuns).toBe(1);
   expect(innerRuns).toBeGreaterThanOrEqual(2);
 
   setA(1);
-  flushSync();
+  flush();
   expect(outerRuns).toBe(2);
 });

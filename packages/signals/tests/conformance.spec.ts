@@ -6,9 +6,8 @@ import {
 } from "reactive-framework-test-suite";
 import { describe, expect, test } from "vitest";
 
-import { flushSync, signal, computed, effect, effectScope } from "../src";
+import { flush, signal, computed, effect, effectScope } from "../src";
 import { setActiveSub } from "../src/context";
-import { endBatch, startBatch } from "../src/scheduler";
 
 const framework: ReactiveFramework = {
   signal(initialValue) {
@@ -17,7 +16,7 @@ const framework: ReactiveFramework = {
       read,
       write: (v) => {
         write(() => v);
-        flushSync();
+        flush();
       },
     };
   },
@@ -30,14 +29,6 @@ const framework: ReactiveFramework = {
   },
   run(fn) {
     effectScope(fn)();
-  },
-  batch(fn) {
-    startBatch();
-    try {
-      fn();
-    } finally {
-      endBatch();
-    }
   },
   untracked(fn) {
     const prev = setActiveSub(undefined);

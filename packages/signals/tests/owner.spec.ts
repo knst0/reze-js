@@ -1,9 +1,8 @@
 import { expect, test } from "vitest";
 
 import {
-  batch,
   effect,
-  flushSync,
+  flush,
   getOwner,
   onCleanup,
   root,
@@ -41,10 +40,10 @@ test("untrack hides reads from the effect but keeps what it creates owned by it"
   });
 
   setB(1);
-  flushSync();
+  flush();
   expect(log).toEqual([]);
   setA(1);
-  flushSync();
+  flush();
   expect(log).toEqual(["inner cleanup"]);
 });
 
@@ -60,16 +59,15 @@ test("runWithOwner attaches work created later to that owner", () => {
   expect(log).toEqual(["late"]);
 });
 
-test("batch defers effects until the outermost batch exits", () => {
+test("writes stay async until flush drains them", () => {
   const [a, setA] = signal(0);
   const seen: number[] = [];
   effect(() => {
     seen.push(a());
   });
-  batch(() => {
-    setA(1);
-    batch(() => setA(2));
-    expect(seen).toEqual([0]);
-  });
+  setA(1);
+  setA(2);
+  expect(seen).toEqual([0]);
+  flush();
   expect(seen).toEqual([0, 2]);
 });

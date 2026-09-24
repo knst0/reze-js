@@ -1,4 +1,4 @@
-import { flushSync, onCleanup, signal, store } from "@rezejs/signals";
+import { flush, onCleanup, signal, store } from "@rezejs/signals";
 import { cleanup, mount } from "@rezejs/test-utils";
 import { afterEach, expect, test } from "vitest";
 
@@ -13,7 +13,7 @@ test("rows follow items by identity: nodes move instead of being rebuilt", () =>
   const { el } = mount(() => <For each={items()}>{(item) => <li>{item()}</li>}</For>, "ul");
   const [a, b, c] = el.children;
   setItems(["c", "a", "b"]);
-  flushSync();
+  flush();
   expect(texts(el)).toEqual(["c", "a", "b"]);
   expect([...el.children]).toEqual([c, a, b]);
 });
@@ -31,7 +31,7 @@ test("with key, a kept row updates item() in place", () => {
   );
   const li = el.firstChild;
   setItems([{ id: 1, label: "uno" }]);
-  flushSync();
+  flush();
   expect(texts(el)).toEqual(["uno"]);
   expect(el.firstChild).toBe(li);
 });
@@ -51,7 +51,7 @@ test("index() tracks the row position", () => {
     "ul",
   );
   setItems(["b", "a"]);
-  flushSync();
+  flush();
   expect(texts(el)).toEqual(["0:b", "1:a"]);
 });
 
@@ -70,14 +70,14 @@ test("removed rows are disposed; fallback shows for an empty list", () => {
     "ul",
   );
   setItems(["b"]);
-  flushSync();
+  flush();
   expect(log).toEqual(["a"]);
   setItems([]);
-  flushSync();
+  flush();
   expect(log).toEqual(["a", "b"]);
   expect(texts(el)).toEqual(["empty"]);
   setItems(["c"]);
-  flushSync();
+  flush();
   expect(texts(el)).toEqual(["c"]);
 });
 
@@ -85,7 +85,7 @@ test("duplicate items map to distinct rows", () => {
   const [items, setItems] = signal(["x", "x", "y"]);
   const { el } = mount(() => <For each={items()}>{(item) => <li>{item()}</li>}</For>, "ul");
   setItems(["y", "x", "x", "x"]);
-  flushSync();
+  flush();
   expect(texts(el)).toEqual(["y", "x", "x", "x"]);
   expect(new Set(el.children).size).toBe(4);
 });
@@ -98,23 +98,23 @@ test("a store array mutated in place updates the rows and keeps the surviving on
   setState((d) => {
     d.todos.push("d");
   });
-  flushSync();
+  flush();
   expect(texts(el)).toEqual(["a", "b", "c", "d"]);
   setState((d) => {
     d.todos.splice(1, 1);
   });
-  flushSync();
+  flush();
   expect(texts(el)).toEqual(["a", "c", "d"]);
   expect([...el.children].slice(0, 2)).toEqual([a, c]);
   setState((d) => {
     d.todos.reverse();
   });
-  flushSync();
+  flush();
   expect(texts(el)).toEqual(["d", "c", "a"]);
   setState((d) => {
     d.todos[0] = "e";
   });
-  flushSync();
+  flush();
   expect(texts(el)).toEqual(["e", "c", "a"]);
   expect([...el.children].slice(1)).toEqual([c, a]);
   expect(el.children).not.toContain(b);
@@ -147,7 +147,7 @@ test("random reorders, inserts and removals keep DOM order and reuse surviving n
     for (let k = rand(5); k--;) list.splice(rand(list.length + 1), 0, next++);
     const before = new Map([...el.children].map((node) => [node.textContent, node]));
     setItems(list);
-    flushSync();
+    flush();
     expect(texts(el)).toEqual(["head", ...list.map(String), "tail"]);
     for (const node of el.children) {
       const old = before.get(node.textContent);
