@@ -68,6 +68,7 @@ pub enum Primitive {
     Hydrate,
     Suspense,
     For,
+    Show,
 }
 
 impl Primitive {
@@ -80,6 +81,7 @@ impl Primitive {
             "hydrate" => Primitive::Hydrate,
             "Suspense" => Primitive::Suspense,
             "For" => Primitive::For,
+            "Show" => Primitive::Show,
             _ => return None,
         })
     }

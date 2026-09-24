@@ -1,14 +1,14 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-24T22:44:19.878Z",
+  "recordedAt": "2026-09-24T22:47:18.336Z",
   "results": {
     "@rezejs/example-async js": {
-      "raw": 11874,
-      "gzip": 4547
+      "raw": 11864,
+      "gzip": 4562
     },
     "@rezejs/example-counter js": {
-      "raw": 9126,
-      "gzip": 3555
+      "raw": 8926,
+      "gzip": 3483
     },
     "@rezejs/example-islands js": {
       "raw": 12610,

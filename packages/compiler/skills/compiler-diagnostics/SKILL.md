@@ -329,6 +329,20 @@ Example:
 <For each={rows()}>{(row) => <tr class={selected() === row().id ? "on" : ""} />}</For>
 ```
 
+## SHOW_INLINED
+
+**`<Show>` compiled to a conditional** · severity `info`
+
+A runtime `<Show>` inside a native element has a `when`, an optional `fallback`, and one child that is not a function. The compiler compiled it like `{when ? child : fallback}`: one memo of the condition's truthiness and an insert, instead of a component with its own computeds (optimization O7). The branch is still rebuilt only when the truthiness flips.
+
+**Repair:** Nothing to repair. A function child, other attributes or several children keep the `<Show>` component.
+
+Example:
+
+```tsx
+<div><Show when={open()} fallback={<i>closed</i>}><b>open</b></Show></div>
+```
+
 ## PROP_FOLDED
 
 **Prop folded to the literal every call site passes** · severity `info`

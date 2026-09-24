@@ -2,6 +2,7 @@
 
 use oxc_allocator::Vec;
 use oxc_ast::ast::*;
+use oxc_ast_visit::Visit;
 use oxc_span::{GetSpan, Span};
 
 use super::constant::{is_dynamic, literal_truthy, static_text};
@@ -187,9 +188,13 @@ impl<'a> Lowerer<'a, '_> {
                         after_dynamic = false;
                         continue;
                     }
-                    super::Tag::Component(callee) => {
-                        Child::Jsx(crate::ir::Jsx::Component(self.component(el, callee)))
-                    }
+                    super::Tag::Component(callee) => match self.show_conditional(el, builder) {
+                        Some((child, id, test)) => {
+                            builder.ops.push(Op::Memo { id, test });
+                            child
+                        }
+                        None => Child::Jsx(crate::ir::Jsx::Component(self.component(el, callee))),
+                    },
                 },
                 Item::Fragment(f) => Child::Jsx(self.fragment(f)),
                 Item::Expr(e) => {
@@ -307,6 +312,92 @@ impl<'a> Lowerer<'a, '_> {
         } else {
             builder.ops.push(Op::Set { node, target, value });
         }
+    }
+
+    /// O7: a runtime `<Show when fallback?>` with one non-function child, as the conditional
+    /// `when ? child : fallback`.
+    fn show_conditional(
+        &mut self,
+        el: &JSXElement<'a>,
+        builder: &mut TemplateBuilder<'a>,
+    ) -> Option<(Child<'a>, MemoId, Embed<'a>)> {
+        if !self.optimize {
+            return None;
+        }
+        let JSXElementName::IdentifierReference(tag) = &el.opening_element.name else {
+            return None;
+        };
+        if self.facts.primitives.of_reference(tag, self.scoping)
+            != Some(crate::facts::Primitive::Show)
+        {
+            return None;
+        }
+        let mut when = None;
+        let mut fallback = None;
+        for item in &el.opening_element.attributes {
+            let JSXAttributeItem::Attribute(attribute) = item else { return None };
+            let JSXAttributeName::Identifier(name) = &attribute.name else { return None };
+            match (name.name.as_str(), attribute.value.as_ref()?) {
+                ("when", JSXAttributeValue::ExpressionContainer(c)) => {
+                    when = Some(c.expression.as_expression()?);
+                }
+                ("fallback", value) => fallback = Some(value),
+                _ => return None,
+            }
+        }
+        let when = when?;
+        let mut children = el.children.iter().filter(|child| match child {
+            JSXChild::Text(text) => {
+                !clean_jsx_text(&decode_entities(text.value.as_str())).is_empty()
+            }
+            _ => true,
+        });
+        let child = children.next()?;
+        if children.next().is_some() {
+            return None;
+        }
+        let consequent = match child {
+            JSXChild::Element(child) => self.embed(child.span, |f| f.visit_jsx_element(child)),
+            JSXChild::Fragment(child) => self.embed(child.span, |f| f.visit_jsx_fragment(child)),
+            JSXChild::ExpressionContainer(c) => {
+                self.untracked_branch(c.expression.as_expression()?)?
+            }
+            _ => return None,
+        };
+        let alternate = match fallback {
+            None => None,
+            Some(JSXAttributeValue::ExpressionContainer(c)) => {
+                Some(self.untracked_branch(c.expression.as_expression()?)?)
+            }
+            Some(JSXAttributeValue::Element(e)) => {
+                Some(self.embed(e.span, |f| f.visit_jsx_element(e)))
+            }
+            Some(JSXAttributeValue::Fragment(f)) => {
+                Some(self.embed(f.span, |finder| finder.visit_jsx_fragment(f)))
+            }
+            Some(JSXAttributeValue::StringLiteral(_)) => return None,
+        };
+        let test = self.expr(when);
+        let memo = MemoId(builder.memo_count);
+        builder.memo_count += 1;
+        self.report(Report::new(
+            Code::ShowInlined,
+            el.opening_element.span,
+            "This `<Show>` compiled to a conditional: one memo of `when`'s truthiness and an \
+             insert, instead of a component with its own computeds.",
+        ));
+        let conditional = Conditional { memo, consequent, alternate };
+        Some((Child::Expr(ExprChild::Conditional(self.boxed(conditional))), memo, test))
+    }
+
+    /// A `<Show>` branch that reads nothing reactive while it is built, as `<Show>` builds it
+    /// untracked: JSX, or an expression without reactive reads.
+    fn untracked_branch(&mut self, e: &Expression<'a>) -> Option<Embed<'a>> {
+        let is_jsx = matches!(
+            e.without_parentheses(),
+            Expression::JSXElement(_) | Expression::JSXFragment(_)
+        );
+        (is_jsx || !(is_function(e) || is_dynamic(e, true, self.facts))).then(|| self.expr(e))
     }
 
     /// The value handed to `insert`; a memoizable condition hoists its test into `Op::Memo`.

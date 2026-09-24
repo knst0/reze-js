@@ -66,6 +66,9 @@ fn trigger(code: Code) -> Trigger {
         Code::AutoSelector => {
             "import { For, signal } from \"reze-js\";\nconst [sel, setSel] = signal(0); setSel(1);\nconst a = <For each={rows()}>{(row) => <i class={sel() === row().id ? \"on\" : \"\"} />}</For>;"
         }
+        Code::ShowInlined => {
+            "import { Show } from \"reze-js\";\nconst a = <div><Show when={on()}><b /></Show></div>;"
+        }
         Code::StoreUnproxied => {
             "import { store } from \"reze-js\";\nconst [s] = store({ a: 1 });\nconst a = <p>{s.a}</p>;"
         }

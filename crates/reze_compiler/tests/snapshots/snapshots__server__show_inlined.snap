@@ -1,0 +1,38 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+assertion_line: 207
+expression: "import { Show } from \"reze-js\";\nconst a = <div><Show when={n() >= 10}><p>big</p></Show></div>;\nconst b = <div>x<Show when={user()} fallback={<i>guest</i>}><>{user().name}<b /></></Show>y</div>;\nconst c = <div><Show when={open()} fallback=\"none\">{label()}</Show></div>;\nconst d = <div><Show when={user()}>{(u) => <b>{u().name}</b>}</Show></div>;\nconst e = <div><Show when={a()} keyed><b /></Show></div>;\nconst f = <div><Show when={a()}><b /><i /></Show></div>;\nconst g = <Show when={a()}><b /></Show>;\nconst h = <div><Show when={a()}>{label()}</Show></div>;"
+---
+import { Show } from "reze-js";
+import { ssr as _$ssr, ssrHydrationKey as _$ssrHydrationKey, ssrChild as _$ssrChild, memo as _$memo, createComponent as _$createComponent } from "reze-js";
+const _tmpl$ = ["<div", ">", "</div>"],
+  _tmpl$2 = ["<p", ">big</p>"],
+  _tmpl$3 = ["<div", ">x<!--[-->", "<!--]--><!>y</div>"],
+  _tmpl$4 = ["<b", "></b>"],
+  _tmpl$5 = ["<i", ">guest</i>"],
+  _tmpl$6 = ["<b", ">", "</b>"],
+  _tmpl$7 = ["<i", "></i>"];
+const a = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild((n() >= 10) ? _$ssr(_tmpl$2, _$ssrHydrationKey()) : null));
+const b = _$ssr(_tmpl$3, _$ssrHydrationKey(), _$ssrChild((user()) ? [_$memo(() => user().name), _$ssr(_tmpl$4, _$ssrHydrationKey())] : _$ssr(_tmpl$5, _$ssrHydrationKey())));
+const c = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Show, { get when() { return open(); }, fallback: "none", get children() { return label(); } })));
+const d = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Show, { get when() { return user(); }, children: (u) => _$ssr(_tmpl$6, _$ssrHydrationKey(), _$ssrChild(u().name)) })));
+const e = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Show, { get when() { return a(); }, keyed: true, get children() { return _$ssr(_tmpl$4, _$ssrHydrationKey()); } })));
+const f = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Show, { get when() { return a(); }, get children() { return [_$ssr(_tmpl$4, _$ssrHydrationKey()), _$ssr(_tmpl$7, _$ssrHydrationKey())]; } })));
+const g = _$createComponent(Show, { get when() { return a(); }, get children() { return _$ssr(_tmpl$4, _$ssrHydrationKey()); } });
+const h = _$ssr(_tmpl$, _$ssrHydrationKey(), _$ssrChild(_$createComponent(Show, { get when() { return a(); }, get children() { return label(); } })));
+// info
+[SHOW_INLINED] This `<Show>` compiled to a conditional: one memo of `when`'s truthiness and an insert, instead of a component with its own computeds.
+  in div
+  at case.tsx:2:16
+  1 | import { Show } from "reze-js";
+> 2 | const a = <div><Show when={n() >= 10}><p>big</p></Show></div>;
+    |                ^^^^^^^^^^^^^^^^^^^^^^^
+  3 | const b = <div>x<Show when={user()} fallback={<i>guest</i>}><>{user().name}<b /></></Show>y</div>;
+// info
+[SHOW_INLINED] This `<Show>` compiled to a conditional: one memo of `when`'s truthiness and an insert, instead of a component with its own computeds.
+  in div
+  at case.tsx:3:17
+  2 | const a = <div><Show when={n() >= 10}><p>big</p></Show></div>;
+> 3 | const b = <div>x<Show when={user()} fallback={<i>guest</i>}><>{user().name}<b /></></Show>y</div>;
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 | const c = <div><Show when={open()} fallback="none">{label()}</Show></div>;

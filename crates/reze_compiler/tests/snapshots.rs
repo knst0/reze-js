@@ -163,6 +163,10 @@ const CASES: &[(&str, &str)] = &[
         "text_runs",
         "const a = <p>doubled: {n() * 2}</p>;\nconst b = <p>{n() + 1}</p>;\nconst c = <p>{`${name()}`}</p>;\nconst d = <p>a {\"<\"} b &amp; {n() - 1} items</p>;\nconst e = <div>{n() * 2}<b />{x()}total: {n() % 3}<i />{(n() | 0) + 1}{-n()}</div>;\nconst f = <p>{label()}: {n() / 2}</p>;\nconst g = <p>size {SIZE * 2}</p>;\nconst h = <p>{on() ? \"yes\" : \"no\"}</p>;\nconst i = <p>state: {on() ? \"yes\" : \"no\"}</p>;",
     ),
+    (
+        "show_inlined",
+        "import { Show } from \"reze-js\";\nconst a = <div><Show when={n() >= 10}><p>big</p></Show></div>;\nconst b = <div>x<Show when={user()} fallback={<i>guest</i>}><>{user().name}<b /></></Show>y</div>;\nconst c = <div><Show when={open()} fallback=\"none\">{label()}</Show></div>;\nconst d = <div><Show when={user()}>{(u) => <b>{u().name}</b>}</Show></div>;\nconst e = <div><Show when={a()} keyed><b /></Show></div>;\nconst f = <div><Show when={a()}><b /><i /></Show></div>;\nconst g = <Show when={a()}><b /></Show>;\nconst h = <div><Show when={a()}>{label()}</Show></div>;",
+    ),
 ];
 
 const TARGETS: &[(Target, &str)] =
