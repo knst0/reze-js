@@ -1,32 +1,29 @@
-//! Generated code plus the source positions it came from, for the source map.
-
 use std::fmt;
 
 use oxc_sourcemap::SourceMapBuilder;
 
-/// A code fragment. `maps` holds `(offset in s, offset in the source)` pairs in `s` order.
+use crate::diagnostic::{LineIndex, utf16_len};
+
+/// Generated code plus `(offset in text, offset in the source)` marks in text order, for the
+/// source map.
 #[derive(Default)]
 pub struct Code {
-    pub s: String,
-    maps: Vec<(u32, u32)>,
+    pub text: String,
+    marks: Vec<(u32, u32)>,
 }
 
 impl Code {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn push(&mut self, s: &str) {
-        self.s.push_str(s);
+        self.text.push_str(s);
     }
 
-    /// Maps what is pushed next to `src`.
+    /// Maps what is pushed next to source offset `src`.
     pub fn mark(&mut self, src: u32) {
-        let at = self.s.len() as u32;
-        if self.maps.last().is_some_and(|&(g, _)| g == at) {
-            self.maps.pop();
+        let at = self.text.len() as u32;
+        if self.marks.last().is_some_and(|&(g, _)| g == at) {
+            self.marks.pop();
         }
-        self.maps.push((at, src));
+        self.marks.push((at, src));
     }
 
     /// Copies `source[start..end]`, mapped at its start and at every line start inside it.
@@ -36,33 +33,33 @@ impl Code {
         }
         let slice = &source[start as usize..end as usize];
         self.mark(start);
-        let base = self.s.len();
-        self.s.push_str(slice);
+        let base = self.text.len();
+        self.text.push_str(slice);
         for (i, b) in slice.bytes().enumerate() {
             if b == b'\n' && i + 1 < slice.len() {
-                self.maps.push(((base + i + 1) as u32, start + i as u32 + 1));
+                self.marks.push(((base + i + 1) as u32, start + i as u32 + 1));
             }
         }
     }
 
     pub fn append(&mut self, other: Code) {
-        let offset = self.s.len() as u32;
-        if other.maps.first().is_some_and(|&(g, _)| g == 0)
-            && self.maps.last().is_some_and(|&(g, _)| g == offset)
+        let offset = self.text.len() as u32;
+        if other.marks.first().is_some_and(|&(g, _)| g == 0)
+            && self.marks.last().is_some_and(|&(g, _)| g == offset)
         {
-            self.maps.pop();
+            self.marks.pop();
         }
-        self.maps.extend(other.maps.into_iter().map(|(g, s)| (g + offset, s)));
-        self.s.push_str(&other.s);
+        self.marks.extend(other.marks.into_iter().map(|(g, s)| (g + offset, s)));
+        self.text.push_str(&other.text);
     }
 
-    /// Serializes the mappings as a source map v3 JSON string.
+    /// Source map v3 JSON.
     pub fn source_map(&self, filename: &str, source: &str) -> String {
         let mut builder = SourceMapBuilder::default();
         let src_id = builder.add_source_and_content(filename, source);
         let src_lines = LineIndex::new(source);
-        let mut gen_lines = LineCursor::new(&self.s);
-        for &(g, s) in &self.maps {
+        let mut gen_lines = LineCursor::new(&self.text);
+        for &(g, s) in &self.marks {
             let (dst_line, dst_col) = gen_lines.locate(g as usize);
             let (src_line, src_col) = src_lines.locate(source, s as usize);
             builder.add_token(dst_line, dst_col, src_line, src_col, Some(src_id), None);
@@ -73,31 +70,8 @@ impl Code {
 
 impl fmt::Write for Code {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.s.push_str(s);
+        self.text.push_str(s);
         Ok(())
-    }
-}
-
-/// UTF-16 length of `s`, as source maps count columns.
-fn utf16_len(s: &str) -> u32 {
-    if s.is_ascii() { s.len() as u32 } else { s.encode_utf16().count() as u32 }
-}
-
-/// Line starts of a text, for random-access `offset → (line, column)`.
-struct LineIndex {
-    starts: Vec<usize>,
-}
-
-impl LineIndex {
-    fn new(text: &str) -> Self {
-        let mut starts = vec![0];
-        starts.extend(text.bytes().enumerate().filter(|&(_, b)| b == b'\n').map(|(i, _)| i + 1));
-        Self { starts }
-    }
-
-    fn locate(&self, text: &str, offset: usize) -> (u32, u32) {
-        let line = self.starts.partition_point(|&s| s <= offset) - 1;
-        (line as u32, utf16_len(&text[self.starts[line]..offset]))
     }
 }
 

@@ -2,7 +2,6 @@ export {
   addEventListener,
   bind,
   className,
-  classList,
   createComponent,
   delegateEvents,
   insert,

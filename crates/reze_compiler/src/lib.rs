@@ -1,25 +1,35 @@
-//! Reze compiler, v0: per-file JSX → DOM code generation for the client (ROADMAP M3).
-//!
-//! The output imports its runtime from `Options::module_name` and keeps all non-JSX source,
-//! TypeScript included, verbatim.
+//! Reze compiler: JSX → DOM code for the client, with diagnostics and module-level
+//! optimizations. The contract is `crates/reze_compiler/SPEC.md`.
 
+mod analyze;
 mod code;
+pub mod diagnostic;
+mod emit;
 mod html;
-mod transform;
+mod ir;
+mod lower;
 
 use oxc_allocator::Allocator;
+use oxc_ast::ast::{Program, Statement};
 use oxc_parser::Parser;
-use oxc_span::SourceType;
+use oxc_semantic::SemanticBuilder;
+use oxc_span::{GetSpan, SourceType, Span};
+
+pub use diagnostic::{Code, Diagnostic, Edit, Fix, Label, Position, Severity};
+
+use diagnostic::Report;
 
 pub struct Options {
     /// Module the generated code imports its runtime helpers from.
     pub module_name: String,
     pub source_map: bool,
+    /// Enables O3 (constant signals) and O5 (dead JSX branches); O1 and O2 always run.
+    pub optimize: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { module_name: "reze-js".to_string(), source_map: true }
+        Self { module_name: "reze-js".to_string(), source_map: true, optimize: true }
     }
 }
 
@@ -27,73 +37,75 @@ pub struct Output {
     pub code: String,
     /// Source map v3 JSON.
     pub map: Option<String>,
-    /// Non-fatal diagnostics (unknown props, ambiguous children, …).
-    pub warnings: Vec<Warning>,
+    /// `warn` and `info` diagnostics.
+    pub diagnostics: Vec<Diagnostic>,
 }
 
-#[derive(Debug)]
-pub struct Warning {
-    pub message: String,
-    /// 1-based.
-    pub line: u32,
-    /// 0-based, in UTF-16 code units.
-    pub column: u32,
-}
-
-#[derive(Debug)]
-pub struct Error {
-    pub message: String,
-    /// 1-based.
-    pub line: u32,
-    /// 0-based, in UTF-16 code units.
-    pub column: u32,
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}: {}", self.line, self.column + 1, self.message)
-    }
-}
-
-/// Compiles the JSX in `source`. `Ok(None)` when the file has no JSX.
-/// `filename` picks the dialect (`.tsx`, `.jsx`, …) and names the source in the map.
+/// Compiles the JSX in `source`. `Ok(None)` when the file has no JSX; `Err` holds every
+/// diagnostic when at least one is an `error`. `filename` picks the dialect and names the source
+/// in diagnostics and the source map.
 pub fn compile(
     source: &str,
     filename: &str,
     options: &Options,
-) -> Result<Option<Output>, Vec<Error>> {
+) -> Result<Option<Output>, Vec<Diagnostic>> {
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::tsx());
     let allocator = Allocator::default();
     let parsed = Parser::new(&allocator, source, source_type).parse();
     if !parsed.diagnostics.is_empty() {
-        return Err(parsed
+        let reports = parsed
             .diagnostics
             .iter()
             .map(|d| {
-                let offset = d.labels.first().map_or(0, |l| l.offset() as usize);
-                let (line, column) = position(source, offset);
-                Error { message: d.message.to_string(), line, column }
+                let span = d.labels.first().map_or(Span::empty(0), |label| {
+                    let start = label.offset();
+                    Span::new(start, start + label.len())
+                });
+                Report::new(Code::ParseError, span, d.message.to_string())
             })
-            .collect());
+            .collect();
+        return Err(diagnostic::resolve(reports, source, filename));
     }
 
-    let transformer = transform::Transformer::new(source, &options.module_name, &parsed.program);
-    let Some((code, diagnostics)) = transformer.program(&parsed.program) else { return Ok(None) };
+    let program = allocator.alloc(parsed.program);
+    let scoping = SemanticBuilder::new().build(program).semantic.into_scoping();
+    let mut reports = Vec::new();
+    let facts =
+        analyze::analyze(program, &scoping, &options.module_name, options.optimize, &mut reports);
+    let header_at = header_position(program);
+    let lowerer =
+        lower::Lowerer::new(&allocator, source, &facts, &scoping, options.optimize, &mut reports);
+    let Some(body) = lowerer.program(program, header_at) else { return Ok(None) };
+
+    let diagnostics = diagnostic::resolve(reports, source, filename);
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return Err(diagnostics);
+    }
+    let emitter = emit::Emitter::new(
+        &allocator,
+        source,
+        &options.module_name,
+        source_type.is_typescript(),
+        &scoping,
+    );
+    let code = emitter.module(&body, header_at);
     let map = options.source_map.then(|| code.source_map(filename, source));
-    let warnings = diagnostics
-        .into_iter()
-        .map(|(offset, message)| {
-            let (line, column) = position(source, offset as usize);
-            Warning { message, line, column }
-        })
-        .collect();
-    Ok(Some(Output { code: code.s, map, warnings }))
+    Ok(Some(Output { code: code.text, map, diagnostics }))
 }
 
-fn position(source: &str, offset: usize) -> (u32, u32) {
-    let offset = offset.min(source.len());
-    let before = &source[..offset];
-    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
-    let line = before.bytes().filter(|&b| b == b'\n').count() as u32 + 1;
-    (line, before[line_start..].encode_utf16().count() as u32)
+/// Runtime imports and templates go after the hashbang, directives and leading imports.
+fn header_position(program: &Program<'_>) -> u32 {
+    let mut at = program.hashbang.as_ref().map_or(0, |h| h.span.end);
+    if let Some(directive) = program.directives.last() {
+        at = directive.span.end;
+    }
+    for statement in &program.body {
+        match statement {
+            Statement::ImportDeclaration(import) => at = import.span.end,
+            _ => break,
+        }
+    }
+    at.max(program.body.first().map_or(at, |s| s.span().start.min(at)))
 }
+
+pub use diagnostic::catalog::render_skill;

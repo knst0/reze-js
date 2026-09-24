@@ -1,6 +1,6 @@
 //! HTML and JS string tables and escaping.
 
-/// Events delegated to the document (SPECIFICATION §3.5); must match `@rezejs/dom`.
+/// Events delegated to the document (SPEC §7.4); must match `DelegatedEvents` in `@rezejs/dom`.
 pub fn is_delegated_event(name: &str) -> bool {
     matches!(
         name,
@@ -18,9 +18,15 @@ pub fn is_delegated_event(name: &str) -> bool {
     )
 }
 
-/// DOM properties set as properties rather than attributes (SPECIFICATION §3.4).
+/// DOM properties set as properties rather than attributes (SPEC §7.2).
 pub fn is_property(name: &str) -> bool {
     matches!(name, "value" | "checked" | "selected" | "textContent" | "innerHTML")
+}
+
+/// DOM event name for the camel-case part of `onFooBar`; must match `spread` in `@rezejs/dom`.
+pub fn event_name(camel: &str) -> String {
+    let lower = camel.to_ascii_lowercase();
+    if lower == "doubleclick" { "dblclick".to_string() } else { lower }
 }
 
 /// Elements without content or closing tag.
@@ -144,9 +150,9 @@ pub fn escape_attribute(out: &mut String, s: &str) {
     }
 }
 
-/// A double-quoted JS string literal.
-pub fn js_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
+/// Appends `s` as a double-quoted JS string literal.
+pub fn push_js_string(out: &mut String, s: &str) {
+    out.reserve(s.len() + 2);
     out.push('"');
     for c in s.chars() {
         match c {
@@ -157,26 +163,188 @@ pub fn js_string(s: &str) -> String {
             '\t' => out.push_str("\\t"),
             '\u{2028}' => out.push_str("\\u2028"),
             '\u{2029}' => out.push_str("\\u2029"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c if (c as u32) < 0x20 => {
+                let code = c as u32;
+                out.push_str("\\x");
+                out.push(char::from_digit(code >> 4, 16).unwrap_or('0'));
+                out.push(char::from_digit(code & 0xf, 16).unwrap_or('0'));
+            }
             c => out.push(c),
         }
     }
     out.push('"');
-    out
 }
 
-/// An object literal key: bare when it is an identifier name, quoted otherwise.
-pub fn property_key(name: &str) -> String {
+pub fn is_identifier_name(name: &str) -> bool {
     let mut chars = name.chars();
-    let ident = chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
-    if ident { name.to_string() } else { js_string(name) }
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
 }
 
-/// Member access on `object`: `.name` for identifier names, `["name"]` otherwise.
-pub fn member(object: &str, name: &str) -> String {
-    let key = property_key(name);
-    if key.starts_with('"') { format!("{object}[{key}]") } else { format!("{object}.{key}") }
+/// Appends an object literal key: bare when it is an identifier name, quoted otherwise.
+pub fn push_property_key(out: &mut String, name: &str) {
+    if is_identifier_name(name) { out.push_str(name) } else { push_js_string(out, name) }
+}
+
+/// Appends member access on `object`: `.name` for identifier names, `["name"]` otherwise.
+pub fn push_member(out: &mut String, object: &str, name: &str) {
+    out.push_str(object);
+    if is_identifier_name(name) {
+        out.push('.');
+        out.push_str(name);
+    } else {
+        out.push('[');
+        push_js_string(out, name);
+        out.push(']');
+    }
+}
+
+/// Common HTML/SVG attributes plus the framework's own, for near-miss suggestions.
+const KNOWN_ATTRIBUTES: &[&str] = &[
+    "abbr",
+    "accept",
+    "action",
+    "align",
+    "alt",
+    "as",
+    "async",
+    "autoplay",
+    "charset",
+    "checked",
+    "cite",
+    "class",
+    "cols",
+    "colspan",
+    "content",
+    "controls",
+    "coords",
+    "crossorigin",
+    "cx",
+    "cy",
+    "d",
+    "datetime",
+    "decoding",
+    "default",
+    "defer",
+    "disabled",
+    "download",
+    "draggable",
+    "enctype",
+    "fill",
+    "for",
+    "form",
+    "formaction",
+    "headers",
+    "height",
+    "hidden",
+    "href",
+    "hreflang",
+    "id",
+    "ismap",
+    "kind",
+    "label",
+    "lang",
+    "loading",
+    "loop",
+    "max",
+    "maxlength",
+    "media",
+    "method",
+    "min",
+    "minlength",
+    "multiple",
+    "muted",
+    "name",
+    "nonce",
+    "open",
+    "pattern",
+    "ping",
+    "placeholder",
+    "playsinline",
+    "poster",
+    "preload",
+    "r",
+    "readonly",
+    "referrerpolicy",
+    "rel",
+    "required",
+    "rev",
+    "rows",
+    "rowspan",
+    "rx",
+    "ry",
+    "sandbox",
+    "scope",
+    "selected",
+    "shape",
+    "size",
+    "sizes",
+    "slot",
+    "span",
+    "spellcheck",
+    "src",
+    "srcdoc",
+    "srclang",
+    "srcset",
+    "start",
+    "step",
+    "style",
+    "tabindex",
+    "target",
+    "title",
+    "translate",
+    "type",
+    "usemap",
+    "value",
+    "viewBox",
+    "width",
+    "wrap",
+    "x",
+    "x1",
+    "x2",
+    "y",
+    "y1",
+    "y2",
+];
+
+/// The closest known attribute within edit distance 2; `None` for known names and far misses.
+pub fn suggest_attribute(name: &str) -> Option<&'static str> {
+    if name.is_empty() || KNOWN_ATTRIBUTES.contains(&name) {
+        return None;
+    }
+    let mut best: Option<(&'static str, usize)> = None;
+    for candidate in KNOWN_ATTRIBUTES {
+        let distance = edit_distance(name, candidate, 2);
+        if distance <= 2 && best.is_none_or(|(_, d)| distance < d) {
+            best = Some((candidate, distance));
+        }
+    }
+    best.map(|(candidate, _)| candidate)
+}
+
+/// Levenshtein distance; anything above `limit` reports `limit + 1`.
+fn edit_distance(a: &str, b: &str, limit: usize) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    if a.len().abs_diff(b.len()) > limit {
+        return limit + 1;
+    }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0; b.len() + 1];
+    for (i, &ca) in a.iter().enumerate() {
+        curr[0] = i + 1;
+        let mut row_min = curr[0];
+        for (j, &cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+            row_min = row_min.min(curr[j + 1]);
+        }
+        if row_min > limit {
+            return limit + 1;
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b.len()]
 }
 
 /// JSX text as it renders: lines trimmed, whitespace-only lines with a line break dropped,

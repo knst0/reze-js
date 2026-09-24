@@ -153,38 +153,17 @@ export function className(node: Element, value: unknown, prev?: unknown): void {
     node.removeAttribute("class");
     (node as Any).$$class = undefined;
   }
-  applyClassTokens(
-    node,
-    "$$class",
-    value as Record<string, unknown> & ClassValue[],
-    prev as Record<string, unknown> | undefined,
-  );
-}
-
-/** `classList` toggles each key; keys present in `prev` but gone from `value` are removed. Arrays flatten like `class`. */
-export function classList(
-  node: Element,
-  value: Record<string, unknown> | ClassValue[] | null | undefined,
-  prev?: Record<string, unknown> | ClassValue[],
-): Record<string, unknown> | ClassValue[] | null | undefined {
-  if (value != null) applyClassTokens(node, "$$classList", value, prev);
-  else {
-    const old: Record<string, unknown> = classListToObject(prev ?? (node as Any).$$classList ?? {});
-    for (const key in old) if (key && key !== "undefined") node.classList.remove(key);
-    (node as Any).$$classList = undefined;
-  }
-  return value;
+  applyClassTokens(node, value, prev);
 }
 
 /**
- * Diffs normalized `value` against the normalized `prev` (or the tokens this key applied last,
- * when the caller threads no `prev`), toggles what changed, and records the new tokens on the
- * element. Each key (`$$class`, `$$classList`) tracks only its own tokens, so the two never
- * clobber each other.
+ * Diffs normalized `value` against the normalized `prev` (or the tokens applied last, tracked
+ * on the element as `$$class`, when the caller threads no `prev`), toggles what changed, and
+ * records the new tokens.
  */
-function applyClassTokens(node: Element, key: string, value: unknown, prev?: unknown): void {
-  const next = classListToObject(value);
-  const old = classListToObject(prev ?? (node as Any)[key] ?? {});
+function applyClassTokens(node: Element, value: unknown, prev?: unknown): void {
+  const next = classTokens(value);
+  const old = classTokens(prev ?? (node as Any).$$class ?? {});
   const list = node.classList;
   for (const k in old) {
     if (!k || k === "undefined" || next[k]) continue;
@@ -194,14 +173,14 @@ function applyClassTokens(node: Element, key: string, value: unknown, prev?: unk
     if (!k || k === "undefined" || old[k] === !!next[k] || !next[k]) continue;
     list.add(k);
   }
-  (node as Any)[key] = next;
+  (node as Any).$$class = next;
 }
 
-/** Normalizes a `class`/`classList` value to one class token per `true` key. */
-function classListToObject(value: unknown): Record<string, unknown> {
+/** Normalizes a `class` value to one class token per `true` key. */
+function classTokens(value: unknown): Record<string, unknown> {
   if (Array.isArray(value)) {
     const result: Record<string, unknown> = {};
-    flattenClassList(value, result);
+    flattenClassValue(value, result);
     value = result;
   }
   if (value && typeof value === "object") {
@@ -216,10 +195,10 @@ function classListToObject(value: unknown): Record<string, unknown> {
 }
 
 /** Flattens nested class arrays: objects merge, truthy strings/numbers become keys (`0` kept). */
-function flattenClassList(list: unknown[], result: Record<string, unknown>): void {
+function flattenClassValue(list: unknown[], result: Record<string, unknown>): void {
   for (let i = 0; i < list.length; i++) {
     const item = list[i];
-    if (Array.isArray(item)) flattenClassList(item, result);
+    if (Array.isArray(item)) flattenClassValue(item, result);
     else if (typeof item === "object" && item !== null) Object.assign(result, item);
     else if (item || item === 0) result[item as string] = true;
   }
@@ -343,12 +322,12 @@ export function spread(
 
 function assignProp(node: Any, name: string, value: Any, prev: Any, isSVG?: boolean): Any {
   if (name === "style") return style(node, value, prev);
-  if (name === "classList") return classList(node, value, prev);
-  if (name === "class" || name === "className") {
+  if (name === "class") {
     className(node, value, prev);
   } else if (name.startsWith("on")) {
     const custom = name[2] === ":";
-    const type = custom ? name.slice(3) : name.slice(2).toLowerCase();
+    const lowered = custom ? name.slice(3) : name.slice(2).toLowerCase();
+    const type = !custom && lowered === "doubleclick" ? "dblclick" : lowered;
     if (!custom && Object.hasOwn(DelegatedEvents, type)) {
       node["$$" + type] = value;
       delegateEvents([type]);

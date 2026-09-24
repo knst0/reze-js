@@ -1,0 +1,53 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "async function User(props: { id: number }): Promise<JSX.Element> {\n  const user = await fetchUser(props.id);\n  const posts = await fetchPosts(user.id);\n  return <ul>{posts.map((p) => <li>{p.title}</li>)}</ul>;\n}"
+---
+import { getOwner as _$getOwner, signal as _$signal, onCleanup as _$onCleanup, trackPending as _$trackPending, effect as _$effect, trackAsync as _$trackAsync, memo as _$memo, template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<ul></ul>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<li></li>");
+function User(props: { id: number }): JSX.Element {
+const _owner$ = _$getOwner();
+const [_val$, _setVal$] = _$signal(undefined as any);
+const [_settled$, _setSettled$] = _$signal(false);
+const [_val$2, _setVal$2] = _$signal(undefined as any);
+const [_settled$2, _setSettled$2] = _$signal(false);
+const [_err$, _setErr$] = _$signal(undefined as any);
+let _epoch$ = 0;
+_$onCleanup(() => { _epoch$++; });
+_$trackPending(() => !_settled$2() && _err$() === undefined);
+_$effect(() => {
+_setErr$(undefined);
+_setSettled$(false);
+const _p$ = Promise.resolve(fetchUser(props.id));
+const _my$ = ++_epoch$;
+_$trackAsync(_owner$, _p$, () => _my$ === _epoch$, (_v) => { _setVal$(_v); _setSettled$(true); }, _setErr$);
+});
+_$effect(() => {
+if (!_settled$()) return;
+const _t$ = _val$();
+const user = _t$;
+_setErr$(undefined);
+_setSettled$2(false);
+const _p$ = Promise.resolve(fetchPosts(user.id));
+const _my$ = ++_epoch$;
+_$trackAsync(_owner$, _p$, () => _my$ === _epoch$, (_v) => { _setVal$2(_v); _setSettled$2(true); }, _setErr$);
+});
+return _$memo(() => {
+const _ex$ = _err$();
+if (_ex$ !== undefined) throw _ex$;
+if (!_settled$() || !_settled$2()) return undefined;
+const _t$ = _val$();
+const user = _t$;
+const _t$2 = _val$2();
+const posts = _t$2;
+return (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, () => posts.map((p) => (() => {
+  var _el$2 = _tmpl$2();
+  _$insert(_el$2, () => p.title);
+  return _el$2;
+})()));
+  return _el$;
+})();
+});
+}

@@ -1,0 +1,25 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <i class=\"a\" className=\"b\" classList={{ on: on() }} />;"
+---
+import { template as _$template, bind as _$bind, className as _$className } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<i></i>");
+const a = (() => {
+  var _el$ = _tmpl$();
+  _$bind(() => _$className(_el$, ["a", "b", { on: on() }]));
+  return _el$;
+})();
+// warn
+[CLASS_ALIAS] `className` is a legacy alias: Reze has one `class` attribute that takes strings, objects and arrays. Rename it to `class`; it was compiled as `class`.
+  in i
+  at case.tsx:1:24
+> 1 | const a = <i class="a" className="b" classList={{ on: on() }} />;
+    |                        ^^^^^^^^^
+  fix: rename `className` to `class`
+// warn
+[CLASS_ALIAS] `classList` is a legacy alias: Reze has one `class` attribute that takes strings, objects and arrays. Rename it to `class`; it was compiled as `class`.
+  in i
+  at case.tsx:1:38
+> 1 | const a = <i class="a" className="b" classList={{ on: on() }} />;
+    |                                      ^^^^^^^^^
+  fix: rename `classList` to `class`

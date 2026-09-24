@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@rezejs/compiler": "workspace:*",
     "@rezejs/test-utils": "workspace:*",
     "@rezejs/vite-plugin": "workspace:*",
     "esbuild": "^0.28.2",

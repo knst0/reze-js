@@ -1,0 +1,23 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "async function User(props) {\n  const label = props.label;\n  const user = await fetchUser(props.id);\n  return <p>{label}{user.name}</p>;\n}"
+---
+import { template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p></p>");
+async function User(props) {
+  const label = props.label;
+  const user = await fetchUser(props.id);
+  return (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, label, null);
+  _$insert(_el$, () => user.name, null);
+  return _el$;
+})();
+}
+// warn
+[ASYNC_COMPONENT_SHAPE] This async component was left as written because of a local declared before an `await` is used after it; it returns a Promise, which renders nothing. Use top-level `const x = await …;` declarations and a final `return …;`.
+  in <User>
+  at case.tsx:1:1
+> 1 | async function User(props) {
+    | ^^^^^
+  2 |   const label = props.label;

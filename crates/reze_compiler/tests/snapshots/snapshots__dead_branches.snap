@@ -1,0 +1,29 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const DEBUG = false;\nconst a = <div>{false && <b>never</b>}{true ? <i>y</i> : <u>n</u>}{DEBUG && <p />}</div>;"
+---
+import { template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<div><i>y</i></div>"),
+  _tmpl$2 = /*#__PURE__*/ _$template("<p></p>");
+const DEBUG = false;
+const a = (() => {
+  var _el$ = _tmpl$();
+  _$insert(_el$, DEBUG && _tmpl$2(), null);
+  return _el$;
+})();
+// info
+[DEAD_BRANCH_REMOVED] The condition is a literal, so this branch can never render; it was removed.
+  in div
+  at case.tsx:2:17
+  1 | const DEBUG = false;
+> 2 | const a = <div>{false && <b>never</b>}{true ? <i>y</i> : <u>n</u>}{DEBUG && <p />}</div>;
+    |                 ^^^^^^^^^^^^^^^^^^^^^
+  note: never rendered (case.tsx:2:26)
+// info
+[DEAD_BRANCH_REMOVED] The condition is a literal, so this branch can never render; it was removed.
+  in div
+  at case.tsx:2:40
+  1 | const DEBUG = false;
+> 2 | const a = <div>{false && <b>never</b>}{true ? <i>y</i> : <u>n</u>}{DEBUG && <p />}</div>;
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  note: never rendered (case.tsx:2:58)

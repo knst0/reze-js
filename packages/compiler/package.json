@@ -4,6 +4,12 @@
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node",
+    "skills"
+  ],
   "exports": {
     ".": {
       "types": "./index.d.ts",

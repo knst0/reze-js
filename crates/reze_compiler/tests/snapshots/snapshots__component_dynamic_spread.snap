@@ -1,0 +1,6 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <Card {...props()} a={1} />;"
+---
+import { createComponent as _$createComponent, mergeProps as _$mergeProps } from "reze-js";
+const a = _$createComponent(Card, _$mergeProps(() => (props()), { a: 1 }));

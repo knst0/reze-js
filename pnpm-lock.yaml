@@ -267,6 +267,9 @@ importers:
         specifier: workspace:*
         version: link:../signals
     devDependencies:
+      '@rezejs/compiler':
+        specifier: workspace:*
+        version: link:../compiler
       '@rezejs/test-utils':
         specifier: workspace:*
         version: link:../test-utils

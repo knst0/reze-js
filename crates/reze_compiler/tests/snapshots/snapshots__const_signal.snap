@@ -1,0 +1,24 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { signal } from \"reze-js\";\nconst [title] = signal(\"Reze\");\nconst [count, setCount] = signal(0);\nexport const a = <h1 onClick={() => setCount(count() + 1)}>{title()}: {count()}</h1>;"
+---
+import { signal } from "reze-js";
+import { template as _$template, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<h1>Reze: </h1>");
+const title = "Reze";
+const [count, setCount] = signal(0);
+export const a = (() => {
+  var _el$ = _tmpl$();
+  _el$.$$click = () => setCount(count() + 1);
+  _$insert(_el$, count, null);
+  return _el$;
+})();
+_$delegateEvents(["click"]);
+
+// info
+[SIGNAL_FOLDED] `title` is never written: its setter is unused and every read is a call, so it compiled to a plain constant.
+  at case.tsx:2:7
+  1 | import { signal } from "reze-js";
+> 2 | const [title] = signal("Reze");
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | const [count, setCount] = signal(0);

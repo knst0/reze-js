@@ -2,7 +2,7 @@ import { effect, flushSync, onCleanup, signal } from "@rezejs/signals";
 import { cleanup, mount } from "@rezejs/test-utils";
 import { afterEach, expect, test } from "vitest";
 
-import { type ClassValue, classList, className, mergeProps, use } from "../src";
+import { type ClassValue, className, mergeProps, use } from "../src";
 
 afterEach(cleanup);
 
@@ -37,7 +37,7 @@ test("null, undefined and false remove the attribute", () => {
 test("class accepts a string or a toggle object", () => {
   const [on, setOn] = signal(true);
   const [cls, setCls] = signal<string | Record<string, boolean>>("a b");
-  const { el } = mount(() => <i class={cls()} classList={{ on: on() }} />);
+  const { el } = mount(() => <i class={[cls(), { on: on() }]} />);
   const i = el.firstChild as HTMLElement;
   expect(i.className).toBe("a b on");
   setOn(false);
@@ -45,7 +45,7 @@ test("class accepts a string or a toggle object", () => {
   expect(i.className).toBe("a b");
   setCls({ "x y": true, z: false });
   flushSync();
-  expect([...i.classList].sort()).toEqual(["a", "b", "x", "y"]);
+  expect([...i.classList].sort()).toEqual(["x", "y"]);
 });
 
 test("style objects set, update and drop properties", () => {
@@ -62,10 +62,10 @@ test("style objects set, update and drop properties", () => {
   expect(i.style.marginTop).toBe("");
 });
 
-test("all-literal style and classList objects compile to static attributes", () => {
+test("all-literal style and class objects compile to static attributes", () => {
   // The compiler folds these into the template (C09/C10): no runtime call,
   // so the parsed attributes must already carry the values.
-  const { el } = mount(() => <i style={{ color: "red", "margin-top": "1px" }} classList={{ a: true, b: false }} />);
+  const { el } = mount(() => <i style={{ color: "red", "margin-top": "1px" }} class={{ a: true, b: false }} />);
   const i = el.firstChild as HTMLElement;
   expect(i.style.color).toBe("red");
   expect(i.style.marginTop).toBe("1px");
@@ -131,6 +131,14 @@ test("on: attaches a direct listener; [handler, options] passes listener options
   i.dispatchEvent(new Event("custom"));
   i.dispatchEvent(new Event("other"));
   expect(log).toEqual(["once", "other"]);
+});
+
+test("spread onDoubleClick listens for dblclick", () => {
+  const log: string[] = [];
+  const { el } = mount(() => <i {...{ onDoubleClick: () => log.push("double") }} />);
+  const i = el.firstChild as HTMLElement;
+  i.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  expect(log).toEqual(["double"]);
 });
 
 test("components run once; props read lazily keep reactivity", () => {
@@ -277,12 +285,12 @@ test("composite object keys keep shared tokens on diff", () => {
   expect(i.classList.contains("bg-sky-400")).toBe(true);
 });
 
-test("classList accepts arrays and drops stale keys on update", () => {
+test("className accepts arrays and drops stale keys on update", () => {
   const i = document.createElement("i");
   const first: ClassValue[] = ["a", { b: true, c: false }];
-  classList(i, first);
+  className(i, first);
   expect([...i.classList].sort()).toEqual(["a", "b"]);
-  classList(i, ["b", "d"], first);
+  className(i, ["b", "d"], first);
   expect([...i.classList].sort()).toEqual(["b", "d"]);
 });
 

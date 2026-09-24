@@ -3,5 +3,6 @@ node_modules
 *.node
 dist
 benches/signals/results/history.jsonl
+packages/dom/tests/.generated
 
 /.idea

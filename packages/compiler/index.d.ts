@@ -11,7 +11,7 @@ export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-was
 
 /**
  * Compiles the JSX in `source` to DOM code. Returns `null` when the file has no JSX.
- * `filename` picks the dialect (`.tsx`, `.jsx`, …) and names the source in the map.
+ * Compile errors are returned as `error` diagnostics with `code: null`, never thrown.
  */
 export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult | null
 
@@ -20,18 +20,60 @@ export interface CompileOptions {
   moduleName?: string
   /** Default: `true`. */
   sourceMap?: boolean
+  /** Constant signals and dead JSX branches (O3, O5). Default: `true`. */
+  optimize?: boolean
 }
 
 export interface CompileResult {
-  code: string
+  /** `null` when `diagnostics` holds an `error`. */
+  code?: string
   /** Source map v3 JSON. */
   map?: string
-  /** Non-fatal diagnostics. */
-  warnings: Array<CompileWarning>
+  diagnostics: Array<Diagnostic>
 }
 
-export interface CompileWarning {
+export interface Diagnostic {
+  /** Stable `SCREAMING_SNAKE` code; see `skills/compiler-diagnostics/SKILL.md`. */
+  code: string
+  severity: "error" | "warn" | "info"
+  /** `[CODE] …`. */
   message: string
+  file: string
+  start: Position
+  end: Position
+  /** Enclosing components (`<Name>`) and elements, root first. */
+  path: Array<string>
+  labels: Array<Label>
+  fixes: Array<Fix>
+  data: Record<string, string>
+  /** Repair guide URL anchored at the code. */
+  docs: string
+  /** Message, `in` line, location, code frame and fixes, without the once-per-code footer. */
+  rendered: string
+}
+
+/** Replaces bytes `start..end` of the source with `text`. */
+export interface Edit {
+  start: number
+  end: number
+  text: string
+}
+
+/** Edits that, applied together, remove the diagnostic. */
+export interface Fix {
+  title: string
+  edits: Array<Edit>
+}
+
+export interface Label {
+  start: number
+  end: number
+  message: string
+}
+
+export interface Position {
+  /** Byte offset. */
+  offset: number
   /** 1-based. */
   line: number
   /** 0-based, in UTF-16 code units. */
