@@ -1,13 +1,13 @@
 export {
-  A,
   Outlet,
   Route,
   Router,
   useIsRouting,
   useLocation,
+  useMatch,
   useNavigate,
   useParams,
 } from "./router";
-export type { AProps, Location, NavigateOptions, RouteProps, RouterProps } from "./router";
+export type { Location, NavigateOptions, RouteConfig, RouteProps, RouterProps } from "./router";
 export { compilePattern, matchPattern } from "./match";
 export type { Pattern, Segment } from "./match";

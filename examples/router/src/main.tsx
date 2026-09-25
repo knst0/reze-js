@@ -1,4 +1,4 @@
-import { A, Outlet, Route, Router, useIsRouting, useLocation } from "@rezejs/router";
+import { Outlet, Route, Router, useIsRouting, useLocation } from "@rezejs/router";
 import { lazy, Loading, render } from "reze-js";
 
 const User = lazy(() => import("./User"));
@@ -8,7 +8,7 @@ function Layout() {
   return (
     <>
       <nav>
-        <A href="/">Home</A> <A href="/users">Users</A> <A href="/nowhere">Broken link</A>
+        <a href="/">Home</a> <a href="/users">Users</a> <a href="/nowhere">Broken link</a>
         {isRouting() && <span> loading…</span>}
       </nav>
       <main>
@@ -28,10 +28,10 @@ function Users() {
       <h1>Users</h1>
       <ul>
         <li>
-          <A href="/users/1">Ada</A>
+          <a href="/users/1">Ada</a>
         </li>
         <li>
-          <A href="/users/2">Grace</A>
+          <a href="/users/2">Grace</a>
         </li>
       </ul>
       <Outlet />

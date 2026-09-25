@@ -5,13 +5,13 @@ import { cleanup, fire, mount } from "@rezejs/test-utils";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
 import {
-  A,
   compilePattern,
   matchPattern,
   Outlet,
   Route,
   Router,
   useLocation,
+  useMatch,
   useNavigate,
   useParams,
 } from "../src";
@@ -72,14 +72,20 @@ test("the most specific route wins and nested routes render in the outlet", () =
   expect(mount(() => <App />).el.innerHTML).toBe("<p>missing /nope/deep</p>");
 });
 
-test("A navigates on a plain click, marks the current link and keeps a modified click", async () => {
+test("native links navigate on a plain click, mark the match and keep a modified click", async () => {
   let go!: ReturnType<typeof useNavigate>;
   const Nav = () => {
     go = useNavigate();
+    const oneCurrent = useMatch("/users/1");
+    const homeCurrent = useMatch("/");
     return (
       <nav>
-        <A href="/users/1">one</A>
-        <A href="/">home</A>
+        <a href="/users/1" aria-current={oneCurrent() ? "page" : undefined}>
+          one
+        </a>
+        <a href="/" aria-current={homeCurrent() ? "page" : undefined}>
+          home
+        </a>
       </nav>
     );
   };
@@ -115,6 +121,7 @@ test("A navigates on a plain click, marks the current link and keeps a modified 
   expect(window.location.pathname).toBe("/users/1");
   expect(el.querySelector("p")!.textContent).toBe("user 1");
   expect(el.querySelector("a")!.getAttribute("aria-current")).toBe("page");
+  expect(el.querySelectorAll("a")[1]!.getAttribute("aria-current")).toBe(null);
   await go("2");
   flush();
   expect(el.querySelector("p")!.textContent).toBe("user 2");
@@ -188,6 +195,19 @@ test("a child route with its parent's path renders inside the parent's outlet", 
     </Router>
   ));
   expect(el.innerHTML).toBe("<main><h1>home</h1></main>");
+});
+
+test("data-driven routes nest and strip groups like file-system manifests", () => {
+  window.history.replaceState(null, "", "/users/7");
+  const { el } = mount(() => (
+    <Router
+      routes={[
+        { path: "(app)/users", component: Users, children: [{ path: ":id", component: User }] },
+        { path: "*rest", component: NotFound },
+      ]}
+    />
+  ));
+  expect(el.innerHTML).toBe("<section><h1>users</h1><p>user 7</p></section>");
 });
 
 test("the server renders the route for url", () => {

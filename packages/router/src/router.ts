@@ -1,16 +1,4 @@
-import {
-  createComponent,
-  createContext,
-  isServerRender,
-  mergeProps,
-  omit,
-  spread,
-  ssr,
-  ssrChild,
-  ssrSpread,
-  startTransition,
-  useContext,
-} from "@rezejs/dom";
+import { createComponent, createContext, startTransition, useContext } from "@rezejs/dom";
 import type { JSX } from "@rezejs/dom/jsx-runtime";
 import { computed, onCleanup, signal, untrack, type Getter } from "@rezejs/signals";
 
@@ -34,6 +22,23 @@ interface RouteDefinition {
   props: RouteProps;
 }
 
+/**
+ * A data-driven route for `Router(routes)`: same `path` language as `<Route>`, `(group)`
+ * segments stripped, `""` nesting without adding a segment. File-system manifests
+ * (`filesystem-routing` neutral paths, nested via its `buildRouteTree`) map here directly.
+ */
+export interface RouteConfig {
+  path: string;
+  component?: Component;
+  children?: RouteConfig[];
+}
+
+interface RouteNode {
+  path: string;
+  component?: Component;
+  children: RouteNode[];
+}
+
 /** Declares a route inside `<Router>` or another `<Route>`; renders nothing by itself. */
 export function Route(props: RouteProps): JSX.Element {
   return { [RouteMark]: true, props } as unknown as JSX.Element;
@@ -41,7 +46,7 @@ export function Route(props: RouteProps): JSX.Element {
 
 interface Branch {
   pattern: Pattern;
-  routes: RouteDefinition[];
+  routes: RouteNode[];
   order: number;
 }
 
@@ -53,27 +58,48 @@ function definitions(children: unknown): RouteDefinition[] {
   );
 }
 
+function jsxNodes(defs: RouteDefinition[]): RouteNode[] {
+  return defs.map((def) => ({
+    path: def.props.path,
+    component: def.props.component,
+    children: jsxNodes(definitions(untrack(() => def.props.children))),
+  }));
+}
+
+function configNodes(configs: RouteConfig[]): RouteNode[] {
+  return configs.map((config) => ({
+    path: config.path,
+    component: config.component,
+    children: config.children === undefined ? [] : configNodes(config.children),
+  }));
+}
+
 function joinPaths(parent: string, child: string): string {
   return `${parent.replace(/\/+$/, "")}/${child.replace(/^\/+/, "")}`;
 }
 
+function stripGroups(path: string): string {
+  const stripped = path.replace(/\/\([^/()]+\)/g, "");
+  return stripped === "" ? "/" : stripped;
+}
+
 function branchesOf(
-  routes: RouteDefinition[],
+  routes: RouteNode[],
   parentPath: string,
-  parents: RouteDefinition[],
+  parents: RouteNode[],
   out: Branch[],
 ): Branch[] {
   for (const route of routes) {
-    const path = joinPaths(parentPath, route.props.path);
+    const path = stripGroups(joinPaths(parentPath, route.path));
     const chain = [...parents, route];
     out.push({ pattern: compilePattern(path), routes: chain, order: out.length });
-    branchesOf(definitions(untrack(() => route.props.children)), path, chain, out);
+    branchesOf(route.children, path, chain, out);
   }
   return out;
 }
 
 interface Match {
-  routes: RouteDefinition[];
+  routes: RouteNode[];
   params: Record<string, string>;
 }
 
@@ -128,8 +154,10 @@ function withoutBase(pathname: string, base: string): string {
 export interface RouterProps {
   /** The URL to render on the server; in the browser the current location is used. */
   url?: string;
-  /** A path prefix every route and link lives under, e.g. `/docs`. */
+  /** A path prefix every route lives under, e.g. `/docs`; write it into link hrefs. */
   base?: string;
+  /** Data-driven routes, combined with `<Route>` children; `fileRoutes` builds them. */
+  routes?: RouteConfig[];
   children?: JSX.Element;
 }
 
@@ -139,7 +167,8 @@ function isBrowser(url: string | undefined): boolean {
 
 /**
  * Renders the route matching the current location. In the browser it follows the History API:
- * `navigate` and `<A>` first load the code of lazy route components (the current page stays
+ * `navigate` and plain left clicks on native `<a href>` (same origin, no modifier keys, no
+ * `target`/`download`) first load the code of lazy route components (the current page stays
  * meanwhile, `useIsRouting()` is true), then push an entry and change the location inside a
  * transition. A push scrolls to the top; back/forward restores the scroll position. On the
  * server, `url` is the location.
@@ -152,7 +181,13 @@ export function Router(props: RouterProps): JSX.Element {
   const [location, setLocation] = signal(current(), {
     equals: (a, b) => a.pathname === b.pathname && a.search === b.search && a.hash === b.hash,
   });
-  const branches = computed(() => branchesOf(definitions(props.children), "/", [], []));
+  const branches = computed(() => {
+    const roots = [
+      ...jsxNodes(definitions(props.children)),
+      ...configNodes(props.routes ?? []),
+    ];
+    return branchesOf(roots, "/", [], []);
+  });
   const match = computed(() => matchBranches(branches(), withoutBase(location().pathname, base)));
   const [isRouting, setRouting] = signal(false);
   let latest = 0;
@@ -162,7 +197,7 @@ export function Router(props: RouterProps): JSX.Element {
     const routes =
       matchBranches(untrack(branches), withoutBase(target.pathname, base))?.routes ?? [];
     const preloads = routes.flatMap((route) => {
-      const preload = (route.props.component as { preload?: () => Promise<unknown> } | undefined)
+      const preload = (route.component as { preload?: () => Promise<unknown> } | undefined)
         ?.preload;
       return preload === undefined ? [] : [preload()];
     });
@@ -173,11 +208,18 @@ export function Router(props: RouterProps): JSX.Element {
     if (navigation === latest) setRouting(false);
     return true;
   };
+  const resolveTarget = (to: string, here: Location): Location => {
+    if (!to.startsWith("/")) {
+      return parseLocation(new URL(to, `http://localhost${here.pathname}${here.search}`).href);
+    }
+    if (base !== "" && to !== base && !to.startsWith(`${base}/`)) {
+      return parseLocation(joinPaths(base || "/", to));
+    }
+    return parseLocation(to);
+  };
   const navigate = async (to: string, options?: NavigateOptions): Promise<void> => {
     const here = untrack(location);
-    const target = to.startsWith("/")
-      ? parseLocation(joinPaths(base || "/", to))
-      : parseLocation(new URL(to, `http://localhost${here.pathname}${here.search}`).href);
+    const target = resolveTarget(to, here);
     if (!inBrowser) {
       await commit(target, () => {});
       return;
@@ -194,14 +236,35 @@ export function Router(props: RouterProps): JSX.Element {
     if (isCommitted && !options?.replace) window.scrollTo(0, 0);
   };
   if (inBrowser) {
+    const onClick = (event: MouseEvent): void => {
+      if (event.button !== 0 || event.defaultPrevented) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = (event.target as Element | null)?.closest?.("a[href]") as
+        | HTMLAnchorElement
+        | null
+        | undefined;
+      if (anchor === null || anchor === undefined) return;
+      if (anchor.target !== "" && anchor.target !== "_self") return;
+      if (anchor.hasAttribute("download")) return;
+      if (anchor.origin !== window.location.origin) return;
+      const href = anchor.getAttribute("href");
+      if (href === null || href === "" || href.startsWith("#")) return;
+      if (/^(mailto|tel|javascript|data|blob):/i.test(href)) return;
+      event.preventDefault();
+      void navigate(href);
+    };
     const onPopState = (event: PopStateEvent): void => {
       void commit(current(), () => {}).then((isCommitted) => {
         const scroll = (event.state as { scroll?: number } | null)?.scroll;
         if (isCommitted && typeof scroll === "number") window.scrollTo(0, scroll);
       });
     };
+    document.addEventListener("click", onClick);
     window.addEventListener("popstate", onPopState);
-    onCleanup(() => window.removeEventListener("popstate", onPopState));
+    onCleanup(() => {
+      document.removeEventListener("click", onClick);
+      window.removeEventListener("popstate", onPopState);
+    });
   }
   const state: RouterState = { location, match, isRouting, base, navigate };
   return createComponent(RouterContext, {
@@ -219,7 +282,7 @@ export function Router(props: RouterProps): JSX.Element {
 
 function useRouter(): RouterState {
   const router = useContext(RouterContext);
-  if (router === undefined) throw new Error("router hooks and <A> must be used inside <Router>");
+  if (router === undefined) throw new Error("router hooks must be used inside <Router>");
   return router;
 }
 
@@ -235,7 +298,7 @@ export function Outlet(): JSX.Element {
       createComponent(DepthContext, {
         value: depth + 1,
         get children() {
-          const component = current.props.component;
+          const component = current.component;
           return component === undefined
             ? createComponent(Outlet, {})
             : createComponent(component, {});
@@ -276,6 +339,13 @@ export function useLocation(): Location {
   };
 }
 
+/** Whether the current pathname equals `path`, for marking native links. */
+export function useMatch(path: string): Getter<boolean> {
+  const router = useRouter();
+  const pathname = parseLocation(joinPaths(router.base || "/", path)).pathname;
+  return () => router.location().pathname === pathname;
+}
+
 /** Whether a navigation is loading the code of the routes it goes to. */
 export function useIsRouting(): Getter<boolean> {
   return useRouter().isRouting;
@@ -288,58 +358,4 @@ export function useIsRouting(): Getter<boolean> {
  */
 export function useNavigate(): (to: string, options?: NavigateOptions) => Promise<void> {
   return useRouter().navigate;
-}
-
-export interface AProps extends Record<string, unknown> {
-  href: string;
-  /** Replace the current history entry instead of pushing one. */
-  replace?: boolean;
-  children?: JSX.Element;
-}
-
-function isPlainLeftClick(event: MouseEvent, anchor: HTMLAnchorElement): boolean {
-  return (
-    event.button === 0 &&
-    !event.defaultPrevented &&
-    !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) &&
-    (!anchor.target || anchor.target === "_self") &&
-    !anchor.hasAttribute("download") &&
-    anchor.origin === window.location.origin
-  );
-}
-
-/**
- * A link to `href` (under the router's `base`) that navigates without reloading on a plain left
- * click, and has `aria-current="page"` while its path is the current one.
- */
-export function A(props: AProps): JSX.Element {
-  const router = useRouter();
-  const href = (): string => joinPaths(router.base || "/", props.href);
-  const isCurrent = (): boolean => parseLocation(href()).pathname === router.location().pathname;
-  const attributes = mergeProps(omit(props, "href", "replace", "children"), {
-    get href() {
-      return href();
-    },
-    get "aria-current"() {
-      return isCurrent() ? "page" : undefined;
-    },
-  });
-  if (isServerRender()) {
-    return ssr(["<a", ">", "</a>"], ssrSpread(attributes), ssrChild(props.children));
-  }
-  const anchor = document.createElement("a");
-  anchor.addEventListener("click", (event) => {
-    if (!isPlainLeftClick(event, anchor)) return;
-    event.preventDefault();
-    void router.navigate(props.href, { replace: props.replace });
-  });
-  spread(
-    anchor,
-    mergeProps(attributes, {
-      get children() {
-        return props.children;
-      },
-    }),
-  );
-  return anchor;
 }
