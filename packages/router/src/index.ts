@@ -33,6 +33,8 @@ export {
 export type { LinkState, RouterIntegration } from "./routing";
 export type {
   BeforeLeaveEventArgs,
+  CompiledBranch,
+  CompiledBranchLevel,
   Location,
   LocationChange,
   MatchFilter,

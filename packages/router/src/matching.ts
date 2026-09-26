@@ -3,6 +3,8 @@ import { signal } from "@rezejs/signals";
 
 import type {
   Branch,
+  CompiledBranch,
+  CompiledBranchLevel,
   LazyBoundary,
   LazyRouteChildren,
   RouteDefinition,
@@ -109,10 +111,10 @@ function createRoutes(definition: RouteDefinition, base = ""): RouteDescription[
   return routes;
 }
 
-function createBranch(routes: RouteDescription[], index: number): Branch {
+function toBranch(routes: RouteDescription[], score: number): Branch {
   return {
     routes,
-    score: scoreRoute(routes[routes.length - 1]!.pattern) * 10000 - index,
+    score,
     matcher(location) {
       const matches: RouteMatch[] = [];
       for (let level = routes.length - 1; level >= 0; level--) {
@@ -153,7 +155,12 @@ function collectBranches(
           children = boundary.resolved;
         } else {
           stack.push(createLazyPlaceholder(route.pattern, boundary));
-          branches.push(createBranch([...stack], branches.length));
+          branches.push(
+            toBranch(
+              [...stack],
+              scoreRoute(stack[stack.length - 1]!.pattern) * 10000 - branches.length,
+            ),
+          );
           stack.pop();
           stack.pop();
           continue;
@@ -162,7 +169,12 @@ function collectBranches(
       if (children && !(Array.isArray(children) && children.length === 0)) {
         collectBranches(children, route.pattern, stack, branches);
       } else {
-        branches.push(createBranch([...stack], branches.length));
+        branches.push(
+          toBranch(
+            [...stack],
+            scoreRoute(stack[stack.length - 1]!.pattern) * 10000 - branches.length,
+          ),
+        );
       }
       stack.pop();
     }
@@ -175,4 +187,87 @@ export function getRouteMatches(branches: readonly Branch[], location: string): 
     if (match) return match;
   }
   return [];
+}
+
+export function compileBranches(
+  definitions: RouteDefinition | readonly RouteDefinition[],
+  base = "",
+): CompiledBranch[] | undefined {
+  const table: CompiledBranch[] = [];
+  const stack: CompiledBranchLevel[] = [];
+  const collect = (defs: RouteDefinition | readonly RouteDefinition[], prefix: string): boolean => {
+    for (const definition of asArray(defs)) {
+      if (!definition || typeof definition !== "object") continue;
+      const { children } = definition;
+      if (typeof children === "function") return false;
+      const leaf = !children || (Array.isArray(children) && children.length === 0);
+      for (const originalPath of asArray<string>(definition.path ?? "")) {
+        for (const expanded of expandOptionals(originalPath)) {
+          const path = joinPaths(prefix, expanded);
+          const pattern = (leaf ? path : path.split("/*", 1)[0]!)
+            .split("/")
+            .map((segment) =>
+              segment.startsWith(":") || segment.startsWith("*") ? segment : encodeSegment(segment),
+            )
+            .join("/");
+          stack.push({ definition, originalPath, pattern, partial: !leaf });
+          if (leaf) {
+            table.push({
+              score: scoreRoute(pattern) * 10000 - table.length,
+              chain: [...stack],
+            });
+          } else if (!collect(children ?? [], pattern)) {
+            return false;
+          }
+          stack.pop();
+        }
+      }
+    }
+    return true;
+  };
+  if (!collect(definitions, base)) return undefined;
+  table.sort((a, b) => b.score - a.score);
+  return table;
+}
+
+export function branchesFromTable(table: readonly CompiledBranch[]): Branch[] {
+  return [...table]
+    .sort((a, b) => b.score - a.score)
+    .map((entry) =>
+      toBranch(
+        entry.chain.map((level) => ({
+          key: level.definition,
+          component: level.definition.component,
+          preload: level.definition.preload,
+          info: level.definition.info,
+          originalPath: level.originalPath,
+          pattern: level.pattern,
+          matcher: createMatcher(level.pattern, level.partial, level.definition.matchFilters),
+        })),
+        entry.score,
+      ),
+    );
+}
+
+export function createBranchesGetter(
+  source:
+    | RouteDefinition
+    | readonly RouteDefinition[]
+    | (() => RouteDefinition | readonly RouteDefinition[]),
+  base = "",
+  compiled?: readonly CompiledBranch[],
+): () => Branch[] {
+  let branches: Branch[] | undefined;
+  let version = -1;
+  return () => {
+    const current = trackLazySubtrees();
+    if (branches === undefined || version !== current) {
+      branches =
+        compiled === undefined
+          ? createBranches(typeof source === "function" ? source() : source, base)
+          : branchesFromTable(compiled);
+      version = current;
+    }
+    return branches;
+  };
 }

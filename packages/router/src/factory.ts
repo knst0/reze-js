@@ -5,7 +5,7 @@ import { computed, signal, untrack, useContext } from "@rezejs/signals";
 
 import { setupLinkClaims, setupNativeEvents } from "./events";
 import { browserHistory, type RouterHistory } from "./history";
-import { createBranches, getRouteMatches, trackLazySubtrees } from "./matching";
+import { createBranchesGetter, getRouteMatches } from "./matching";
 import { createPathsProxy, HREF, type RoutePaths } from "./paths";
 import {
   createRouterContext,
@@ -17,7 +17,7 @@ import {
 } from "./routing";
 import { createScrollRestoration, withScrollRestoration } from "./scrollRestoration";
 import type {
-  Branch,
+  CompiledBranch,
   DefinedRouteFilters,
   LazyRouteChildren,
   Intent,
@@ -96,6 +96,11 @@ export function defineRoute(route: RouteDefinition): RouteDefinition {
 export interface RouterConfig<R extends readonly RouteDefinition[] = RouteDefinition[]> {
   routes: R;
   base?: string;
+  /**
+   * Build-precomputed branch table for `routes`, matching `createBranches` output.
+   * Only trees without lazy children qualify; anything else falls back to the runtime.
+   */
+  compiled?: readonly CompiledBranch[];
   /** Runs once per mount to warm app-wide data; the result reaches the render-prop child as `props.data`. */
   preload?: RoutePreloadFunc;
   /** Client history adapter, defaulting to browser history. On the server only its `utils` apply. */
@@ -221,16 +226,7 @@ export function createRouter<const R extends readonly RouteDefinition[]>(
   config: RouterConfig<R>,
 ): RouterInstance<R> {
   const basePath = config.base ?? "";
-  let compiled: Branch[] | undefined;
-  let compiledVersion = -1;
-  const branches = (): Branch[] => {
-    const version = trackLazySubtrees();
-    if (!compiled || compiledVersion !== version) {
-      compiled = createBranches(config.routes, basePath);
-      compiledVersion = version;
-    }
-    return compiled;
-  };
+  const branches = createBranchesGetter(config.routes, basePath, config.compiled);
   const renderPath = config.history?.utils?.renderPath;
   const matchPath = (pathname: string): OutputMatch[] =>
     getRouteMatches(branches(), config.transformUrl ? config.transformUrl(pathname) : pathname).map(

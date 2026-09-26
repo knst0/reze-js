@@ -1,6 +1,6 @@
 // Ported from @solidjs/router (MIT, Copyright (c) 2020-2022 Ryan Carniato).
 import type { RouterInstance } from "./factory";
-import { createBranches, getRouteMatches, resolveLazySubtree, trackLazySubtrees } from "./matching";
+import { createBranchesGetter, getRouteMatches, resolveLazySubtree } from "./matching";
 import { runWithCacheScope, type QueryCache } from "./query";
 import { runPreload, runWithIntent } from "./routing";
 import type {
@@ -64,16 +64,11 @@ export function createFlightDataCollector(
     ? { routes: options.routes, rootPreload: options.config.preload, base: options.config.base }
     : options;
   if (!routes) throw new Error("createFlightDataCollector requires `routes`");
-  let compiled: Branch[] | undefined;
-  let compiledVersion = -1;
-  const branches = (): Branch[] => {
-    const version = trackLazySubtrees();
-    if (!compiled || compiledVersion !== version) {
-      compiled = createBranches(typeof routes === "function" ? routes() : routes, base);
-      compiledVersion = version;
-    }
-    return compiled;
-  };
+  const branches = createBranchesGetter(
+    routes,
+    base,
+    isRouterInstance(options) ? options.config.compiled : undefined,
+  );
   return async (_sourceEvent, outcome) => {
     const { targetUrl, revalidateKeys } = outcome;
     if (!targetUrl) return undefined;

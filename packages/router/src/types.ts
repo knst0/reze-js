@@ -253,6 +253,18 @@ export interface Branch {
   matcher: (location: string) => RouteMatch[] | null;
 }
 
+export interface CompiledBranchLevel {
+  definition: RouteDefinition;
+  originalPath: string;
+  pattern: string;
+  partial: boolean;
+}
+
+export interface CompiledBranch {
+  score: number;
+  chain: CompiledBranchLevel[];
+}
+
 export interface RouteContext {
   parent?: RouteContext;
   pattern: string;

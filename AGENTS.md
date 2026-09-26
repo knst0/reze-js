@@ -2,8 +2,12 @@
 
 Reze is a fine-grained reactive UI framework in the Solid family. A Rust compiler turns JSX
 into direct DOM operations (client), DOM claiming (hydrate), or string concatenation (server).
-Its core rule: **the runtime defines the semantics, and the compiler only removes overhead.**
-With `optimize: true` and `optimize: false`, compiled code must behave the same.
+Its core rule: **thin runtime, fat compiler.** The runtime is a minimal fast layer (reactive
+core + DOM ops); everything statically decidable moves into the compiler — templates, bindings,
+constant folding, specialization, islands, feature pruning. We are not building another JS
+framework: the compiler may grow, shipped JS must shrink.
+With `optimize: true` and `optimize: false`, compiled code must behave the same; `optimize`
+only unlocks speculative folds, base compilation already does the maximum static work.
 
 ## Layout
 
@@ -45,8 +49,13 @@ With `optimize: true` and `optimize: false`, compiled code must behave the same.
 
 ## Invariants
 
-- **Pay only for what you use.** A new feature must not add bytes to apps that don't use it:
-    - Gate it behind a feature flag, or keep it in a module that only its users import.
+- **Compiler-first.** New behavior defaults to a compile-time implementation (analysis, codegen,
+  specialization). A runtime helper/branch is allowed only when the compiler cannot decide
+  statically — state why in the commit/plan. Prefer deleting runtime code via compiler folds
+  over adding runtime fast paths.
+- **Pay only for what you use.** A new feature must not add bytes to apps that don't use it,
+  and SHOULD remove bytes from apps that do (compiler fold preferred over runtime helper):
+    - Gate runtime code behind a feature flag, or keep it in a module that only its users import.
     - A flag lives in three places: `crates/reze_compiler/src/features.rs`,
       `packages/dom/src/features.ts` (plus `flags.d.ts`), and the plugin's `Flags` map.
     - Check the result with `bundle-size` and `signals/tests/treeShaking.spec.ts`.
