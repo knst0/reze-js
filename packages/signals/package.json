@@ -1,0 +1,43 @@
+{
+  "name": "@rezejs/signals",
+  "version": "0.0.0",
+  "license": "MIT",
+  "author": "Konstantin Kireyev <https://github.com/knst0>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/knst0/reze-js.git",
+    "directory": "packages/signals"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./devtools": {
+      "import": "./dist/devtools.js",
+      "types": "./dist/devtools.d.ts"
+    },
+    "./render": {
+      "import": "./dist/render.js",
+      "types": "./dist/render.d.ts"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "bench": "vitest bench --run",
+    "bench:update": "REZE_BENCH_UPDATE=1 vitest bench --run",
+    "build": "tsdown",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "reactive-framework-test-suite": "0.0.2",
+    "rolldown": "^1.2.11"
+  }
+}

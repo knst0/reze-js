@@ -1,0 +1,23 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "function Greeting({ name, count }) {\n  return <p title={name}>{name}: {count}</p>;\n}"
+---
+import { template as _$template, insert as _$insert, renderEffect as _$renderEffect, setAttribute as _$setAttribute } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p>: </p>");
+function Greeting(_props$) {
+  {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
+  _$insert(_el$, () => _props$.name, _el$2);
+  _$insert(_el$, () => _props$.count, null);
+  _$renderEffect(() => _$setAttribute(_el$, "title", _props$.name));
+  return _el$;
+}
+}
+// info
+[PROPS_REWRITTEN] `Greeting` destructures its props, so the pattern became one props object and each destructured name a lazy read of it.
+  in <Greeting>
+  at case.tsx:1:19
+> 1 | function Greeting({ name, count }) {
+    |                   ^^^^^^^^^^^^^^^
+  2 |   return <p title={name}>{name}: {count}</p>;

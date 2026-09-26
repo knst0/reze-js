@@ -1,0 +1,12 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <p>{s() + \"\"}</p>;"
+---
+import { template as _$template, renderEffect as _$renderEffect } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p> </p>");
+const a = (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild;
+  _$renderEffect(() => _el$2.data = "" + (s() + ""));
+  return _el$;
+})();

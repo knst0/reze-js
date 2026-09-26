@@ -1,0 +1,41 @@
+{
+  "name": "@rezejs/dom",
+  "version": "0.0.0",
+  "license": "MIT",
+  "author": "Konstantin Kireyev <https://github.com/knst0>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/knst0/reze-js.git",
+    "directory": "packages/dom"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./jsx-runtime": {
+      "import": "./dist/jsx-runtime.js",
+      "types": "./dist/jsx-runtime.d.ts"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@rezejs/signals": "workspace:*"
+  },
+  "devDependencies": {
+    "@rezejs/compiler": "workspace:*",
+    "@rezejs/vite-plugin": "workspace:*",
+    "happy-dom": "^20.0.0"
+  }
+}

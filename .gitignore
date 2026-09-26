@@ -1,0 +1,9 @@
+node_modules
+/target
+*.node
+dist
+
+/.idea
+
+/.claude
+/.omp

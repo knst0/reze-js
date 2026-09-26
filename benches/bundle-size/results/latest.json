@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-09-26T00:53:24.848Z",
+  "results": {
+    "@rezejs/example-counter js": {
+      "raw": 9214,
+      "gzip": 3568
+    }
+  }
+}

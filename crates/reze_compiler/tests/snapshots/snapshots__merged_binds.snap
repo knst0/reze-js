@@ -1,0 +1,24 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <input value={v()} checked={c()} style={{ color: color() }} class={cls()} />;"
+---
+import { template as _$template, renderEffect as _$renderEffect, style as _$style, className as _$className } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<input>");
+const a = (() => {
+  var _el$ = _tmpl$(),
+    _p$,
+    _p$2,
+    _p$3,
+    _p$4;
+  _$renderEffect(() => {
+    var _v$ = v(),
+      _v$2 = c(),
+      _v$3 = { color: color() },
+      _v$4 = cls();
+    _v$ !== _p$ && (_el$.value = _p$ = _v$);
+    _v$2 !== _p$2 && (_el$.checked = _p$2 = _v$2);
+    _v$3 !== _p$3 && (_p$3 = _$style(_el$, _v$3, _p$3));
+    _v$4 !== _p$4 && (_$className(_el$, _p$4 = _v$4));
+  });
+  return _el$;
+})();

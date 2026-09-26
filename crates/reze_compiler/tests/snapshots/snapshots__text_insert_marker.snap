@@ -1,0 +1,12 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <p>hi {name()}!</p>;"
+---
+import { template as _$template, insert as _$insert } from "reze-js";
+const _tmpl$ = /*#__PURE__*/ _$template("<p>hi <!>!</p>");
+const a = (() => {
+  var _el$ = _tmpl$(),
+    _el$2 = _el$.firstChild.nextSibling;
+  _$insert(_el$, name, _el$2);
+  return _el$;
+})();

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "reze-js",
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "reze-js": ["../reze-js/src/index.ts"],
+      "reze-js/jsx-runtime": ["../reze-js/src/jsx-runtime.ts"],
+      "@rezejs/dom": ["./src/index.ts"],
+      "@rezejs/dom/jsx-runtime": ["./src/jsx-runtime.ts"],
+      "@rezejs/signals": ["../signals/src/index.ts"],
+      "@rezejs/signals/render": ["../signals/src/render.ts"],
+      "@rezejs/signals/devtools": ["../signals/src/devtools.ts"]
+    }
+  },
+  "include": ["src", "tests", "*.mts"]
+}

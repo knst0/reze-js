@@ -1,0 +1,99 @@
+// Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
+import { effectDepth, track } from "./context";
+import { debugHook } from "./devtools";
+import { FlagDirty, FlagMutable } from "./flags";
+import { propagate, type Link, type ReactiveNode, shallowPropagate } from "./graph";
+import { scheduleFlush } from "./scheduler";
+
+export type Getter<T> = () => T;
+/** Writes `next`, or the result of calling it with the latest written value, and returns it. */
+export type Setter<T> = (next: T | ((prev: T) => T)) => T;
+/** `true` suppresses notification; `false` notifies on every write. */
+export type Equals<T> = false | ((prev: T, next: T) => boolean);
+export interface SignalOptions<T> {
+  /** Default `Object.is`. */
+  equals?: Equals<T>;
+  /** The name devtools show; ignored in production builds. */
+  name?: string;
+}
+
+export class SignalNode<T = unknown> implements ReactiveNode {
+  subs: Link | undefined = undefined;
+  subsTail: Link | undefined = undefined;
+  flags: number = FlagMutable;
+  currentValue: T;
+  pendingValue: T;
+  equals: Equals<T>;
+
+  constructor(value: T, equals: Equals<T>) {
+    this.currentValue = value;
+    this.pendingValue = value;
+    this.equals = equals;
+  }
+
+  update(): boolean {
+    this.flags = FlagMutable;
+    const prev = this.currentValue;
+    return differs(this.equals, prev, (this.currentValue = this.pendingValue));
+  }
+
+  read(): T {
+    if (this.flags & FlagDirty && this.update()) {
+      const subs = this.subs;
+      if (subs !== undefined) {
+        shallowPropagate(subs);
+      }
+    }
+    track(this);
+    return this.currentValue;
+  }
+
+  /** Stores `next` and notifies subscribers unless `equals` reports it equal to the latest write. */
+  write(next: T): void {
+    if (differs(this.equals, this.pendingValue, next)) {
+      this.pendingValue = next;
+      this.flags = FlagMutable | FlagDirty;
+      if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+        debugHook.written(this);
+      }
+      const subs = this.subs;
+      if (subs !== undefined) {
+        propagate(subs, effectDepth !== 0);
+        scheduleFlush();
+      }
+    }
+  }
+}
+
+/**
+ * Creates a writable signal. Read and write rights are separate values so the compiler can prove
+ * a signal constant by tracking the setter alone. To store a function, pass an updater returning it.
+ */
+export function signal<T>(): [Getter<T | undefined>, Setter<T | undefined>];
+export function signal<T>(initialValue: T, options?: SignalOptions<T>): [Getter<T>, Setter<T>];
+export function signal<T>(initialValue?: T, options?: SignalOptions<T | undefined>): [Getter<T | undefined>, Setter<T | undefined>] {
+  const node = new SignalNode(initialValue, options?.equals ?? Object.is);
+  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+    debugHook.created(node, "signal", options?.name, () => node.pendingValue);
+  }
+  return [node.read.bind(node), (signalSet<T | undefined>).bind(node)];
+}
+
+function signalSet<T>(this: SignalNode<T>, next: T | ((prev: T) => T)): T {
+  const value = typeof next === "function" ? (next as (prev: T) => T)(this.pendingValue) : next;
+  this.write(value);
+  return value;
+}
+
+/** `!equals(prev, next)` with the default `Object.is` intrinsic inlined. */
+export function differs<T>(equals: Equals<T>, prev: T, next: T): boolean {
+  if (equals === false) {
+    return true;
+  }
+  if (equals !== Object.is) {
+    return !equals(prev, next);
+  }
+  return !(prev === next
+    ? (prev as number) !== 0 || 1 / (prev as number) === 1 / (next as number)
+    : (prev as unknown) !== (prev as unknown) && (next as unknown) !== (next as unknown));
+}
