@@ -3,14 +3,13 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "import { For, signal } from \"reze-js\";\nconst [n, setN] = signal(0); setN(1);\nfunction Greeting({ name = fallback() }) {\n  return <p key=\"k\" clas=\"x\" title={n} title=\"y\">{name}<For each={[1, 2]}>{(i) => i}</For></p>;\n}"
 ---
 import { For, signal } from "reze-js";
-import { template as _$template, insert as _$insert, list as _$list } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<p key=\"k\" clas=\"x\" title=\"y\"></p>");
+import { template as _$template, append as _$append, list as _$list } from "reze-js";
 const [n, setN] = signal(0); setN(1);
 function Greeting({ name = fallback() }) {
   {
-  var _el$ = _tmpl$();
-  _$insert(_el$, name, null);
-  _$insert(_el$, _$list(() => [1, 2], (i) => i), null);
+  var _el$ = _$template("<p key=k clas=x title=y>");
+  _$append(_el$, name);
+  _$append(_el$, _$list(() => [1, 2], (i) => i));
   return _el$;
 }
 }

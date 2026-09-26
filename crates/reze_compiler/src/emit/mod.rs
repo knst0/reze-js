@@ -3,7 +3,7 @@ mod flow;
 mod script;
 mod template;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use oxc_allocator::Allocator;
@@ -45,6 +45,9 @@ helpers! {
     TemplateSvg => "templateSVG",
     TemplateMathMl => "templateMathML",
     Insert => "insert",
+    Child => "child",
+    Next => "next",
+    Append => "append",
     RenderEffect => "renderEffect",
     CreateComponent => "createComponent",
     MergeProps => "mergeProps",
@@ -67,13 +70,6 @@ helpers! {
     HotComponent => "hotComponent",
 }
 
-struct TemplateDecl<'a> {
-    name: &'a str,
-    factory: &'a str,
-    html: &'a str,
-    namespace: Namespace,
-}
-
 pub struct Emitter<'a, 's> {
     alloc: &'a Allocator,
     source: &'a str,
@@ -81,8 +77,6 @@ pub struct Emitter<'a, 's> {
     namer: Namer<'s>,
     aliases: [Option<&'a str>; HELPER_COUNT],
     helper_order: std::vec::Vec<Helper>,
-    templates: std::vec::Vec<TemplateDecl<'a>>,
-    template_names: HashMap<(&'a str, Namespace), &'a str>,
     events: BTreeSet<&'a str>,
 }
 
@@ -95,8 +89,6 @@ impl<'a, 's> Emitter<'a, 's> {
             namer,
             aliases: [None; HELPER_COUNT],
             helper_order: std::vec::Vec::new(),
-            templates: std::vec::Vec::new(),
-            template_names: HashMap::new(),
             events: BTreeSet::new(),
         }
     }
@@ -134,7 +126,7 @@ impl<'a, 's> Emitter<'a, 's> {
         code
     }
 
-    /// Runtime imports and template declarations; empty when there are none.
+    /// Runtime imports; empty when there are none.
     fn header(&self) -> String {
         let mut out = String::new();
         if !self.helper_order.is_empty() {
@@ -152,26 +144,6 @@ impl<'a, 's> Emitter<'a, 's> {
             }
             out.push_str(" } from ");
             push_js_string(&mut out, RUNTIME_MODULE);
-            out.push(';');
-        }
-        for (i, template) in self.templates.iter().enumerate() {
-            if i == 0 {
-                if !out.is_empty() {
-                    out.push('\n');
-                }
-                out.push_str("const ");
-            } else {
-                out.push_str(",\n  ");
-            }
-            let _ = write!(out, "{} = /*#__PURE__*/ {}(", template.name, template.factory);
-            if template.namespace == Namespace::Svg {
-                push_js_string(&mut out, &format!("<svg>{}</svg>", template.html));
-            } else {
-                push_js_string(&mut out, template.html);
-            }
-            out.push(')');
-        }
-        if !self.templates.is_empty() {
             out.push(';');
         }
         out
@@ -193,19 +165,21 @@ impl<'a, 's> Emitter<'a, 's> {
         alias
     }
 
-    fn template_name(&mut self, html: &'a str, namespace: Namespace) -> &'a str {
-        if let Some(name) = self.template_names.get(&(html, namespace)) {
-            return name;
-        }
+    /// `factory("html")`; the runtime caches the parse per HTML string.
+    fn push_template(&mut self, out: &mut Code, html: &str, namespace: Namespace) {
         let factory = self.helper(match namespace {
             Namespace::Html => Helper::Template,
             Namespace::Svg => Helper::TemplateSvg,
             Namespace::MathMl => Helper::TemplateMathMl,
         });
-        let name = self.fresh("_tmpl$");
-        self.templates.push(TemplateDecl { name, factory, html, namespace });
-        self.template_names.insert((html, namespace), name);
-        name
+        out.push(factory);
+        out.push("(");
+        if namespace == Namespace::Svg {
+            push_js_string(&mut out.text, &format!("<svg>{html}"));
+        } else {
+            push_js_string(&mut out.text, html);
+        }
+        out.push(")");
     }
 
     fn src(&self, out: &mut Code, span: Span) {

@@ -2,38 +2,36 @@
 source: crates/reze_compiler/tests/snapshots.rs
 expression: "function A({ a = new Date() }) { return <p>{a}</p>; }\nfunction B({ a = tag`x` }) { return <p>{a}</p>; }\nfunction C({ a = b, b }) { return <p>{a}{b}</p>; }\nfunction D({ a = x }) { const x = 1; return <p>{a}{x}</p>; }\nconst E = ({ a = <b /> }) => <p>{a}</p>;\nfunction F({ a = arguments[0] }) { return <p>{a}</p>; }"
 ---
-import { template as _$template, insert as _$insert } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<p></p>"),
-  _tmpl$2 = /*#__PURE__*/ _$template("<b></b>");
+import { template as _$template, insert as _$insert, append as _$append } from "reze-js";
 function A({ a = new Date() }) { {
-  var _el$ = _tmpl$();
+  var _el$ = _$template("<p>");
   _$insert(_el$, a);
   return _el$;
 } }
 function B({ a = tag`x` }) { {
-  var _el$2 = _tmpl$();
+  var _el$2 = _$template("<p>");
   _$insert(_el$2, a);
   return _el$2;
 } }
 function C({ a = b, b }) { {
-  var _el$3 = _tmpl$();
-  _$insert(_el$3, a, null);
-  _$insert(_el$3, b, null);
+  var _el$3 = _$template("<p>");
+  _$append(_el$3, a);
+  _$append(_el$3, b);
   return _el$3;
 } }
 function D({ a = x }) { const x = 1; {
-  var _el$4 = _tmpl$();
-  _$insert(_el$4, a, null);
-  _$insert(_el$4, x, null);
+  var _el$4 = _$template("<p>");
+  _$append(_el$4, a);
+  _$append(_el$4, x);
   return _el$4;
 } }
-const E = ({ a = _tmpl$2() }) => {
-  var _el$5 = _tmpl$();
+const E = ({ a = _$template("<b>") }) => {
+  var _el$5 = _$template("<p>");
   _$insert(_el$5, a);
   return _el$5;
 };
 function F({ a = arguments[0] }) { {
-  var _el$6 = _tmpl$();
+  var _el$6 = _$template("<p>");
   _$insert(_el$6, a);
   return _el$6;
 } }

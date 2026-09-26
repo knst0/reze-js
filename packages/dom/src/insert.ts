@@ -19,6 +19,11 @@ export function insert(parent: Node, value: unknown, marker?: Node | null): void
   }
 }
 
+/** {@link insert} after the existing children of `parent`. */
+export function append(parent: Node, value: unknown): void {
+  insert(parent, value, null);
+}
+
 function insertExpression(parent: Node, value: unknown, current: Current, marker: Node | null | undefined, unwrap?: boolean): Current {
   while (typeof current === "function") {
     current = current();

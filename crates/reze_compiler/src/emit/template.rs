@@ -10,31 +10,36 @@ use crate::ir::{
 
 impl<'a> Emitter<'a, '_> {
     pub(super) fn template(&mut self, out: &mut Code, template: &Template<'a>) {
-        let factory = self.template_name(template.html, template.namespace);
         if !template.has_work() {
-            out.push(factory);
-            out.push("()");
+            self.push_template(out, template.html, template.namespace);
             return;
         }
         let is_block = template.placement == Placement::Block;
         let mut names: std::vec::Vec<&'a str> = vec![""; template.node_count as usize];
         let root = self.fresh("_el$");
         names[0] = root;
-        let _ =
-            write!(out, "{}\n  var {root} = {factory}()", if is_block { "{" } else { "(() => {" });
+        let _ = write!(out, "{}\n  var {root} = ", if is_block { "{" } else { "(() => {" });
+        self.push_template(out, template.html, template.namespace);
         for walk in &template.walks {
             let name = self.fresh("_el$");
             names[walk.node.index()] = name;
             let _ = write!(out, ",\n    {name} = ");
+            if walk.next_siblings > 0 {
+                let next = self.helper(Helper::Next);
+                for _ in 0..walk.next_siblings {
+                    out.push(next);
+                    out.push("(");
+                }
+            }
             match walk.from {
                 From::FirstChildOf(parent) => {
-                    out.push(names[parent.index()]);
-                    out.push(".firstChild");
+                    let child = self.helper(Helper::Child);
+                    let _ = write!(out, "{child}({})", names[parent.index()]);
                 }
                 From::Node(previous) => out.push(names[previous.index()]),
             }
             for _ in 0..walk.next_siblings {
-                out.push(".nextSibling");
+                out.push(")");
             }
         }
         let previous: std::vec::Vec<&'a str> = if template.binds.len() > 1 {
@@ -78,20 +83,19 @@ impl<'a> Emitter<'a, '_> {
                 let _ = write!(out, ", {is_svg}, {has_children})");
             }
             Op::Insert { parent, value, anchor } => {
-                let insert = self.helper(Helper::Insert);
+                let insert = self.helper(match anchor {
+                    Anchor::End => Helper::Append,
+                    Anchor::Only | Anchor::Before(_) => Helper::Insert,
+                });
                 if let Child::Expr(ExprChild::Conditional(conditional)) = value {
                     self.conditional(out, insert, names[parent.index()], conditional);
                 } else {
                     let _ = write!(out, "{insert}({}, ", names[parent.index()]);
                     self.child(out, value);
                 }
-                match anchor {
-                    Anchor::Only => {}
-                    Anchor::Before(node) => {
-                        out.push(", ");
-                        out.push(names[node.index()]);
-                    }
-                    Anchor::End => out.push(", null"),
+                if let Anchor::Before(node) = anchor {
+                    out.push(", ");
+                    out.push(names[node.index()]);
                 }
                 out.push(")");
             }

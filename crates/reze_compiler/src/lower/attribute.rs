@@ -12,8 +12,8 @@ use super::{Lowerer, attribute_name, is_function};
 use crate::analyze::Analysis;
 use crate::diagnostic::{Code, Edit, Report};
 use crate::html::{
-    attribute_namespace, decode_entities, escape_attribute, event_name, is_delegated_event,
-    is_property, suggest_attribute,
+    attribute_namespace, decode_entities, event_name, is_delegated_event, is_property,
+    push_attribute_value, suggest_attribute,
 };
 use crate::ir::{AssignTarget, Bind, BindTarget, Handler, MemberKey, NodeId, Op, RefTarget, Value};
 use crate::kind::{Kind as ValueKind, static_kind};
@@ -225,9 +225,8 @@ impl<'a> Lowerer<'a, '_> {
         if is_static {
             let class = keys.attribute();
             if !class.is_empty() {
-                builder.html.push_str(" class=\"");
-                escape_attribute(&mut builder.html, &class);
-                builder.html.push('"');
+                builder.html.push_str(" class");
+                push_attribute_value(&mut builder.html, &class);
             }
             return;
         }
@@ -274,9 +273,8 @@ impl<'a> Lowerer<'a, '_> {
         classes: ClassToggles<'_, 'a>,
     ) {
         if !classes.static_tokens.is_empty() {
-            builder.html.push_str(" class=\"");
-            escape_attribute(&mut builder.html, &classes.static_tokens.join(" "));
-            builder.html.push('"');
+            builder.html.push_str(" class");
+            push_attribute_value(&mut builder.html, &classes.static_tokens.join(" "));
         }
         builder.reference(node);
         for (token, value) in classes.toggles {
@@ -365,9 +363,8 @@ impl<'a> Lowerer<'a, '_> {
         if let (Kind::Style, AttrValue::Expr(e)) = (kind, &value)
             && let Some(style) = static_style(e, self.analysis)
         {
-            builder.html.push_str(" style=\"");
-            escape_attribute(&mut builder.html, &style);
-            builder.html.push('"');
+            builder.html.push_str(" style");
+            push_attribute_value(&mut builder.html, &style);
             return;
         }
         if self.inline_literal(builder, kind, &value) {
@@ -477,7 +474,7 @@ impl<'a> Lowerer<'a, '_> {
             Literal::Bool(true) => {
                 html.push(' ');
                 html.push_str(html_name);
-                html.push_str("=\"true\"");
+                html.push_str("=true");
             }
             Literal::Str(s) if is_bool => {
                 if !s.is_empty() {
@@ -488,9 +485,7 @@ impl<'a> Lowerer<'a, '_> {
             Literal::Str(s) => {
                 html.push(' ');
                 html.push_str(html_name);
-                html.push_str("=\"");
-                escape_attribute(html, &s);
-                html.push('"');
+                push_attribute_value(html, &s);
             }
             Literal::Bool(false) | Literal::Nullish => {}
         }
@@ -525,9 +520,7 @@ impl<'a> Lowerer<'a, '_> {
             AttrValue::Str(s) => {
                 builder.html.push_str(" on");
                 builder.html.push_str(event);
-                builder.html.push_str("=\"");
-                escape_attribute(&mut builder.html, s);
-                builder.html.push('"');
+                push_attribute_value(&mut builder.html, s);
                 return;
             }
             AttrValue::Bare | AttrValue::Jsx(_) => return,

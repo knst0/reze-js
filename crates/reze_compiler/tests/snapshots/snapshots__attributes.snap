@@ -3,9 +3,8 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "const a = <a href={url()} title=\"t\" data-id={id} aria-label={label()} bool:hidden={h()} attr:x=\"1\" prop:foo={v} xlink:href=\"#i\" />;"
 ---
 import { template as _$template, setAttribute as _$setAttribute, renderEffect as _$renderEffect, setBoolAttribute as _$setBoolAttribute } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<a title=\"t\" x=\"1\" xlink:href=\"#i\"></a>");
 const a = (() => {
-  var _el$ = _tmpl$(),
+  var _el$ = _$template("<a title=t x=1 xlink:href=#i>"),
     _p$,
     _p$2,
     _p$3;

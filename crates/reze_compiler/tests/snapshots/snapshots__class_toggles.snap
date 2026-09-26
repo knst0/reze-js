@@ -3,16 +3,13 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "const a = <p class={{ negative: n() < 0 }} />;\nconst b = <p class={[\"box\", { on: on(), big: false, wide: true }, [\"x\", { deep: d() }]]} />;\nconst c = <p class={[\"btn\", { active: active() }]} />;\nconst d = <p class={{ once: flag }} />;\nconst e = <p class={{ \"a b\": ab() }} />;\nconst f = <p class={[\"on\", { on: on() }]} />;\nconst g = <p class={[{ on: on(), off: false }, { on: other() }]} />;\nconst h = <p class={[\"x\", { x: false, y: y() }]} />;\nconst i = <p class={[cls(), { on: on() }]} />;"
 ---
 import { template as _$template, renderEffect as _$renderEffect, toggleClass as _$toggleClass, className as _$className } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<p></p>"),
-  _tmpl$2 = /*#__PURE__*/ _$template("<p class=\"box wide x\"></p>"),
-  _tmpl$3 = /*#__PURE__*/ _$template("<p class=\"btn\"></p>");
 const a = (() => {
-  var _el$ = _tmpl$();
+  var _el$ = _$template("<p>");
   _$renderEffect(_p$ => _$toggleClass(_el$, "negative", !!(n() < 0), _p$));
   return _el$;
 })();
 const b = (() => {
-  var _el$2 = _tmpl$2(),
+  var _el$2 = _$template("<p class=\"box wide x\">"),
     _p$2,
     _p$3;
   _$renderEffect(() => {
@@ -24,37 +21,37 @@ const b = (() => {
   return _el$2;
 })();
 const c = (() => {
-  var _el$3 = _tmpl$3();
+  var _el$3 = _$template("<p class=btn>");
   _$renderEffect(_p$4 => _$toggleClass(_el$3, "active", !!(active()), _p$4));
   return _el$3;
 })();
 const d = (() => {
-  var _el$4 = _tmpl$();
+  var _el$4 = _$template("<p>");
   _$toggleClass(_el$4, "once", !!(flag));
   return _el$4;
 })();
 const e = (() => {
-  var _el$5 = _tmpl$();
+  var _el$5 = _$template("<p>");
   _$renderEffect(() => _$className(_el$5, { "a b": ab() }));
   return _el$5;
 })();
 const f = (() => {
-  var _el$6 = _tmpl$();
+  var _el$6 = _$template("<p>");
   _$renderEffect(() => _$className(_el$6, ["on", { on: on() }]));
   return _el$6;
 })();
 const g = (() => {
-  var _el$7 = _tmpl$();
+  var _el$7 = _$template("<p>");
   _$renderEffect(() => _$className(_el$7, [{ on: on(), off: false }, { on: other() }]));
   return _el$7;
 })();
 const h = (() => {
-  var _el$8 = _tmpl$();
+  var _el$8 = _$template("<p>");
   _$renderEffect(() => _$className(_el$8, ["x", { x: false, y: y() }]));
   return _el$8;
 })();
 const i = (() => {
-  var _el$9 = _tmpl$();
+  var _el$9 = _$template("<p>");
   _$renderEffect(() => _$className(_el$9, [cls(), { on: on() }]));
   return _el$9;
 })();

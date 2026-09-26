@@ -1,4 +1,5 @@
 packages:
+  - benches/component-scaling/frameworks/*
   - examples/*
   - packages/*
 allowBuilds:

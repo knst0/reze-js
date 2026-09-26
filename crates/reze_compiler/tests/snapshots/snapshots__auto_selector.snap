@@ -3,10 +3,7 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "import { For, computed, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nconst [hovered, setHovered] = signal(0);\nconst active = computed(() => selected() + 1);\nexport const list = (\n  <For each={rows()}>\n    {(row, index) => {\n      const [local, setLocal] = signal(0);\n      return (\n        <tr class={selected() === row().id ? \"danger\" : \"\"} title={row().id !== selected() ? \"a\" : \"b\"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>\n          {selected() === row().id && <b>on</b>}\n          <td onInput={() => setLocal(1)} data-local={local() === row().id} data-other={selected() === other()} data-loose={selected() == row().id} />\n        </tr>\n      );\n    }}\n  </For>\n);\nexport const unrelated = <p>{selected() === 1}</p>;\nsetHovered(1);"
 ---
 import { For, computed, signal } from "reze-js";
-import { list as _$list, template as _$template, insert as _$insert, branch as _$branch, renderEffect as _$renderEffect, setAttribute as _$setAttribute, selector as _$selector, delegateEvents as _$delegateEvents } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<tr><td></td></tr>"),
-  _tmpl$2 = /*#__PURE__*/ _$template("<b>on</b>"),
-  _tmpl$3 = /*#__PURE__*/ _$template("<p></p>");
+import { list as _$list, template as _$template, child as _$child, insert as _$insert, branch as _$branch, renderEffect as _$renderEffect, setAttribute as _$setAttribute, selector as _$selector, delegateEvents as _$delegateEvents } from "reze-js";
 const [selected, setSelected] = signal(0);
 const [hovered, setHovered] = signal(0);
 const active = computed(() => selected() + 1);
@@ -14,8 +11,8 @@ export const list = (
   ((_sel$, _sel$2, _sel$3) => _$list(() => rows(), (row, index) => {
       const [local, setLocal] = signal(0);
       {
-  var _el$ = _tmpl$(),
-    _el$2 = _el$.firstChild,
+  var _el$ = _$template("<tr><td>"),
+    _el$2 = _$child(_el$),
     _p$,
     _p$2,
     _p$3,
@@ -24,7 +21,7 @@ export const list = (
     _p$6,
     _p$7;
   _el$.$$click = () => setSelected(selected() === row().id ? 0 : row().id);
-  _$insert(_el$, _$branch(() => _sel$(row().id), () => _tmpl$2()), _el$2);
+  _$insert(_el$, _$branch(() => _sel$(row().id), () => _$template("<b>on")), _el$2);
   _el$2.$$input = () => setLocal(1);
   _$renderEffect(() => {
     var _v$ = _sel$(row().id) ? "danger" : "",
@@ -47,7 +44,7 @@ export const list = (
     }))(_$selector(selected), _$selector(hovered), _$selector(active))
 );
 export const unrelated = (() => {
-  var _el$3 = _tmpl$3();
+  var _el$3 = _$template("<p>");
   _$insert(_el$3, () => selected() === 1);
   return _el$3;
 })();

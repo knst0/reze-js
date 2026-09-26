@@ -3,15 +3,13 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "import { signal } from \"reze-js\"; export function Counter() { const [n, setN] = signal(0); return <button onClick={() => setN(n() + 1)}>{n()}</button>; } export const Label = () => <b/>;"
 ---
 import { signal } from "reze-js";
-import { template as _$template, insert as _$insert, hotComponent as _$hotComponent, delegateEvents as _$delegateEvents } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<button></button>"),
-  _tmpl$2 = /*#__PURE__*/ _$template("<b></b>"); export function Counter() { const [n, setN] = signal(0, { name: "n" }); {
-  var _el$ = _tmpl$();
+import { template as _$template, insert as _$insert, hotComponent as _$hotComponent, delegateEvents as _$delegateEvents } from "reze-js"; export function Counter() { const [n, setN] = signal(0, { name: "n" }); {
+  var _el$ = _$template("<button>");
   _el$.$$click = () => setN(n() + 1);
   _$insert(_el$, n);
   return _el$;
 } }
-Counter = _$hotComponent(import.meta.hot, "case.tsx#Counter", Counter); export const Label = _$hotComponent(import.meta.hot, "case.tsx#Label", () => _tmpl$2());
+Counter = _$hotComponent(import.meta.hot, "case.tsx#Counter", Counter); export const Label = _$hotComponent(import.meta.hot, "case.tsx#Label", () => _$template("<b>"));
 if (import.meta.hot) import.meta.hot.accept();
 
 _$delegateEvents(["click"]);

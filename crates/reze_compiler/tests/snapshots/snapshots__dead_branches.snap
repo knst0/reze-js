@@ -2,13 +2,11 @@
 source: crates/reze_compiler/tests/snapshots.rs
 expression: "const DEBUG = false;\nconst a = <div>{false && <b>never</b>}{true ? <i>y</i> : <u>n</u>}{DEBUG && <p />}</div>;"
 ---
-import { template as _$template, insert as _$insert, branch as _$branch } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<div><i>y</i></div>"),
-  _tmpl$2 = /*#__PURE__*/ _$template("<p></p>");
+import { template as _$template, append as _$append, branch as _$branch } from "reze-js";
 const DEBUG = false;
 const a = (() => {
-  var _el$ = _tmpl$();
-  _$insert(_el$, _$branch(() => DEBUG, () => _tmpl$2()), null);
+  var _el$ = _$template("<div><i>y");
+  _$append(_el$, _$branch(() => DEBUG, () => _$template("<p>")));
   return _el$;
 })();
 // info

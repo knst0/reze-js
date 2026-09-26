@@ -2,14 +2,13 @@
 source: crates/reze_compiler/tests/snapshots.rs
 expression: "const Button = ({ label = \"Save\", size = 2, disabled = false, icon = undefined }) => (\n  <button disabled={disabled} class={size}>{icon}{label}</button>\n);"
 ---
-import { template as _$template, insert as _$insert, renderEffect as _$renderEffect, setAttribute as _$setAttribute, className as _$className } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<button></button>");
+import { template as _$template, append as _$append, renderEffect as _$renderEffect, setAttribute as _$setAttribute, className as _$className } from "reze-js";
 const Button = (_props$) => {
-  var _el$ = _tmpl$(),
+  var _el$ = _$template("<button>"),
     _p$,
     _p$2;
-  _$insert(_el$, () => _props$.icon, null);
-  _$insert(_el$, () => (_props$.label === undefined ? "Save" : _props$.label), null);
+  _$append(_el$, () => _props$.icon);
+  _$append(_el$, () => (_props$.label === undefined ? "Save" : _props$.label));
   _$renderEffect(() => {
     var _v$ = (_props$.disabled === undefined ? false : _props$.disabled),
       _v$2 = (_props$.size === undefined ? 2 : _props$.size);

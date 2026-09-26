@@ -3,14 +3,12 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "function A() { return <p title={t()}>x</p>; } const B = () => (<p>{n()}</p>);"
 ---
 import { template as _$template, renderEffect as _$renderEffect, setAttribute as _$setAttribute, insert as _$insert } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<p>x</p>"),
-  _tmpl$2 = /*#__PURE__*/ _$template("<p></p>");
 function A() { {
-  var _el$ = _tmpl$();
+  var _el$ = _$template("<p>x");
   _$renderEffect(() => _$setAttribute(_el$, "title", t()));
   return _el$;
 } } const B = () => {
-  var _el$2 = _tmpl$2();
+  var _el$2 = _$template("<p>");
   _$insert(_el$2, n);
   return _el$2;
 };

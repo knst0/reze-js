@@ -3,9 +3,8 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "const a = <div onClick={() => go()} onInput={[pick, 1]} onKeyDown={handler} on:scroll={s} onDoubleClick={d} onclick=\"legacy()\" />;"
 ---
 import { template as _$template, addEventListener as _$addEventListener, delegateEvents as _$delegateEvents } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<div onclick=\"legacy()\"></div>");
 const a = (() => {
-  var _el$ = _tmpl$();
+  var _el$ = _$template("<div onclick=legacy()>");
   _el$.$$click = () => go();
   _el$.$$input = pick;
   _el$.$$inputData = 1;

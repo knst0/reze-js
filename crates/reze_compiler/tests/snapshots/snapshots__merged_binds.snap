@@ -3,9 +3,8 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "const a = <input value={v()} checked={c()} style={{ color: color() }} class={cls()} />;"
 ---
 import { template as _$template, renderEffect as _$renderEffect, style as _$style, className as _$className } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<input>");
 const a = (() => {
-  var _el$ = _tmpl$(),
+  var _el$ = _$template("<input>"),
     _p$,
     _p$2,
     _p$3,

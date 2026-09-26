@@ -19,7 +19,7 @@ fn errors(source: &str) -> Vec<Diagnostic> {
     compile(source, "test.tsx", &Options::default()).err().expect("fails")
 }
 
-/// The HTML of every template factory, in declaration order.
+/// The HTML of every template factory call, in source order.
 fn templates(code: &str) -> Vec<String> {
     code.split("_$template")
         .skip(1)
@@ -68,7 +68,15 @@ fn syntax_errors_are_parse_errors_at_their_position() {
 #[test]
 fn a_marker_separates_an_insert_from_texts_the_parser_would_merge() {
     let code = run("const a = <p>hi {name()}!</p>;\nconst b = <p>{a()}:{b()}<i/>{c()}</p>;");
-    assert_eq!(templates(&code), ["<p>hi <!>!</p>", "<p>:<i></i></p>"]);
+    assert_eq!(templates(&code), ["<p>hi <!>!", "<p>:<i>"]);
+}
+
+#[test]
+fn templates_drop_trailing_end_tags_and_needless_attribute_quotes() {
+    let code = run(
+        "const a = <div><p class=\"a b\" id=\"x\" title=\"\" data-q=\"a=b\"></p><i>t</i></div>;",
+    );
+    assert_eq!(templates(&code), [r#"<div><p class="a b" id=x title data-q="a=b"></p><i>t"#]);
 }
 
 #[test]
@@ -78,27 +86,29 @@ fn text_follows_jsx_whitespace_and_entity_rules() {
     );
     assert_eq!(
         templates(&code),
-        ["<p title=\"x &amp; &quot;y&quot;\">a &amp; b c\u{a0}AB &lt;&amp;></p>"]
+        ["<p title=\"x &amp; &quot;y&quot;\">a &amp; b c\u{a0}AB &lt;&amp;>"]
     );
 }
 
 #[test]
 fn svg_and_mathml_roots_pick_their_factories() {
     let code = run("const a = <path d=\"M0\" />;\nconst b = <svg><path /></svg>;");
-    assert!(code.contains(r#"_$templateSVG("<svg><path d=\"M0\"></path></svg>")"#), "{code}");
-    assert!(code.contains(r#"_$template("<svg><path></path></svg>")"#), "{code}");
+    assert!(code.contains(r#"_$templateSVG("<svg><path d=M0>")"#), "{code}");
+    assert!(code.contains(r#"_$template("<svg><path>")"#), "{code}");
     let code = run("const a = <math><mi>{x}</mi></math>;");
-    assert!(code.contains(r#"_$templateMathML("<math><mi></mi></math>")"#), "{code}");
+    assert!(code.contains(r#"_$templateMathML("<math><mi>")"#), "{code}");
     let code = run("const a = <div><math><mi>x</mi></math></div>;");
     assert!(!code.contains("templateMathML"), "{code}");
 }
 
 #[test]
 fn generated_names_avoid_names_in_the_source() {
-    let code = run("const _tmpl$ = 1, _el$ = 2, _$insert = 3, _p$ = 4, _v$ = 5, _$branch = 6;\n\
-         export const a = <p class={c()} title={t()}>{_tmpl$}{_el$}{_$insert}{_p$}{_v$}{x() ? <b/> : _$branch}<b/></p>;");
+    let code = run(
+        "const _$template = 1, _el$ = 2, _$insert = 3, _p$ = 4, _v$ = 5, _$branch = 6;\n\
+         export const a = <p class={c()} title={t()}>{_$template}{_el$}{_$insert}{_p$}{_v$}{x() ? <b/> : _$branch}<b/></p>;",
+    );
     assert!(
-        code.contains("_tmpl$2") && code.contains("_el$2") && code.contains("_$insert2"),
+        code.contains("_$template2(") && code.contains("_el$2") && code.contains("_$insert2"),
         "{code}"
     );
     assert!(
@@ -110,19 +120,18 @@ fn generated_names_avoid_names_in_the_source() {
 #[test]
 fn string_concatenation_folds_but_number_addition_does_not() {
     let code = run(r#"const a = <div title={"a" + "b" + `c`}>{"x" + 1}</div>;"#);
-    assert_eq!(templates(&code), [r#"<div title="abc">x1</div>"#]);
+    assert_eq!(templates(&code), ["<div title=abc>x1"]);
     let code = run("const a = <div title={1 + 2}>{\"x\" + y}</div>;");
-    assert!(!code.contains("title=\""), "{code}");
+    assert!(!code.contains("title="), "{code}");
     assert!(code.contains("1 + 2"), "{code}");
 }
 
 #[test]
-fn runtime_imports_and_templates_follow_the_leading_imports() {
+fn runtime_imports_follow_the_leading_imports() {
     let code = run("import { a } from \"a\";\nimport b from \"b\";\nconst x = <i/>;");
     let runtime = code.find("from \"reze-js\"").unwrap();
     assert!(code.find("from \"b\"").unwrap() < runtime);
-    assert!(runtime < code.find("_tmpl$ =").unwrap());
-    assert!(code.find("_tmpl$ =").unwrap() < code.find("const x").unwrap());
+    assert!(runtime < code.find("const x").unwrap());
 }
 
 #[test]
@@ -154,7 +163,7 @@ fn exported_signals_are_not_folded() {
     assert!(code.contains("export const [x] = signal(1)"), "{code}");
     let code =
         run("import { signal } from \"reze-js\";\nconst [x] = signal(1);\nconst a = <p>{x()}</p>;");
-    assert!(code.contains("const x = 1") && templates(&code) == ["<p>1</p>"], "{code}");
+    assert!(code.contains("const x = 1") && templates(&code) == ["<p>1"], "{code}");
 }
 
 #[test]

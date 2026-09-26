@@ -7,3 +7,5 @@ dist
 
 /.claude
 /.omp
+
+/benches/component-scaling/frameworks/*/src

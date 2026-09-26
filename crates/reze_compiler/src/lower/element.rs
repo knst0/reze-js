@@ -5,7 +5,7 @@ use oxc_span::Span;
 use super::children::Item;
 use super::{Lowerer, attribute_name};
 use crate::diagnostic::{Code, Report};
-use crate::html::{is_mathml_root, is_svg_element, is_void};
+use crate::html::{is_mathml_root, is_svg_element, is_void, trim_trailing_end_tags};
 use crate::ir::{Bind, From, Namespace, NodeId, Op, Placement, Template, Walk};
 
 pub struct TemplateBuilder<'a> {
@@ -48,7 +48,8 @@ impl<'a> TemplateBuilder<'a> {
         self.nodes[node.index()].is_referenced = true;
     }
 
-    fn finish(self, namespace: Namespace, alloc: &'a Allocator) -> Template<'a> {
+    fn finish(mut self, namespace: Namespace, alloc: &'a Allocator) -> Template<'a> {
+        trim_trailing_end_tags(&mut self.html);
         let mut needs_walk = vec![false; self.nodes.len()];
         mark_needs_walk(&self.nodes, NodeId::ROOT, &mut needs_walk);
         let mut walks = Vec::new_in(&alloc);

@@ -99,7 +99,7 @@ pub fn compile(
     Ok(Some(Output { code: code.text, map, diagnostics }))
 }
 
-/// Runtime imports and templates go after the hashbang, directives and leading imports.
+/// Runtime imports go after the hashbang, directives and leading imports.
 fn header_position(program: &Program<'_>) -> u32 {
     let mut at = program.hashbang.as_ref().map_or(0, |hashbang| hashbang.span.end);
     if let Some(directive) = program.directives.last() {

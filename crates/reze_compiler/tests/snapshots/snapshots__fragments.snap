@@ -3,7 +3,6 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "const a = <>{a()}<b />text</>;\nconst b = <></>;\nconst c = <>{x}</>;"
 ---
 import { template as _$template } from "reze-js";
-const _tmpl$ = /*#__PURE__*/ _$template("<b></b>");
-const a = [a, _tmpl$(), "text"];
+const a = [a, _$template("<b>"), "text"];
 const b = [];
 const c = x;

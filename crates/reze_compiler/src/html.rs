@@ -152,8 +152,40 @@ pub fn escape_text(out: &mut String, s: &str) {
     push_escaped(out, s, false);
 }
 
-pub fn escape_attribute(out: &mut String, s: &str) {
-    push_escaped(out, s, true);
+/// Appends `=value` after an attribute name, unquoted when the HTML parser reads it back
+/// unchanged; an empty value appends nothing, since a bare attribute is empty.
+pub fn push_attribute_value(out: &mut String, value: &str) {
+    if value.is_empty() {
+        return;
+    }
+    let needs_quotes = value.bytes().any(|b| {
+        matches!(
+            b,
+            b' ' | b'\t' | b'\n' | b'\x0C' | b'\r' | b'"' | b'\'' | b'=' | b'<' | b'>' | b'`'
+        )
+    });
+    out.push('=');
+    if needs_quotes {
+        out.push('"');
+        push_escaped(out, value, true);
+        out.push('"');
+    } else {
+        push_escaped(out, value, true);
+    }
+}
+
+/// Drops the closing tags that end `html`: the parser closes open elements at end of input.
+pub fn trim_trailing_end_tags(html: &mut String) {
+    while html.ends_with('>') {
+        let Some(start) = html.rfind("</") else { return };
+        let name = &html[start + 2..html.len() - 1];
+        if name.is_empty()
+            || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b':')
+        {
+            return;
+        }
+        html.truncate(start);
+    }
 }
 
 /// Appends `s` as a double-quoted JS string literal.

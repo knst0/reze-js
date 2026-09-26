@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "bench": "vitest bench --run",
+    "bench:scaling": "node benches/component-scaling/run.mjs",
     "bench:size": "node benches/bundle-size/log.mjs",
     "build": "pnpm -r --filter \"./packages/*\" build",
     "fmt": "oxfmt",
