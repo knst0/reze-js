@@ -2,28 +2,19 @@ import { flush } from "@rezejs/signals";
 import { cleanup, mount } from "@rezejs/test-utils";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
-import { Outlet, Router, useParams } from "../src";
-import { fileRoutes, type FileRouteEntry } from "@rezejs/router/fs";
+import { createRouter, defineRoutes, memoryHistory } from "../src";
+import { defineFileRoute, fileRoutes, type FileRouteEntry } from "../src/fs";
 
 afterEach(cleanup);
 beforeEach(() => window.history.replaceState(null, "", "/"));
 
-async function settle(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  flush();
-}
-
 const Home = () => <h1>home</h1>;
-const Users = () => (
-  <section>
+const Users = (props: { children?: unknown }) => (
+  <>
     <h1>users</h1>
-    <Outlet />
-  </section>
+    {props.children as never}
+  </>
 );
-const User = () => {
-  const params = useParams();
-  return <p>user {params.id}</p>;
-};
 
 function entries(): FileRouteEntry[] {
   return [
@@ -40,47 +31,89 @@ function entries(): FileRouteEntry[] {
         {
           path: "/:id",
           page: true,
-          $component: { src: "routes/users/[id].tsx", require: () => ({ default: User }) },
+          $component: {
+            src: "routes/users.tsx",
+            import: () => Promise.resolve({ default: Users }),
+          },
+        },
+        {
+          path: "/new",
+          page: true,
+          $component: { require: () => ({ default: Home }) },
         },
       ],
     },
-    { path: "/ghost", $component: undefined },
+    { path: "/ghost" },
   ];
 }
 
-test("fileRoutes nests pageRoutes and skips entries without a component", async () => {
-  window.history.replaceState(null, "", "/users/7");
-  const { el } = mount(() => <Router routes={fileRoutes(entries())} />);
-  await settle();
-  expect(el.innerHTML).toBe("<section><h1>users</h1><p>user 7</p></section>");
+test("fileRoutes maps every entry with component, config and children", () => {
+  const routes = fileRoutes(entries());
+  expect(routes).toHaveLength(3);
+  expect(routes[0]).toMatchObject({ path: "/", info: { filesystem: true } });
+  expect(routes[2]).toMatchObject({ path: "/ghost", component: undefined });
+  const users = routes[1]!;
+  expect(users.path).toBe("/users");
+  expect(users.children).toHaveLength(2);
 });
 
-test("a route preload runs next to the module load", async () => {
-  const seen: string[] = [];
-  const gate = Promise.withResolvers<Record<string, unknown>>();
+test("eager refs pass through, lazy refs share by source", () => {
+  const routes = fileRoutes(entries());
+  const users = routes[1]!;
+  const [param, fresh] = users.children as unknown as { component: unknown }[];
+  expect(param!.component).toBe(users.component);
+  expect(fresh!.component).toBe(Home);
+});
+
+test("a route export spreads into the definition", () => {
   const routes = fileRoutes([
     {
-      path: "/",
+      path: "/post",
       page: true,
-      $component: { src: "routes/slow.tsx", import: () => gate.promise },
+      $component: { src: "routes/post.tsx", import: () => Promise.resolve({ default: Home }) },
       $$route: {
-        require: () => ({
-          route: {
-            preload: () => {
-              seen.push("data");
-              return Promise.resolve();
-            },
-          },
-        }),
+        require: () => ({ route: defineFileRoute("/post", { info: { breadcrumb: "Post" } }) }),
       },
     },
   ]);
-  const preload = (routes[0]?.component as { preload: () => Promise<unknown> } | undefined)
-    ?.preload;
-  expect(preload).toBeTypeOf("function");
-  const pending = preload?.();
-  gate.resolve({ default: Home });
-  const module = (await pending) as { default: typeof Home };
-  expect(seen).toEqual(["data"]);
-  expect(module.default).toBe(Home);
+  expect(routes[0]).toMatchObject({
+    path: "/post",
+    info: { breadcrumb: "Post", filesystem: true },
+  });
+});
+
+test("file routes render through the router", async () => {
+  const history = memoryHistory("/users/new");
+  const App = createRouter({ history, routes: fileRoutes(entries()) });
+  const { el } = mount(() => <App />);
+  for (let round = 0; round < 3; round++) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    flush();
+  }
+  expect(el.innerHTML).toBe("<h1>users</h1><h1>home</h1>");
+});
+
+test("defineFileRoute keeps its config", () => {
+  const route = defineFileRoute("/blog/:id", {
+    preload: ({ params }) => `post-${params.id}`,
+    info: { breadcrumb: "Blog" },
+  });
+  expect(
+    route.preload!({ params: { id: "7" }, location: undefined as never, intent: "initial" }),
+  ).toBe("post-7");
+  expect(route.info).toEqual({ breadcrumb: "Blog" });
+});
+
+test("manifest tuples keep literal paths", () => {
+  const routes = fileRoutes([
+    {
+      path: "/",
+      $component: { src: "a", import: () => Promise.resolve({ default: Home }) },
+    },
+    {
+      path: "/users/:id",
+      $component: { src: "b", import: () => Promise.resolve({ default: Users }) },
+    },
+  ] as const);
+  expect(defineRoutes(routes).length).toBe(2);
 });

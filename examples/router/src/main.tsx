@@ -1,9 +1,16 @@
-import { Outlet, Route, Router, useIsRouting, useLocation } from "@rezejs/router";
+import {
+  createRouter,
+  defineRoute,
+  defineRoutes,
+  useIsRouting,
+  useLocation,
+  type RouteSectionProps,
+} from "@rezejs/router";
 import { lazy, Loading, render } from "reze-js";
 
 const User = lazy(() => import("./User"));
 
-function Layout() {
+function Layout(props: RouteSectionProps) {
   const isRouting = useIsRouting();
   return (
     <>
@@ -11,9 +18,7 @@ function Layout() {
         <a href="/">Home</a> <a href="/users">Users</a> <a href="/nowhere">Broken link</a>
         {isRouting() && <span> loading…</span>}
       </nav>
-      <main>
-        <Outlet />
-      </main>
+      <main>{props.children}</main>
     </>
   );
 }
@@ -22,7 +27,7 @@ function Home() {
   return <h1>Home</h1>;
 }
 
-function Users() {
+function Users(props: RouteSectionProps) {
   return (
     <>
       <h1>Users</h1>
@@ -34,7 +39,7 @@ function Users() {
           <a href="/users/2">Grace</a>
         </li>
       </ul>
-      <Outlet />
+      {props.children}
     </>
   );
 }
@@ -43,18 +48,31 @@ function NotFound() {
   return <p>Nothing at {useLocation().pathname}.</p>;
 }
 
+const Router = createRouter({
+  routes: defineRoutes([
+    defineRoute({
+      path: "/",
+      component: Layout,
+      children: [
+        defineRoute({ path: "/", component: Home }),
+        defineRoute({
+          path: "users",
+          component: Users,
+          children: [
+            defineRoute({ path: "/", component: () => null }),
+            defineRoute({ path: ":id", component: User }),
+          ],
+        }),
+        defineRoute({ path: "*rest", component: NotFound }),
+      ],
+    }),
+  ]),
+});
+
 render(
   () => (
     <Loading fallback={<p>loading…</p>}>
-      <Router>
-        <Route path="/" component={Layout}>
-          <Route path="/" component={Home} />
-          <Route path="users" component={Users}>
-            <Route path=":id" component={User} />
-          </Route>
-          <Route path="*rest" component={NotFound} />
-        </Route>
-      </Router>
+      <Router />
     </Loading>
   ),
   document.getElementById("app")!,
