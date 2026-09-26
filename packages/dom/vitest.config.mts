@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import { defineConfig } from "vitest/config";
 
-import reze from "../vite-plugin/src/index.ts";
+import reze from "../vite-plugin/src/index";
 
 const packages = join(import.meta.dirname, "..");
 
