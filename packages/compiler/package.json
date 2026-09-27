@@ -1,6 +1,13 @@
 {
   "name": "@rezejs/compiler",
   "version": "0.0.0",
+  "license": "MIT",
+  "author": "Konstantin Kireyev <https://github.com/knst0>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/knst0/reze-js.git",
+    "directory": "packages/compiler"
+  },
   "files": [
     "index.js",
     "index.d.ts",

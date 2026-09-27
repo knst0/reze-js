@@ -4,5 +4,5 @@ export default defineConfig({
   entry: ["src/index.ts"],
   platform: "neutral",
   unbundle: true,
-  dts: true,
+  dts: { tsconfig: "./tsconfig.build.json" },
 });
