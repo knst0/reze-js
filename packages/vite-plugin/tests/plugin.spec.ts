@@ -98,6 +98,21 @@ test("the dev server compiles with source maps, debug names and hot-swap", () =>
   });
 });
 
+test("the links option claims anchors for its module", () => {
+  const { transform } = setup(buildConfig, clientEnvironment, { links: "@rezejs/router" });
+  transform("src", "/src/App.tsx");
+  expect(compile.mock.calls[0]![2]).toMatchObject({ links: "@rezejs/router" });
+});
+
+test("api.claimLinks turns anchor claiming on for later transforms", () => {
+  const plugin = reze();
+  (plugin.configResolved as (config: ResolvedConfig) => void)(buildConfig);
+  plugin.api!.claimLinks("@rezejs/router");
+  const hook = plugin.transform as { handler: (code: string, id: string) => unknown };
+  hook.handler.call({ environment: { config: clientEnvironment }, warn: vi.fn() }, "src", "/src/App.tsx");
+  expect(compile.mock.calls[0]![2]).toMatchObject({ links: "@rezejs/router" });
+});
+
 test("a build with sourcemap enabled asks for a source map", () => {
   const { transform } = setup(buildConfig, { ...clientEnvironment, build: { sourcemap: "hidden" } });
   transform("src", "/src/App.tsx");

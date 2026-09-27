@@ -104,6 +104,17 @@ fn class_toggles<'b, 'a>(
     Some(ClassToggles { static_tokens, toggles })
 }
 
+/// Whether a literal href may be a router path: none of empty, `#…`, `?…`, `//…` or `scheme:…`.
+fn is_routable_href(href: &str) -> bool {
+    let Some(first) = href.bytes().next() else { return false };
+    if matches!(first, b'#' | b'?') || href.starts_with("//") {
+        return false;
+    }
+    let scheme_end =
+        href.bytes().position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'+' | b'.' | b'-')));
+    !(first.is_ascii_alphabetic() && scheme_end.is_some_and(|end| href.as_bytes()[end] == b':'))
+}
+
 enum AttrValue<'b, 'a> {
     Bare,
     Str(&'a str),
@@ -150,6 +161,8 @@ impl<'a> Lowerer<'a, '_> {
             .filter(|&(i, (_, name))| !is_overridden[i] && *name == "class")
             .map(|(_, (a, _))| *a)
             .collect();
+        let link = self.claimed_href(tag, &attrs, &names, &is_overridden);
+        let mut link_href = None;
         let mut deferred = std::vec::Vec::new();
         let mut is_class_done = false;
         for (i, (a, name)) in attrs.iter().zip(&names).enumerate() {
@@ -163,9 +176,56 @@ impl<'a> Lowerer<'a, '_> {
                 }
                 continue;
             }
+            if link == Some(i)
+                && let Some(JSXAttributeValue::ExpressionContainer(c)) = &a.value
+                && let Some(e) = c.expression.as_expression()
+                && is_dynamic(e, false, self.analysis)
+            {
+                self.check_signal_called(e);
+                link_href = Some(self.getter(e));
+                continue;
+            }
             self.attribute(builder, node, tag, a, name, is_svg, &mut deferred);
         }
+        if link.is_some() {
+            builder.reference(node);
+            builder.ops.push(Op::Link { node, href: link_href });
+        }
         deferred
+    }
+
+    /// Index of the `href` that makes this element a claimed `<a>` (see `Settings::links`).
+    fn claimed_href(
+        &self,
+        tag: &str,
+        attrs: &[&JSXAttribute<'a>],
+        names: &[&'a str],
+        is_overridden: &[bool],
+    ) -> Option<usize> {
+        if !self.settings.links || tag != "a" {
+            return None;
+        }
+        let is_aria_current = |name: &&str| {
+            matches!(*name, "aria-current" | "attr:aria-current" | "prop:ariaCurrent")
+        };
+        if names.iter().any(is_aria_current) {
+            return None;
+        }
+        let i = (0..attrs.len()).find(|&i| names[i] == "href" && !is_overridden[i])?;
+        let is_routable = match &attrs[i].value {
+            Some(JSXAttributeValue::StringLiteral(s)) => {
+                is_routable_href(&decode_entities(s.value.as_str()))
+            }
+            Some(JSXAttributeValue::ExpressionContainer(c)) => {
+                match literal(c.expression.as_expression()?, self.analysis) {
+                    Some(Literal::Str(s)) => is_routable_href(&s),
+                    Some(Literal::Bool(_) | Literal::Nullish) => false,
+                    None => true,
+                }
+            }
+            None | Some(JSXAttributeValue::Element(_) | JSXAttributeValue::Fragment(_)) => false,
+        };
+        is_routable.then_some(i)
     }
 
     /// Flags every attribute a later one with the same name overrides.

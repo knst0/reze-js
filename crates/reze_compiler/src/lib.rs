@@ -33,11 +33,14 @@ pub struct Options {
     pub debug_names: bool,
     /// Register components for hot-swap through `import.meta.hot`.
     pub hot: bool,
+    /// Module exporting `link`: when set, native `<a href>` elements are claimed and passed to
+    /// `link(el, href?)`, which keeps their `aria-current`/`data-active`/`data-pending` current.
+    pub links: Option<String>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { source_map: true, debug_names: false, hot: false }
+        Self { source_map: true, debug_names: false, hot: false, links: None }
     }
 }
 
@@ -83,7 +86,11 @@ pub fn compile(
         .into_scoping_and_nodes();
     let mut reports = Vec::new();
     let analysis = analyze::analyze(program, &scoping, &nodes, &mut reports);
-    let settings = lower::Settings { debug_names: options.debug_names, hot: options.hot };
+    let settings = lower::Settings {
+        debug_names: options.debug_names,
+        hot: options.hot,
+        links: options.links.is_some(),
+    };
     let lowerer =
         lower::Lowerer::new(&allocator, source, &analysis, settings, Namer::new(&scoping), reports);
     let lowered = lowerer.program(program, header_position(program));
@@ -93,8 +100,9 @@ pub fn compile(
     }
     let Some(body) = lowered.body else { return Ok(None) };
     let filename = allocator.alloc_str(filename);
-    let code = emit::Emitter::new(&allocator, source, filename, lowered.namer)
-        .module(&lowered.head, &body);
+    let code =
+        emit::Emitter::new(&allocator, source, filename, lowered.namer, options.links.as_deref())
+            .module(&lowered.head, &body);
     let map = options.source_map.then(|| code.source_map(filename, source));
     Ok(Some(Output { code: code.text, map, diagnostics }))
 }

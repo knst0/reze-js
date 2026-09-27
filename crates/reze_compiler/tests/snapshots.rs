@@ -138,6 +138,27 @@ const CASES: &[(&str, &str)] = &[
 
 const HOT: &str = "import { signal } from \"reze-js\"; export function Counter() { const [n, setN] = signal(0); return <button onClick={() => setN(n() + 1)}>{n()}</button>; } export const Label = () => <b/>;";
 
+const LINK_CASES: &[(&str, &str)] = &[
+    ("link_static", "const a = <nav><a href=\"/x\" class=\"n\">X</a><a href={\"/y\"}>Y</a></nav>;"),
+    ("link_root_quoted", "const a = <a href=\"/\">home</a>;"),
+    (
+        "link_dynamic",
+        "const a = <a href={url()} title={t()}>go</a>;\nconst b = <a href={`/u/${id()}`} />;",
+    ),
+    ("link_constant_expression", "const to = \"/\" + page;\nconst a = <a href={to}>go</a>;"),
+    (
+        "link_aria_current_unclaimed",
+        "const a = <a href=\"/x\" aria-current=\"page\" />;\nconst b = <a href={u()} aria-current={c()} />;",
+    ),
+    ("link_spread_unclaimed", "const a = <a {...p} href=\"/x\" />;"),
+    (
+        "link_external_unclaimed",
+        "const a = <p><a href=\"#x\" /><a href=\"?q\" /><a href=\"mailto:a\" /><a href=\"https://x\" /><a href=\"//cdn\" /><a href=\"\" /><a /></p>;",
+    ),
+    ("link_svg", "const a = <svg><a href=\"/x\"><text>x</text></a></svg>;"),
+    ("link_header", "import \"./x.css\";\nconst a = <a href=\"/x\" />;"),
+];
+
 fn render(source: &str, options: &Options) -> String {
     let out = match compile(source, "case.tsx", options) {
         Ok(Some(out)) => out,
@@ -175,6 +196,15 @@ fn output_snapshots() {
 
 #[test]
 fn hot_snapshot() {
-    let options = Options { source_map: false, debug_names: true, hot: true };
+    let options = Options { source_map: false, debug_names: true, hot: true, links: None };
     insta::assert_snapshot!("hot", render(HOT, &options), HOT);
+}
+
+#[test]
+fn link_snapshots() {
+    let options =
+        Options { source_map: false, links: Some("@rezejs/router".into()), ..Options::default() };
+    for (name, source) in LINK_CASES {
+        insta::assert_snapshot!(*name, render(source, &options), source);
+    }
 }

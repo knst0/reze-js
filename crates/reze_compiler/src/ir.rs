@@ -153,11 +153,36 @@ pub enum From {
 }
 
 pub enum Op<'a> {
-    Set { node: NodeId, target: BindTarget<'a>, value: Value<'a> },
-    Event { node: NodeId, event: &'a str, handler: Handler<'a> },
-    Ref { node: NodeId, target: RefTarget<'a> },
-    Spread { node: NodeId, props: Props<'a>, is_svg: bool, has_children: bool },
-    Insert { parent: NodeId, value: Child<'a>, anchor: Anchor },
+    Set {
+        node: NodeId,
+        target: BindTarget<'a>,
+        value: Value<'a>,
+    },
+    Event {
+        node: NodeId,
+        event: &'a str,
+        handler: Handler<'a>,
+    },
+    Ref {
+        node: NodeId,
+        target: RefTarget<'a>,
+    },
+    Spread {
+        node: NodeId,
+        props: Props<'a>,
+        is_svg: bool,
+        has_children: bool,
+    },
+    /// A claimed `<a>`: `link(el)`, or `link(el, href)` when the href is reactive.
+    Link {
+        node: NodeId,
+        href: Option<Getter<'a>>,
+    },
+    Insert {
+        parent: NodeId,
+        value: Child<'a>,
+        anchor: Anchor,
+    },
 }
 
 #[derive(Clone, Copy)]

@@ -158,12 +158,13 @@ pub fn push_attribute_value(out: &mut String, value: &str) {
     if value.is_empty() {
         return;
     }
-    let needs_quotes = value.bytes().any(|b| {
-        matches!(
-            b,
-            b' ' | b'\t' | b'\n' | b'\x0C' | b'\r' | b'"' | b'\'' | b'=' | b'<' | b'>' | b'`'
-        )
-    });
+    let needs_quotes = value.ends_with('/')
+        || value.bytes().any(|b| {
+            matches!(
+                b,
+                b' ' | b'\t' | b'\n' | b'\x0C' | b'\r' | b'"' | b'\'' | b'=' | b'<' | b'>' | b'`'
+            )
+        });
     out.push('=');
     if needs_quotes {
         out.push('"');

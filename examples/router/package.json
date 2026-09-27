@@ -1,0 +1,17 @@
+{
+  "name": "@rezejs/example-router",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@rezejs/router": "workspace:*",
+    "reze-js": "workspace:*"
+  },
+  "devDependencies": {
+    "@rezejs/vite-plugin": "workspace:*"
+  }
+}

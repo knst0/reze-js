@@ -68,6 +68,7 @@ helpers! {
     List => "list",
     Selector => "selector",
     HotComponent => "hotComponent",
+    Link => "link",
 }
 
 pub struct Emitter<'a, 's> {
@@ -75,18 +76,27 @@ pub struct Emitter<'a, 's> {
     source: &'a str,
     filename: &'a str,
     namer: Namer<'s>,
+    /// Where `Helper::Link` is imported from.
+    links_module: Option<&'a str>,
     aliases: [Option<&'a str>; HELPER_COUNT],
     helper_order: std::vec::Vec<Helper>,
     events: BTreeSet<&'a str>,
 }
 
 impl<'a, 's> Emitter<'a, 's> {
-    pub fn new(alloc: &'a Allocator, source: &'a str, filename: &'a str, namer: Namer<'s>) -> Self {
+    pub fn new(
+        alloc: &'a Allocator,
+        source: &'a str,
+        filename: &'a str,
+        namer: Namer<'s>,
+        links_module: Option<&str>,
+    ) -> Self {
         Self {
             alloc,
             source,
             filename,
             namer,
+            links_module: links_module.map(|module| alloc.alloc_str(module) as &str),
             aliases: [None; HELPER_COUNT],
             helper_order: std::vec::Vec::new(),
             events: BTreeSet::new(),
@@ -126,27 +136,46 @@ impl<'a, 's> Emitter<'a, 's> {
         code
     }
 
-    /// Runtime imports; empty when there are none.
+    /// Runtime imports, one per source module with `reze-js` first; empty when there are none.
     fn header(&self) -> String {
         let mut out = String::new();
-        if !self.helper_order.is_empty() {
-            out.push_str("import { ");
-            for (i, helper) in self.helper_order.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(", ");
-                }
-                let _ = write!(
-                    out,
-                    "{} as {}",
-                    helper.export(),
-                    self.aliases[*helper as usize].unwrap_or_default()
-                );
-            }
-            out.push_str(" } from ");
-            push_js_string(&mut out, RUNTIME_MODULE);
-            out.push(';');
+        let is_runtime = |helper: &&Helper| **helper != Helper::Link;
+        self.import(&mut out, self.helper_order.iter().filter(is_runtime), RUNTIME_MODULE);
+        if let Some(module) = self.links_module {
+            let links = self.helper_order.iter().filter(|helper| **helper == Helper::Link);
+            self.import(&mut out, links, module);
         }
         out
+    }
+
+    fn import<'h>(
+        &self,
+        out: &mut String,
+        helpers: impl Iterator<Item = &'h Helper>,
+        module: &str,
+    ) {
+        let mut helpers = helpers.peekable();
+        if helpers.peek().is_none() {
+            return;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str("import { ");
+        for (i, helper) in helpers.enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            let _ = write!(
+                out,
+                "{} as {}",
+                helper.export(),
+                self.aliases[*helper as usize].unwrap_or_default()
+            );
+        }
+        out.push_str(" } from ");
+        push_js_string(out, module);
+        out.push(';');
     }
 
     fn fresh(&mut self, base: &str) -> &'a str {

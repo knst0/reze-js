@@ -10,6 +10,8 @@
       "reze-js/jsx-runtime": ["./packages/reze-js/src/jsx-runtime.ts"],
       "@rezejs/dom": ["./packages/dom/src/index.ts"],
       "@rezejs/dom/jsx-runtime": ["./packages/dom/src/jsx-runtime.ts"],
+      "@rezejs/router": ["./packages/router/src/index.ts"],
+      "@rezejs/router/vite": ["./packages/router/src/vite/index.ts"],
       "@rezejs/signals": ["./packages/signals/src/index.ts"],
       "@rezejs/signals/render": ["./packages/signals/src/render.ts"],
       "@rezejs/signals/devtools": ["./packages/signals/src/devtools.ts"]
@@ -25,5 +27,6 @@
     "allowImportingTsExtensions": false,
     "resolveJsonModule": true,
     "types": ["node"]
-  }
+  },
+  "exclude": ["**/node_modules", "examples"]
 }

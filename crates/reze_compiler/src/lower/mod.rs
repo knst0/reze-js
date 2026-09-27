@@ -34,6 +34,7 @@ pub struct Lowered<'a, 'f> {
 pub struct Settings {
     pub debug_names: bool,
     pub hot: bool,
+    pub links: bool,
 }
 
 pub struct Lowerer<'a, 'f> {

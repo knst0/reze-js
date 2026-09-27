@@ -1,0 +1,12 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+assertion_line: 208
+expression: "const a = <a href=\"/\">home</a>;"
+---
+import { template as _$template } from "reze-js";
+import { link as _$link } from "@rezejs/router";
+const a = (() => {
+  var _el$ = _$template("<a href=\"/\">home");
+  _$link(_el$);
+  return _el$;
+})();

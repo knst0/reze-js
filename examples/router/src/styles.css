@@ -1,0 +1,11 @@
+nav a[aria-current="page"] {
+  font-weight: 600;
+}
+
+nav a[data-active] {
+  color: crimson;
+}
+
+a[data-pending] {
+  opacity: 0.6;
+}

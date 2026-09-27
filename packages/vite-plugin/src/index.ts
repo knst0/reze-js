@@ -9,6 +9,13 @@ export interface Options {
     /** File every diagnostic, `info` included, is appended to as one JSON line. */
     jsonl?: string;
   };
+  /** Module exporting `link`, e.g. `"@rezejs/router"`: native `<a href>` elements are claimed and passed to it. */
+  links?: string;
+}
+
+export interface RezeApi {
+  /** Claims native `<a href>` elements for `module`, as the `links` option does. */
+  claimLinks(module: string): void;
 }
 
 interface Position {
@@ -35,13 +42,14 @@ interface Diagnostic {
 const SkillGuide = "node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md";
 const QueryOrHash = /[?#].*$/;
 
-export default function reze(options: Options = {}): Plugin {
+export default function reze(options: Options = {}): Plugin<RezeApi> {
   const jsonl = options.diagnostics?.jsonl;
   const seenCodes = new Set<string>();
   let jsonlDirReady = false;
   let isServe = false;
   let debugNames = false;
   let hot = false;
+  let links = options.links;
 
   function formatDiagnostic(d: Diagnostic): string {
     if (seenCodes.has(d.code)) return d.rendered;
@@ -69,6 +77,11 @@ export default function reze(options: Options = {}): Plugin {
   return {
     name: "reze-js",
     enforce: "pre",
+    api: {
+      claimLinks(module) {
+        links = module;
+      },
+    },
     applyToEnvironment: (environment) => environment.config.consumer === "client",
     configResolved(config) {
       isServe = config.command === "serve";
@@ -82,6 +95,7 @@ export default function reze(options: Options = {}): Plugin {
           sourceMap: emitsSourceMap(this.environment.config),
           debugNames,
           hot,
+          links,
         });
         if (result === null) return null;
         const diagnostics: Diagnostic[] = result.diagnostics;

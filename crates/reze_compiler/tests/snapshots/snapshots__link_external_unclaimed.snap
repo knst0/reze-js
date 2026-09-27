@@ -1,0 +1,7 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+assertion_line: 207
+expression: "const a = <p><a href=\"#x\" /><a href=\"?q\" /><a href=\"mailto:a\" /><a href=\"https://x\" /><a href=\"//cdn\" /><a href=\"\" /><a /></p>;"
+---
+import { template as _$template } from "reze-js";
+const a = _$template("<p><a href=#x></a><a href=?q></a><a href=mailto:a></a><a href=https://x></a><a href=//cdn></a><a href></a><a>");

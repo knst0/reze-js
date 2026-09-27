@@ -82,6 +82,15 @@ impl<'a> Emitter<'a, '_> {
                 self.props(out, props);
                 let _ = write!(out, ", {is_svg}, {has_children})");
             }
+            Op::Link { node, href } => {
+                let link = self.helper(Helper::Link);
+                let _ = write!(out, "{link}({}", names[node.index()]);
+                if let Some(href) = href {
+                    out.push(", ");
+                    self.getter(out, href);
+                }
+                out.push(")");
+            }
             Op::Insert { parent, value, anchor } => {
                 let insert = self.helper(match anchor {
                     Anchor::End => Helper::Append,

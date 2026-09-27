@@ -1,0 +1,11 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+assertion_line: 207
+expression: "const a = <a {...p} href=\"/x\" />;"
+---
+import { template as _$template, spread as _$spread, mergeProps as _$mergeProps } from "reze-js";
+const a = (() => {
+  var _el$ = _$template("<a>");
+  _$spread(_el$, _$mergeProps(p, { href: "/x" }), false, false);
+  return _el$;
+})();

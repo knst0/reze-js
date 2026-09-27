@@ -22,6 +22,8 @@ export interface CompileOptions {
   debugNames?: boolean
   /** Register components for hot-swap through `import.meta.hot`. Default: `false`. */
   hot?: boolean
+  /** Module exporting `link`: native `<a href>` elements are claimed and passed to it. Default: none. */
+  links?: string
 }
 
 export interface CompileResult {

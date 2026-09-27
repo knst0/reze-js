@@ -1,0 +1,19 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+assertion_line: 207
+expression: "const a = <a href=\"/x\" aria-current=\"page\" />;\nconst b = <a href={u()} aria-current={c()} />;"
+---
+import { template as _$template, renderEffect as _$renderEffect, setAttribute as _$setAttribute } from "reze-js";
+const a = _$template("<a href=/x aria-current=page>");
+const b = (() => {
+  var _el$ = _$template("<a>"),
+    _p$,
+    _p$2;
+  _$renderEffect(() => {
+    var _v$ = u(),
+      _v$2 = c();
+    _v$ !== _p$ && (_$setAttribute(_el$, "href", _p$ = _v$));
+    _v$2 !== _p$2 && (_$setAttribute(_el$, "aria-current", _p$2 = _v$2));
+  });
+  return _el$;
+})();

@@ -10,6 +10,8 @@ pub struct CompileOptions {
     pub debug_names: Option<bool>,
     /// Register components for hot-swap through `import.meta.hot`. Default: `false`.
     pub hot: Option<bool>,
+    /// Module exporting `link`: native `<a href>` elements are claimed and passed to it. Default: none.
+    pub links: Option<String>,
 }
 
 #[napi(object)]
@@ -88,13 +90,21 @@ fn diagnostic(d: reze_compiler::Diagnostic) -> Diagnostic {
         start: position(d.start),
         end: position(d.end),
         path: d.path,
-        labels: d.labels.into_iter().map(|l| Label { start: l.start, end: l.end, message: l.message }).collect(),
+        labels: d
+            .labels
+            .into_iter()
+            .map(|l| Label { start: l.start, end: l.end, message: l.message })
+            .collect(),
         fixes: d
             .fixes
             .into_iter()
             .map(|fix| Fix {
                 title: fix.title,
-                edits: fix.edits.into_iter().map(|e| Edit { start: e.start, end: e.end, text: e.text }).collect(),
+                edits: fix
+                    .edits
+                    .into_iter()
+                    .map(|e| Edit { start: e.start, end: e.end, text: e.text })
+                    .collect(),
             })
             .collect(),
         data: d.data.into_iter().collect(),
@@ -106,12 +116,17 @@ fn diagnostic(d: reze_compiler::Diagnostic) -> Diagnostic {
 /// Compiles `source`; `null` when nothing in the file is rewritten. Compile errors come back as
 /// `error` diagnostics without `code`; the call never throws on them.
 #[napi]
-pub fn compile(source: String, filename: String, options: Option<CompileOptions>) -> Option<CompileResult> {
+pub fn compile(
+    source: String,
+    filename: String,
+    options: Option<CompileOptions>,
+) -> Option<CompileResult> {
     let mut opts = reze_compiler::Options::default();
     if let Some(o) = options {
         opts.source_map = o.source_map.unwrap_or(opts.source_map);
         opts.debug_names = o.debug_names.unwrap_or(opts.debug_names);
         opts.hot = o.hot.unwrap_or(opts.hot);
+        opts.links = o.links.or(opts.links);
     }
     match reze_compiler::compile(&source, &filename, &opts) {
         Ok(None) => None,
@@ -120,8 +135,10 @@ pub fn compile(source: String, filename: String, options: Option<CompileOptions>
             map: out.map,
             diagnostics: out.diagnostics.into_iter().map(diagnostic).collect(),
         }),
-        Err(diagnostics) => {
-            Some(CompileResult { code: None, map: None, diagnostics: diagnostics.into_iter().map(diagnostic).collect() })
-        }
+        Err(diagnostics) => Some(CompileResult {
+            code: None,
+            map: None,
+            diagnostics: diagnostics.into_iter().map(diagnostic).collect(),
+        }),
     }
 }
