@@ -9,8 +9,10 @@ import {
   useNavigate,
   useSearchParams,
   type BeforeLeaveEvent,
+  type HistoryEntry,
   type Navigate,
   type RouteDefinition,
+  type RouterHistory,
   type RouteModule,
   type RouteProps,
 } from "../src";
@@ -224,4 +226,47 @@ test("a failed load reaches catchError and the next navigation retries it", asyn
   await settle();
   expect(load).toHaveBeenCalledTimes(2);
   expect(el.textContent).toBe("about");
+});
+
+test("back/forward restores the scroll position saved for that entry and no other", () => {
+  let entry: HistoryEntry = { path: "/", state: undefined, index: 0 };
+  let onPop!: (entry: HistoryEntry) => void;
+  const history: RouterHistory = {
+    get: () => entry,
+    push: (path, state) => void (entry = { path, state, index: entry.index + 1 }),
+    replace: (path, state) => void (entry = { path, state, index: entry.index }),
+    go: () => {},
+    listen: (listener) => ((onPop = listener), () => {}),
+    resolve: (url) => url.pathname,
+    scroll: true,
+  };
+  const pop = (path: string, index: number): void => {
+    entry = { path, state: undefined, index };
+    onPop(entry);
+  };
+  const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  let navigate!: Navigate;
+  const Root = (props: { children: JSX.Element }) => {
+    navigate = useNavigate();
+    return <main>{props.children}</main>;
+  };
+  mount(() => (
+    <Router
+      routes={[
+        { path: "/", component: Home },
+        { path: "/about", component: About },
+      ]}
+      history={history}
+      root={Root}
+    />
+  ));
+  vi.stubGlobal("scrollY", 300);
+  navigate("/about");
+  vi.stubGlobal("scrollY", 0);
+  pop("/", 0);
+  expect(scrollTo).toHaveBeenLastCalledWith(0, 300);
+  pop("/about", 128);
+  expect(scrollTo).toHaveBeenLastCalledWith(0, 0);
+  vi.unstubAllGlobals();
+  scrollTo.mockRestore();
 });

@@ -43,8 +43,11 @@ export interface RouterState {
   readonly leaveListeners: Set<(event: BeforeLeaveEvent) => void>;
   ignorePop: boolean;
   skipNextGuard: boolean;
-  readonly positions: Map<number, readonly [number, number]>;
+  /** `[index, scrollX, scrollY]` per slot `index % MaxRestorableEntries`, more than browsers keep in session history (50 in Chrome and Firefox, 100 in WebKit); allocated on first save. */
+  positions: Float64Array | undefined;
 }
+
+const MaxRestorableEntries = 128;
 
 export const RouterContext: ContextKey<RouterState | undefined> = { id: Symbol("reze-router"), defaultValue: undefined };
 
@@ -136,7 +139,7 @@ function commit(
     }
   }
   const isScrollManaged = state.history.scroll;
-  if (isScrollManaged && state.entry !== undefined) state.positions.set(state.entry.index, [scrollX, scrollY]);
+  if (isScrollManaged && state.entry !== undefined) savePosition(state, state.entry.index);
   state.entry = entry;
   state.setLocation(location);
   state.setMatches(matches);
@@ -145,12 +148,26 @@ function commit(
   flush();
   if (!isScrollManaged) return;
   if (scrollMode === "restore") {
-    const [x, y] = state.positions.get(entry.index) ?? [0, 0];
-    scrollTo(x, y);
+    restorePosition(state, entry.index);
   } else if (scrollMode === "top") {
     if (location.hash === "") scrollTo(0, 0);
     else document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
   }
+}
+
+function savePosition(state: RouterState, index: number): void {
+  const slots = (state.positions ??= new Float64Array(MaxRestorableEntries * 3));
+  const at = (index % MaxRestorableEntries) * 3;
+  slots[at] = index;
+  slots[at + 1] = scrollX;
+  slots[at + 2] = scrollY;
+}
+
+function restorePosition(state: RouterState, index: number): void {
+  const slots = state.positions;
+  const at = (index % MaxRestorableEntries) * 3;
+  if (slots !== undefined && slots[at] === index) scrollTo(slots[at + 1]!, slots[at + 2]!);
+  else scrollTo(0, 0);
 }
 
 /** Runs the leave guards unless `to` is the current path; `true` when one prevented the navigation. */

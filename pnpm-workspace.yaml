@@ -9,3 +9,15 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - "@tanstack/react-router@1.170.40"
   - "@tanstack/router-core@1.171.33"
+  - "@solidjs/babel-plugin@2.0.0-rc.10"
+  - "@solidjs/compiler-darwin-arm64@2.0.0-rc.10"
+  - "@solidjs/compiler-darwin-x64@2.0.0-rc.10"
+  - "@solidjs/compiler-linux-arm64-gnu@2.0.0-rc.10"
+  - "@solidjs/compiler-linux-x64-gnu@2.0.0-rc.10"
+  - "@solidjs/compiler-wasm32-wasi@2.0.0-rc.10"
+  - "@solidjs/compiler-win32-x64-msvc@2.0.0-rc.10"
+  - "@solidjs/compiler@2.0.0-rc.10"
+  - "@solidjs/signals@2.0.0-rc.10"
+  - "@solidjs/vite-plugin@3.0.0-next.46"
+  - "@solidjs/web@2.0.0-rc.10"
+  - solid-js@2.0.0-rc.10

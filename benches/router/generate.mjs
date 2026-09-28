@@ -1,4 +1,4 @@
-export const routers = ["reze", "solid-router", "react-router", "tanstack-router", "vue-router"];
+export const routers = ["reze", "solid-router", "solid-router-v2", "react-router", "tanstack-router", "vue-router"];
 
 export const variants = ["router", "baseline"];
 
@@ -127,9 +127,9 @@ export default function User(props) {
   };
 }
 
-function solidRouter(sections) {
+function solidRoutes(sections) {
   const lazyRoute = (path, name, extra = "") => `{ path: "${path}", component: lazy(() => import("./pages/${name}"))${extra} }`;
-  const routes = [
+  return [
     lazyRoute("/", "Home"),
     lazyRoute("/about", "About"),
     `{
@@ -143,6 +143,14 @@ function solidRouter(sections) {
     ...sectionIds(sections).map((k) => lazyRoute(`/section-${k}`, `Section${k}`)),
     lazyRoute("*404", "NotFound"),
   ];
+}
+
+const solidData = `import { query } from "@solidjs/router";
+
+export const getUser = query(async (id) => ({ name: "User " + id }), "user");
+`;
+
+function solidRouter(sections) {
   return {
     "index.html": html("main.jsx"),
     "main.jsx": `import { Router } from "@solidjs/router";
@@ -153,7 +161,7 @@ import { getUser } from "./data";
 import { Shell } from "./Shell";
 
 const routes = [
-  ${routes.join(",\n  ")},
+  ${solidRoutes(sections).join(",\n  ")},
 ];
 
 render(() => <Router root={Shell}>{routes}</Router>, document.getElementById("app"));
@@ -175,10 +183,7 @@ ${navLinks(sections)
 `,
     ...jsxPages(sections),
     "pages/Users.jsx": jsxUsers,
-    "data.js": `import { query } from "@solidjs/router";
-
-export const getUser = query(async (id) => ({ name: "User " + id }), "user");
-`,
+    "data.js": solidData,
     "pages/User.jsx": `import { A, createAsync } from "@solidjs/router";
 
 import { getUser } from "../data";
@@ -191,6 +196,47 @@ export default function User(props) {
       <A data-next href={"/users/" + (Number(props.params.id) + 1)}>
         Next
       </A>
+    </article>
+  );
+}
+`,
+  };
+}
+
+function solidRouterV2(sections) {
+  return {
+    "index.html": html("main.jsx"),
+    "main.jsx": `import { createRouter } from "@solidjs/router";
+import { render } from "@solidjs/web";
+import { lazy } from "solid-js";
+
+import { getUser } from "./data";
+import { Shell } from "./Shell";
+
+const Router = createRouter({
+  routes: [
+    ${solidRoutes(sections).join(",\n    ")},
+  ],
+});
+
+render(() => <Router>{(props) => <Shell>{props.children}</Shell>}</Router>, document.getElementById("app"));
+`,
+    "Shell.jsx": jsxShell(sections),
+    ...jsxPages(sections),
+    "pages/Users.jsx": jsxUsers,
+    "data.js": solidData,
+    "pages/User.jsx": `import { createMemo } from "solid-js";
+
+import { getUser } from "../data";
+
+export default function User(props) {
+  const user = createMemo(() => getUser(props.params.id));
+  return (
+    <article data-page="user" data-id={props.params.id}>
+      <h2>{user().name}</h2>
+      <a data-next href={"/users/" + (Number(props.params.id) + 1)}>
+        Next
+      </a>
     </article>
   );
 }
@@ -481,12 +527,17 @@ const props = defineProps({ id: String, name: String });
 }
 
 const solidBaseline = jsxBaseline(`import { render } from "solid-js/web";`, (el) => `render(() => ${el}, document.getElementById("app"));`);
+const solidV2Baseline = jsxBaseline(
+  `import { render } from "@solidjs/web";`,
+  (el) => `render(() => ${el}, document.getElementById("app"));`,
+);
 const rezeBaseline = jsxBaseline(`import { render } from "reze-js";`, (el) => `render(() => ${el}, document.getElementById("app"));`);
 const reactBaseline = jsxBaseline(`import { createRoot } from "react-dom/client";`, reactRender);
 
 const generators = {
   reze: { router: reze, baseline: rezeBaseline },
   "solid-router": { router: solidRouter, baseline: solidBaseline },
+  "solid-router-v2": { router: solidRouterV2, baseline: solidV2Baseline },
   "react-router": { router: reactRouter, baseline: reactBaseline },
   "tanstack-router": { router: tanstackRouter, baseline: reactBaseline },
   "vue-router": { router: vueRouter, baseline: vueBaseline },

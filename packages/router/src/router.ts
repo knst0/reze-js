@@ -74,7 +74,7 @@ export function Router(props: RouterProps): JSX.Element {
     leaveListeners: new Set(),
     ignorePop: false,
     skipNextGuard: false,
-    positions: new Map(),
+    positions: undefined,
   };
   const root = props.root;
   const isPreloading = props.preload !== false;

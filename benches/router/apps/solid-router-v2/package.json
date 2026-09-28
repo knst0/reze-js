@@ -1,0 +1,14 @@
+{
+  "name": "@rezejs/bench-router-solid-router-v2",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@solidjs/router": "2.0.0-next.30",
+    "@solidjs/web": "2.0.0-rc.10",
+    "solid-js": "2.0.0-rc.10"
+  },
+  "devDependencies": {
+    "@solidjs/vite-plugin": "3.0.0-next.46",
+    "vite": "^8.3.0"
+  }
+}
