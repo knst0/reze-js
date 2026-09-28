@@ -6,7 +6,8 @@ export interface Location {
   readonly pathname: string;
   readonly search: string;
   readonly hash: string;
-  readonly query: Readonly<Record<string, string>>;
+  /** Repeated keys (`?tag=a&tag=b`) map to every value in order. */
+  readonly query: Readonly<Record<string, string | readonly string[]>>;
   readonly state: unknown;
 }
 
@@ -59,24 +60,36 @@ export interface NavigateOptions {
   scroll?: boolean;
 }
 
-/** Navigates to `to`, resolved against the current location; a number moves through history. */
-export type Navigate = (to: Href | number, options?: NavigateOptions) => void;
+/** Navigates to `to`: a route path resolved against the current location, an absolute URL (loaded by the browser when outside the router), or a history delta. */
+export type Navigate = (to: NavigateTarget | number, options?: NavigateOptions) => void;
 
 export interface BeforeLeaveEvent {
   readonly from: Location;
-  readonly to: string | number;
+  /** The target path, a history delta, or `null` when the document itself is being unloaded. */
+  readonly to: string | number | null;
   readonly options: NavigateOptions;
   readonly defaultPrevented: boolean;
+  /** Blocks the navigation; for a document unload the browser asks the user to confirm. */
   preventDefault(): void;
-  /** Re-runs the prevented navigation; `force` (default `true`) skips the leave guards. */
+  /** Re-runs the prevented navigation; `force` (default `true`) skips the leave guards. No-op for a document unload. */
   retry(force?: boolean): void;
 }
 
-/** Augmented by the generated routes `.d.ts` with `paths`, the union of every route href. */
+/** Augmented by the generated routes `.d.ts` with `paths`, every route path, and `base`, Vite's base without its trailing slash. */
 export interface Register {}
 
 export type RoutePath = Register extends { paths: infer P extends string } ? P : string;
 
+type Base = Register extends { base: infer B extends string } ? B : "";
+
+type ForeignHref = `${string}:${string}` | `//${string}` | `#${string}` | `?${string}`;
+
+/** A `navigate()` target: a route path (without Vite's `base`), optionally with a query or hash, or an absolute URL. */
+export type NavigateTarget = string extends RoutePath
+  ? string
+  : RoutePath | `${RoutePath}?${string}` | `${RoutePath}#${string}` | ForeignHref;
+
+/** An `<a href>`: a route path under Vite's `base`, optionally with a query or hash, or an absolute URL. */
 export type Href = string extends RoutePath
   ? string
-  : RoutePath | `${RoutePath}?${string}` | `${RoutePath}#${string}` | `${string}:${string}` | `//${string}` | `#${string}` | `?${string}`;
+  : `${Base}${RoutePath}` | `${Base}${RoutePath}?${string}` | `${Base}${RoutePath}#${string}` | ForeignHref;

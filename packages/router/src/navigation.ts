@@ -1,7 +1,7 @@
 import { flush, untrack, type ContextKey, type Getter, type Owner, type Setter } from "@rezejs/signals";
 
 import type { HistoryEntry, RouterHistory } from "./history";
-import { matchBranches, pathKey, type Branch, type BranchMatch, type CompiledRoute } from "./match";
+import { decode, matchBranches, pathKey, type Branch, type BranchMatch, type CompiledRoute } from "./match";
 import type { BeforeLeaveEvent, Location, NavigateOptions, Params, PreloadIntent } from "./types";
 
 export interface ActiveMatch {
@@ -13,7 +13,8 @@ export interface ActiveMatch {
   readonly info: Readonly<Record<string, unknown>> | undefined;
 }
 
-type ScrollMode = "top" | "restore" | "none";
+/** `initial` restores a position saved by an earlier document, else scrolls to the hash target only. */
+export type ScrollMode = "top" | "restore" | "initial" | "none";
 
 /** Per-link state lookups, created on first use under the router's owner. */
 export interface LinkSelectors {
@@ -28,7 +29,11 @@ export interface RouterState {
   readonly history: RouterHistory;
   readonly branches: readonly Branch[];
   owner: Owner | undefined;
+  /** The committed entry, whose view and scroll position are on screen. */
   entry: HistoryEntry | undefined;
+  /** The entry of the latest navigation, ahead of `entry` while its route modules load. */
+  target: HistoryEntry | undefined;
+  targetLocation: Location | undefined;
   readonly location: Getter<Location>;
   readonly setLocation: Setter<Location>;
   readonly matches: Getter<readonly ActiveMatch[]>;
@@ -41,6 +46,8 @@ export interface RouterState {
   links: LinkSelectors | undefined;
   generation: number;
   readonly leaveListeners: Set<(event: BeforeLeaveEvent) => void>;
+  /** `beforeunload` listener, installed while `leaveListeners` is non-empty. */
+  readonly onUnload: (event: BeforeUnloadEvent) => void;
   ignorePop: boolean;
   skipNextGuard: boolean;
   /** `[index, scrollX, scrollY]` per slot `index % MaxRestorableEntries`, more than browsers keep in session history (50 in Chrome and Firefox, 100 in WebKit); allocated on first save. */
@@ -48,8 +55,22 @@ export interface RouterState {
 }
 
 const MaxRestorableEntries = 128;
+const PositionsKey = "reze-router:scroll";
+const AbsoluteUrl = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i;
 
 export const RouterContext: ContextKey<RouterState | undefined> = { id: Symbol("reze-router"), defaultValue: undefined };
+
+function parseQuery(search: string): Record<string, string | string[]> {
+  const query: Record<string, string | string[]> = Object.create(null);
+  if (search === "") return query;
+  for (const [key, value] of new URLSearchParams(search)) {
+    const existing = query[key];
+    if (existing === undefined) query[key] = value;
+    else if (typeof existing === "string") query[key] = [existing, value];
+    else existing.push(value);
+  }
+  return query;
+}
 
 export function parseLocation(entry: HistoryEntry): Location {
   let path = entry.path;
@@ -65,7 +86,18 @@ export function parseLocation(entry: HistoryEntry): Location {
     search = path.slice(searchAt);
     path = path.slice(0, searchAt);
   }
-  return { pathname: path, search, hash, query: Object.fromEntries(new URLSearchParams(search)), state: entry.state };
+  return { pathname: path, search, hash, query: parseQuery(search), state: entry.state };
+}
+
+/** Router path `href` navigates to when clicked, or `undefined` when the browser handles it (cross-origin, outside the history, malformed). */
+export function resolveHref(state: RouterState, href: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(href, document.baseURI);
+  } catch {
+    return undefined;
+  }
+  return url.origin === location.origin ? state.history.resolve(url) : undefined;
 }
 
 /** Loads `route`'s module once; a failure is stored in `loadError` and retried by the next call, never rejected. */
@@ -98,46 +130,60 @@ export function loadBranch(match: BranchMatch): Promise<unknown> | undefined {
   return pending === undefined ? undefined : Promise.all(pending);
 }
 
+function isHashChange(state: RouterState, location: Location): boolean {
+  if (state.entry === undefined) return false;
+  const committed = untrack(state.location);
+  return location.hash !== committed.hash && location.pathname === committed.pathname && location.search === committed.search;
+}
+
 export function start(state: RouterState, entry: HistoryEntry, intent: PreloadIntent, scrollMode: ScrollMode): void {
   const generation = ++state.generation;
   const location = parseLocation(entry);
+  state.target = entry;
+  state.targetLocation = location;
+  if (isHashChange(state, location)) {
+    commit(state, entry, location, untrack(state.matches), scrollMode);
+    return;
+  }
   const match = matchBranches(state.branches, location.pathname);
   const loading = match === undefined ? undefined : loadBranch(match);
   if (loading === undefined) {
-    commit(state, entry, location, match, intent, scrollMode);
+    commit(state, entry, location, activate(match, location, intent), scrollMode);
     return;
   }
   state.setIsRouting(true);
   state.setPendingKey(pathKey(location.pathname));
   void loading.then(() => {
-    if (generation === state.generation) commit(state, entry, location, match, intent, scrollMode);
+    if (generation === state.generation) commit(state, entry, location, activate(match, location, intent), scrollMode);
   });
+}
+
+function activate(match: BranchMatch | undefined, location: Location, intent: PreloadIntent): ActiveMatch[] {
+  const matches: ActiveMatch[] = [];
+  if (match === undefined) return matches;
+  const { params, path } = match;
+  for (const route of match.branch.routes) {
+    let data: unknown;
+    let error: unknown = route.isLoaded ? undefined : route.loadError;
+    if (route.isLoaded && route.preload !== undefined) {
+      try {
+        data = untrack(() => route.preload!({ params, location, intent }));
+      } catch (thrown) {
+        error = thrown;
+      }
+    }
+    matches.push({ route, path, params, data, error, info: route.info });
+  }
+  return matches;
 }
 
 function commit(
   state: RouterState,
   entry: HistoryEntry,
   location: Location,
-  match: BranchMatch | undefined,
-  intent: PreloadIntent,
+  matches: readonly ActiveMatch[],
   scrollMode: ScrollMode,
 ): void {
-  const matches: ActiveMatch[] = [];
-  if (match !== undefined) {
-    const { params, path } = match;
-    for (const route of match.branch.routes) {
-      let data: unknown;
-      let error: unknown = route.isLoaded ? undefined : route.loadError;
-      if (route.isLoaded && route.preload !== undefined) {
-        try {
-          data = untrack(() => route.preload!({ params, location, intent }));
-        } catch (thrown) {
-          error = thrown;
-        }
-      }
-      matches.push({ route, path, params, data, error, info: route.info });
-    }
-  }
   const isScrollManaged = state.history.scroll;
   if (isScrollManaged && state.entry !== undefined) savePosition(state, state.entry.index);
   state.entry = entry;
@@ -146,13 +192,10 @@ function commit(
   state.setIsRouting(false);
   state.setPendingKey(undefined);
   flush();
-  if (!isScrollManaged) return;
-  if (scrollMode === "restore") {
-    restorePosition(state, entry.index);
-  } else if (scrollMode === "top") {
-    if (location.hash === "") scrollTo(0, 0);
-    else document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
-  }
+  if (!isScrollManaged || scrollMode === "none") return;
+  if ((scrollMode === "restore" || scrollMode === "initial") && restorePosition(state, entry.index)) return;
+  if (location.hash !== "") document.getElementById(decode(location.hash.slice(1)))?.scrollIntoView();
+  else if (scrollMode !== "initial") scrollTo(0, 0);
 }
 
 function savePosition(state: RouterState, index: number): void {
@@ -163,21 +206,44 @@ function savePosition(state: RouterState, index: number): void {
   slots[at + 2] = scrollY;
 }
 
-function restorePosition(state: RouterState, index: number): void {
+function restorePosition(state: RouterState, index: number): boolean {
   const slots = state.positions;
   const at = (index % MaxRestorableEntries) * 3;
-  if (slots !== undefined && slots[at] === index) scrollTo(slots[at + 1]!, slots[at + 2]!);
-  else scrollTo(0, 0);
+  if (slots === undefined || slots[at] !== index) return false;
+  scrollTo(slots[at + 1]!, slots[at + 2]!);
+  return true;
 }
 
-/** Runs the leave guards unless `to` is the current path; `true` when one prevented the navigation. */
+/** Reads the positions an earlier document of this tab saved with `persistPositions`. */
+export function loadPositions(state: RouterState): void {
+  let saved: unknown;
+  try {
+    saved = JSON.parse(sessionStorage.getItem(PositionsKey) ?? "null");
+  } catch {
+    return;
+  }
+  if (Array.isArray(saved) && saved.length === MaxRestorableEntries * 3) state.positions = Float64Array.from(saved as number[]);
+}
+
+/** Saves the current entry's position and keeps every position for the next document of this tab. */
+export function persistPositions(state: RouterState): void {
+  if (state.entry !== undefined) savePosition(state, state.entry.index);
+  if (state.positions === undefined) return;
+  try {
+    sessionStorage.setItem(PositionsKey, JSON.stringify(Array.from(state.positions)));
+  } catch {
+    return;
+  }
+}
+
+/** Runs the leave guards unless `to` is the target path; `true` when one prevented the navigation. A throwing guard is reported and does not prevent. */
 export function isLeavePrevented(
   state: RouterState,
-  to: string | number,
+  to: string | number | null,
   options: NavigateOptions,
   retry: (force?: boolean) => void,
 ): boolean {
-  if (state.leaveListeners.size === 0 || to === state.entry?.path) return false;
+  if (state.leaveListeners.size === 0 || to === state.target?.path) return false;
   let defaultPrevented = false;
   const event: BeforeLeaveEvent = {
     from: untrack(state.location),
@@ -191,8 +257,24 @@ export function isLeavePrevented(
     },
     retry,
   };
-  for (const listener of state.leaveListeners) listener(event);
+  for (const listener of state.leaveListeners) {
+    try {
+      listener(event);
+    } catch (error) {
+      reportError(error);
+    }
+  }
   return defaultPrevented;
+}
+
+/** Adds a leave guard, which also guards unloading the document; returns the remover. */
+export function addLeaveListener(state: RouterState, listener: (event: BeforeLeaveEvent) => void): () => void {
+  const listeners = state.leaveListeners;
+  if (listeners.size === 0) addEventListener("beforeunload", state.onUnload);
+  listeners.add(listener);
+  return () => {
+    if (listeners.delete(listener) && listeners.size === 0) removeEventListener("beforeunload", state.onUnload);
+  };
 }
 
 export function navigate(state: RouterState, to: string | number, options: NavigateOptions = {}, force = false): void {
@@ -201,11 +283,21 @@ export function navigate(state: RouterState, to: string | number, options: Navig
     state.history.go(to);
     return;
   }
-  const current = untrack(state.location);
-  const url = new URL(to, "http://r" + current.pathname + current.search);
-  const path = url.pathname + url.search + url.hash;
+  let path: string;
+  if (AbsoluteUrl.test(to)) {
+    const resolved = resolveHref(state, to);
+    if (resolved === undefined) {
+      location.assign(to);
+      return;
+    }
+    path = resolved;
+  } else {
+    const current = state.targetLocation!;
+    const url = new URL(to, "http://r" + current.pathname + current.search);
+    path = url.pathname + url.search + url.hash;
+  }
   if (!force && isLeavePrevented(state, path, options, (retryForce = true) => navigate(state, to, options, retryForce))) return;
-  if (options.replace === true || path === state.entry?.path) state.history.replace(path, options.state);
+  if (options.replace === true || path === state.target?.path) state.history.replace(path, options.state);
   else state.history.push(path, options.state);
   start(state, state.history.get(), "navigate", options.scroll === false ? "none" : "top");
 }
@@ -218,7 +310,7 @@ export function onPop(state: RouterState, entry: HistoryEntry): void {
   if (state.skipNextGuard) {
     state.skipNextGuard = false;
   } else {
-    const delta = entry.index - (state.entry?.index ?? 0);
+    const delta = entry.index - (state.target?.index ?? 0);
     const retry = (force = true): void => {
       if (force) state.skipNextGuard = true;
       state.history.go(delta);

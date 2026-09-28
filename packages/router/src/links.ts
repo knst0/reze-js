@@ -1,5 +1,5 @@
 import { matchBranches } from "./match";
-import { loadBranch, navigate, parseLocation, type RouterState } from "./navigation";
+import { loadBranch, navigate, parseLocation, resolveHref, type RouterState } from "./navigation";
 
 const SvgNamespace = "http://www.w3.org/2000/svg";
 const HoverDelayMs = 20;
@@ -9,12 +9,6 @@ function anchorOf(event: Event): Element | undefined {
     if ((node as Node).nodeName?.toUpperCase() === "A") return node as Element;
   }
   return undefined;
-}
-
-/** Router path `href` navigates to when clicked, or `undefined` when the browser handles it (cross-origin, outside the history). */
-export function resolveHref(state: RouterState, href: string): string | undefined {
-  const url = URL.parse(href, document.baseURI);
-  return url !== null && url.origin === location.origin ? state.history.resolve(url) : undefined;
 }
 
 function anchorPath(state: RouterState, anchor: Element): string | undefined {
@@ -27,23 +21,27 @@ function anchorPath(state: RouterState, anchor: Element): string | undefined {
   return resolveHref(state, href);
 }
 
-function preloadPath(state: RouterState, path: string): void {
+function ignoreRejection(): void {}
+
+/** Loads `path`'s route modules and runs their `preload` with intent `"preload"`; `false` when a module failed to load. */
+async function preloadPath(state: RouterState, path: string): Promise<boolean> {
   const location = parseLocation({ path, state: undefined, index: 0 });
   const match = matchBranches(state.branches, location.pathname);
-  if (match === undefined) return;
-  const run = (): void => {
-    for (const route of match.branch.routes) {
-      if (!route.isLoaded || route.preload === undefined) continue;
-      try {
-        route.preload({ params: match.params, location, intent: "preload" });
-      } catch {
-        continue;
-      }
+  if (match === undefined) return true;
+  await loadBranch(match);
+  for (const route of match.branch.routes) {
+    if (!route.isLoaded) return false;
+  }
+  for (const route of match.branch.routes) {
+    if (route.preload === undefined) continue;
+    try {
+      const data = route.preload({ params: match.params, location, intent: "preload" });
+      if (data instanceof Promise) data.catch(ignoreRejection);
+    } catch {
+      continue;
     }
-  };
-  const loading = loadBranch(match);
-  if (loading === undefined) run();
-  else void loading.then(run);
+  }
+  return true;
 }
 
 /** Routes same-origin anchor clicks through `state` and, with `isPreloading`, preloads hovered links; returns the remover. */
@@ -70,7 +68,9 @@ export function installLinks(state: RouterState, isPreloading: boolean): () => v
     const path = anchorPath(state, anchor);
     if (path === undefined || path === lastPreloaded) return;
     lastPreloaded = path;
-    preloadPath(state, path);
+    void preloadPath(state, path).then((isLoaded) => {
+      if (!isLoaded && lastPreloaded === path) lastPreloaded = undefined;
+    });
   };
   const onIntent = (event: Event): void => {
     const anchor = anchorOf(event);

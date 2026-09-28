@@ -4,7 +4,17 @@ import { computed, getOwner, onCleanup, provideContext, signal, untrack } from "
 import { createBrowserHistory, type RouterHistory } from "./history";
 import { installLinks } from "./links";
 import { compileRoutes } from "./match";
-import { onPop, parseLocation, RouterContext, start, type ActiveMatch, type RouterState } from "./navigation";
+import {
+  isLeavePrevented,
+  loadPositions,
+  onPop,
+  parseLocation,
+  persistPositions,
+  RouterContext,
+  start,
+  type ActiveMatch,
+  type RouterState,
+} from "./navigation";
 import type { RouteDefinition } from "./types";
 
 /** Read once, when the router is created. */
@@ -14,9 +24,13 @@ export interface RouterProps {
   history?: RouterHistory;
   /** Wraps every page; `children` renders the matched route. */
   root?: (props: { children: JSX.Element }) => JSX.Element;
-  /** Default `true`: load and preload a link's route on hover, focus or touch. */
+  /** Default `true`: route same-origin `<a>` clicks anywhere in the document. Pass `false` for a router that does not own the page's links, such as an embedded memory router; it then moves only through `useNavigate`. */
+  links?: boolean;
+  /** Default `true`: load and preload a link's route on hover, focus or touch. Needs `links`. */
   preload?: boolean;
 }
+
+function ignoreRetry(): void {}
 
 const NoMatches: readonly ActiveMatch[] = [];
 
@@ -61,6 +75,8 @@ export function Router(props: RouterProps): JSX.Element {
     branches: compileRoutes(props.routes),
     owner: undefined,
     entry: undefined,
+    target: undefined,
+    targetLocation: undefined,
     location,
     setLocation,
     matches,
@@ -72,24 +88,39 @@ export function Router(props: RouterProps): JSX.Element {
     links: undefined,
     generation: 0,
     leaveListeners: new Set(),
+    onUnload: (event) => {
+      if (!isLeavePrevented(state, null, {}, ignoreRetry)) return;
+      event.preventDefault();
+      event.returnValue = true;
+    },
     ignorePop: false,
     skipNextGuard: false,
     positions: undefined,
   };
   const root = props.root;
+  const isLinking = props.links !== false;
   const isPreloading = props.preload !== false;
   return provideContext(RouterContext, state, () => {
     state.owner = getOwner();
-    start(state, history.get(), "initial", "none");
+    const isScrollManaged = history.scroll;
+    if (isScrollManaged) loadPositions(state);
+    start(state, history.get(), "initial", "initial");
     const unlisten = history.listen((entry) => onPop(state, entry));
-    const scrollRestoration = history.scroll ? window.history.scrollRestoration : undefined;
-    if (scrollRestoration !== undefined) window.history.scrollRestoration = "manual";
-    const uninstallLinks = installLinks(state, isPreloading);
+    const scrollRestoration = isScrollManaged ? window.history.scrollRestoration : undefined;
+    const onPageHide = (): void => persistPositions(state);
+    if (scrollRestoration !== undefined) {
+      window.history.scrollRestoration = "manual";
+      addEventListener("pagehide", onPageHide);
+    }
+    const uninstallLinks = isLinking ? installLinks(state, isPreloading) : undefined;
     onCleanup(() => {
       state.generation++;
       unlisten();
-      uninstallLinks();
-      if (scrollRestoration !== undefined) window.history.scrollRestoration = scrollRestoration;
+      uninstallLinks?.();
+      removeEventListener("beforeunload", state.onUnload);
+      if (scrollRestoration === undefined) return;
+      removeEventListener("pagehide", onPageHide);
+      window.history.scrollRestoration = scrollRestoration;
     });
     if (root === undefined) return outlet(state, 0);
     let children: JSX.Element;

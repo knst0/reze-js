@@ -35,6 +35,13 @@ describe("matchBranches", () => {
     expect(match?.path).toBe("/Users/42");
   });
 
+  test("static segments match percent-encoded pathnames, as browsers report them", () => {
+    const branches = compileRoutes([{ path: "/über/a b" }]);
+    expect(matchBranches(branches, new URL("http://r/%C3%9Cber/a%20b").pathname)?.path).toBe("/%C3%9Cber/a%20b");
+    expect(matchBranches(branches, "/über/a b")).toBeDefined();
+    expect(matchPath("/über/*", "/%C3%BCber/x")?.path).toBe("/%C3%BCber");
+  });
+
   test("params decode, keeping malformed escapes raw", () => {
     const branches = compileRoutes([{ path: "/p/:v" }]);
     expect(matchBranches(branches, "/p/%E2%9C%93")?.params).toEqual({ v: "✓" });

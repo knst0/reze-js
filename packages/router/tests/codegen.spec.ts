@@ -3,11 +3,15 @@ import { expect, test } from "vitest";
 import { routesDts, routesModule } from "../src/vite/codegen";
 import { scanRoutes } from "../src/vite/scan";
 
-test("routesDts registers every leaf href under the base, deduped and sorted", () => {
-  const routes = scanRoutes(["index.tsx", "blog/[id].tsx", "blog/[[page]].tsx", "docs/[...path].tsx"]);
-  expect(routesDts(routes, "/app/")).toContain(
-    'paths: "/app/" | "/app/blog" | "/app/docs" | `/app/blog/${string}` | `/app/docs/${string}`;',
-  );
+test("routesDts registers every leaf path without the base, deduped and sorted, and the base on its own", () => {
+  const dts = routesDts(scanRoutes(["index.tsx", "blog/[id].tsx", "blog/[[page]].tsx", "docs/[...path].tsx"]), "/app/");
+  expect(dts).toContain('paths: "/" | "/blog" | "/docs" | `/blog/${string}` | `/docs/${string}`;');
+  expect(dts).toContain('base: "/app";');
+});
+
+test("a relative or URL base registers the root base, as the browser history does", () => {
+  expect(routesDts([], "./")).toContain('base: "";');
+  expect(routesDts([], "https://cdn.test/assets/")).toContain('base: "";');
 });
 
 test("a catch-all splat registers only its prefix so hrefs stay checked", () => {
@@ -29,6 +33,7 @@ declare module "virtual:reze-routes/register" {
   module "@rezejs/router" {
     interface Register {
       paths: "/";
+      base: "";
     }
   }
 }

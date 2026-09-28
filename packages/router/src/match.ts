@@ -59,7 +59,7 @@ function compileSegments(path: string): Segment[] {
       if (name !== "*" && !SplatName.test(name)) throw invalid(path, `bad splat name "${name}"`);
       segments.push({ kind: Splat, value: name });
     } else {
-      segments.push({ kind: Static, value: part.toLowerCase() });
+      segments.push({ kind: Static, value: decode(part).toLowerCase() });
     }
   }
   for (let i = 0; i < segments.length; i++) {
@@ -130,7 +130,9 @@ export function compileRoutes(defs: readonly RouteDefinition[]): Branch[] {
   return branches.sort((a, b) => b.score - a.score || a.order - b.order);
 }
 
-function decode(value: string): string {
+/** `decodeURIComponent`, keeping `value` as is when it is malformed. */
+export function decode(value: string): string {
+  if (!value.includes("%")) return value;
   try {
     return decodeURIComponent(value);
   } catch {
@@ -138,12 +140,13 @@ function decode(value: string): string {
   }
 }
 
+/** `parts` are decoded path segments; static segments compare case-insensitively. */
 function matchSegments(segments: readonly Segment[], parts: readonly string[], isPrefix: boolean): Record<string, string> | undefined {
   const params: Record<string, string> = {};
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i]!;
     if (segment.kind === Splat) {
-      params[segment.value] = parts.slice(i).map(decode).join("/");
+      params[segment.value] = parts.slice(i).join("/");
       return params;
     }
     const part = parts[i];
@@ -151,7 +154,7 @@ function matchSegments(segments: readonly Segment[], parts: readonly string[], i
     if (segment.kind === Static) {
       if (part.toLowerCase() !== segment.value) return undefined;
     } else {
-      params[segment.value] = decode(part);
+      params[segment.value] = part;
     }
   }
   return isPrefix || parts.length === segments.length ? params : undefined;
@@ -168,10 +171,11 @@ export function pathKey(pathname: string): string {
 
 /** The first of `branches` matching `pathname`, with decoded params and the normalised matched path. */
 export function matchBranches(branches: readonly Branch[], pathname: string): BranchMatch | undefined {
-  const parts = splitPath(pathname);
+  const raw = splitPath(pathname);
+  const parts = raw.map(decode);
   for (const branch of branches) {
     const params = matchSegments(branch.segments, parts, false);
-    if (params !== undefined) return { branch, params, path: "/" + parts.join("/") };
+    if (params !== undefined) return { branch, params, path: "/" + raw.join("/") };
   }
   return undefined;
 }
@@ -181,12 +185,13 @@ export function matchPath(pattern: string, pathname: string): PathMatch | undefi
   const segments = compileSegments(pattern);
   const last = segments[segments.length - 1];
   const isPrefix = last !== undefined && last.kind === Splat && last.value === "*";
-  const parts = splitPath(pathname);
+  const raw = splitPath(pathname);
+  const parts = raw.map(decode);
   const required = requiredLength(segments);
   for (let length = segments.length; length >= required; length--) {
     const params = matchSegments(isPrefix ? segments.slice(0, -1) : segments.slice(0, length), parts, isPrefix);
     if (params !== undefined) {
-      const matched = isPrefix ? parts.slice(0, segments.length - 1) : parts;
+      const matched = isPrefix ? raw.slice(0, segments.length - 1) : raw;
       return { params, path: "/" + matched.join("/") };
     }
     if (isPrefix) break;

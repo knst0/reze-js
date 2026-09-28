@@ -29,28 +29,49 @@ function isStored(value: unknown): value is StoredState {
   return typeof value === "object" && value !== null && (value as StoredState).reze === 1;
 }
 
-function windowHistory(read: () => string, toUrl: (path: string) => string, resolve: (url: URL) => string | undefined): RouterHistory {
+/**
+ * `read` returns the router path of the current URL, or `undefined` when the URL is not one (an in-page `#anchor` under hash
+ * history), in which case the entry change is left to the browser and the router keeps its path. An entry without router
+ * state is adopted with the index it most likely has: `history.length - 1` for a fresh document, one past the current entry
+ * on `popstate` (a hash edited in the address bar).
+ */
+function windowHistory(
+  read: () => string | undefined,
+  toUrl: (path: string) => string,
+  resolve: (url: URL) => string | undefined,
+): RouterHistory {
   const history = window.history;
-  if (!isStored(history.state)) {
-    history.replaceState({ reze: 1, index: 0, state: history.state }, "", location.href);
-  }
-  const entryOf = (stored: unknown): HistoryEntry => {
-    const isOwn = isStored(stored);
-    return { path: read(), state: isOwn ? stored.state : undefined, index: isOwn ? stored.index : 0 };
+  const adopt = (index: number): StoredState => {
+    const existing: unknown = history.state;
+    if (isStored(existing)) return existing;
+    const stored: StoredState = { reze: 1, index, state: existing };
+    history.replaceState(stored, "", location.href);
+    return stored;
   };
+  let current = adopt(history.length - 1);
+  let path = read() ?? "/";
+  const entry = (): HistoryEntry => ({ path, state: current.state, index: current.index });
   return {
-    get: () => entryOf(history.state),
-    push(path, state) {
-      const index = entryOf(history.state).index + 1;
-      history.pushState({ reze: 1, index, state } satisfies StoredState, "", toUrl(path));
+    get: entry,
+    push(next, state) {
+      current = { reze: 1, index: current.index + 1, state };
+      history.pushState(current, "", toUrl(next));
+      path = next;
     },
-    replace(path, state) {
-      const index = entryOf(history.state).index;
-      history.replaceState({ reze: 1, index, state } satisfies StoredState, "", toUrl(path));
+    replace(next, state) {
+      current = { reze: 1, index: current.index, state };
+      history.replaceState(current, "", toUrl(next));
+      path = next;
     },
     go: (delta) => history.go(delta),
     listen(listener) {
-      const onPop = (event: PopStateEvent): void => listener(entryOf(event.state));
+      const onPop = (): void => {
+        current = adopt(current.index + 1);
+        const next = read();
+        if (next === undefined) return;
+        path = next;
+        listener(entry());
+      };
       window.addEventListener("popstate", onPop);
       return () => window.removeEventListener("popstate", onPop);
     },
@@ -59,9 +80,16 @@ function windowHistory(read: () => string, toUrl: (path: string) => string, reso
   };
 }
 
-/** History over `window.location` paths, served under `base` (e.g. Vite's `import.meta.env.BASE_URL`). */
+const UrlOrRelative = /^(?:\.|\/\/|[a-z][a-z\d+.-]*:)/i;
+
+/** `base` (e.g. Vite's `import.meta.env.BASE_URL`) as a path prefix without a trailing slash; `""` for the root and for relative or URL bases, which name no path. */
+export function routerBase(base: string): string {
+  return UrlOrRelative.test(base) ? "" : ("/" + base).replace(/\/+/g, "/").replace(/\/$/, "");
+}
+
+/** History over `window.location` paths, served under `base` (e.g. Vite's `import.meta.env.BASE_URL`; a relative base means the root). */
 export function createBrowserHistory(base = ""): RouterHistory {
-  const prefix = ("/" + base).replace(/\/+/g, "/").replace(/\/$/, "");
+  const prefix = routerBase(base);
   const strip = (pathname: string): string | undefined => {
     if (pathname === prefix) return "/";
     return pathname.startsWith(prefix + "/") ? pathname.slice(prefix.length) : undefined;
@@ -76,10 +104,14 @@ export function createBrowserHistory(base = ""): RouterHistory {
   );
 }
 
-/** History kept in `location.hash` (`#/path`), for hosts that cannot rewrite unknown paths to the app. */
+/** History kept in `location.hash` (`#/path`), for hosts that cannot rewrite unknown paths to the app; other hashes stay in-page anchors. */
 export function createHashHistory(): RouterHistory {
   return windowHistory(
-    () => location.hash.slice(1) || "/",
+    () => {
+      const hash = location.hash;
+      if (hash === "") return "/";
+      return hash.startsWith("#/") ? hash.slice(1) : undefined;
+    },
     (path) => "#" + path,
     (url) =>
       url.pathname + url.search === location.pathname + location.search && url.hash.startsWith("#/") ? url.hash.slice(1) : undefined,

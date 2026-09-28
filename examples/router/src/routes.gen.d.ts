@@ -7,6 +7,7 @@ declare module "virtual:reze-routes/register" {
   module "@rezejs/router" {
     interface Register {
       paths: "/" | "/about" | "/blog" | "/login" | `/blog/${string}`;
+      base: "";
     }
   }
 }

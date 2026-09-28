@@ -2,6 +2,7 @@ import { catchError, type JSX } from "reze-js";
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
+  createBrowserHistory,
   createMemoryHistory,
   Router,
   useBeforeLeave,
@@ -18,7 +19,13 @@ import {
 } from "../src";
 import { cleanup, fire, mount, tick } from "./utils";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  sessionStorage.clear();
+  window.history.replaceState(null, "", "/");
+});
 
 function settle(): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>();
@@ -31,15 +38,25 @@ interface Controls {
   isRouting: () => boolean;
 }
 
-function setup(routes: RouteDefinition[], initial = "/", view: (children: JSX.Element) => JSX.Element = (c) => c) {
-  const history = createMemoryHistory(initial);
+interface SetupOptions {
+  history?: RouterHistory;
+  links?: boolean;
+}
+
+function setup(
+  routes: RouteDefinition[],
+  initial = "/",
+  view: (children: JSX.Element) => JSX.Element = (c) => c,
+  options: SetupOptions = {},
+) {
+  const history = options.history ?? createMemoryHistory(initial);
   const controls = {} as Controls;
   function Root(props: { children: JSX.Element }) {
     controls.navigate = useNavigate();
     controls.isRouting = useIsRouting();
     return <main>{view(props.children)}</main>;
   }
-  const { el } = mount(() => <Router routes={routes} history={history} root={Root} />);
+  const { el } = mount(() => <Router routes={routes} history={history} root={Root} links={options.links} />);
   return { el: el.firstElementChild!, history, ...controls };
 }
 
@@ -269,4 +286,211 @@ test("back/forward restores the scroll position saved for that entry and no othe
   expect(scrollTo).toHaveBeenLastCalledWith(0, 0);
   vi.unstubAllGlobals();
   scrollTo.mockRestore();
+});
+
+const pages: RouteDefinition[] = [
+  { path: "/", component: Home },
+  { path: "/about", component: About },
+];
+
+function silenceScroll(): ReturnType<typeof vi.spyOn> {
+  return vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+}
+
+test("navigate takes route paths while anchors carry the base", () => {
+  silenceScroll();
+  window.history.replaceState(null, "", "/app/");
+  const { el, navigate } = setup(
+    pages,
+    "/",
+    (children) => (
+      <>
+        {children}
+        <a href="/app/">home</a>
+      </>
+    ),
+    {
+      history: createBrowserHistory("/app/"),
+    },
+  );
+  navigate("/about");
+  tick();
+  expect(location.pathname).toBe("/app/about");
+  expect(el.textContent).toContain("about");
+  fire(el.querySelector("a")!, "click");
+  tick();
+  expect(location.pathname).toBe("/app/");
+  expect(el.textContent).toContain("home");
+});
+
+test("navigate hands absolute URLs outside the router to the browser and routes same-origin ones", () => {
+  const assign = vi.spyOn(location, "assign").mockImplementation(() => {});
+  const { history, navigate } = setup(pages);
+  navigate("https://other.test/about");
+  expect(assign).toHaveBeenCalledWith("https://other.test/about");
+  expect(history.get().path).toBe("/");
+  navigate("http://localhost/about?x=1");
+  expect(history.get().path).toBe("/about?x=1");
+});
+
+test("a malformed hash target is looked up raw instead of throwing", () => {
+  silenceScroll();
+  const { el } = setup(
+    [{ path: "/", component: () => <h2 id="%E0%A4%A">t</h2> }],
+    "/",
+    (children) => (
+      <>
+        {children}
+        <a href="#%E0%A4%A">bad</a>
+      </>
+    ),
+    { history: createBrowserHistory() },
+  );
+  const scrollIntoView = vi.fn();
+  el.querySelector("h2")!.scrollIntoView = scrollIntoView;
+  fire(el.querySelector("a")!, "click");
+  expect(scrollIntoView).toHaveBeenCalledOnce();
+});
+
+test("links={false} leaves the document's anchors to the browser", () => {
+  let isPrevented: boolean | undefined;
+  window.addEventListener(
+    "click",
+    (event) => {
+      isPrevented = event.defaultPrevented;
+      event.preventDefault();
+    },
+    { once: true },
+  );
+  const { el, history, navigate } = setup(
+    pages,
+    "/",
+    (children) => (
+      <>
+        {children}
+        <a href="/about">a</a>
+      </>
+    ),
+    { links: false },
+  );
+  fire(el.querySelector("a")!, "click");
+  expect(isPrevented).toBe(false);
+  expect(history.get().path).toBe("/");
+  navigate("/about");
+  tick();
+  expect(el.textContent).toContain("about");
+});
+
+test("scroll positions outlive the document through sessionStorage", () => {
+  const scrollTo = silenceScroll();
+  window.history.replaceState(null, "", "/about");
+  setup(pages, "/", (children) => children, { history: createBrowserHistory() });
+  expect(scrollTo).not.toHaveBeenCalled();
+  vi.stubGlobal("scrollY", 420);
+  window.dispatchEvent(new Event("pagehide"));
+  vi.stubGlobal("scrollY", 0);
+  cleanup();
+  setup(pages, "/", (children) => children, { history: createBrowserHistory() });
+  expect(scrollTo).toHaveBeenLastCalledWith(0, 420);
+});
+
+test("navigating while route modules load builds on the pending location", async () => {
+  const module = Promise.withResolvers<RouteModule>();
+  let setQuery!: ReturnType<typeof useSearchParams>[1];
+  const { el, history, navigate } = setup(
+    [
+      { path: "/", component: Home },
+      { path: "/slow", load: () => module.promise },
+    ],
+    "/",
+    (children) => {
+      setQuery = useSearchParams()[1];
+      return children;
+    },
+  );
+  navigate("/slow?x=1");
+  setQuery({ y: 2 });
+  expect(history.get().path).toBe("/slow?x=1&y=2");
+  navigate("#top");
+  expect(history.get().path).toBe("/slow?x=1&y=2#top");
+  module.resolve({ default: About });
+  await settle();
+  expect(el.textContent).toBe("about");
+});
+
+test("a throwing leave guard is reported without blocking, and guards also cover unloading the document", () => {
+  const reportError = vi.fn();
+  vi.stubGlobal("reportError", reportError);
+  let isBlocking = false;
+  const { el, navigate } = setup(pages, "/", (children) => {
+    useBeforeLeave(() => {
+      throw new Error("bug");
+    });
+    useBeforeLeave((event) => {
+      if (isBlocking) event.preventDefault();
+    });
+    return children;
+  });
+  navigate("/about");
+  tick();
+  expect(reportError).toHaveBeenCalledWith(new Error("bug"));
+  expect(el.textContent).toBe("about");
+  isBlocking = true;
+  const unload = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(unload);
+  expect(unload.defaultPrevented).toBe(true);
+  cleanup();
+  const afterDispose = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(afterDispose);
+  expect(afterDispose.defaultPrevented).toBe(false);
+});
+
+test("repeated query keys keep every value and the setter writes arrays in place of the key", () => {
+  let search!: ReturnType<typeof useSearchParams>;
+  const { history } = setup([{ path: "/s", component: Home }], "/s?tag=a&q=x&tag=b", (children) => {
+    search = useSearchParams();
+    return children;
+  });
+  expect({ ...search[0]() }).toEqual({ tag: ["a", "b"], q: "x" });
+  search[1]({ tag: ["c", null, "d"], q: "y" });
+  expect(history.get().path).toBe("/s?q=y&tag=c&tag=d");
+});
+
+test("a hash-only change keeps route data without re-running preload", () => {
+  const preload = vi.fn(() => "data");
+  const { navigate } = setup([{ path: "/", component: Home, preload }]);
+  navigate("#a");
+  navigate("/#b");
+  expect(preload).toHaveBeenCalledOnce();
+  navigate("/?q=1");
+  expect(preload).toHaveBeenCalledTimes(2);
+});
+
+test("focus preloads a link's route, retries after a failed load, and swallows preload rejections", async () => {
+  const load = vi
+    .fn<() => Promise<RouteModule>>()
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValue({ default: About, route: { preload: () => Promise.reject(new Error("no data")) } });
+  const { el } = setup(
+    [
+      { path: "/", component: Home },
+      { path: "/about", load },
+    ],
+    "/",
+    (children) => (
+      <>
+        {children}
+        <a href="/about">a</a>
+      </>
+    ),
+  );
+  const anchor = el.querySelector("a")!;
+  fire(anchor, "focusin");
+  await settle();
+  fire(anchor, "focusin");
+  await settle();
+  expect(load).toHaveBeenCalledTimes(2);
+  fire(anchor, "focusin");
+  await settle();
+  expect(load).toHaveBeenCalledTimes(2);
 });

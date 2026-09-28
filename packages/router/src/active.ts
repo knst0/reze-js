@@ -3,9 +3,8 @@ import { computed, runWithOwner, selector, useContext } from "@rezejs/signals";
 import { renderEffect } from "@rezejs/signals/render";
 
 import { useRouter } from "./hooks";
-import { resolveHref } from "./links";
 import { pathKey } from "./match";
-import { RouterContext, type LinkSelectors, type RouterState } from "./navigation";
+import { resolveHref, RouterContext, type LinkSelectors, type RouterState } from "./navigation";
 import type { Href } from "./types";
 
 const Current = 1;

@@ -10,6 +10,7 @@ export type {
   Location,
   Navigate,
   NavigateOptions,
+  NavigateTarget,
   Params,
   PreloadArgs,
   PreloadIntent,
