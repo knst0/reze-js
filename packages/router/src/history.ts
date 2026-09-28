@@ -104,7 +104,7 @@ export function createBrowserHistory(base = ""): RouterHistory {
   );
 }
 
-/** History kept in `location.hash` (`#/path`), for hosts that cannot rewrite unknown paths to the app; other hashes stay in-page anchors. */
+/** History kept in `location.hash` (`#/path`), for hosts that cannot rewrite unknown paths to the app. Links to routes are written `href="#/path"` (the routes plugin's `history: "hash"` types them); other hashes stay in-page anchors. */
 export function createHashHistory(): RouterHistory {
   return windowHistory(
     () => {

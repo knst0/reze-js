@@ -44,6 +44,11 @@ export interface RouterState {
   readonly pendingKey: Getter<string | undefined>;
   readonly setPendingKey: Setter<string | undefined>;
   links: LinkSelectors | undefined;
+  /** Route components being created; a navigation they start commits once they return. */
+  renderDepth: number;
+  /** The pathname `lastMatch` was matched for; a link click, its hover preload and the navigation share one match. */
+  matchedPathname: string | undefined;
+  lastMatch: BranchMatch | undefined;
   generation: number;
   readonly leaveListeners: Set<(event: BeforeLeaveEvent) => void>;
   /** `beforeunload` listener, installed while `leaveListeners` is non-empty. */
@@ -56,7 +61,8 @@ export interface RouterState {
 
 const MaxRestorableEntries = 128;
 const PositionsKey = "reze-router:scroll";
-const AbsoluteUrl = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i;
+const RelativeOrigin = "http://router.invalid";
+const QueryOrHash = /[?#]/;
 
 export const RouterContext: ContextKey<RouterState | undefined> = { id: Symbol("reze-router"), defaultValue: undefined };
 
@@ -100,6 +106,12 @@ export function resolveHref(state: RouterState, href: string): string | undefine
   return url.origin === location.origin ? state.history.resolve(url) : undefined;
 }
 
+/** The pathname of router path `path`, without its search and hash. */
+export function pathnameOf(path: string): string {
+  const end = path.search(QueryOrHash);
+  return end < 0 ? path : path.slice(0, end);
+}
+
 /** Loads `route`'s module once; a failure is stored in `loadError` and retried by the next call, never rejected. */
 export function ensureLoaded(route: CompiledRoute): Promise<void> {
   const load = route.def.load!;
@@ -136,26 +148,36 @@ function isHashChange(state: RouterState, location: Location): boolean {
   return location.hash !== committed.hash && location.pathname === committed.pathname && location.search === committed.search;
 }
 
+export function matchPathname(state: RouterState, pathname: string): BranchMatch | undefined {
+  if (pathname !== state.matchedPathname) {
+    state.lastMatch = matchBranches(state.branches, pathname);
+    state.matchedPathname = pathname;
+  }
+  return state.lastMatch;
+}
+
 export function start(state: RouterState, entry: HistoryEntry, intent: PreloadIntent, scrollMode: ScrollMode): void {
   const generation = ++state.generation;
   const location = parseLocation(entry);
   state.target = entry;
   state.targetLocation = location;
-  if (isHashChange(state, location)) {
-    commit(state, entry, location, untrack(state.matches), scrollMode);
-    return;
-  }
-  const match = matchBranches(state.branches, location.pathname);
+  const isHash = isHashChange(state, location);
+  const match = isHash ? undefined : matchPathname(state, location.pathname);
+  const finish = (): void => {
+    if (generation !== state.generation) return;
+    const matches = isHash ? untrack(state.matches) : activate(match, location, intent);
+    if (generation === state.generation) commit(state, entry, location, matches, scrollMode);
+  };
   const loading = match === undefined ? undefined : loadBranch(match);
-  if (loading === undefined) {
-    commit(state, entry, location, activate(match, location, intent), scrollMode);
-    return;
+  if (loading !== undefined) {
+    state.setIsRouting(true);
+    state.setPendingKey(pathKey(location.pathname));
+    void loading.then(finish);
+  } else if (state.renderDepth > 0) {
+    queueMicrotask(finish);
+  } else {
+    finish();
   }
-  state.setIsRouting(true);
-  state.setPendingKey(pathKey(location.pathname));
-  void loading.then(() => {
-    if (generation === state.generation) commit(state, entry, location, activate(match, location, intent), scrollMode);
-  });
 }
 
 function activate(match: BranchMatch | undefined, location: Location, intent: PreloadIntent): ActiveMatch[] {
@@ -283,18 +305,22 @@ export function navigate(state: RouterState, to: string | number, options: Navig
     state.history.go(to);
     return;
   }
-  let path: string;
-  if (AbsoluteUrl.test(to)) {
-    const resolved = resolveHref(state, to);
-    if (resolved === undefined) {
-      location.assign(to);
+  const current = state.targetLocation!;
+  let url: URL;
+  try {
+    url = new URL(to, RelativeOrigin + current.pathname + current.search);
+  } catch {
+    return;
+  }
+  let path: string | undefined;
+  if (url.origin === RelativeOrigin) {
+    path = url.pathname + url.search + url.hash;
+  } else {
+    path = resolveHref(state, to);
+    if (path === undefined) {
+      if (url.protocol !== "javascript:") location.assign(to);
       return;
     }
-    path = resolved;
-  } else {
-    const current = state.targetLocation!;
-    const url = new URL(to, "http://r" + current.pathname + current.search);
-    path = url.pathname + url.search + url.hash;
   }
   if (!force && isLeavePrevented(state, path, options, (retryForce = true) => navigate(state, to, options, retryForce))) return;
   if (options.replace === true || path === state.target?.path) state.history.replace(path, options.state);

@@ -29,6 +29,10 @@ export interface RouteProps<P extends Params = Params, D = unknown> {
 export type RouteComponent<P extends Params = Params, D = unknown> = (props: RouteProps<P, D>) => JSX.Element;
 
 export interface RouteConfig<D = unknown> {
+  /**
+   * Starts the route's data; the return value is the component's `data`. Runs with intent `"preload"` when a link to the
+   * route is hovered, focused or touched, and again with `"navigate"` when it is entered, so cache fetches that should not repeat.
+   */
   preload?: (args: PreloadArgs<any>) => D;
   info?: Readonly<Record<string, unknown>>;
 }
@@ -75,7 +79,7 @@ export interface BeforeLeaveEvent {
   retry(force?: boolean): void;
 }
 
-/** Augmented by the generated routes `.d.ts` with `paths`, every route path, and `base`, Vite's base without its trailing slash. */
+/** Augmented by the generated routes `.d.ts` with `paths`, every route path, and `base`, the prefix `<a href>` puts before one: Vite's base without its trailing slash, or `#` for hash history. */
 export interface Register {}
 
 export type RoutePath = Register extends { paths: infer P extends string } ? P : string;
@@ -84,12 +88,13 @@ type Base = Register extends { base: infer B extends string } ? B : "";
 
 type ForeignHref = `${string}:${string}` | `//${string}` | `#${string}` | `?${string}`;
 
-/** A `navigate()` target: a route path (without Vite's `base`), optionally with a query or hash, or an absolute URL. */
-export type NavigateTarget = string extends RoutePath
-  ? string
-  : RoutePath | `${RoutePath}?${string}` | `${RoutePath}#${string}` | ForeignHref;
+type Target<Prefix extends string, Path extends string> = `${Prefix}${Path}` | `${Prefix}${Path}?${string}` | `${Prefix}${Path}#${string}` | ForeignHref;
 
-/** An `<a href>`: a route path under Vite's `base`, optionally with a query or hash, or an absolute URL. */
-export type Href = string extends RoutePath
-  ? string
-  : `${Base}${RoutePath}` | `${Base}${RoutePath}?${string}` | `${Base}${RoutePath}#${string}` | ForeignHref;
+/** A `navigate()` target: a route path (without `base`), optionally with a query or hash, or an absolute URL. */
+export type NavigateTarget = string extends RoutePath ? string : Target<"", RoutePath>;
+
+/**
+ * An `<a href>`: a route path under `base`, optionally with a query or hash, or an absolute URL. A dynamic segment accepts any
+ * text, slashes included, so a route with a dynamic first segment (`[id].tsx`) makes every root-relative href valid.
+ */
+export type Href = string extends RoutePath ? string : Target<Base, RoutePath>;

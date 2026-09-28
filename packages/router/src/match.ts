@@ -24,8 +24,6 @@ export interface CompiledRoute {
 export interface Branch {
   readonly routes: readonly CompiledRoute[];
   readonly segments: readonly Segment[];
-  readonly score: number;
-  readonly order: number;
 }
 
 export interface PathMatch {
@@ -37,8 +35,8 @@ export interface BranchMatch extends PathMatch {
   readonly branch: Branch;
 }
 
-export const ParamName = /^[A-Za-z_$][\w$]*$/;
-export const SplatName = /^[\w$]+$/;
+export const ParamName = /^(?!__proto__$)[A-Za-z_$][\w$]*$/;
+export const SplatName = /^(?!__proto__$)[\w$]+$/;
 
 function invalid(path: string, reason: string): Error {
   return new Error(`[reze-router] invalid route path "${path}": ${reason}`);
@@ -85,13 +83,20 @@ function joinPaths(parent: string, child: string): string {
   return parent.replace(/\/+$/, "") + "/" + child.replace(/^\/+/, "");
 }
 
-function scoreOf(segments: readonly Segment[]): number {
-  let score = segments[segments.length - 1]?.kind === Splat ? 0 : 1;
-  for (const segment of segments) {
-    if (segment.kind === Static) score += 3;
-    else if (segment.kind !== Splat) score += 2;
+/** Rank of `segments[i]`, higher first: static, then param, then the path's end, then splat. */
+function rankAt(segments: readonly Segment[], i: number): number {
+  if (i >= segments.length) return 1;
+  const kind = segments[i]!.kind;
+  return kind === Static ? 3 : kind === Splat ? 0 : 2;
+}
+
+function compareBranches(a: Branch, b: Branch): number {
+  const length = Math.max(a.segments.length, b.segments.length);
+  for (let i = 0; i < length; i++) {
+    const difference = rankAt(b.segments, i) - rankAt(a.segments, i);
+    if (difference !== 0) return difference;
   }
-  return score;
+  return 0;
 }
 
 function compileRoute(def: RouteDefinition): CompiledRoute {
@@ -106,7 +111,7 @@ function compileRoute(def: RouteDefinition): CompiledRoute {
   };
 }
 
-/** Flattens `defs` into leaf branches, best match first. Throws on an invalid path. */
+/** Flattens `defs` into leaf branches, best match first: segment by segment, static beats param beats splat; ties keep definition order. Throws on an invalid path. */
 export function compileRoutes(defs: readonly RouteDefinition[]): Branch[] {
   const branches: Branch[] = [];
   const walk = (list: readonly RouteDefinition[], parentPath: string, parents: readonly CompiledRoute[]): void => {
@@ -122,12 +127,12 @@ export function compileRoutes(defs: readonly RouteDefinition[]): Branch[] {
         const expanded: Segment[] = segments
           .slice(0, length)
           .map((s) => (s.kind === Optional ? { kind: Param, value: s.value } : s) satisfies Segment);
-        branches.push({ routes, segments: expanded, score: scoreOf(expanded), order: branches.length });
+        branches.push({ routes, segments: expanded });
       }
     }
   };
   walk(defs, "", []);
-  return branches.sort((a, b) => b.score - a.score || a.order - b.order);
+  return branches.sort(compareBranches);
 }
 
 /** `decodeURIComponent`, keeping `value` as is when it is malformed. */

@@ -1,5 +1,4 @@
-import { matchBranches } from "./match";
-import { loadBranch, navigate, parseLocation, resolveHref, type RouterState } from "./navigation";
+import { loadBranch, matchPathname, navigate, parseLocation, pathnameOf, resolveHref, type RouterState } from "./navigation";
 
 const SvgNamespace = "http://www.w3.org/2000/svg";
 const HoverDelayMs = 20;
@@ -26,7 +25,7 @@ function ignoreRejection(): void {}
 /** Loads `path`'s route modules and runs their `preload` with intent `"preload"`; `false` when a module failed to load. */
 async function preloadPath(state: RouterState, path: string): Promise<boolean> {
   const location = parseLocation({ path, state: undefined, index: 0 });
-  const match = matchBranches(state.branches, location.pathname);
+  const match = matchPathname(state, location.pathname);
   if (match === undefined) return true;
   await loadBranch(match);
   for (const route of match.branch.routes) {
@@ -44,14 +43,14 @@ async function preloadPath(state: RouterState, path: string): Promise<boolean> {
   return true;
 }
 
-/** Routes same-origin anchor clicks through `state` and, with `isPreloading`, preloads hovered links; returns the remover. */
+/** Routes same-origin anchor clicks that match a route through `state` and, with `isPreloading`, preloads hovered links; returns the remover. */
 export function installLinks(state: RouterState, isPreloading: boolean): () => void {
   const onClick = (event: MouseEvent): void => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const anchor = anchorOf(event);
     if (anchor === undefined) return;
     const path = anchorPath(state, anchor);
-    if (path === undefined) return;
+    if (path === undefined || matchPathname(state, pathnameOf(path)) === undefined) return;
     event.preventDefault();
     navigate(state, path, {
       replace: anchor.hasAttribute("replace"),

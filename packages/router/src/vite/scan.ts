@@ -51,14 +51,29 @@ function validate(route: FileRoute): void {
   }
 }
 
-function checkSiblings(routes: readonly FileRoute[]): void {
-  const leaves = new Map<string, FileRoute>();
+/** The pathname shapes `fullPath` matches, as the matcher compares them: case-insensitive, param and splat names erased, optionals expanded. */
+function shapesOf(fullPath: string): string[] {
+  let shapes = [""];
+  for (const segment of fullPath.split("/")) {
+    if (segment === "") continue;
+    const head = segment[0];
+    if (head === ":" && segment.endsWith("?")) shapes = [...shapes, ...shapes.map((shape) => shape + "/:")];
+    else shapes = shapes.map((shape) => shape + "/" + (head === ":" ? ":" : head === "*" ? "*" : segment.toLowerCase()));
+  }
+  return shapes;
+}
+
+function checkConflicts(routes: readonly FileRoute[], leaves: Map<string, FileRoute>): void {
   for (const route of routes) {
-    checkSiblings(route.children);
-    if (route.children.length > 0) continue;
-    const other = leaves.get(route.path);
-    if (other !== undefined) throw new Error(`[reze-router] routes "${other.file}" and "${route.file}" both match "${route.fullPath}"`);
-    leaves.set(route.path, route);
+    if (route.children.length > 0) {
+      checkConflicts(route.children, leaves);
+      continue;
+    }
+    for (const shape of shapesOf(route.fullPath)) {
+      const other = leaves.get(shape);
+      if (other !== undefined) throw new Error(`[reze-router] routes "${other.file}" and "${route.file}" both match "${route.fullPath}"`);
+      leaves.set(shape, route);
+    }
   }
 }
 
@@ -93,6 +108,6 @@ export function scanRoutes(files: readonly string[]): FileRoute[] {
     validate(route);
     (parent?.children ?? roots).push(route);
   }
-  checkSiblings(roots);
+  checkConflicts(roots, new Map());
   return roots;
 }

@@ -24,7 +24,7 @@ export interface RouterProps {
   history?: RouterHistory;
   /** Wraps every page; `children` renders the matched route. */
   root?: (props: { children: JSX.Element }) => JSX.Element;
-  /** Default `true`: route same-origin `<a>` clicks anywhere in the document. Pass `false` for a router that does not own the page's links, such as an embedded memory router; it then moves only through `useNavigate`. */
+  /** Route same-origin `<a>` clicks anywhere in the document; `false` leaves them to the browser, so the router moves only through `useNavigate`. Default `true` for window histories (browser, hash), `false` for a memory history, which does not own the page's links. */
   links?: boolean;
   /** Default `true`: load and preload a link's route on hover, focus or touch. Needs `links`. */
   preload?: boolean;
@@ -40,20 +40,25 @@ function renderLevel(state: RouterState, depth: number): JSX.Element {
   const Comp = match.route.component;
   if (Comp === undefined) return outlet(state, depth + 1);
   let children: JSX.Element;
-  return createComponent(Comp, {
-    get params() {
-      return state.matches()[depth]?.params;
-    },
-    get data() {
-      return state.matches()[depth]?.data;
-    },
-    get location() {
-      return state.location();
-    },
-    get children() {
-      return (children ??= outlet(state, depth + 1));
-    },
-  });
+  state.renderDepth++;
+  try {
+    return createComponent(Comp, {
+      get params() {
+        return state.matches()[depth]?.params;
+      },
+      get data() {
+        return state.matches()[depth]?.data;
+      },
+      get location() {
+        return state.location();
+      },
+      get children() {
+        return (children ??= outlet(state, depth + 1));
+      },
+    });
+  } finally {
+    state.renderDepth--;
+  }
 }
 
 function outlet(state: RouterState, depth: number): () => JSX.Element {
@@ -86,6 +91,9 @@ export function Router(props: RouterProps): JSX.Element {
     pendingKey,
     setPendingKey,
     links: undefined,
+    renderDepth: 0,
+    matchedPathname: undefined,
+    lastMatch: undefined,
     generation: 0,
     leaveListeners: new Set(),
     onUnload: (event) => {
@@ -98,7 +106,7 @@ export function Router(props: RouterProps): JSX.Element {
     positions: undefined,
   };
   const root = props.root;
-  const isLinking = props.links !== false;
+  const isLinking = props.links ?? history.scroll;
   const isPreloading = props.preload !== false;
   return provideContext(RouterContext, state, () => {
     state.owner = getOwner();

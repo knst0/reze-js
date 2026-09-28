@@ -23,8 +23,19 @@ describe("ranking", () => {
     expect(leafPath([{ path: "/*404" }, { path: "/" }], "/x")).toBe("/*404");
   });
 
-  test("equal scores keep definition order", () => {
+  test("an earlier static segment beats a param, even ahead of a splat", () => {
+    expect(leafPath([{ path: "/:x" }, { path: "/a/*" }], "/a")).toBe("/a/*");
+    expect(leafPath([{ path: "/a/:b/:c" }, { path: "/a/b/*" }], "/a/b/c")).toBe("/a/b/*");
+    expect(leafPath([{ path: "/a/*" }, { path: "/a" }], "/a")).toBe("/a");
+  });
+
+  test("equal ranks keep definition order", () => {
     expect(leafPath([{ path: "/:a" }, { path: "/:b" }], "/x")).toBe("/:a");
+  });
+
+  test("__proto__ is rejected as a param or splat name", () => {
+    expect(() => compileRoutes([{ path: "/:__proto__" }])).toThrow('bad param name "__proto__"');
+    expect(() => compileRoutes([{ path: "/*__proto__" }])).toThrow('bad splat name "__proto__"');
   });
 });
 

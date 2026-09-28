@@ -155,6 +155,7 @@ const LINK_CASES: &[(&str, &str)] = &[
         "link_external_unclaimed",
         "const a = <p><a href=\"#x\" /><a href=\"?q\" /><a href=\"mailto:a\" /><a href=\"https://x\" /><a href=\"//cdn\" /><a href=\"\" /><a /></p>;",
     ),
+    ("link_hash_route", "const a = <a href=\"#/x\">X</a>;"),
     ("link_svg", "const a = <svg><a href=\"/x\"><text>x</text></a></svg>;"),
     ("link_header", "import \"./x.css\";\nconst a = <a href=\"/x\" />;"),
 ];

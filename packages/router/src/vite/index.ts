@@ -3,6 +3,7 @@ import { dirname, join, resolve, sep } from "node:path";
 
 import type { Plugin } from "vite";
 
+import { routerBase } from "../history";
 import { routesDts, routesModule } from "./codegen";
 import { scanRoutes, type FileRoute } from "./scan";
 
@@ -13,6 +14,8 @@ export interface Options {
   dts?: string | false;
   /** Have `@rezejs/vite-plugin` claim native `<a href>` elements for this router (`aria-current`, `data-active`, `data-pending`). Default `true`. */
   links?: boolean;
+  /** The history the app routes with, which decides the `<a href>` shape the generated types accept: `"/about"` under Vite's `base` for `"browser"`, `"#/about"` for `"hash"`. Default `"browser"`. */
+  history?: "browser" | "hash";
 }
 
 interface LinkClaimer {
@@ -32,7 +35,7 @@ function writeIfChanged(file: string, content: string): void {
 export default function fileRoutes(options: Options = {}): Plugin {
   let dir = "";
   let dtsFile: string | undefined;
-  let base = "/";
+  let hrefBase = "";
   let code: string | undefined;
 
   function scan(): FileRoute[] {
@@ -47,7 +50,7 @@ export default function fileRoutes(options: Options = {}): Plugin {
   function generate(): boolean {
     const routes = scan();
     const next = routesModule(routes, dir);
-    if (dtsFile !== undefined) writeIfChanged(dtsFile, routesDts(routes, base));
+    if (dtsFile !== undefined) writeIfChanged(dtsFile, routesDts(routes, hrefBase));
     const isChanged = next !== code;
     code = next;
     return isChanged;
@@ -59,7 +62,7 @@ export default function fileRoutes(options: Options = {}): Plugin {
       dir = resolve(config.root, options.dir ?? "src/routes");
       const dts = options.dts ?? "src/routes.gen.d.ts";
       dtsFile = dts === false ? undefined : resolve(config.root, dts);
-      base = config.base;
+      hrefBase = options.history === "hash" ? "#" : routerBase(config.base);
       if (options.links === false) return;
       const reze = config.plugins.find((plugin) => plugin.name === "reze-js");
       if (reze === undefined) throw new Error("[reze-router] @rezejs/vite-plugin not found");

@@ -54,6 +54,9 @@ describe("scanRoutes", () => {
   test.each([
     [["a.tsx", "a.ts"], '[reze-router] duplicate route files for "a": a.ts, a.tsx'],
     [["about.tsx", "(x)/about.tsx"], '[reze-router] routes "(x)/about.tsx" and "about.tsx" both match "/about"'],
+    [["[id].tsx", "[slug].tsx"], '[reze-router] routes "[id].tsx" and "[slug].tsx" both match "/:slug"'],
+    [["(a).tsx", "(a)/Login.tsx", "login.tsx"], '[reze-router] routes "(a)/Login.tsx" and "login.tsx" both match "/login"'],
+    [["blog/index.tsx", "blog/[[page]].tsx"], '[reze-router] routes "blog/[[page]].tsx" and "blog/index.tsx" both match "/blog"'],
     [["[...rest].tsx", "[...rest]/x.tsx"], '[reze-router] [...rest]/x.tsx: splat "rest" must be the last segment in "/*rest/x"'],
     [["[id].tsx", "[id]/[id].tsx"], '[reze-router] [id]/[id].tsx: duplicate param "id" in "/:id/:id"'],
     [["[1x].tsx"], '[reze-router] [1x].tsx: invalid param name "1x" in "/:1x"'],

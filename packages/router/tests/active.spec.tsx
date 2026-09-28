@@ -3,6 +3,7 @@ import { afterEach, expect, test } from "vitest";
 
 import {
   createBrowserHistory,
+  createHashHistory,
   createMemoryHistory,
   Router,
   useLinkState,
@@ -129,6 +130,25 @@ test("relative hrefs resolve against the current document URL and re-key on navi
   expect(stateOf(anchor("team"))).toBe("- - -");
   go("/team");
   expect(stateOf(anchor("team"))).toBe("page active -");
+});
+
+test("hash history links written #/path carry state; in-page #anchors do not", () => {
+  window.history.replaceState(null, "", "/#/about");
+  const { anchor, go } = setup(
+    () => (
+      <>
+        <a href="#/about">about</a>
+        <a href="#top">top</a>
+      </>
+    ),
+    "",
+    CatchAll,
+    createHashHistory(),
+  );
+  expect(stateOf(anchor("#/about"))).toBe("page active -");
+  expect(stateOf(anchor("#top"))).toBe("- - -");
+  go("/other");
+  expect(stateOf(anchor("#/about"))).toBe("- - -");
 });
 
 test("an anchor to a loading route is pending until it commits, and a superseding navigation clears it", async () => {

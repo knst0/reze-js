@@ -4,14 +4,13 @@ import { renderEffect } from "@rezejs/signals/render";
 
 import { useRouter } from "./hooks";
 import { pathKey } from "./match";
-import { resolveHref, RouterContext, type LinkSelectors, type RouterState } from "./navigation";
+import { pathnameOf, resolveHref, RouterContext, type LinkSelectors, type RouterState } from "./navigation";
 import type { Href } from "./types";
 
 const Current = 1;
 const Active = 2;
 const Pending = 4;
 const Scheme = /^[a-z][a-z\d+.-]*:/i;
-const QueryOrHash = /[?#]/;
 
 export interface LinkState {
   /** The link's pathname is the current one: `aria-current="page"`. */
@@ -43,12 +42,10 @@ function isPrefixAt(state: RouterState, links: LinkSelectors, depth: number): (k
 }
 
 function linkKey(state: RouterState, href: string | null | undefined): string | undefined {
-  if (!href || href[0] === "#" || href[0] === "?") return undefined;
+  if (!href || href[0] === "?" || (href[0] === "#" && href[1] !== "/")) return undefined;
   if (href[0] !== "/" && !Scheme.test(href)) state.location();
   const path = resolveHref(state, href);
-  if (path === undefined) return undefined;
-  const end = path.search(QueryOrHash);
-  return pathKey(end < 0 ? path : path.slice(0, end));
+  return path === undefined ? undefined : pathKey(pathnameOf(path));
 }
 
 function linkFlags(state: RouterState, key: string | undefined): number {

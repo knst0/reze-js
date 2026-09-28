@@ -1,6 +1,5 @@
 import { posix } from "node:path";
 
-import { routerBase } from "../history";
 import type { FileRoute } from "./scan";
 
 const StringType = "${string}";
@@ -57,7 +56,7 @@ function collectPaths(routes: readonly FileRoute[], paths: Set<string>): void {
   }
 }
 
-/** The generated `.d.ts`: types `virtual:reze-routes` and registers every leaf route path plus Vite's `base`. */
+/** The generated `.d.ts`: types `virtual:reze-routes` and registers every leaf route path plus `base`, the prefix `<a href>` puts before a route path. */
 export function routesDts(routes: readonly FileRoute[], base: string): string {
   const set = new Set<string>();
   collectPaths(routes, set);
@@ -71,7 +70,7 @@ declare module "virtual:reze-routes/register" {
   module "@rezejs/router" {
     interface Register {
       paths: ${paths};
-      base: ${JSON.stringify(routerBase(base))};
+      base: ${JSON.stringify(base)};
     }
   }
 }

@@ -28,11 +28,30 @@ function rezePlugin() {
   return { name: "reze-js", api: { claimLinks: vi.fn() } };
 }
 
-function start(options?: Options, plugins: unknown[] = [rezePlugin()]): Hooks {
+function start(options?: Options, plugins: unknown[] = [rezePlugin()], base = "/"): Hooks {
   const hooks = fileRoutes(options) as unknown as Hooks;
-  hooks.configResolved({ root, base: "/", plugins } as unknown as ResolvedConfig);
+  hooks.configResolved({ root, base, plugins } as unknown as ResolvedConfig);
   return hooks;
 }
+
+function registeredBase(options: Options | undefined, base: string): string | undefined {
+  mkdirSync(join(root, "src", "routes"), { recursive: true });
+  writeFileSync(join(root, "src", "routes", "index.tsx"), "");
+  start(options, undefined, base).buildStart();
+  return /base: (".*");/.exec(readFileSync(join(root, "src", "routes.gen.d.ts"), "utf8"))?.[1];
+}
+
+test.each([
+  ["/app/", '"/app"'],
+  ["./", '""'],
+  ["https://cdn.test/assets/", '""'],
+])("Vite base %j registers the href base the browser history uses", (base, registered) => {
+  expect(registeredBase(undefined, base)).toBe(registered);
+});
+
+test('history: "hash" registers "#" as the href base whatever Vite\'s base', () => {
+  expect(registeredBase({ history: "hash" }, "/app/")).toBe('"#"');
+});
 
 test("claims native anchors for the router through the reze plugin", () => {
   const reze = rezePlugin();

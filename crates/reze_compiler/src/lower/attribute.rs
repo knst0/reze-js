@@ -104,10 +104,10 @@ fn class_toggles<'b, 'a>(
     Some(ClassToggles { static_tokens, toggles })
 }
 
-/// Whether a literal href may be a router path: none of empty, `#…`, `?…`, `//…` or `scheme:…`.
+/// Whether a literal href may be a router path: none of empty, `#…` (except a hash-history `#/…`), `?…`, `//…` or `scheme:…`.
 fn is_routable_href(href: &str) -> bool {
     let Some(first) = href.bytes().next() else { return false };
-    if matches!(first, b'#' | b'?') || href.starts_with("//") {
+    if first == b'?' || (first == b'#' && !href.starts_with("#/")) || href.starts_with("//") {
         return false;
     }
     let scheme_end =

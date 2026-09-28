@@ -119,7 +119,7 @@ test("preload receives params and intent, and its result is the route's data", (
   expect(el.textContent).toBe("data 3");
 });
 
-test("same-origin anchor clicks navigate; modified, targeted, download and external links do not", () => {
+test("same-origin anchor clicks navigate; modified, targeted, download, external and unrouted links do not", () => {
   const seen: boolean[] = [];
   const record = (event: Event): void => {
     seen.push(event.defaultPrevented);
@@ -147,16 +147,21 @@ test("same-origin anchor clicks navigate; modified, targeted, download and exter
           <a id="external" href="https://other.test/x">
             d
           </a>
+          <a id="unrouted" href="/files/report.csv">
+            e
+          </a>
           {children}
         </>
       ),
+      { links: true },
     );
     const link = (id: string) => el.querySelector(`#${id}`)!;
     fire(link("plain"), "click", { ctrlKey: true } as MouseEventInit);
     fire(link("blank"), "click");
     fire(link("download"), "click");
     fire(link("external"), "click");
-    expect(seen).toEqual([false, false, false, false]);
+    fire(link("unrouted"), "click");
+    expect(seen).toEqual([false, false, false, false, false]);
     expect(history.get().path).toBe("/");
     fire(link("plain"), "click");
     tick();
@@ -323,7 +328,7 @@ test("navigate takes route paths while anchors carry the base", () => {
   expect(el.textContent).toContain("home");
 });
 
-test("navigate hands absolute URLs outside the router to the browser and routes same-origin ones", () => {
+test("navigate hands absolute URLs outside the router to the browser, routes same-origin ones, and never runs scripts", () => {
   const assign = vi.spyOn(location, "assign").mockImplementation(() => {});
   const { history, navigate } = setup(pages);
   navigate("https://other.test/about");
@@ -331,6 +336,9 @@ test("navigate hands absolute URLs outside the router to the browser and routes 
   expect(history.get().path).toBe("/");
   navigate("http://localhost/about?x=1");
   expect(history.get().path).toBe("/about?x=1");
+  navigate(" JavaScript:alert(1)");
+  navigate("java\tscript:alert(1)");
+  expect(assign).toHaveBeenCalledOnce();
 });
 
 test("a malformed hash target is looked up raw instead of throwing", () => {
@@ -352,7 +360,7 @@ test("a malformed hash target is looked up raw instead of throwing", () => {
   expect(scrollIntoView).toHaveBeenCalledOnce();
 });
 
-test("links={false} leaves the document's anchors to the browser", () => {
+test("a memory router leaves the document's anchors to the browser by default", () => {
   let isPrevented: boolean | undefined;
   window.addEventListener(
     "click",
@@ -371,7 +379,6 @@ test("links={false} leaves the document's anchors to the browser", () => {
         <a href="/about">a</a>
       </>
     ),
-    { links: false },
   );
   fire(el.querySelector("a")!, "click");
   expect(isPrevented).toBe(false);
@@ -483,6 +490,7 @@ test("focus preloads a link's route, retries after a failed load, and swallows p
         <a href="/about">a</a>
       </>
     ),
+    { links: true },
   );
   const anchor = el.querySelector("a")!;
   fire(anchor, "focusin");
@@ -493,4 +501,30 @@ test("focus preloads a link's route, retries after a failed load, and swallows p
   fire(anchor, "focusin");
   await settle();
   expect(load).toHaveBeenCalledTimes(2);
+});
+
+test("a redirect from preload wins over the navigation that ran it", () => {
+  let navigate!: Navigate;
+  const routes: RouteDefinition[] = [
+    ...pages,
+    { path: "/admin", component: () => <p>secret</p>, preload: () => navigate("/about", { replace: true }) },
+  ];
+  const result = setup(routes);
+  navigate = result.navigate;
+  navigate("/admin");
+  tick();
+  expect(result.history.get().path).toBe("/about");
+  expect(result.el.textContent).toBe("about");
+});
+
+test.each(["/admin", "/"])("a redirect from a route component renders its target (starting at %s)", async (initial) => {
+  const Admin = () => {
+    useNavigate()("/about", { replace: true });
+    return <p>secret</p>;
+  };
+  const { el, history, navigate } = setup([...pages, { path: "/admin", component: Admin }], initial);
+  if (initial !== "/admin") navigate("/admin");
+  await settle();
+  expect(history.get().path).toBe("/about");
+  expect(el.textContent).toBe("about");
 });
