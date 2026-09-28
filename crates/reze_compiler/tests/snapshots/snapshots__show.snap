@@ -6,7 +6,7 @@ import { Show } from "reze-js";
 import { template as _$template, insert as _$insert, computed as _$computed, next as _$next, child as _$child, createComponent as _$createComponent, branch as _$branch } from "reze-js";
 const a = (() => {
   var _el$ = _$template("<div>");
-  var _c$ = _$computed(() => !!(n() >= 10));
+  var _c$ = _$computed(() => n() >= 10);
   _$insert(_el$, () => _c$() && _$template("<p>big"));
   return _el$;
 })();

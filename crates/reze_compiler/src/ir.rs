@@ -270,6 +270,8 @@ pub enum ExprChild<'a> {
 
 pub struct Conditional<'a> {
     pub test: Embed<'a>,
+    /// `test` always yields a boolean and is written without `!!`.
+    pub test_is_boolean: bool,
     pub consequent: Child<'a>,
     pub alternate: Option<Child<'a>>,
 }

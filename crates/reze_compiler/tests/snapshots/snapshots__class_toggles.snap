@@ -5,7 +5,7 @@ expression: "const a = <p class={{ negative: n() < 0 }} />;\nconst b = <p class=
 import { template as _$template, renderEffect as _$renderEffect, toggleClass as _$toggleClass, className as _$className } from "reze-js";
 const a = (() => {
   var _el$ = _$template("<p>");
-  _$renderEffect(_p$ => _$toggleClass(_el$, "negative", !!(n() < 0), _p$));
+  _$renderEffect(_p$ => _$toggleClass(_el$, "negative", n() < 0, _p$));
   return _el$;
 })();
 const b = (() => {

@@ -123,6 +123,10 @@ const CASES: &[(&str, &str)] = &[
         "import { Show } from \"reze-js\";\nconst a = <div><Show when={n() >= 10}><p>big</p></Show></div>;\nconst b = <div>x<Show when={user()} fallback={<i>guest</i>}><>{user().name}<b/></></Show>y</div>;\nconst c = <Card><Show when={u()}>{(v) => <b>{v().name}</b>}</Show></Card>;",
     ),
     (
+        "show_boolean_when",
+        "import { Show } from \"reze-js\";\nconst a = <div><Show when={!x() || (k() in o && Boolean(v()))}><b /></Show></div>;\nconst b = <div><Show when={{} instanceof X}><i /></Show></div>;\nconst c = <div><Show when={a() ?? b() === 1}><u /></Show></div>;\nconst d = <p class={{ on: s() ? t() > 1 : !u() }} />;",
+    ),
+    (
         "for_list",
         "import { For } from \"reze-js\";\nconst a = <ul><For each={rows()} fallback={<li>none</li>}>{(row, i) => <li>{i()}</li>}</For></ul>;\nconst b = <For each={rows()} key={(row) => row.id}>{(row) => <li>{row().name}</li>}</For>;",
     ),

@@ -5,7 +5,7 @@ use oxc_span::GetSpan;
 
 use super::constant::{is_dynamic, literal_truthy, static_text};
 use super::element::TemplateBuilder;
-use super::{Lowerer, Tag, has_jsx, is_function};
+use super::{Lowerer, Tag, attribute_name, has_jsx, is_function};
 use crate::analyze::Intrinsic;
 use crate::diagnostic::{Code, Report};
 use crate::html::{clean_jsx_text, decode_entities, escape_text};
@@ -13,7 +13,7 @@ use crate::ir::{
     Anchor, Bind, BindTarget, Branch, Child, Conditional, ExprChild, Flow, Jsx, NodeId, Op,
     Placement, Render, TextPart, Value,
 };
-use crate::kind::static_kind;
+use crate::kind::{is_boolean, static_kind};
 
 pub enum Item<'b, 'a> {
     Text(String),
@@ -284,12 +284,32 @@ impl<'a> Lowerer<'a, '_> {
                     Some(Render::Child(child)) => Some(inline(child)),
                     _ => None,
                 };
-                let conditional =
-                    Conditional { test: when, consequent: inline(consequent), alternate };
+                let conditional = Conditional {
+                    test: when,
+                    test_is_boolean: self.is_boolean_when(el),
+                    consequent: inline(consequent),
+                    alternate,
+                };
                 Child::Expr(ExprChild::Conditional(self.boxed(conditional)))
             }
             flow => Child::Jsx(Jsx::Flow(self.boxed(flow))),
         }
+    }
+
+    /// Whether the last `when` of `el` always yields a boolean and can be an arrow's body as is.
+    fn is_boolean_when(&self, el: &JSXElement<'a>) -> bool {
+        let when = el.opening_element.attributes.iter().rev().find_map(|item| match item {
+            JSXAttributeItem::Attribute(a) if attribute_name(self, a) == "when" => Some(a),
+            _ => None,
+        });
+        let Some(JSXAttributeValue::ExpressionContainer(container)) =
+            when.and_then(|a| a.value.as_ref())
+        else {
+            return false;
+        };
+        container.expression.as_expression().is_some_and(|e| {
+            is_boolean(e, self.analysis) && self.source.as_bytes()[e.span().start as usize] != b'{'
+        })
     }
 
     /// The value an `insert` receives for a child expression.

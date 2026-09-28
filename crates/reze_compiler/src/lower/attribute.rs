@@ -16,7 +16,7 @@ use crate::html::{
     push_attribute_value, suggest_attribute,
 };
 use crate::ir::{AssignTarget, Bind, BindTarget, Handler, MemberKey, NodeId, Op, RefTarget, Value};
-use crate::kind::{Kind as ValueKind, static_kind};
+use crate::kind::{Kind as ValueKind, is_boolean, static_kind};
 
 enum ClassPiece<'b, 'a> {
     Static(&'a str),
@@ -339,7 +339,11 @@ impl<'a> Lowerer<'a, '_> {
         builder.reference(node);
         for (token, value) in classes.toggles {
             let target = BindTarget::ClassToggle(token);
-            let toggle = Value::Truthy(self.expr(value));
+            let toggle = if is_boolean(value, self.analysis) {
+                Value::Expr(self.expr(value))
+            } else {
+                Value::Truthy(self.expr(value))
+            };
             if is_dynamic(value, false, self.analysis) {
                 builder.binds.push(Bind { node, target, value: toggle });
             } else {

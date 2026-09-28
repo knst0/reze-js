@@ -121,9 +121,10 @@ impl<'a> Emitter<'a, '_> {
     ) {
         let memo = self.fresh("_c$");
         let computed = self.helper(Helper::Computed);
-        let _ = write!(out, "var {memo} = {computed}(() => !!(");
+        let (open, close) = if conditional.test_is_boolean { ("", "") } else { ("!!(", ")") };
+        let _ = write!(out, "var {memo} = {computed}(() => {open}");
         self.embed(out, &conditional.test);
-        let _ = write!(out, "));\n  {insert}({parent}, () => {memo}() ");
+        let _ = write!(out, "{close});\n  {insert}({parent}, () => {memo}() ");
         match &conditional.alternate {
             Some(alternate) => {
                 out.push("? ");
