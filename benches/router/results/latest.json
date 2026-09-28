@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-28T01:49:40.744Z",
+  "recordedAt": "2026-09-28T04:54:16.666Z",
   "browser": "153.0.8010.12",
   "options": {
     "runs": 3,
@@ -44,45 +44,45 @@
       "router": "reze",
       "bundle": {
         "home": {
-          "raw": 26101,
-          "gzip": 9460,
-          "brotli": 8469
+          "raw": 26413,
+          "gzip": 9569,
+          "brotli": 8544
         },
         "homeCost": {
-          "raw": 16530,
-          "gzip": 5877,
-          "brotli": 5195
+          "raw": 16842,
+          "gzip": 5986,
+          "brotli": 5270
         },
         "total": {
-          "raw": 29363,
-          "gzip": 12833,
-          "brotli": 11277
+          "raw": 29675,
+          "gzip": 12942,
+          "brotli": 11624
         },
         "totalCost": {
-          "raw": 16457,
-          "gzip": 5913,
-          "brotli": 5437
+          "raw": 16769,
+          "gzip": 6022,
+          "brotli": 5784
         }
       },
       "perf": {
-        "bootMs": 39.980000019073486,
+        "bootMs": 37.84999996423721,
         "param": {
-          "latencyUs": 229.07499998807907,
-          "cpuUs": 264.43999999999994
+          "latencyUs": 221.55000001192093,
+          "cpuUs": 259.39999999999975
         },
         "swap": {
-          "latencyUs": 250.47500014305115,
-          "cpuUs": 287.65500000000054
+          "latencyUs": 257.2500002384186,
+          "cpuUs": 293.1000000000003
         },
         "pop": {
-          "latencyUs": 722.8000000119209,
-          "cpuUs": 305.0999999999998
+          "latencyUs": 718.7750002741814,
+          "cpuUs": 304.2299999999998
         }
       },
       "memory": {
-        "heap": 819708,
-        "cost": 154352,
-        "retained": 44024
+        "heap": 821472,
+        "cost": 156116,
+        "retained": 43844
       }
     },
     {

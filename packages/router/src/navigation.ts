@@ -314,7 +314,8 @@ export function navigate(state: RouterState, to: string | number, options: Navig
   }
   let path: string | undefined;
   if (url.origin === RelativeOrigin) {
-    path = url.pathname + url.search + url.hash;
+    // `paths` builders emit the served base; strip it back to the router path the branches match.
+    path = state.history.resolve(url) ?? url.pathname + url.search + url.hash;
   } else {
     path = resolveHref(state, to);
     if (path === undefined) {

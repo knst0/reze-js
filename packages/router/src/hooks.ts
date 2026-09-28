@@ -2,11 +2,23 @@ import { computed, onCleanup, useContext } from "@rezejs/signals";
 
 import { matchPath, type PathMatch } from "./match";
 import { addLeaveListener, navigate, RouterContext, type RouterState } from "./navigation";
-import type { BeforeLeaveEvent, Location, Navigate, NavigateOptions, Params, RouteMatch } from "./types";
-
-type SearchValue = string | number | boolean | null | undefined;
+import type {
+  BeforeLeaveEvent,
+  Location,
+  Navigate,
+  NavigateOptions,
+  Params,
+  ParamsFor,
+  RouteMatch,
+  RoutePattern,
+  SearchInit,
+  SearchValue,
+} from "./types";
 
 const NoParams: Params = Object.freeze({});
+
+/** `matchPath` narrowed to pattern `P` when the plugin registered it. */
+export type PathMatchFor<P extends string> = P extends RoutePattern ? { params: ParamsFor<P>; path: string } : PathMatch;
 
 export function useRouter(): RouterState {
   const state = useContext(RouterContext);
@@ -18,12 +30,14 @@ export function useLocation(): () => Location {
   return useRouter().location;
 }
 
-/** The deepest match's params, merged across its layouts. */
-export function useParams<P extends Params = Params>(): () => P {
+/** The deepest match's params, merged across its layouts; `from` narrows them to a registered pattern. */
+export function useParams(): () => Params;
+export function useParams<P extends RoutePattern>(from: P): () => ParamsFor<P>;
+export function useParams(_from?: string): () => Params {
   const state = useRouter();
   return () => {
     const matches = state.matches();
-    return (matches[matches.length - 1]?.params ?? NoParams) as P;
+    return matches[matches.length - 1]?.params ?? NoParams;
   };
 }
 
@@ -36,13 +50,10 @@ export function useNavigate(): Navigate {
  * The query and a setter that merges into it: `null`/`undefined` delete a key, an array sets one entry per non-nullish item.
  * The setter builds on the latest navigation, even one still loading, and defaults to `scroll: false`.
  */
-export function useSearchParams(): [
-  () => Location["query"],
-  (next: Record<string, SearchValue | readonly SearchValue[]>, options?: NavigateOptions) => void,
-] {
+export function useSearchParams(): [() => Location["query"], (next: SearchInit, options?: NavigateOptions) => void] {
   const state = useRouter();
   const query = (): Location["query"] => state.location().query;
-  const setQuery = (next: Record<string, SearchValue | readonly SearchValue[]>, options?: NavigateOptions): void => {
+  const setQuery = (next: SearchInit, options?: NavigateOptions): void => {
     const current = state.targetLocation!;
     const search = new URLSearchParams(current.search);
     for (const key in next) {
@@ -65,9 +76,9 @@ export function useSearchParams(): [
 }
 
 /** Matches `pattern` against the current pathname; a trailing `/*` matches any deeper path too. */
-export function useMatch(pattern: () => string): () => PathMatch | undefined {
+export function useMatch<P extends string>(pattern: () => P): () => PathMatchFor<P> | undefined {
   const state = useRouter();
-  return computed(() => matchPath(pattern(), state.location().pathname));
+  return computed(() => matchPath(pattern(), state.location().pathname) as PathMatchFor<P> | undefined);
 }
 
 /** `true` while a navigation waits for route modules to load. */

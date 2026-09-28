@@ -1,10 +1,9 @@
-import { createBrowserHistory, Router } from "@rezejs/router";
+import { createBrowserHistory, createRouter } from "@rezejs/router";
 import { render } from "reze-js";
-import { routes } from "virtual:reze-routes";
+import { paths, routes } from "virtual:reze-routes";
 
 import { Shell } from "./Shell";
 
-render(
-  () => <Router routes={routes} root={Shell} history={createBrowserHistory(import.meta.env.BASE_URL)} />,
-  document.getElementById("app")!,
-);
+const Router = createRouter({ routes, paths, history: createBrowserHistory(import.meta.env.BASE_URL) });
+
+render(() => <Router root={Shell} />, document.getElementById("app")!);

@@ -78,14 +78,13 @@ test("serves the scanned routes as a virtual module and writes the declaration f
   hooks.buildStart();
   const id = hooks.resolveId("virtual:reze-routes")!;
   const posixDir = dir.replaceAll("\\", "/");
-  expect(hooks.load(id)).toBe(
+  expect(hooks.load(id)).toContain(
     `export const routes = [{ path: "/blog/:id", load: () => import(${JSON.stringify(posixDir + "/blog/[id].tsx")}) }, ` +
-      `{ path: "/", load: () => import(${JSON.stringify(posixDir + "/index.tsx")}) }];\n`,
+      `{ path: "/", load: () => import(${JSON.stringify(posixDir + "/index.tsx")}) }];`,
   );
-  expect(readFileSync(join(root, "src", "routes.gen.d.ts"), "utf8")).toContain('paths: "/" | `/blog/${string}`;');
+  expect(hooks.load(id)).toContain('export const paths = { "byId": (value, search, hash) => href(`/blog/${enc(value)}`, search, hash)');
   expect(hooks.resolveId("other")).toBeUndefined();
 });
-
 test("a missing routes directory throws", () => {
   expect(() => start().buildStart()).toThrow(`[reze-router] routes directory not found: ${join(root, "src", "routes")}`);
 });

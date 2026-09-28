@@ -5,7 +5,7 @@ import {
   createBrowserHistory,
   createHashHistory,
   createMemoryHistory,
-  Router,
+  createRouter,
   useLinkState,
   useNavigate,
   type LinkState,
@@ -41,7 +41,8 @@ function setup(nav: () => JSX.Element, initial: string, routes = CatchAll, histo
       </main>
     );
   }
-  const { el } = mount(() => <Router routes={routes} history={history} root={Root} />);
+  const Router = createRouter({ routes, history });
+  const { el } = mount(() => <Router root={Root} />);
   const anchor = (href: string): Element => el.querySelector(`a[href="${href}"]`)!;
   const go = (to: string): void => {
     navigate(to);
@@ -192,10 +193,9 @@ test("hrefs the router does not handle get no state", () => {
 
 test("hrefs outside the browser history base get no state", () => {
   window.history.replaceState(null, "", "/app/docs");
+  const Router = createRouter({ routes: CatchAll, history: createBrowserHistory("/app") });
   const nav = mount(() => (
     <Router
-      routes={CatchAll}
-      history={createBrowserHistory("/app")}
       root={() => (
         <>
           <a href="/app/docs">in</a>

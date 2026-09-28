@@ -45,9 +45,26 @@ describe("scanRoutes", () => {
       { id: "(auth)", path: "/", fullPath: "/", children: [{ id: "(auth)/login", path: "/login", fullPath: "/login" }] },
     ]);
   });
+  test("names nodes for the paths builders, groups by inner name", () => {
+    const routes = scanRoutes(["index.tsx", "(auth).tsx", "(auth)/login.tsx", "blog.tsx", "blog/[id].tsx", "docs/[...path].tsx"]);
+    const names = (list: FileRoute[]): unknown[] =>
+      list.map((route) => (route.children.length > 0 ? { [route.name]: names(route.children) } : route.name));
+    expect(names(routes)).toEqual([{ auth: ["login"] }, { blog: ["byId"] }, "byPath", "index"]);
+  });
 
-  test("skips non-route files, declarations, tests and dot paths", () => {
-    const routes = scanRoutes(["a.tsx", "b.css", "c.d.ts", "d.test.tsx", "e.spec.ts", ".hidden/f.tsx", "g/.h.tsx"]);
+  test("skips non-route files, declarations, tests, dot paths and underscore paths", () => {
+    const routes = scanRoutes([
+      "a.tsx",
+      "b.css",
+      "c.d.ts",
+      "d.test.tsx",
+      "e.spec.ts",
+      ".hidden/f.tsx",
+      "g/.h.tsx",
+      "_utils.ts",
+      "_components/a.tsx",
+      "blog/_draft.tsx",
+    ]);
     expect(routes.map((route) => route.file)).toEqual(["a.tsx"]);
   });
 

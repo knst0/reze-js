@@ -15,6 +15,8 @@ export interface RouterHistory {
   listen(listener: (entry: HistoryEntry) => void): () => void;
   /** Router path for a clicked same-origin anchor URL, or `undefined` to leave it to the browser. */
   resolve(url: URL): string | undefined;
+  /** The prefix router hrefs carry: the served base without a trailing slash, `"#"` for hash history, `""` for memory. */
+  readonly base: string;
   /** Whether the router manages `window` scroll for this history. */
   readonly scroll: boolean;
 }
@@ -39,6 +41,7 @@ function windowHistory(
   read: () => string | undefined,
   toUrl: (path: string) => string,
   resolve: (url: URL) => string | undefined,
+  base: string,
 ): RouterHistory {
   const history = window.history;
   const adopt = (index: number): StoredState => {
@@ -76,6 +79,7 @@ function windowHistory(
       return () => window.removeEventListener("popstate", onPop);
     },
     resolve,
+    base,
     scroll: true,
   };
 }
@@ -101,6 +105,7 @@ export function createBrowserHistory(base = ""): RouterHistory {
       const pathname = strip(url.pathname);
       return pathname === undefined ? undefined : pathname + url.search + url.hash;
     },
+    prefix,
   );
 }
 
@@ -115,6 +120,7 @@ export function createHashHistory(): RouterHistory {
     (path) => "#" + path,
     (url) =>
       url.pathname + url.search === location.pathname + location.search && url.hash.startsWith("#/") ? url.hash.slice(1) : undefined,
+    "#",
   );
 }
 
@@ -144,6 +150,7 @@ export function createMemoryHistory(initial = "/"): RouterHistory {
       return () => listeners.delete(listener);
     },
     resolve: (url) => url.pathname + url.search + url.hash,
+    base: "",
     scroll: false,
   };
 }

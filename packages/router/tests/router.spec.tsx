@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import {
   createBrowserHistory,
   createMemoryHistory,
-  Router,
+  createRouter,
   useBeforeLeave,
   useIsRouting,
   useNavigate,
@@ -56,7 +56,8 @@ function setup(
     controls.isRouting = useIsRouting();
     return <main>{view(props.children)}</main>;
   }
-  const { el } = mount(() => <Router routes={routes} history={history} root={Root} links={options.links} />);
+  const Router = createRouter({ routes, history, links: options.links });
+  const { el } = mount(() => <Router root={Root} />);
   return { el: el.firstElementChild!, history, ...controls };
 }
 
@@ -238,7 +239,8 @@ test("a failed load reaches catchError and the next navigation retries it", asyn
     { path: "/", component: Home },
     { path: "/about", load },
   ];
-  const { el } = mount(() => catchError(() => <Router routes={routes} history={history} root={Root} />, handler));
+  const Router = createRouter({ routes, history });
+  const { el } = mount(() => catchError(() => <Router root={Root} />, handler));
   navigate("/about");
   await settle();
   expect(handler).toHaveBeenCalledWith(error);
@@ -260,6 +262,7 @@ test("back/forward restores the scroll position saved for that entry and no othe
     go: () => {},
     listen: (listener) => ((onPop = listener), () => {}),
     resolve: (url) => url.pathname,
+    base: "",
     scroll: true,
   };
   const pop = (path: string, index: number): void => {
@@ -272,16 +275,14 @@ test("back/forward restores the scroll position saved for that entry and no othe
     navigate = useNavigate();
     return <main>{props.children}</main>;
   };
-  mount(() => (
-    <Router
-      routes={[
-        { path: "/", component: Home },
-        { path: "/about", component: About },
-      ]}
-      history={history}
-      root={Root}
-    />
-  ));
+  const Router = createRouter({
+    routes: [
+      { path: "/", component: Home },
+      { path: "/about", component: About },
+    ],
+    history,
+  });
+  mount(() => <Router root={Root} />);
   vi.stubGlobal("scrollY", 300);
   navigate("/about");
   vi.stubGlobal("scrollY", 0);
@@ -377,16 +378,12 @@ test("a memory router leaves the document's anchors to the browser by default", 
     },
     { once: true },
   );
-  const { el, history, navigate } = setup(
-    pages,
-    "/",
-    (children) => (
-      <>
-        {children}
-        <a href="/about">a</a>
-      </>
-    ),
-  );
+  const { el, history, navigate } = setup(pages, "/", (children) => (
+    <>
+      {children}
+      <a href="/about">a</a>
+    </>
+  ));
   fire(el.querySelector("a")!, "click");
   expect(isPrevented).toBe(false);
   expect(history.get().path).toBe("/");

@@ -102,13 +102,15 @@ ${renderCall("<Shell><Home /></Shell>")}
 function reze(sections) {
   return {
     "index.html": html("main.jsx"),
-    "main.jsx": `import { Router } from "@rezejs/router";
+    "main.jsx": `import { createRouter } from "@rezejs/router";
 import { render } from "reze-js";
 import { routes } from "virtual:reze-routes";
 
 import { Shell } from "./Shell";
 
-render(() => <Router routes={routes} root={Shell} />, document.getElementById("app"));
+const Router = createRouter({ routes });
+
+render(() => <Router root={Shell} />, document.getElementById("app"));
 `,
     "Shell.jsx": jsxShell(sections),
     ...Object.fromEntries(staticPages(sections).map((page) => [`routes/${page.file}.jsx`, jsxPage(page)])),

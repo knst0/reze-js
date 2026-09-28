@@ -13,6 +13,8 @@ interface Segment {
 
 export interface CompiledRoute {
   readonly def: RouteDefinition;
+  /** The joined pattern from the root (`/blog/:id`); `Router.match` reports one per level. */
+  readonly pattern: string;
   component: RouteComponent<any, any> | undefined;
   preload: ((args: PreloadArgs<any>) => unknown) | undefined;
   info: Readonly<Record<string, unknown>> | undefined;
@@ -99,9 +101,10 @@ function compareBranches(a: Branch, b: Branch): number {
   return 0;
 }
 
-function compileRoute(def: RouteDefinition): CompiledRoute {
+function compileRoute(def: RouteDefinition, pattern: string): CompiledRoute {
   return {
     def,
+    pattern,
     component: def.component,
     preload: def.preload,
     info: def.info,
@@ -117,7 +120,7 @@ export function compileRoutes(defs: readonly RouteDefinition[]): Branch[] {
   const walk = (list: readonly RouteDefinition[], parentPath: string, parents: readonly CompiledRoute[]): void => {
     for (const def of list) {
       const fullPath = joinPaths(parentPath, def.path);
-      const routes = [...parents, compileRoute(def)];
+      const routes = [...parents, compileRoute(def, fullPath)];
       const segments = compileSegments(fullPath);
       if (def.children !== undefined && def.children.length > 0) {
         walk(def.children, fullPath, routes);

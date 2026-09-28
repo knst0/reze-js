@@ -49,8 +49,8 @@ export default function fileRoutes(options: Options = {}): Plugin {
 
   function generate(): boolean {
     const routes = scan();
-    const next = routesModule(routes, dir);
-    if (dtsFile !== undefined) writeIfChanged(dtsFile, routesDts(routes, hrefBase));
+    const next = routesModule(routes, dir, hrefBase);
+    if (dtsFile !== undefined) writeIfChanged(dtsFile, routesDts(routes, hrefBase, dtsFile, dir));
     const isChanged = next !== code;
     code = next;
     return isChanged;

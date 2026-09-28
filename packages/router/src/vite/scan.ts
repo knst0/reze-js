@@ -5,14 +5,30 @@ export interface FileRoute {
   id: string;
   /** File path relative to the routes directory. */
   file: string;
+  /** `Router.paths` node key, from the id's last segment: `index`, groups by inner name, params and splats as capitalized `byName`, other statics verbatim. */
+  name: string;
+
   /** Pattern relative to the parent route. */
   path: string;
   fullPath: string;
   children: FileRoute[];
 }
+function capitalize(name: string): string {
+  return name.slice(0, 1).toUpperCase() + name.slice(1);
+}
+
+/** Node key for one file id segment. */
+export function nodeKey(segment: string): string {
+  if (segment === "index") return "index";
+  if (segment.startsWith("(") && segment.endsWith(")")) return segment.slice(1, -1);
+  if (segment.startsWith("[[") && segment.endsWith("]]")) return "by" + capitalize(segment.slice(2, -2));
+  if (segment.startsWith("[...") && segment.endsWith("]")) return "by" + capitalize(segment.slice(4, -1));
+  if (segment.startsWith("[") && segment.endsWith("]")) return "by" + capitalize(segment.slice(1, -1));
+  return segment;
+}
 
 const RouteExtension = /\.[jt]sx?$/;
-const Ignored = /\.d\.ts$|\.(?:test|spec)\.[^/]*$|(?:^|\/)\./;
+const Ignored = /\.d\.ts$|\.(?:test|spec)\.[^/]*$|(?:^|\/)[._]/;
 
 function mapSegment(segment: string, isLast: boolean): string {
   if (isLast && segment === "index") return "";
@@ -80,6 +96,7 @@ function checkConflicts(routes: readonly FileRoute[], leaves: Map<string, FileRo
 /**
  * Builds the route tree from `files`, posix paths relative to the routes directory, using the nested convention:
  * `index`, `(group)`, `[param]`, `[[optional]]`, `[...splat]`; a file named like a directory is that directory's layout.
+ * Files with an underscore-prefixed segment (`_utils.ts`, `_components/`) are private and skipped.
  * Children are sorted by `id`. Throws on duplicate, conflicting or invalid routes.
  */
 export function scanRoutes(files: readonly string[]): FileRoute[] {
@@ -92,7 +109,7 @@ export function scanRoutes(files: readonly string[]): FileRoute[] {
       const [a, b] = [existing.file, file].sort();
       throw new Error(`[reze-router] duplicate route files for "${id}": ${a}, ${b}`);
     }
-    byId.set(id, { id, file, path: "/", fullPath: "/", children: [] });
+    byId.set(id, { id, file, name: nodeKey(id.split("/").pop() ?? ""), path: "/", fullPath: "/", children: [] });
   }
   const roots: FileRoute[] = [];
   for (const id of [...byId.keys()].sort()) {
