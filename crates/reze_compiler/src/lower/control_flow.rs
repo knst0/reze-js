@@ -7,7 +7,7 @@ use super::{Lowerer, Tag, attribute_name, is_function};
 use crate::analyze::Intrinsic;
 use crate::diagnostic::{Code, Report};
 use crate::html::{clean_jsx_text, decode_entities};
-use crate::ir::{Branch, Child, Embed, Flow, Jsx, Render};
+use crate::ir::{Branch, Child, Embed, Flow, Jsx, Render, Source};
 
 const FOR_ROW: &str = "one function `(item, index) => …`";
 
@@ -86,6 +86,26 @@ impl<'a> Lowerer<'a, '_> {
         value
     }
 
+    fn required_source(
+        &mut self,
+        el: &JSXElement<'a>,
+        intrinsic: Intrinsic,
+        attributes: &[(&'a str, &JSXAttribute<'a>)],
+        name: &'static str,
+    ) -> Option<Source<'a>> {
+        let expr = self.required(el, intrinsic, attributes, name)?;
+        let getter = attributes
+            .iter()
+            .rev()
+            .find(|(n, _)| *n == name)
+            .and_then(|(_, a)| match a.value.as_ref()? {
+                JSXAttributeValue::ExpressionContainer(c) => c.expression.as_expression(),
+                _ => None,
+            })
+            .and_then(|e| self.stable_getter_callee(e));
+        Some(Source { expr, getter })
+    }
+
     fn attribute_value(&mut self, a: &JSXAttribute<'a>) -> Option<Embed<'a>> {
         match a.value.as_ref()? {
             JSXAttributeValue::ExpressionContainer(c) => {
@@ -136,7 +156,7 @@ impl<'a> Lowerer<'a, '_> {
 
     fn show(&mut self, el: &JSXElement<'a>, intrinsic: Intrinsic) -> Option<Branch<'a>> {
         let attributes = self.flow_attributes(el, intrinsic, &["when", "fallback"]);
-        let when = self.required(el, intrinsic, &attributes, "when");
+        let when = self.required_source(el, intrinsic, &attributes, "when");
         let child = self.case_children(el, intrinsic);
         let fallback = self.fallback(&attributes);
         Some(Branch { when: when?, child: child?, fallback })
@@ -153,7 +173,7 @@ impl<'a> Lowerer<'a, '_> {
         {
             self.report(Report::new(Code::InlineEach, array.span));
         }
-        let each = self.required(el, intrinsic, &attributes, "each");
+        let each = self.required_source(el, intrinsic, &attributes, "each");
         let map = self.row(el, &attributes);
         let fallback = self.fallback(&attributes);
         let key = match attributes.iter().rev().find(|(name, _)| *name == "key") {
@@ -240,7 +260,7 @@ impl<'a> Lowerer<'a, '_> {
             };
             self.path.push(String::from("<Match>"));
             let case_attributes = self.flow_attributes(case, Intrinsic::Match, &["when"]);
-            let when = self.required(case, Intrinsic::Match, &case_attributes, "when");
+            let when = self.required_source(case, Intrinsic::Match, &case_attributes, "when");
             let render = self.case_children(case, Intrinsic::Match);
             self.path.pop();
             match (when, render) {

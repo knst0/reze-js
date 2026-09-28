@@ -1,6 +1,6 @@
 use super::{Emitter, Helper};
 use crate::code::Code;
-use crate::ir::{Branch, Flow, Render};
+use crate::ir::{Branch, Flow, Render, Source};
 
 impl<'a> Emitter<'a, '_> {
     pub(super) fn flow(&mut self, out: &mut Code, flow: &Flow<'a>) {
@@ -11,8 +11,10 @@ impl<'a> Emitter<'a, '_> {
                 out.push(choose);
                 out.push("([");
                 for (i, when) in whens.iter().enumerate() {
-                    out.push(if i > 0 { ", () => " } else { "() => " });
-                    self.embed(out, when);
+                    if i > 0 {
+                        out.push(", ");
+                    }
+                    self.source(out, when);
                 }
                 out.push("], [");
                 for (i, child) in children.iter().enumerate() {
@@ -38,8 +40,8 @@ impl<'a> Emitter<'a, '_> {
                 }
                 let list = self.helper(Helper::List);
                 out.push(list);
-                out.push("(() => ");
-                self.embed(out, each);
+                out.push("(");
+                self.source(out, each);
                 out.push(", ");
                 self.embed(out, map);
                 match (fallback, key) {
@@ -73,12 +75,22 @@ impl<'a> Emitter<'a, '_> {
     fn branch(&mut self, out: &mut Code, branch: &Branch<'a>) {
         let helper = self.helper(Helper::Branch);
         out.push(helper);
-        out.push("(() => ");
-        self.embed(out, &branch.when);
+        out.push("(");
+        self.source(out, &branch.when);
         out.push(", ");
         self.render(out, &branch.child);
         self.fallback(out, branch.fallback.as_ref());
         out.push(")");
+    }
+
+    fn source(&mut self, out: &mut Code, source: &Source<'a>) {
+        match source.getter {
+            Some(getter) => self.src(out, getter),
+            None => {
+                out.push("() => ");
+                self.embed(out, &source.expr);
+            }
+        }
     }
 
     fn fallback(&mut self, out: &mut Code, fallback: Option<&Render<'a>>) {

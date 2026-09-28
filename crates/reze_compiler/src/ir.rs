@@ -291,8 +291,16 @@ pub enum Render<'a> {
     Child(Child<'a>),
 }
 
+/// What a flow tracks: `getter` as is when set, else `() => expr`.
+pub struct Source<'a> {
+    pub expr: Embed<'a>,
+    /// The callee of `expr` when it calls a signal or computed getter that is never
+    /// reassigned: such a getter ignores its arguments, so it stands for the arrow.
+    pub getter: Option<Span>,
+}
+
 pub struct Branch<'a> {
-    pub when: Embed<'a>,
+    pub when: Source<'a>,
     pub child: Render<'a>,
     pub fallback: Option<Render<'a>>,
 }
@@ -300,12 +308,12 @@ pub struct Branch<'a> {
 pub enum Flow<'a> {
     Show(Branch<'a>),
     Switch {
-        whens: Vec<'a, Embed<'a>>,
+        whens: Vec<'a, Source<'a>>,
         children: Vec<'a, Render<'a>>,
         fallback: Option<Render<'a>>,
     },
     For {
-        each: Embed<'a>,
+        each: Source<'a>,
         map: Embed<'a>,
         fallback: Option<Render<'a>>,
         key: Option<Embed<'a>>,

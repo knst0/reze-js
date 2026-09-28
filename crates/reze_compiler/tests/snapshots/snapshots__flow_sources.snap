@@ -1,0 +1,33 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { computed, For, Match, Show, signal, Switch } from \"reze-js\";\nconst [open, setOpen] = signal(false);\nsetOpen(true);\nlet [moved] = signal(1);\nmoved = other;\nconst [fixed] = signal(true);\nconst rows = computed(() => []);\nconst a = <For each={rows()}>{(row) => <li>{row().name}</li>}</For>;\nconst b = <Show when={open()}><b /></Show>;\nconst c = <Switch><Match when={open()}><i /></Match><Match when={moved()}><u /></Match></Switch>;\nconst d = <Show when={fixed()}><s /></Show>;\nconst e = <Show when={plain()}><em /></Show>;\nconst f = <p>{open() && <b />}</p>;"
+---
+import { computed, For, Match, Show, signal, Switch } from "reze-js";
+import { list as _$list, template as _$template, insert as _$insert, branch as _$branch, choose as _$choose } from "reze-js";
+const [open, setOpen] = signal(false);
+setOpen(true);
+let [moved] = signal(1);
+moved = other;
+const fixed = true;
+const rows = computed(() => []);
+const a = _$list(rows, (row) => {
+  var _el$ = _$template("<li>");
+  _$insert(_el$, () => row().name);
+  return _el$;
+});
+const b = _$branch(open, () => _$template("<b>"));
+const c = _$choose([open, () => moved()], [() => _$template("<i>"), () => _$template("<u>")]);
+const d = _$branch(() => fixed, () => _$template("<s>"));
+const e = _$branch(() => plain(), () => _$template("<em>"));
+const f = (() => {
+  var _el$2 = _$template("<p>");
+  _$insert(_el$2, _$branch(open, () => _$template("<b>")));
+  return _el$2;
+})();
+// info
+[SIGNAL_FOLDED] `fixed` is never written and every read is a call, so it compiled to a plain constant.
+  at case.tsx:6:7
+  5 | moved = other;
+> 6 | const [fixed] = signal(true);
+    |       ^^^^^^^^^^^^^^^^^^^^^^
+  7 | const rows = computed(() => []);

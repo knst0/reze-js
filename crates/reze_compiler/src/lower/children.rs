@@ -285,7 +285,7 @@ impl<'a> Lowerer<'a, '_> {
                     _ => None,
                 };
                 let conditional = Conditional {
-                    test: when,
+                    test: when.expr,
                     test_is_boolean: self.is_boolean_when(el),
                     consequent: inline(consequent),
                     alternate,
@@ -338,7 +338,7 @@ impl<'a> Lowerer<'a, '_> {
         if !has_jsx_branch || literal_truthy(test, self.analysis).is_some() {
             return None;
         }
-        let when = self.expr(test);
+        let when = self.source(test);
         let child = self.render(consequent);
         let fallback = alternate.map(|a| self.render(a));
         Some(Branch { when, child, fallback })

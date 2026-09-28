@@ -117,6 +117,11 @@ impl<'s> Analysis<'s> {
         id.reference_id.get().is_some_and(|r| self.getter_refs.contains(&r))
     }
 
+    /// Whether `id` reads a signal or computed getter whose binding is never reassigned.
+    pub fn is_stable_getter(&self, id: &IdentifierReference<'_>) -> bool {
+        self.is_getter(id) && self.symbol(id).is_some_and(|s| !self.scoping.symbol_is_mutated(s))
+    }
+
     /// The getter binding of a folded `[get, set] = signal(init)` declarator.
     pub fn folded_getter(&self, declarator: &VariableDeclarator<'_>) -> Option<Span> {
         let BindingPattern::ArrayPattern(pattern) = &declarator.id else { return None };

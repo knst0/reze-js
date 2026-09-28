@@ -19,7 +19,7 @@ use oxc_syntax::scope::ScopeFlags;
 
 use crate::analyze::{Analysis, Intrinsic};
 use crate::diagnostic::{Edit, Report};
-use crate::ir::{Embed, Getter, Hole, HoleKind, HotEdit, Jsx, Placement, ScriptEdit};
+use crate::ir::{Embed, Getter, Hole, HoleKind, HotEdit, Jsx, Placement, ScriptEdit, Source};
 use crate::namer::Namer;
 
 pub struct Lowered<'a, 'f> {
@@ -176,6 +176,22 @@ impl<'a, 'f> Lowerer<'a, 'f> {
     fn thunk(&mut self, e: &Expression<'a>) -> Getter<'a> {
         let parenthesize = self.source.as_bytes()[e.span().start as usize] == b'{';
         Getter::Thunk { body: self.expr(e), parenthesize }
+    }
+
+    fn source(&mut self, e: &Expression<'a>) -> Source<'a> {
+        Source { expr: self.expr(e), getter: self.stable_getter_callee(e) }
+    }
+
+    /// `f` of `e` = `f()` reading a stable signal or computed getter that is not folded.
+    fn stable_getter_callee(&self, e: &Expression<'a>) -> Option<Span> {
+        let Expression::CallExpression(call) = e.without_parentheses() else { return None };
+        let Expression::Identifier(id) = &call.callee else { return None };
+        let is_plain_call =
+            call.arguments.is_empty() && !call.optional && call.type_arguments.is_none();
+        (is_plain_call
+            && self.analysis.is_stable_getter(id)
+            && self.analysis.folded_read(call).is_none())
+        .then_some(id.span)
     }
 
     /// Removes `span` together with the whitespace before it.
