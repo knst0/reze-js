@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 import { compile } from "@rezejs/compiler";
 import type { Environment, Plugin } from "vite";
 
+import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
+
 export interface Options {
   diagnostics?: {
     /** File every diagnostic, `info` included, is appended to as one JSON line. */
@@ -11,6 +13,8 @@ export interface Options {
   };
   /** Module exporting `link`, e.g. `"@rezejs/router"`: native `<a href>` elements are claimed and passed to it. */
   links?: string;
+  /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. The result is awaitable in `plugins`. */
+  fileRoutes?: boolean | FileRoutesOptions;
 }
 
 export interface RezeApi {
@@ -42,7 +46,7 @@ interface Diagnostic {
 const SkillGuide = "node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md";
 const QueryOrHash = /[?#].*$/;
 
-export default function reze(options: Options = {}): Plugin<RezeApi> {
+function rezePlugin(options: Options): Plugin<RezeApi> {
   const jsonl = options.diagnostics?.jsonl;
   const seenCodes = new Set<string>();
   let jsonlDirReady = false;
@@ -125,4 +129,30 @@ export default function reze(options: Options = {}): Plugin<RezeApi> {
       },
     },
   };
+}
+
+export type { FileRoutesOptions } from "./routes";
+
+export default function reze(options?: Options & { fileRoutes?: false | undefined }): Plugin<RezeApi>;
+export default function reze(options: Options & { fileRoutes: true | FileRoutesOptions }): Promise<Plugin[]>;
+export default function reze(options: Options = {}): Plugin<RezeApi> | Promise<Plugin[]> {
+  const plugin = rezePlugin(options);
+  if (options.fileRoutes === undefined || options.fileRoutes === false) return plugin;
+  const routesOptions = options.fileRoutes === true ? {} : options.fileRoutes;
+  return routesPlugins(plugin, routesOptions);
+}
+
+// Optional peer: a static import would make every user install @rezejs/router.
+async function loadRouterFs(): Promise<FileRoutesApi> {
+  try {
+    return await import("@rezejs/router/fs");
+  } catch {
+    throw new Error("[reze] fileRoutes needs @rezejs/router to be installed");
+  }
+}
+
+async function routesPlugins(plugin: Plugin<RezeApi>, options: FileRoutesOptions): Promise<Plugin[]> {
+  const fs = await loadRouterFs();
+  if (options.links !== false) plugin.api?.claimLinks("@rezejs/router");
+  return [plugin, createFileRoutesPlugin(fs, options)];
 }

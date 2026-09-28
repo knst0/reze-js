@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { scanRoutes, type FileRoute } from "../src/vite/scan";
+import { scanRoutes, type FileRoute } from "../src/fs/scan";
 
 type Shape = { id: string; path: string; fullPath: string; children?: Shape[] };
 

@@ -1,3 +1,5 @@
+import { routerBase } from "./fs/base";
+
 export interface HistoryEntry {
   /** Router path: pathname, search and hash. */
   readonly path: string;
@@ -84,12 +86,7 @@ function windowHistory(
   };
 }
 
-const UrlOrRelative = /^(?:\.|\/\/|[a-z][a-z\d+.-]*:)/i;
-
-/** `base` (e.g. Vite's `import.meta.env.BASE_URL`) as a path prefix without a trailing slash; `""` for the root and for relative or URL bases, which name no path. */
-export function routerBase(base: string): string {
-  return UrlOrRelative.test(base) ? "" : ("/" + base).replace(/\/+/g, "/").replace(/\/$/, "");
-}
+export { routerBase };
 
 /** History over `window.location` paths, served under `base` (e.g. Vite's `import.meta.env.BASE_URL`; a relative base means the root). */
 export function createBrowserHistory(base = ""): RouterHistory {

@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-28T04:54:16.666Z",
+  "recordedAt": "2026-09-28T05:08:31.837Z",
   "browser": "153.0.8010.12",
   "options": {
-    "runs": 3,
-    "batches": 10,
-    "navsPerBatch": 100,
+    "runs": 1,
+    "batches": 1,
+    "navsPerBatch": 2,
     "cpuThrottle": 1,
     "sections": 20,
     "retainedNavs": 1000
@@ -14,29 +14,6 @@
     "reze": {
       "@rezejs/router": "workspace:*",
       "reze-js": "workspace:*"
-    },
-    "solid-router": {
-      "@solidjs/router": "1.0.0",
-      "solid-js": "1.9.15"
-    },
-    "solid-router-v2": {
-      "@solidjs/router": "2.0.0-next.30",
-      "@solidjs/web": "2.0.0-rc.10",
-      "solid-js": "2.0.0-rc.10"
-    },
-    "react-router": {
-      "react": "19.3.0",
-      "react-dom": "19.3.0",
-      "react-router": "8.4.0"
-    },
-    "tanstack-router": {
-      "@tanstack/react-router": "1.170.40",
-      "react": "19.3.0",
-      "react-dom": "19.3.0"
-    },
-    "vue-router": {
-      "vue": "3.6.0-rc.9",
-      "vue-router": "5.3.1"
     }
   },
   "summaries": [
@@ -45,269 +22,44 @@
       "bundle": {
         "home": {
           "raw": 26413,
-          "gzip": 9569,
-          "brotli": 8544
+          "gzip": 9573,
+          "brotli": 8548
         },
         "homeCost": {
           "raw": 16842,
-          "gzip": 5986,
-          "brotli": 5270
+          "gzip": 5990,
+          "brotli": 5274
         },
         "total": {
           "raw": 29675,
-          "gzip": 12942,
-          "brotli": 11624
+          "gzip": 12908,
+          "brotli": 11141
         },
         "totalCost": {
           "raw": 16769,
-          "gzip": 6022,
-          "brotli": 5784
+          "gzip": 5988,
+          "brotli": 5301
         }
       },
       "perf": {
-        "bootMs": 37.84999996423721,
+        "bootMs": 45.189999997615814,
         "param": {
-          "latencyUs": 221.55000001192093,
-          "cpuUs": 259.39999999999975
+          "latencyUs": 435.0000023841858,
+          "cpuUs": 633.9999999999992
         },
         "swap": {
-          "latencyUs": 257.2500002384186,
-          "cpuUs": 293.1000000000003
+          "latencyUs": 612.4999821186066,
+          "cpuUs": 1175.5000000000011
         },
         "pop": {
-          "latencyUs": 718.7750002741814,
-          "cpuUs": 304.2299999999998
+          "latencyUs": 1069.9999928474426,
+          "cpuUs": 742.5000000000001
         }
       },
       "memory": {
         "heap": 821472,
         "cost": 156116,
         "retained": 43844
-      }
-    },
-    {
-      "router": "solid-router",
-      "bundle": {
-        "home": {
-          "raw": 43967,
-          "gzip": 15956,
-          "brotli": 14401
-        },
-        "homeCost": {
-          "raw": 31200,
-          "gzip": 11139,
-          "brotli": 10052
-        },
-        "total": {
-          "raw": 48183,
-          "gzip": 19768,
-          "brotli": 17360
-        },
-        "totalCost": {
-          "raw": 31869,
-          "gzip": 11367,
-          "brotli": 9957
-        }
-      },
-      "perf": {
-        "bootMs": 43.594999969005585,
-        "param": {
-          "latencyUs": 390.4000002145767,
-          "cpuUs": 432.515
-        },
-        "swap": {
-          "latencyUs": 454.12499994039536,
-          "cpuUs": 494.68500000000023
-        },
-        "pop": {
-          "latencyUs": 756.5500000119209,
-          "cpuUs": 347.69999999999965
-        }
-      },
-      "memory": {
-        "heap": 1024608,
-        "cost": 356016,
-        "retained": 54612
-      }
-    },
-    {
-      "router": "solid-router-v2",
-      "bundle": {
-        "home": {
-          "raw": 91093,
-          "gzip": 34423,
-          "brotli": 31116
-        },
-        "homeCost": {
-          "raw": 55570,
-          "gzip": 20851,
-          "brotli": 18839
-        },
-        "total": {
-          "raw": 124093,
-          "gzip": 48136,
-          "brotli": 43310
-        },
-        "totalCost": {
-          "raw": 85069,
-          "gzip": 30990,
-          "brotli": 27960
-        }
-      },
-      "perf": {
-        "bootMs": 49.10000002384186,
-        "param": {
-          "latencyUs": 663.0749997496605,
-          "cpuUs": 692.5149999999999
-        },
-        "swap": {
-          "latencyUs": 643.6250001192093,
-          "cpuUs": 680.1250000000009
-        },
-        "pop": {
-          "latencyUs": 900.0249999761581,
-          "cpuUs": 526.2899999999993
-        }
-      },
-      "memory": {
-        "heap": 1116540,
-        "cost": 363008,
-        "retained": 44872
-      }
-    },
-    {
-      "router": "react-router",
-      "bundle": {
-        "home": {
-          "raw": 315243,
-          "gzip": 97811,
-          "brotli": 84792
-        },
-        "homeCost": {
-          "raw": 92126,
-          "gzip": 29257,
-          "brotli": 25810
-        },
-        "total": {
-          "raw": 319342,
-          "gzip": 101745,
-          "brotli": 87829
-        },
-        "totalCost": {
-          "raw": 92257,
-          "gzip": 29252,
-          "brotli": 25731
-        }
-      },
-      "perf": {
-        "bootMs": 63.69999998807907,
-        "param": {
-          "latencyUs": 728.2499995827675,
-          "cpuUs": 728.0499999999997
-        },
-        "swap": {
-          "latencyUs": 679.6500000357628,
-          "cpuUs": 682.6099999999991
-        },
-        "pop": {
-          "latencyUs": 1146.6000002622604,
-          "cpuUs": 784.4850000000014
-        }
-      },
-      "memory": {
-        "heap": 1738876,
-        "cost": 600664,
-        "retained": 72844
-      }
-    },
-    {
-      "router": "tanstack-router",
-      "bundle": {
-        "home": {
-          "raw": 300153,
-          "gzip": 95265,
-          "brotli": 82658
-        },
-        "homeCost": {
-          "raw": 77036,
-          "gzip": 26711,
-          "brotli": 23676
-        },
-        "total": {
-          "raw": 304213,
-          "gzip": 99173,
-          "brotli": 85637
-        },
-        "totalCost": {
-          "raw": 77128,
-          "gzip": 26680,
-          "brotli": 23539
-        }
-      },
-      "perf": {
-        "bootMs": 66.14499998092651,
-        "param": {
-          "latencyUs": 462.6750001311302,
-          "cpuUs": 492.64500000000004
-        },
-        "swap": {
-          "latencyUs": 475.6999999284744,
-          "cpuUs": 503.3350000000004
-        },
-        "pop": {
-          "latencyUs": 850.4749998450279,
-          "cpuUs": 536.9499999999994
-        }
-      },
-      "memory": {
-        "heap": 1771012,
-        "cost": 632800,
-        "retained": -579392
-      }
-    },
-    {
-      "router": "vue-router",
-      "bundle": {
-        "home": {
-          "raw": 88455,
-          "gzip": 33006,
-          "brotli": 29963
-        },
-        "homeCost": {
-          "raw": 29271,
-          "gzip": 10152,
-          "brotli": 9184
-        },
-        "total": {
-          "raw": 93460,
-          "gzip": 37490,
-          "brotli": 33912
-        },
-        "totalCost": {
-          "raw": 29420,
-          "gzip": 10233,
-          "brotli": 9173
-        }
-      },
-      "perf": {
-        "bootMs": 49.189999997615814,
-        "param": {
-          "latencyUs": 319.17499989271164,
-          "cpuUs": 355.23
-        },
-        "swap": {
-          "latencyUs": 368.6250001192093,
-          "cpuUs": 407.24499999999995
-        },
-        "pop": {
-          "latencyUs": 727.2499999403954,
-          "cpuUs": 309.4350000000002
-        }
-      },
-      "memory": {
-        "heap": 1407752,
-        "cost": 566420,
-        "retained": 81492
       }
     }
   ]

@@ -1,26 +1,22 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
+import type * as routerFs from "@rezejs/router/fs";
+import type { FileRoute } from "@rezejs/router/fs";
 import type { Plugin } from "vite";
 
-import { routerBase } from "../history";
-import { routesDts, routesModule } from "./codegen";
-import { scanRoutes, type FileRoute } from "./scan";
-
-export interface Options {
+export interface FileRoutesOptions {
   /** Routes directory, relative to Vite `root`. Default `"src/routes"`. */
   dir?: string;
   /** Generated declaration file, relative to Vite `root`; `false` disables it. Default `"src/routes.gen.d.ts"`. */
   dts?: string | false;
-  /** Have `@rezejs/vite-plugin` claim native `<a href>` elements for this router (`aria-current`, `data-active`, `data-pending`). Default `true`. */
+  /** Claim native `<a href>` elements for the router (`aria-current`, `data-active`, `data-pending`). Default `true`. */
   links?: boolean;
   /** The history the app routes with, which decides the `<a href>` shape the generated types accept: `"/about"` under Vite's `base` for `"browser"`, `"#/about"` for `"hash"`. Default `"browser"`. */
   history?: "browser" | "hash";
 }
 
-interface LinkClaimer {
-  claimLinks(module: string): void;
-}
+export type FileRoutesApi = typeof routerFs;
 
 const VirtualId = "virtual:reze-routes";
 const ResolvedId = "\0" + VirtualId;
@@ -32,7 +28,7 @@ function writeIfChanged(file: string, content: string): void {
 }
 
 /** File-system routes from `dir`, served as `virtual:reze-routes` with one lazy chunk per route file. */
-export default function fileRoutes(options: Options = {}): Plugin {
+export function createFileRoutesPlugin(fs: FileRoutesApi, options: FileRoutesOptions): Plugin {
   let dir = "";
   let dtsFile: string | undefined;
   let hrefBase = "";
@@ -44,13 +40,13 @@ export default function fileRoutes(options: Options = {}): Plugin {
     for (const entry of readdirSync(dir, { recursive: true, encoding: "utf8" })) {
       if (statSync(join(dir, entry)).isFile()) files.push(entry.split(sep).join("/"));
     }
-    return scanRoutes(files);
+    return fs.scanRoutes(files);
   }
 
   function generate(): boolean {
     const routes = scan();
-    const next = routesModule(routes, dir, hrefBase);
-    if (dtsFile !== undefined) writeIfChanged(dtsFile, routesDts(routes, hrefBase, dtsFile, dir));
+    const next = fs.routesModule(routes, dir, hrefBase);
+    if (dtsFile !== undefined) writeIfChanged(dtsFile, fs.routesDts(routes, hrefBase, dtsFile, dir));
     const isChanged = next !== code;
     code = next;
     return isChanged;
@@ -62,11 +58,7 @@ export default function fileRoutes(options: Options = {}): Plugin {
       dir = resolve(config.root, options.dir ?? "src/routes");
       const dts = options.dts ?? "src/routes.gen.d.ts";
       dtsFile = dts === false ? undefined : resolve(config.root, dts);
-      hrefBase = options.history === "hash" ? "#" : routerBase(config.base);
-      if (options.links === false) return;
-      const reze = config.plugins.find((plugin) => plugin.name === "reze-js");
-      if (reze === undefined) throw new Error("[reze-router] @rezejs/vite-plugin not found");
-      (reze.api as LinkClaimer).claimLinks("@rezejs/router");
+      hrefBase = options.history === "hash" ? "#" : fs.routerBase(config.base);
     },
     buildStart() {
       generate();

@@ -18,9 +18,9 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./vite": {
-      "import": "./dist/vite/index.js",
-      "types": "./dist/vite/index.d.ts"
+    "./fs": {
+      "import": "./dist/fs/index.js",
+      "types": "./dist/fs/index.d.ts"
     }
   },
   "publishConfig": {
@@ -36,17 +36,8 @@
   },
   "devDependencies": {
     "@rezejs/compiler": "workspace:*",
-    "@rezejs/vite-plugin": "workspace:*",
     "happy-dom": "^20.0.0",
     "reze-js": "workspace:*",
     "vite": "^8.3.0"
-  },
-  "peerDependencies": {
-    "vite": "^6.4.0 || ^7.0.0 || ^8.0.0"
-  },
-  "peerDependenciesMeta": {
-    "vite": {
-      "optional": true
-    }
   }
 }

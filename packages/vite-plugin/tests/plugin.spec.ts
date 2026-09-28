@@ -57,7 +57,7 @@ interface Harness {
   transform(code: string, id: string): unknown;
 }
 
-function setup(config: ResolvedConfig, environment: EnvironmentConfig, options?: Options): Harness {
+function setup(config: ResolvedConfig, environment: EnvironmentConfig, options?: Omit<Options, "fileRoutes">): Harness {
   const plugin = reze(options);
   (plugin.configResolved as (config: ResolvedConfig) => void)(config);
   const warn = vi.fn();

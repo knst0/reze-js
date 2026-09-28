@@ -2,6 +2,7 @@ import { defineConfig } from "oxfmt";
 
 export default defineConfig({
   ignorePatterns: [
+    "**/*.gen.d.ts",
     "target",
     "dist",
     "packages/compiler/skills/reze-compiler-diagnostics/SKILL.md",
