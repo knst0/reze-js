@@ -8,6 +8,7 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@tanstack/router-plugin": "1.168.41",
     "@vitejs/plugin-react": "6.1.1",
     "vite": "^8.3.0"
   }

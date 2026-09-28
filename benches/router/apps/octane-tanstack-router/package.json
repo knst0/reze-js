@@ -1,0 +1,13 @@
+{
+  "name": "@rezejs/bench-router-octane-tanstack-router",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@octanejs/tanstack-router": "0.1.59",
+    "octane": "0.6.1"
+  },
+  "devDependencies": {
+    "@octanejs/vite-plugin": "0.1.61",
+    "vite": "^8.3.0"
+  }
+}

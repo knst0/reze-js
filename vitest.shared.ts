@@ -1,7 +1,8 @@
 import { join } from "node:path";
 
 import { playwright } from "@vitest/browser-playwright";
-import type { TestProjectInlineConfiguration } from "vitest/config";
+import type { PluginOption } from "vite";
+import { configDefaults, defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
 
 type BrowserConfig = NonNullable<TestProjectInlineConfiguration["test"]>["browser"];
 
@@ -10,7 +11,7 @@ type SupportedBrowser = (typeof supportedBrowsers)[number];
 
 const packages = join(import.meta.dirname, "packages");
 
-/** Resolves every workspace package to its sources, so tests and benches never read a stale `dist`. */
+/** Resolves every workspace package to its sources, so tests never read a stale `dist`. */
 export const sourceAliases = [
   { find: "@rezejs/router/fs", replacement: join(packages, "router", "src", "fs", "index.ts") },
   { find: "@rezejs/router", replacement: join(packages, "router", "src", "index.ts") },
@@ -47,4 +48,24 @@ export function browserConfig(environment = process.env.VITEST_ENV): BrowserConf
     headless: true,
     instances,
   };
+}
+
+export const nodeSpecs = "tests/**/*.node.spec.ts";
+
+export function domProject(name: string, plugins: PluginOption[]) {
+  return defineConfig({
+    plugins,
+    test: {
+      name,
+      exclude: [...configDefaults.exclude, nodeSpecs],
+      environment: "happy-dom",
+      environmentOptions: { happyDOM: { url: "http://localhost/" } },
+      alias: sourceAliases,
+      browser: browserConfig(),
+    },
+  });
+}
+
+export function nodeProject(name: string) {
+  return defineConfig({ test: { name: `${name} (node)`, include: [nodeSpecs] } });
 }

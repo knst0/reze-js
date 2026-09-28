@@ -1,6 +1,7 @@
 import { Show, signal, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
+import { cleanup, mount, tick } from "../../../testing/dom";
 import {
   createBrowserHistory,
   createHashHistory,
@@ -14,7 +15,6 @@ import {
   type RouteModule,
   type RouterHistory,
 } from "../src";
-import { cleanup, mount, tick } from "./utils";
 
 afterEach(() => {
   cleanup();

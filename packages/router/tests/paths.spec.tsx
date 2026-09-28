@@ -1,6 +1,7 @@
 import { type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
+import { cleanup, mount, tick } from "../../../testing/dom";
 import {
   buildPaths,
   createBrowserHistory,
@@ -12,7 +13,6 @@ import {
   type Navigate,
   type RouteDefinition,
 } from "../src";
-import { cleanup, mount, tick } from "./utils";
 
 afterEach(() => {
   cleanup();

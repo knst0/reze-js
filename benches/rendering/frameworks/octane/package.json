@@ -1,0 +1,15 @@
+{
+  "name": "@rezejs/bench-rendering-octane",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "octane": "0.6.1"
+  },
+  "devDependencies": {
+    "@octanejs/vite-plugin": "0.1.61",
+    "vite": "^8.3.0"
+  }
+}

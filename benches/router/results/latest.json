@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-28T05:08:31.837Z",
+  "recordedAt": "2026-09-28T14:18:39.461Z",
   "browser": "153.0.8010.12",
   "options": {
-    "runs": 1,
-    "batches": 1,
-    "navsPerBatch": 2,
+    "runs": 3,
+    "batches": 10,
+    "navsPerBatch": 100,
     "cpuThrottle": 1,
     "sections": 20,
     "retainedNavs": 1000
@@ -14,6 +14,33 @@
     "reze": {
       "@rezejs/router": "workspace:*",
       "reze-js": "workspace:*"
+    },
+    "solid-router": {
+      "@solidjs/router": "1.0.0",
+      "solid-js": "1.9.15"
+    },
+    "solid-router-v2": {
+      "@solidjs/router": "2.0.0-next.30",
+      "@solidjs/web": "2.0.0-rc.10",
+      "solid-js": "2.0.0-rc.10"
+    },
+    "react-router": {
+      "react": "19.3.0",
+      "react-dom": "19.3.0",
+      "react-router": "8.4.0"
+    },
+    "tanstack-router": {
+      "@tanstack/react-router": "1.170.40",
+      "react": "19.3.0",
+      "react-dom": "19.3.0"
+    },
+    "octane-tanstack-router": {
+      "@octanejs/tanstack-router": "0.1.59",
+      "octane": "0.6.1"
+    },
+    "vue-router": {
+      "vue": "3.6.0-rc.9",
+      "vue-router": "5.3.1"
     }
   },
   "summaries": [
@@ -42,24 +69,294 @@
         }
       },
       "perf": {
-        "bootMs": 45.189999997615814,
+        "bootMs": 40.564999997615814,
         "param": {
-          "latencyUs": 435.0000023841858,
-          "cpuUs": 633.9999999999992
+          "latencyUs": 242.14999973773956,
+          "cpuUs": 284.44000000000005
         },
         "swap": {
-          "latencyUs": 612.4999821186066,
-          "cpuUs": 1175.5000000000011
+          "latencyUs": 270.3999999165535,
+          "cpuUs": 305.83500000000043
         },
         "pop": {
-          "latencyUs": 1069.9999928474426,
-          "cpuUs": 742.5000000000001
+          "latencyUs": 741.5749999880791,
+          "cpuUs": 315.54000000000025
         }
       },
       "memory": {
         "heap": 821472,
         "cost": 156116,
         "retained": 43844
+      }
+    },
+    {
+      "router": "solid-router",
+      "bundle": {
+        "home": {
+          "raw": 43967,
+          "gzip": 15956,
+          "brotli": 14401
+        },
+        "homeCost": {
+          "raw": 31200,
+          "gzip": 11139,
+          "brotli": 10052
+        },
+        "total": {
+          "raw": 48183,
+          "gzip": 19768,
+          "brotli": 17360
+        },
+        "totalCost": {
+          "raw": 31869,
+          "gzip": 11367,
+          "brotli": 9957
+        }
+      },
+      "perf": {
+        "bootMs": 47.20999997854233,
+        "param": {
+          "latencyUs": 409.1250002384186,
+          "cpuUs": 452.66999999999985
+        },
+        "swap": {
+          "latencyUs": 497.6750001311302,
+          "cpuUs": 544.27
+        },
+        "pop": {
+          "latencyUs": 782.3499998450279,
+          "cpuUs": 384.8549999999995
+        }
+      },
+      "memory": {
+        "heap": 1024608,
+        "cost": 356016,
+        "retained": 54612
+      }
+    },
+    {
+      "router": "solid-router-v2",
+      "bundle": {
+        "home": {
+          "raw": 91093,
+          "gzip": 34423,
+          "brotli": 31116
+        },
+        "homeCost": {
+          "raw": 55570,
+          "gzip": 20851,
+          "brotli": 18839
+        },
+        "total": {
+          "raw": 124093,
+          "gzip": 48136,
+          "brotli": 43310
+        },
+        "totalCost": {
+          "raw": 85069,
+          "gzip": 30990,
+          "brotli": 27960
+        }
+      },
+      "perf": {
+        "bootMs": 52.564999997615814,
+        "param": {
+          "latencyUs": 716.2000000476837,
+          "cpuUs": 743.1099999999997
+        },
+        "swap": {
+          "latencyUs": 701.7500001192093,
+          "cpuUs": 737.5399999999988
+        },
+        "pop": {
+          "latencyUs": 933.4749999642372,
+          "cpuUs": 563.0699999999999
+        }
+      },
+      "memory": {
+        "heap": 1116540,
+        "cost": 363008,
+        "retained": 44932
+      }
+    },
+    {
+      "router": "react-router",
+      "bundle": {
+        "home": {
+          "raw": 315243,
+          "gzip": 97811,
+          "brotli": 84792
+        },
+        "homeCost": {
+          "raw": 92126,
+          "gzip": 29257,
+          "brotli": 25810
+        },
+        "total": {
+          "raw": 319342,
+          "gzip": 101745,
+          "brotli": 87829
+        },
+        "totalCost": {
+          "raw": 92257,
+          "gzip": 29252,
+          "brotli": 25731
+        }
+      },
+      "perf": {
+        "bootMs": 66.52499997615814,
+        "param": {
+          "latencyUs": 750.9749999642372,
+          "cpuUs": 752.9650000000001
+        },
+        "swap": {
+          "latencyUs": 723.75,
+          "cpuUs": 726.1350000000011
+        },
+        "pop": {
+          "latencyUs": 1192.049999833107,
+          "cpuUs": 820.9099999999992
+        }
+      },
+      "memory": {
+        "heap": 1738876,
+        "cost": 600664,
+        "retained": 72820
+      }
+    },
+    {
+      "router": "tanstack-router",
+      "bundle": {
+        "home": {
+          "raw": 302376,
+          "gzip": 95656,
+          "brotli": 82904
+        },
+        "homeCost": {
+          "raw": 79259,
+          "gzip": 27102,
+          "brotli": 23922
+        },
+        "total": {
+          "raw": 306473,
+          "gzip": 99655,
+          "brotli": 85965
+        },
+        "totalCost": {
+          "raw": 79388,
+          "gzip": 27162,
+          "brotli": 23867
+        }
+      },
+      "perf": {
+        "bootMs": 69.68500000238419,
+        "param": {
+          "latencyUs": 495.8000001311302,
+          "cpuUs": 525.9549999999999
+        },
+        "swap": {
+          "latencyUs": 520.9750002622604,
+          "cpuUs": 552.5899999999995
+        },
+        "pop": {
+          "latencyUs": 907.3999997973442,
+          "cpuUs": 579.7200000000014
+        }
+      },
+      "memory": {
+        "heap": 1782212,
+        "cost": 644000,
+        "retained": -574148
+      }
+    },
+    {
+      "router": "octane-tanstack-router",
+      "bundle": {
+        "home": {
+          "raw": 383523,
+          "gzip": 117369,
+          "brotli": 101456
+        },
+        "homeCost": {
+          "raw": 177405,
+          "gzip": 53461,
+          "brotli": 46340
+        },
+        "total": {
+          "raw": 389986,
+          "gzip": 122708,
+          "brotli": 105964
+        },
+        "totalCost": {
+          "raw": 178035,
+          "gzip": 53834,
+          "brotli": 46707
+        }
+      },
+      "perf": {
+        "bootMs": 71.15500003099442,
+        "param": {
+          "latencyUs": 1514.7999998927116,
+          "cpuUs": 1543.8550000000005
+        },
+        "swap": {
+          "latencyUs": 1664.8000001907349,
+          "cpuUs": 1707.8749999999986
+        },
+        "pop": {
+          "latencyUs": 2034.7750002145767,
+          "cpuUs": 1658.7450000000015
+        }
+      },
+      "memory": {
+        "heap": 2335032,
+        "cost": 1445260,
+        "retained": 95868
+      }
+    },
+    {
+      "router": "vue-router",
+      "bundle": {
+        "home": {
+          "raw": 88455,
+          "gzip": 33006,
+          "brotli": 29963
+        },
+        "homeCost": {
+          "raw": 29271,
+          "gzip": 10152,
+          "brotli": 9184
+        },
+        "total": {
+          "raw": 93460,
+          "gzip": 37490,
+          "brotli": 33912
+        },
+        "totalCost": {
+          "raw": 29420,
+          "gzip": 10233,
+          "brotli": 9173
+        }
+      },
+      "perf": {
+        "bootMs": 49.310000002384186,
+        "param": {
+          "latencyUs": 342.77499973773956,
+          "cpuUs": 381.145
+        },
+        "swap": {
+          "latencyUs": 387.950000166893,
+          "cpuUs": 423.3799999999999
+        },
+        "pop": {
+          "latencyUs": 752.325000166893,
+          "cpuUs": 320.46000000000015
+        }
+      },
+      "memory": {
+        "heap": 1407752,
+        "cost": 566420,
+        "retained": 81552
       }
     }
   ]

@@ -1,5 +1,8 @@
 {
   "@rezejs/example-counter": {
     "dir": "examples/counter"
+  },
+  "@rezejs/example-router": {
+    "dir": "examples/router"
   }
 }

@@ -1,6 +1,6 @@
 const archetypes = ["StatCard", "DataTable", "FilterForm", "BarChart", "TabsPanel"];
 
-export const frameworks = ["reze", "solid-1", "solid-2", "react-19", "vue-3.6", "vue-3.6-vapor", "svelte-5"];
+export const frameworks = ["reze", "solid-1", "solid-2", "react-19", "react-19-compiler", "octane", "vue-3.6", "vue-3.6-vapor", "svelte-5"];
 
 const syllables = ["ka", "lo", "mi", "ren", "tas", "vu", "dor", "pel", "zi", "qua", "bri", "nox", "sel", "fa", "gim", "hu"];
 
@@ -52,7 +52,9 @@ function signalJsx(flavor) {
   const computed = isReze ? "computed" : "createMemo";
   const classes = (base, toggles) =>
     flavor === "solid-1"
-      ? `class="${base}" classList={{ ${toggles} }}`
+      ? base
+        ? `class="${base}" classList={{ ${toggles} }}`
+        : `classList={{ ${toggles} }}`
       : base
         ? `class={["${base}", { ${toggles} }]}`
         : `class={{ ${toggles} }}`;
@@ -350,6 +352,142 @@ export function TabsPanel${i}({ title, seed }) {
       )}
     </div>
   );
+}
+`,
+};
+
+const octane = {
+  StatCard: (i, w = vocab(i)) => `import { useState } from "octane";
+
+export function StatCard${i}({ title, seed }: { title: string; seed: number }) @{
+  const [open, setOpen] = useState(false);
+  const [count, setCount] = useState(seed);
+  const trend = count > ${i % 50} ? "up" : "down";
+  <article class={["card stat-${w.slug}", { up: trend === "up" }]}>
+    <header>
+      <h3>{title as string}</h3>
+      <button onClick={() => setOpen((v) => !v)}>{(open ? "Hide" : "Show") as string}</button>
+    </header>
+    <p class="value">{String(count)}</p>
+    <p class="trend">${w.trend}: {trend as string}</p>
+    @if (open) {
+      <footer>
+        <button onClick={() => setCount((n) => n + 1)}>+1</button>
+        <button onClick={() => setCount((n) => n - 1)}>-1</button>
+      </footer>
+    }
+  </article>
+}
+`,
+  DataTable: (i, w = vocab(i)) => `import { useMemo, useState } from "octane";
+
+export function DataTable${i}({ title, seed }: { title: string; seed: number }) @{
+  const [desc, setDesc] = useState(false);
+  const rows = useMemo(() => {
+    const list = ${rowsExpr("seed", i)};
+    return ${sortRows("list", "desc")};
+  });
+  <section class="table table-${w.slug}">
+    <h3>{title as string}</h3>
+    <table>
+      <thead>
+        <tr>
+          <th onClick={() => setDesc((v) => !v)}>Name {(desc ? "▼" : "▲") as string}</th>
+          <th>${w.metric}</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (const row of rows; key row.id) {
+          <tr>
+            <td>{row.name as string}</td>
+            <td>{String(row.value)}</td>
+            <td class={row.value > 50 ? "ok" : "warn"}>{(row.value > 50 ? "OK" : "Low") as string}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </section>
+}
+`,
+  FilterForm: (i, w = vocab(i)) => `import { useState } from "octane";
+
+export function FilterForm${i}({ title }: { title: string }) @{
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("all");
+  const [onlyActive, setOnlyActive] = useState(false);
+  const summary = category + ":" + query + (onlyActive ? " active" : "");
+  <form class="filter filter-${w.slug}" onSubmit={(e) => e.preventDefault()}>
+    <h3>{title as string}</h3>
+    <label>
+      ${w.search} <input value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
+    </label>
+    <select value={category} onChange={(e) => setCategory(e.currentTarget.value)}>
+      <option value="all">All</option>
+${options(w, "      ")}    </select>
+    <label>
+      <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.currentTarget.checked)} /> ${w.toggle}
+    </label>
+    <output>{summary}</output>
+  </form>
+}
+`,
+  BarChart: (i, w = vocab(i)) => `import { useMemo, useState } from "octane";
+
+export function BarChart${i}({ title, seed }: { title: string; seed: number }) @{
+  const bars = useMemo(() => ${barsExpr("seed", i)});
+  const [hovered, setHovered] = useState<string | null>(null);
+  const active = bars.find((bar) => bar.label === hovered);
+  <figure class="chart chart-${w.slug}">
+    <figcaption>{title as string}</figcaption>
+    <div class="bars">
+      @for (const bar of bars; key bar.label) {
+        <div
+          class={["bar", { active: hovered === bar.label }]}
+          style={{ height: bar.value + "%" }}
+          onMouseEnter={() => setHovered(bar.label)}
+          onMouseLeave={() => setHovered(null)}
+        />
+      }
+    </div>
+    @if (active) {
+      <p class="tip">{active.label + ": " + active.value}</p>
+    } @else {
+      <p class="tip muted">${w.hint}</p>
+    }
+  </figure>
+}
+`,
+  TabsPanel: (i, w = vocab(i)) => `import { useState } from "octane";
+
+export function TabsPanel${i}({ title, seed }: { title: string; seed: number }) @{
+  const [tab, setTab] = useState("overview");
+  <div class="tabs tabs-${w.slug}">
+    <nav>
+      <button class={{ active: tab === "overview" }} onClick={() => setTab("overview")}>${w.tabs[0]}</button>
+      <button class={{ active: tab === "details" }} onClick={() => setTab("details")}>${w.tabs[1]}</button>
+      <button class={{ active: tab === "logs" }} onClick={() => setTab("logs")}>${w.tabs[2]}</button>
+    </nav>
+    @switch (tab) {
+      @case "overview": {
+        <p>${w.overview} {title as string}</p>
+      }
+      @case "details": {
+        <dl>
+          <dt>${w.seedLabel}</dt>
+          <dd>{String(seed)}</dd>
+          <dt>${w.idLabel}</dt>
+          <dd>${i}</dd>
+        </dl>
+      }
+      @default: {
+        <ul>
+          <li>${w.log1}</li>
+          <li>${w.log2}</li>
+        </ul>
+      }
+    }
+  </div>
 }
 `,
 };
@@ -711,7 +849,7 @@ export function generate(framework, { components, usages }) {
     files["App.jsx"] = jsxApp(list, { classAttr: "class" });
     files["main.jsx"] = jsxMains[framework];
     files["index.html"] = html("main.jsx");
-  } else if (framework === "react-19") {
+  } else if (framework === "react-19" || framework === "react-19-compiler") {
     for (const w of list) files[`${w.name}.jsx`] = react[w.archetype](w.i);
     files["App.jsx"] = jsxApp(list, { classAttr: "className" });
     files["main.jsx"] = `import { createRoot } from "react-dom/client";
@@ -721,6 +859,24 @@ import { App } from "./App";
 createRoot(document.getElementById("app")).render(<App />);
 `;
     files["index.html"] = html("main.jsx");
+  } else if (framework === "octane") {
+    for (const w of list) files[`${w.name}.tsrx`] = octane[w.archetype](w.i);
+    const imports = list.map((w) => `import { ${w.name} } from "./${w.name}.tsrx";\n`).join("");
+    const body = list.flatMap((w) => w.uses.map((u) => `    <${w.name} title="${u.title}" seed={${u.seed}} />\n`)).join("");
+    files["App.tsrx"] = `${imports}
+export function App() @{
+  <main class="dashboard">
+    <h1>Dashboard</h1>
+${body}  </main>
+}
+`;
+    files["main.js"] = `import { createRoot } from "octane";
+
+import { App } from "./App.tsrx";
+
+createRoot(document.getElementById("app")).render(App);
+`;
+    files["index.html"] = html("main.js");
   } else if (framework === "vue-3.6" || framework === "vue-3.6-vapor") {
     const vapor = framework === "vue-3.6-vapor";
     const sources = vue(vapor);

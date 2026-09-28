@@ -1,8 +1,3 @@
-import { defineConfig } from "vitest/config";
+import { nodeProject } from "../../vitest.shared";
 
-export default defineConfig({
-  test: {
-    name: "@rezejs/router (node)",
-    include: ["tests/**/*.node.spec.ts"],
-  },
-});
+export default nodeProject("@rezejs/router");

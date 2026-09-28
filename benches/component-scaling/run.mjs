@@ -1,14 +1,12 @@
-import { execFile, execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { promisify } from "node:util";
-import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 
+import { buildPackages, viteBuild, writeSources } from "../kit/build.mjs";
+import { dependenciesOf, writeResults } from "../kit/results.mjs";
+import { totalSize } from "../kit/sizes.mjs";
+import { slope } from "../kit/stats.mjs";
 import { frameworks, generate } from "./generate.mjs";
 
-const run = promisify(execFile);
 const here = import.meta.dirname;
-const root = join(here, "..", "..");
 
 const componentCounts = [0, 1, 5, 10, 25, 50, 100, 200];
 const usageCounts = [1, 10, 50];
@@ -20,53 +18,15 @@ const cases = [
   ...usageCounts.filter((u) => u !== 1).map((usages) => ({ components: usageComponents, usages })),
 ];
 
-const brotli = (buf) => brotliCompressSync(buf, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).length;
-
-function measure(dist) {
-  const assets = join(dist, "assets");
-  let raw = 0;
-  let gzip = 0;
-  let br = 0;
-  for (const file of readdirSync(assets)) {
-    if (!file.endsWith(".js")) continue;
-    const content = readFileSync(join(assets, file));
-    raw += content.length;
-    gzip += gzipSync(content, { level: 9 }).length;
-    br += brotli(content);
-  }
-  return { raw, gzip, brotli: br };
-}
-
 async function benchFramework(framework) {
   const dir = join(here, "frameworks", framework);
-  const src = join(dir, "src");
   const rows = [];
   for (const c of cases) {
-    rmSync(src, { recursive: true, force: true });
-    mkdirSync(src, { recursive: true });
-    for (const [file, content] of Object.entries(generate(framework, c))) writeFileSync(join(src, file), content);
-    try {
-      await run("pnpm", ["exec", "vite", "build", "--logLevel", "error"], { cwd: dir, maxBuffer: 1 << 26 });
-    } catch (error) {
-      throw new Error(`${framework} ${JSON.stringify(c)} failed:\n${error.stdout}\n${error.stderr}`);
-    }
-    rows.push({ ...c, ...measure(join(dir, "dist")) });
+    writeSources(join(dir, "src"), generate(framework, c));
+    await viteBuild(dir, `${framework} ${JSON.stringify(c)}`);
+    rows.push({ ...c, ...totalSize(join(dir, "dist")) });
   }
   return rows;
-}
-
-function slope(points) {
-  const n = points.length;
-  const mx = points.reduce((s, [x]) => s + x, 0) / n;
-  const my = points.reduce((s, [, y]) => s + y, 0) / n;
-  let num = 0;
-  let den = 0;
-  for (const [x, y] of points) {
-    num += (x - mx) * (y - my);
-    den += (x - mx) ** 2;
-  }
-  const m = num / den;
-  return { perUnit: m, intercept: my - m * mx };
 }
 
 function summarize(rows, metric) {
@@ -88,16 +48,11 @@ function crossover(a, b) {
   return n > 0 ? Math.round(n) : null;
 }
 
-execFileSync("pnpm", ["build"], { cwd: root, stdio: "inherit" });
+buildPackages();
 
 const results = Object.fromEntries(await Promise.all(frameworks.map(async (framework) => [framework, await benchFramework(framework)])));
 
-const versions = Object.fromEntries(
-  frameworks.map((framework) => [
-    framework,
-    JSON.parse(readFileSync(join(here, "frameworks", framework, "package.json"), "utf8")).dependencies,
-  ]),
-);
+const versions = Object.fromEntries(frameworks.map((framework) => [framework, dependenciesOf(join(here, "frameworks", framework))]));
 
 const summary = {};
 for (const metric of ["raw", "gzip", "brotli"]) {
@@ -124,7 +79,4 @@ for (const metric of ["raw", "gzip", "brotli"]) {
   }
 }
 
-const out = join(here, "results", "latest.json");
-mkdirSync(join(here, "results"), { recursive: true });
-writeFileSync(out, `${JSON.stringify({ schema: 1, recordedAt: new Date().toISOString(), versions, summary, results }, null, 2)}\n`);
-console.log(`\nwrote ${out}`);
+writeResults(here, { versions, summary, results });

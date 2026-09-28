@@ -1,0 +1,15 @@
+{
+  "name": "@rezejs/bench-rendering-svelte",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "svelte": "5.57.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "vite": "^8.3.0"
+  }
+}

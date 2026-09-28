@@ -1,4 +1,12 @@
-export const routers = ["reze", "solid-router", "solid-router-v2", "react-router", "tanstack-router", "vue-router"];
+export const routers = [
+  "reze",
+  "solid-router",
+  "solid-router-v2",
+  "react-router",
+  "tanstack-router",
+  "octane-tanstack-router",
+  "vue-router",
+];
 
 export const variants = ["router", "baseline"];
 
@@ -330,50 +338,47 @@ export function Component() {
   };
 }
 
+const tanstackLink = (l) =>
+  l.userId !== undefined
+    ? `<Link to="/users/$id" params={{ id: "${l.userId}" }}>${l.label}</Link>`
+    : `<Link to="${l.to}"${l.isRoot ? " activeOptions={{ exact: true }}" : ""}>${l.label}</Link>`;
+
+const tanstackNav = (sections) =>
+  navLinks(sections)
+    .map((l) => `        ${tanstackLink(l)}`)
+    .join("\n");
+
+const tanstackRoutePath = (file) => (file === "index" ? "/" : file === "users/index" ? "/users/" : file === "[...404]" ? "/$" : `/${file}`);
+
+const tanstackRouteFile = (file) => (file === "[...404]" ? "$" : file);
+
+const fileRoute = (path, options, body, imports = "createFileRoute") => `import { ${imports} } from "@tanstack/react-router";
+
+export const Route = createFileRoute("${path}")(${options});
+
+${body}`;
+
 function tanstackRouter(sections) {
-  const link = (l) =>
-    l.userId !== undefined
-      ? `<Link to="/users/$id" params={{ id: "${l.userId}" }}>${l.label}</Link>`
-      : `<Link to="${l.to}"${l.isRoot ? " activeOptions={{ exact: true }}" : ""}>${l.label}</Link>`;
   return {
     "index.html": html("main.jsx"),
-    "main.jsx": `import { createRootRoute, createRoute, createRouter, lazyRouteComponent, RouterProvider } from "@tanstack/react-router";
+    "main.jsx": `import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
 
-import { Shell } from "./Shell";
-
-const page = (parent, path, load, options) =>
-  createRoute({ getParentRoute: () => parent, path, component: lazyRouteComponent(load), ...options });
-
-const rootRoute = createRootRoute({ component: Shell });
-const usersRoute = page(rootRoute, "/users", () => import("./pages/Users"));
-
-const routeTree = rootRoute.addChildren([
-  page(rootRoute, "/", () => import("./pages/Home")),
-  page(rootRoute, "/about", () => import("./pages/About")),
-  usersRoute.addChildren([
-    page(usersRoute, "/", () => import("./pages/UsersIndex")),
-    page(usersRoute, "$id", () => import("./pages/User"), { loader: ({ params }) => ({ name: "User " + params.id }) }),
-  ]),
-${sectionIds(sections)
-  .map((k) => `  page(rootRoute, "/section-${k}", () => import("./pages/Section${k}")),`)
-  .join("\n")}
-  page(rootRoute, "$", () => import("./pages/NotFound")),
-]);
+import { routeTree } from "./routeTree.gen";
 
 const router = createRouter({ routeTree });
 
 ${reactRender("<RouterProvider router={router} />")}
 `,
-    "Shell.jsx": `import { Link, Outlet } from "@tanstack/react-router";
+    "routes/__root.jsx": `import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 
-export function Shell() {
+export const Route = createRootRoute({ component: Shell });
+
+function Shell() {
   return (
     <>
       <nav>
-${navLinks(sections)
-  .map((l) => `        ${link(l)}`)
-  .join("\n")}
+${tanstackNav(sections)}
       </nav>
       <main>
         <Outlet />
@@ -382,10 +387,20 @@ ${navLinks(sections)
   );
 }
 `,
-    ...jsxPages(sections),
-    "pages/Users.jsx": `import { Outlet } from "@tanstack/react-router";
-
-export default function Users() {
+    ...Object.fromEntries(
+      staticPages(sections).map((page) => [
+        `routes/${tanstackRouteFile(page.file)}.jsx`,
+        fileRoute(
+          tanstackRoutePath(page.file),
+          `{ component: ${page.name} }`,
+          jsxPage(page, `function ${page.name}`).replace(/^export /, ""),
+        ),
+      ]),
+    ),
+    "routes/users.jsx": fileRoute(
+      "/users",
+      "{ component: Users }",
+      `function Users() {
   return (
     <section>
       <h1>Users</h1>
@@ -394,13 +409,17 @@ export default function Users() {
   );
 }
 `,
-    "pages/User.jsx": `import { getRouteApi, Link } from "@tanstack/react-router";
-
-const route = getRouteApi("/users/$id");
-
-export default function User() {
-  const { id } = route.useParams();
-  const data = route.useLoaderData();
+      "createFileRoute, Outlet",
+    ),
+    "routes/users/$id.jsx": fileRoute(
+      "/users/$id",
+      `{
+  loader: ({ params }) => ({ name: "User " + params.id }),
+  component: User,
+}`,
+      `function User() {
+  const { id } = Route.useParams();
+  const data = Route.useLoaderData();
   return (
     <article data-page="user" data-id={id}>
       <h2>{data.name}</h2>
@@ -409,6 +428,145 @@ export default function User() {
       </Link>
     </article>
   );
+}
+`,
+      "createFileRoute, Link",
+    ),
+  };
+}
+
+const tsrxPage = (page) => `export default function ${page.name}() @{\n  ${page.markup}\n}\n`;
+
+const tsrxPages = (sections) => Object.fromEntries(staticPages(sections).map((page) => [`pages/${page.name}.tsrx`, tsrxPage(page)]));
+
+const octaneMain = `import { createRoot } from "octane";
+
+import { App } from "./App.tsrx";
+
+createRoot(document.getElementById("app")).render(App);
+`;
+
+function octaneTanstackRouter(sections) {
+  return {
+    "index.html": html("main.js"),
+    "main.js": octaneMain,
+    "App.tsrx": `import { createRootRoute, createRoute, createRouter, lazyRouteComponent, RouterProvider } from "@octanejs/tanstack-router";
+
+import { Shell } from "./Shell.tsrx";
+
+const page = (parent, path, load, options?) =>
+  createRoute({ getParentRoute: () => parent, path, component: lazyRouteComponent(load), ...options });
+
+const rootRoute = createRootRoute({ component: Shell });
+const usersRoute = page(rootRoute, "/users", () => import("./pages/Users.tsrx"));
+
+const routeTree = rootRoute.addChildren([
+  page(rootRoute, "/", () => import("./pages/Home.tsrx")),
+  page(rootRoute, "/about", () => import("./pages/About.tsrx")),
+  usersRoute.addChildren([
+    page(usersRoute, "/", () => import("./pages/UsersIndex.tsrx")),
+    page(usersRoute, "$id", () => import("./pages/User.tsrx"), { loader: ({ params }) => ({ name: "User " + params.id }) }),
+  ]),
+${sectionIds(sections)
+  .map((k) => `  page(rootRoute, "/section-${k}", () => import("./pages/Section${k}.tsrx")),`)
+  .join("\n")}
+  page(rootRoute, "$", () => import("./pages/NotFound.tsrx")),
+]);
+
+const router = createRouter({ routeTree });
+
+export function App() @{
+  <RouterProvider router={router} />
+}
+`,
+    "Shell.tsrx": `import { Link, Outlet } from "@octanejs/tanstack-router";
+
+export function Shell() @{
+  <>
+    <nav>
+${tanstackNav(sections).replaceAll("        <", "      <")}
+    </nav>
+    <main>
+      <Outlet />
+    </main>
+  </>
+}
+`,
+    ...tsrxPages(sections),
+    "pages/Users.tsrx": `import { Outlet } from "@octanejs/tanstack-router";
+
+export default function Users() @{
+  <section>
+    <h1>Users</h1>
+    <Outlet />
+  </section>
+}
+`,
+    "pages/User.tsrx": `import { getRouteApi, Link } from "@octanejs/tanstack-router";
+
+const route = getRouteApi("/users/$id");
+
+export default function User() @{
+  const { id } = route.useParams();
+  const data = route.useLoaderData();
+  <article data-page="user" data-id={id}>
+    <h2>{data.name as string}</h2>
+    <Link data-next to="/users/$id" params={{ id: String(Number(id) + 1) }}>
+      Next
+    </Link>
+  </article>
+}
+`,
+  };
+}
+
+function octaneBaseline(sections) {
+  return {
+    "index.html": html("main.js"),
+    "main.js": `import { createRoot } from "octane";
+
+import { App } from "./App.tsrx";
+
+${pagesGlobal(sections, ".tsrx")}
+createRoot(document.getElementById("app")).render(App);
+`,
+    "App.tsrx": `import Home from "./pages/Home.tsrx";
+import { Shell } from "./Shell.tsrx";
+
+export function App() @{
+  <Shell>
+    <Home />
+  </Shell>
+}
+`,
+    "Shell.tsrx": `import type { OctaneNode } from "octane";
+
+export function Shell({ children }: { children: OctaneNode }) @{
+  <>
+    <nav>
+${navLinks(sections)
+  .map((link) => `      <a href="${link.to}">${link.label}</a>`)
+  .join("\n")}
+    </nav>
+    <main>{children}</main>
+  </>
+}
+`,
+    ...tsrxPages(sections),
+    "pages/Users.tsrx": `import type { OctaneNode } from "octane";
+
+export default function Users({ children }: { children: OctaneNode }) @{
+  <section>
+    <h1>Users</h1>
+    {children}
+  </section>
+}
+`,
+    "pages/User.tsrx": `export default function User({ id, name }: { id: string; name: string }) @{
+  <article data-page="user" data-id={id}>
+    <h2>{name as string}</h2>
+    <a data-next href={"/users/" + (Number(id) + 1)}>Next</a>
+  </article>
 }
 `,
   };
@@ -542,6 +700,7 @@ const generators = {
   "solid-router-v2": { router: solidRouterV2, baseline: solidV2Baseline },
   "react-router": { router: reactRouter, baseline: reactBaseline },
   "tanstack-router": { router: tanstackRouter, baseline: reactBaseline },
+  "octane-tanstack-router": { router: octaneTanstackRouter, baseline: octaneBaseline },
   "vue-router": { router: vueRouter, baseline: vueBaseline },
 };
 

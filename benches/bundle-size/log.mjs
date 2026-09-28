@@ -1,13 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
+
+import { readResults, writeResults } from "../kit/results.mjs";
+import { totalSize } from "../kit/sizes.mjs";
 
 const here = import.meta.dirname;
 const root = join(here, "..", "..");
-const latestPath = join(here, "results", "latest.json");
 const targets = JSON.parse(readFileSync(join(here, "targets.json"), "utf8"));
-const previous = existsSync(latestPath) ? JSON.parse(readFileSync(latestPath, "utf8")).results : {};
+const previous = readResults(here)?.results ?? {};
 
 const bytes = (n) => `${n} B`;
 const delta = (current, was) =>
@@ -16,20 +17,12 @@ const delta = (current, was) =>
 const results = {};
 for (const [pkg, target] of Object.entries(targets)) {
   execFileSync("pnpm", ["--filter", pkg, "build"], { cwd: root, stdio: "inherit" });
-  const assets = join(root, target.dir, "dist", "assets");
-  let raw = 0;
-  let gzip = 0;
-  for (const file of readdirSync(assets)) {
-    if (!file.endsWith(".js")) continue;
-    const content = readFileSync(join(assets, file));
-    raw += content.length;
-    gzip += gzipSync(content).length;
-  }
+  const size = totalSize(join(root, target.dir, "dist"));
   const key = `${pkg} js`;
   const was = previous[key];
-  console.log(`${key}: raw ${bytes(raw)}${delta(raw, was?.raw)}, gzip ${bytes(gzip)}${delta(gzip, was?.gzip)}`);
-  results[key] = { raw, gzip };
+  const fields = ["raw", "gzip", "brotli"].map((field) => `${field} ${bytes(size[field])}${delta(size[field], was?.[field])}`);
+  console.log(`${key}: ${fields.join(", ")}`);
+  results[key] = size;
 }
 
-writeFileSync(latestPath, `${JSON.stringify({ schema: 1, recordedAt: new Date().toISOString(), results }, null, 2)}\n`);
-console.log(`wrote ${latestPath}`);
+writeResults(here, { results });

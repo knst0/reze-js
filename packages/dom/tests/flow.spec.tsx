@@ -1,7 +1,7 @@
 import { For, Match, onCleanup, Show, signal, Switch, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
-import { cleanup, mount, tick } from "./utils";
+import { cleanup, mount, tick } from "../../../testing/dom";
 
 afterEach(cleanup);
 

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-26T18:01:30.626Z",
+  "recordedAt": "2026-09-28T14:19:14.602Z",
   "versions": {
     "reze": {
       "reze-js": "workspace:*"
@@ -16,6 +16,13 @@
       "react": "19.3.0",
       "react-dom": "19.3.0"
     },
+    "react-19-compiler": {
+      "react": "19.3.0",
+      "react-dom": "19.3.0"
+    },
+    "octane": {
+      "octane": "0.6.1"
+    },
     "vue-3.6": {
       "vue": "3.6.0-rc.9"
     },
@@ -30,13 +37,13 @@
     "raw": {
       "reze": {
         "baseline": 6051,
-        "perComponent": 734,
-        "intercept": 11752,
+        "perComponent": 731,
+        "intercept": 11779,
         "perUsage": 39.9
       },
       "solid-1": {
         "baseline": 9183,
-        "perComponent": 906,
+        "perComponent": 903,
         "intercept": 12906,
         "perUsage": 44.8
       },
@@ -51,6 +58,18 @@
         "perComponent": 789,
         "intercept": 219029,
         "perUsage": 42.8
+      },
+      "react-19-compiler": {
+        "baseline": 219214,
+        "perComponent": 1348,
+        "intercept": 219380,
+        "perUsage": 42.9
+      },
+      "octane": {
+        "baseline": 72909,
+        "perComponent": 1819,
+        "intercept": 141392,
+        "perUsage": 190.7
       },
       "vue-3.6": {
         "baseline": 54043,
@@ -75,13 +94,13 @@
       "reze": {
         "baseline": 2352,
         "perComponent": 56,
-        "intercept": 5776,
+        "intercept": 5778,
         "perUsage": 5.5
       },
       "solid-1": {
         "baseline": 3569,
         "perComponent": 76,
-        "intercept": 6561,
+        "intercept": 6557,
         "perUsage": 5.8
       },
       "solid-2": {
@@ -95,6 +114,18 @@
         "perComponent": 56,
         "intercept": 68533,
         "perUsage": 5.9
+      },
+      "react-19-compiler": {
+        "baseline": 67570,
+        "perComponent": 81,
+        "intercept": 69908,
+        "perUsage": 5.8
+      },
+      "octane": {
+        "baseline": 23748,
+        "perComponent": 168,
+        "intercept": 47462,
+        "perUsage": 42
       },
       "vue-3.6": {
         "baseline": 20993,
@@ -119,13 +150,13 @@
       "reze": {
         "baseline": 2171,
         "perComponent": 40,
-        "intercept": 5386,
+        "intercept": 5383,
         "perUsage": 2.3
       },
       "solid-1": {
         "baseline": 3242,
         "perComponent": 52,
-        "intercept": 6090,
+        "intercept": 6074,
         "perUsage": 2.2
       },
       "solid-2": {
@@ -139,6 +170,18 @@
         "perComponent": 42,
         "intercept": 59167,
         "perUsage": 2
+      },
+      "react-19-compiler": {
+        "baseline": 58205,
+        "perComponent": 53,
+        "intercept": 60477,
+        "perUsage": 2
+      },
+      "octane": {
+        "baseline": 21187,
+        "perComponent": 105,
+        "intercept": 42140,
+        "perUsage": 19.2
       },
       "vue-3.6": {
         "baseline": 19121,
@@ -179,58 +222,58 @@
       {
         "components": 5,
         "usages": 1,
-        "raw": 15430,
-        "gzip": 5877,
-        "brotli": 5351
+        "raw": 15445,
+        "gzip": 5880,
+        "brotli": 5362
       },
       {
         "components": 10,
         "usages": 1,
-        "raw": 19082,
-        "gzip": 6228,
-        "brotli": 5673
+        "raw": 19085,
+        "gzip": 6230,
+        "brotli": 5670
       },
       {
         "components": 25,
         "usages": 1,
-        "raw": 30069,
-        "gzip": 7169,
-        "brotli": 6411
+        "raw": 30036,
+        "gzip": 7171,
+        "brotli": 6399
       },
       {
         "components": 50,
         "usages": 1,
-        "raw": 48449,
-        "gzip": 8662,
-        "brotli": 7467
+        "raw": 48356,
+        "gzip": 8664,
+        "brotli": 7488
       },
       {
         "components": 100,
         "usages": 1,
-        "raw": 85172,
-        "gzip": 11509,
-        "brotli": 9492
+        "raw": 84959,
+        "gzip": 11513,
+        "brotli": 9516
       },
       {
         "components": 200,
         "usages": 1,
-        "raw": 158477,
-        "gzip": 16942,
-        "brotli": 13380
+        "raw": 158024,
+        "gzip": 16945,
+        "brotli": 13411
       },
       {
         "components": 5,
         "usages": 10,
-        "raw": 17179,
-        "gzip": 6142,
-        "brotli": 5498
+        "raw": 17194,
+        "gzip": 6145,
+        "brotli": 5504
       },
       {
         "components": 5,
         "usages": 50,
-        "raw": 25179,
-        "gzip": 7236,
-        "brotli": 5937
+        "raw": 25194,
+        "gzip": 7238,
+        "brotli": 5939
       }
     ],
     "solid-1": [
@@ -251,57 +294,57 @@
       {
         "components": 5,
         "usages": 1,
-        "raw": 17449,
-        "gzip": 6730,
-        "brotli": 6087
+        "raw": 17431,
+        "gzip": 6726,
+        "brotli": 6091
       },
       {
         "components": 10,
         "usages": 1,
-        "raw": 21960,
-        "gzip": 7192,
-        "brotli": 6493
+        "raw": 21924,
+        "gzip": 7187,
+        "brotli": 6475
       },
       {
         "components": 25,
         "usages": 1,
-        "raw": 35533,
-        "gzip": 8441,
-        "brotli": 7382
+        "raw": 35443,
+        "gzip": 8436,
+        "brotli": 7374
       },
       {
         "components": 50,
         "usages": 1,
-        "raw": 58223,
-        "gzip": 10460,
-        "brotli": 8769
+        "raw": 58043,
+        "gzip": 10454,
+        "brotli": 8760
       },
       {
         "components": 100,
         "usages": 1,
-        "raw": 103566,
-        "gzip": 14243,
-        "brotli": 11293
+        "raw": 103206,
+        "gzip": 14236,
+        "brotli": 11305
       },
       {
         "components": 200,
         "usages": 1,
-        "raw": 194111,
-        "gzip": 21648,
-        "brotli": 16347
+        "raw": 193391,
+        "gzip": 21636,
+        "brotli": 16369
       },
       {
         "components": 5,
         "usages": 10,
-        "raw": 19421,
-        "gzip": 6999,
+        "raw": 19403,
+        "gzip": 6995,
         "brotli": 6221
       },
       {
         "components": 5,
         "usages": 50,
-        "raw": 28421,
-        "gzip": 8154,
+        "raw": 28403,
+        "gzip": 8150,
         "brotli": 6636
       }
     ],
@@ -447,6 +490,150 @@
         "raw": 233450,
         "gzip": 70080,
         "brotli": 59753
+      }
+    ],
+    "react-19-compiler": [
+      {
+        "components": 0,
+        "usages": 1,
+        "raw": 219214,
+        "gzip": 67570,
+        "brotli": 58205
+      },
+      {
+        "components": 1,
+        "usages": 1,
+        "raw": 220431,
+        "gzip": 68106,
+        "brotli": 58579
+      },
+      {
+        "components": 5,
+        "usages": 1,
+        "raw": 226089,
+        "gzip": 69979,
+        "brotli": 60300
+      },
+      {
+        "components": 10,
+        "usages": 1,
+        "raw": 232795,
+        "gzip": 70642,
+        "brotli": 60743
+      },
+      {
+        "components": 25,
+        "usages": 1,
+        "raw": 252998,
+        "gzip": 72014,
+        "brotli": 61863
+      },
+      {
+        "components": 50,
+        "usages": 1,
+        "raw": 286799,
+        "gzip": 73967,
+        "brotli": 63301
+      },
+      {
+        "components": 100,
+        "usages": 1,
+        "raw": 354327,
+        "gzip": 77913,
+        "brotli": 65908
+      },
+      {
+        "components": 200,
+        "usages": 1,
+        "raw": 488814,
+        "gzip": 86054,
+        "brotli": 70970
+      },
+      {
+        "components": 5,
+        "usages": 10,
+        "raw": 227979,
+        "gzip": 70225,
+        "brotli": 60366
+      },
+      {
+        "components": 5,
+        "usages": 50,
+        "raw": 236577,
+        "gzip": 71392,
+        "brotli": 60777
+      }
+    ],
+    "octane": [
+      {
+        "components": 0,
+        "usages": 1,
+        "raw": 72909,
+        "gzip": 23748,
+        "brotli": 21187
+      },
+      {
+        "components": 1,
+        "usages": 1,
+        "raw": 111046,
+        "gzip": 35769,
+        "brotli": 31561
+      },
+      {
+        "components": 5,
+        "usages": 1,
+        "raw": 150629,
+        "gzip": 48144,
+        "brotli": 42054
+      },
+      {
+        "components": 10,
+        "usages": 1,
+        "raw": 159591,
+        "gzip": 49010,
+        "brotli": 42952
+      },
+      {
+        "components": 25,
+        "usages": 1,
+        "raw": 186937,
+        "gzip": 51623,
+        "brotli": 44634
+      },
+      {
+        "components": 50,
+        "usages": 1,
+        "raw": 232353,
+        "gzip": 55930,
+        "brotli": 47482
+      },
+      {
+        "components": 100,
+        "usages": 1,
+        "raw": 323212,
+        "gzip": 64561,
+        "brotli": 53076
+      },
+      {
+        "components": 200,
+        "usages": 1,
+        "raw": 505303,
+        "gzip": 80997,
+        "brotli": 62809
+      },
+      {
+        "components": 5,
+        "usages": 10,
+        "raw": 158810,
+        "gzip": 49821,
+        "brotli": 43198
+      },
+      {
+        "components": 5,
+        "usages": 50,
+        "raw": 197202,
+        "gzip": 58361,
+        "brotli": 46856
       }
     ],
     "vue-3.6": [

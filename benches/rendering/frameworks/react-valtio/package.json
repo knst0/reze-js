@@ -1,0 +1,17 @@
+{
+  "name": "@rezejs/bench-rendering-react-valtio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "valtio": "2.3.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "^8.3.0"
+  }
+}

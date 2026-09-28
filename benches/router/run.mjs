@@ -1,17 +1,19 @@
-import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import { dirname, extname, join } from "node:path";
-import { parseArgs, promisify } from "node:util";
-import { brotliCompressSync, constants, gzipSync } from "node:zlib";
+import { join } from "node:path";
+import { parseArgs } from "node:util";
 
 import { chromium } from "playwright";
 
+import { assertClean, heapBytes, openPage as openPageWith, taskSeconds } from "../kit/browser.mjs";
+import { buildPackages, viteBuild, writeSources } from "../kit/build.mjs";
+import { selectNames } from "../kit/cli.mjs";
+import { kib, ratio, signed, us } from "../kit/format.mjs";
+import { dependenciesOf, writeResults } from "../kit/results.mjs";
+import { origin, serve } from "../kit/serve.mjs";
+import { assetSizes, diffSizes, sumSizes } from "../kit/sizes.mjs";
+import { median } from "../kit/stats.mjs";
 import { generate, routers, variants } from "./generate.mjs";
 
-const run = promisify(execFile);
 const here = import.meta.dirname;
-const root = join(here, "..", "..");
 
 const { values: args } = parseArgs({
   options: {
@@ -30,111 +32,26 @@ const batches = Number(args.batches);
 const navsPerBatch = Number(args.navs) & ~1;
 const cpuThrottle = Number(args.cpu);
 const sections = Number(args.sections);
-const selected = args.only ? args.only.split(",") : routers;
+const selected = selectNames(routers, args.only, "router");
 const scenarios = ["param", "swap", "pop"];
 const retainedNavs = 1000;
-
-for (const name of selected)
-  if (!routers.includes(name)) throw new Error(`unknown router "${name}", expected one of ${routers.join(", ")}`);
 
 const appDir = (router) => join(here, "apps", router);
 const distDir = (router, variant) => join(appDir(router), "dist", variant);
 
 async function build(router) {
   for (const variant of variants) {
-    const src = join(appDir(router), "src", variant);
-    rmSync(src, { recursive: true, force: true });
-    for (const [file, content] of Object.entries(generate(router, variant, sections))) {
-      mkdirSync(dirname(join(src, file)), { recursive: true });
-      writeFileSync(join(src, file), content);
-    }
-    try {
-      await run("pnpm", ["exec", "vite", "build", "--logLevel", "error"], {
-        cwd: appDir(router),
-        env: { ...process.env, BENCH_VARIANT: variant },
-        maxBuffer: 1 << 26,
-      });
-    } catch (error) {
-      throw new Error(`${router} ${variant} build failed:\n${error.stdout}\n${error.stderr}`);
-    }
+    writeSources(join(appDir(router), "src", variant), generate(router, variant, sections));
+    await viteBuild(appDir(router), `${router} ${variant}`, { BENCH_VARIANT: variant });
   }
 }
 
-const brotli = (buf) => brotliCompressSync(buf, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).length;
-
-function assetSizes(dist) {
-  const sizes = new Map();
-  for (const file of readdirSync(join(dist, "assets"))) {
-    if (!file.endsWith(".js")) continue;
-    const content = readFileSync(join(dist, "assets", file));
-    sizes.set(`/assets/${file}`, { raw: content.length, gzip: gzipSync(content, { level: 9 }).length, brotli: brotli(content) });
-  }
-  return sizes;
-}
-
-function sumSizes(sizes, paths) {
-  const total = { raw: 0, gzip: 0, brotli: 0 };
-  for (const path of paths) {
-    const size = sizes.get(path);
-    if (size === undefined) throw new Error(`loaded script ${path} is not a built asset`);
-    total.raw += size.raw;
-    total.gzip += size.gzip;
-    total.brotli += size.brotli;
-  }
-  return total;
-}
-
-const diffSizes = (a, b) => ({ raw: a.raw - b.raw, gzip: a.gzip - b.gzip, brotli: a.brotli - b.brotli });
-
-const mimeTypes = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
-
-function serve(dist) {
-  const server = createServer((req, res) => {
-    const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-    const file = join(dist, path);
-    const isAsset = path !== "/" && file.startsWith(dist) && existsSync(file) && extname(file) !== "";
-    const target = isAsset ? file : join(dist, "index.html");
-    res.writeHead(200, {
-      "content-type": mimeTypes[extname(target)] ?? "application/octet-stream",
-      "cross-origin-opener-policy": "same-origin",
-      "cross-origin-embedder-policy": "require-corp",
-    });
-    res.end(readFileSync(target));
-  });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
-}
-
-const origin = (server) => `http://127.0.0.1:${server.address().port}`;
-
-async function openPage(browser) {
-  const context = await browser.newContext();
-  await context.addInitScript({ path: join(here, "harness.js") });
-  const page = await context.newPage();
-  const errors = [];
-  page.on("pageerror", (error) => errors.push(error));
-  const cdp = await context.newCDPSession(page);
-  if (cpuThrottle > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpuThrottle });
-  return { context, page, cdp, errors };
-}
-
-async function heapBytes(cdp) {
-  await cdp.send("HeapProfiler.collectGarbage");
-  await cdp.send("HeapProfiler.collectGarbage");
-  return (await cdp.send("Runtime.getHeapUsage")).usedSize;
-}
-
-async function taskSeconds(cdp) {
-  const { metrics } = await cdp.send("Performance.getMetrics");
-  return metrics.find((m) => m.name === "TaskDuration").value;
-}
-
-function assertClean(errors, router) {
-  if (errors.length > 0) throw new Error(`${router} page errors:\n${errors.map(String).join("\n")}`);
+function openPage(browser) {
+  return openPageWith(browser, { initScript: join(here, "harness.js"), cpuThrottle });
 }
 
 async function measurePerf(browser, url, router) {
   const { context, page, cdp, errors } = await openPage(browser);
-  await cdp.send("Performance.enable");
   await page.goto(`${url}/users/1`);
   const bootMs = await page.evaluate(() => window.__bench.boot);
   await page.evaluate(() => window.__bench.user(1));
@@ -190,12 +107,6 @@ async function measureMemory(browser, routerUrl, baselineUrl, router) {
   return { baselineHeap, bootHeap, retained: afterHeap - warmHeap, homeScripts, baselineScripts: [...baseline.scripts] };
 }
 
-const median = (values) => {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-};
-
 function summarize(router, perfRuns, memoryRuns, sizes) {
   const perf = { bootMs: median(perfRuns.map((r) => r.bootMs)) };
   for (const scenario of scenarios) {
@@ -220,16 +131,6 @@ function summarize(router, perfRuns, memoryRuns, sizes) {
   return { router, bundle, perf, memory };
 }
 
-function versionsOf(router) {
-  const pkg = JSON.parse(readFileSync(join(appDir(router), "package.json"), "utf8"));
-  return pkg.dependencies;
-}
-
-const kb = (bytes) => (bytes / 1024).toFixed(2);
-const signed = (value, format) => (value > 0 ? "+" : "") + format(value);
-const us = (value) => value.toFixed(1);
-const ratio = (value, reze) => (reze > 0 ? `${(value / reze).toFixed(2)}×` : "");
-
 function report(summaries) {
   const reze = summaries.find((s) => s.router === "reze");
   const rel = (s, f) => (reze === undefined || s === reze ? "" : ` (${ratio(f(s), f(reze))})`);
@@ -239,9 +140,9 @@ function report(summaries) {
     console.log("| --- | ---: | ---: | ---: | ---: |");
     for (const s of summaries) {
       const b = s.bundle;
-      const homeCost = kb(b.homeCost[metric]) + rel(s, (x) => x.bundle.homeCost[metric]);
-      const totalCost = kb(b.totalCost[metric]) + rel(s, (x) => x.bundle.totalCost[metric]);
-      console.log(`| ${s.router} | ${kb(b.home[metric])} | ${homeCost} | ${kb(b.total[metric])} | ${totalCost} |`);
+      const homeCost = kib(b.homeCost[metric]) + rel(s, (x) => x.bundle.homeCost[metric]);
+      const totalCost = kib(b.totalCost[metric]) + rel(s, (x) => x.bundle.totalCost[metric]);
+      console.log(`| ${s.router} | ${kib(b.home[metric])} | ${homeCost} | ${kib(b.total[metric])} | ${totalCost} |`);
     }
   }
   console.log(
@@ -266,12 +167,12 @@ function report(summaries) {
   console.log("| --- | ---: | ---: | ---: |");
   for (const s of summaries) {
     const m = s.memory;
-    console.log(`| ${s.router} | ${kb(m.heap)} | ${kb(m.cost)}${rel(s, (x) => x.memory.cost)} | ${signed(m.retained, kb)} |`);
+    console.log(`| ${s.router} | ${kib(m.heap)} | ${kib(m.cost)}${rel(s, (x) => x.memory.cost)} | ${signed(m.retained, kib)} |`);
   }
 }
 
 if (!args["skip-build"]) {
-  execFileSync("pnpm", ["build"], { cwd: root, stdio: "inherit" });
+  buildPackages();
   await Promise.all(selected.map(build));
 }
 
@@ -308,21 +209,9 @@ try {
 const summaries = selected.map((router) => summarize(router, perfRuns[router], memoryRuns[router], sizes[router]));
 report(summaries);
 
-const out = join(here, "results", "latest.json");
-mkdirSync(dirname(out), { recursive: true });
-writeFileSync(
-  out,
-  `${JSON.stringify(
-    {
-      schema: 1,
-      recordedAt: new Date().toISOString(),
-      browser: browserVersion,
-      options: { runs, batches, navsPerBatch, cpuThrottle, sections, retainedNavs },
-      versions: Object.fromEntries(selected.map((router) => [router, versionsOf(router)])),
-      summaries,
-    },
-    null,
-    2,
-  )}\n`,
-);
-console.log(`\nwrote ${out}`);
+writeResults(here, {
+  browser: browserVersion,
+  options: { runs, batches, navsPerBatch, cpuThrottle, sections, retainedNavs },
+  versions: Object.fromEntries(selected.map((router) => [router, dependenciesOf(appDir(router))])),
+  summaries,
+});

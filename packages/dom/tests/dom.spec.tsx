@@ -1,7 +1,7 @@
 import { effect, mergeProps, onCleanup, signal, use, type ClassValue, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
-import { cleanup, fire, mount, tick } from "./utils";
+import { cleanup, fire, mount, tick } from "../../../testing/dom";
 
 afterEach(cleanup);
 

@@ -1,6 +1,7 @@
 packages:
   - benches/component-scaling/frameworks/*
   - benches/rendering
+  - benches/rendering/frameworks/*
   - benches/router
   - benches/router/apps/*
   - examples/*
@@ -22,3 +23,6 @@ minimumReleaseAgeExclude:
   - "@solidjs/vite-plugin@3.0.0-next.46"
   - "@solidjs/web@2.0.0-rc.10"
   - solid-js@2.0.0-rc.10
+  - octane@0.6.1
+  - "@tanstack/router-generator@1.167.39"
+  - "@tanstack/router-plugin@1.168.41"

@@ -1,6 +1,7 @@
 import { catchError, type JSX } from "reze-js";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { cleanup, fire, mount, tick } from "../../../testing/dom";
 import {
   createBrowserHistory,
   createMemoryHistory,
@@ -17,7 +18,6 @@ import {
   type RouteModule,
   type RouteProps,
 } from "../src";
-import { cleanup, fire, mount, tick } from "./utils";
 
 afterEach(() => {
   cleanup();

@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import reze, { type FileRoutesOptions, type Options } from "@rezejs/vite-plugin";
 import type { Plugin, ResolvedConfig } from "vite";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+
+import reze, { type FileRoutesOptions, type Options } from "../src";
 
 const compile = vi.hoisted(() => vi.fn());
 vi.mock("@rezejs/compiler", () => ({ compile }));

@@ -3,14 +3,14 @@ import { join } from "node:path";
 import { rolldown } from "rolldown";
 import { configDefaults, defineConfig, type Plugin } from "vitest/config";
 
-import { browserConfig } from "../../vitest.shared";
+import { browserConfig, nodeSpecs } from "../../vitest.shared";
 
-const devBuild = join(import.meta.dirname, "dist", "index.js");
+const sourceEntry = join(import.meta.dirname, "src", "index.ts");
 const productionBundle = join(import.meta.dirname, "node_modules", ".bench", "signals.mjs");
 
 async function buildProductionBundle(): Promise<void> {
   const build = await rolldown({
-    input: join(import.meta.dirname, "src", "index.ts"),
+    input: sourceEntry,
     platform: "neutral",
     transform: { define: { "process.env.NODE_ENV": '"production"' } },
   });
@@ -25,7 +25,7 @@ const resolveSignals: Plugin = {
   enforce: "pre",
   async resolveId(id, importer) {
     if (id !== "@rezejs/signals") return;
-    if (!importer?.endsWith(".bench.ts")) return devBuild;
+    if (!importer?.endsWith(".bench.ts")) return sourceEntry;
     await (productionBuild ??= buildProductionBundle());
     return productionBundle;
   },
@@ -35,7 +35,7 @@ export default defineConfig({
   plugins: [resolveSignals],
   test: {
     name: "@rezejs/signals",
-    exclude: [...configDefaults.exclude, "tests/**/*.node.spec.ts"],
+    exclude: [...configDefaults.exclude, nodeSpecs],
     benchmark: { include: ["benches/**/*.bench.ts"] },
     browser: browserConfig(),
   },
