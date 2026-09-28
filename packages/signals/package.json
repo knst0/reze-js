@@ -34,7 +34,7 @@
     "bench": "vitest bench --run",
     "bench:update": "REZE_BENCH_UPDATE=1 vitest bench --run",
     "build": "tsdown",
-    "test": "vitest run"
+    "test": "vitest run && vitest run --config vitest.node.config.mts"
   },
   "devDependencies": {
     "reactive-framework-test-suite": "0.0.2",

@@ -1,7 +1,9 @@
 import { join } from "node:path";
 
 import { rolldown } from "rolldown";
-import { defineConfig, type Plugin } from "vitest/config";
+import { configDefaults, defineConfig, type Plugin } from "vitest/config";
+
+import { browserConfig } from "../../vitest.shared";
 
 const devBuild = join(import.meta.dirname, "dist", "index.js");
 const productionBundle = join(import.meta.dirname, "node_modules", ".bench", "signals.mjs");
@@ -32,6 +34,9 @@ const resolveSignals: Plugin = {
 export default defineConfig({
   plugins: [resolveSignals],
   test: {
+    name: "@rezejs/signals",
+    exclude: [...configDefaults.exclude, "tests/**/*.node.spec.ts"],
     benchmark: { include: ["benches/**/*.bench.ts"] },
+    browser: browserConfig(),
   },
 });

@@ -1,0 +1,13 @@
+{
+  "name": "@rezejs/bench-rendering",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "vitest bench --run",
+    "bench:update": "REZE_BENCH_UPDATE=1 vitest bench --run"
+  },
+  "devDependencies": {
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  }
+}

@@ -328,18 +328,25 @@ test("navigate takes route paths while anchors carry the base", () => {
   expect(el.textContent).toContain("home");
 });
 
-test("navigate hands absolute URLs outside the router to the browser, routes same-origin ones, and never runs scripts", () => {
-  const assign = vi.spyOn(location, "assign").mockImplementation(() => {});
+test("navigate routes same-origin absolute URLs", () => {
   const { history, navigate } = setup(pages);
-  navigate("https://other.test/about");
-  expect(assign).toHaveBeenCalledWith("https://other.test/about");
-  expect(history.get().path).toBe("/");
-  navigate("http://localhost/about?x=1");
+  navigate(`${location.origin}/about?x=1`);
   expect(history.get().path).toBe("/about?x=1");
-  navigate(" JavaScript:alert(1)");
-  navigate("java\tscript:alert(1)");
-  expect(assign).toHaveBeenCalledOnce();
 });
+
+test.runIf(navigator.userAgent.includes("HappyDOM"))(
+  "navigate hands absolute URLs outside the router to the browser and never runs scripts",
+  () => {
+    const assign = vi.spyOn(location, "assign").mockImplementation(() => {});
+    const { history, navigate } = setup(pages);
+    navigate("https://other.test/about");
+    expect(assign).toHaveBeenCalledWith("https://other.test/about");
+    expect(history.get().path).toBe("/");
+    navigate(" JavaScript:alert(1)");
+    navigate("java\tscript:alert(1)");
+    expect(assign).toHaveBeenCalledOnce();
+  },
+);
 
 test("a malformed hash target is looked up raw instead of throwing", () => {
   silenceScroll();

@@ -28,7 +28,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "test": "vitest run"
+    "test": "vitest run && vitest run --config vitest.node.config.mts"
   },
   "dependencies": {
     "@rezejs/dom": "workspace:*",

@@ -1,5 +1,6 @@
 packages:
   - benches/component-scaling/frameworks/*
+  - benches/rendering
   - benches/router
   - benches/router/apps/*
   - examples/*

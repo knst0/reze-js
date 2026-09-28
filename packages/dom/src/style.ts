@@ -8,6 +8,7 @@ type StyleProperties = { readonly [property: string]: string | number | null | u
 export function style(node: Element & ElementCSSInlineStyle, value: string | StyleProperties | null | undefined, prev?: unknown): unknown {
   const css = node.style;
   if (value == null) {
+    node.setAttribute("style", "");
     node.removeAttribute("style");
     return value;
   }
