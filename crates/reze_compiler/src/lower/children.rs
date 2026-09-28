@@ -240,24 +240,18 @@ impl<'a> Lowerer<'a, '_> {
         parts: std::vec::Vec<Item<'_, 'a>>,
     ) {
         let node = builder.node(parent);
-        let start = builder.html.len();
+        builder.html.push(' ');
         let mut is_reactive = false;
         let mut lowered = self.vec();
         for part in parts {
             match part {
-                Item::Text(text) => {
-                    escape_text(&mut builder.html, &text);
-                    lowered.push(TextPart::Static(self.str(&text)));
-                }
+                Item::Text(text) => lowered.push(TextPart::Static(self.str(&text))),
                 Item::Expr(e) => {
                     is_reactive |= is_dynamic(e, false, self.analysis);
                     lowered.push(TextPart::Dynamic(self.expr(e)));
                 }
                 Item::Element(_) | Item::Fragment(_) => {}
             }
-        }
-        if builder.html.len() == start {
-            builder.html.push(' ');
         }
         builder.reference(node);
         let target = BindTarget::Text;
