@@ -1,0 +1,14 @@
+{
+  "name": "@rezejs/bench-router-tanstack-router",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tanstack/react-router": "1.170.40",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "^8.3.0"
+  }
+}

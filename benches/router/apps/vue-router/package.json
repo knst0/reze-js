@@ -1,0 +1,13 @@
+{
+  "name": "@rezejs/bench-router-vue-router",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "vue": "3.6.0-rc.9",
+    "vue-router": "5.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.9",
+    "vite": "^8.3.0"
+  }
+}

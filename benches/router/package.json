@@ -1,0 +1,8 @@
+{
+  "name": "@rezejs/bench-router",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

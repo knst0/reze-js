@@ -1,0 +1,13 @@
+{
+  "name": "@rezejs/bench-router-reze",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@rezejs/router": "workspace:*",
+    "reze-js": "workspace:*"
+  },
+  "devDependencies": {
+    "@rezejs/vite-plugin": "workspace:*",
+    "vite": "^8.3.0"
+  }
+}
