@@ -25,7 +25,22 @@ function applyLayer<T>(entry: LayerEntry<T>, value: T): T {
 
 /**
  * A derived view of `source()` with temporary layers over it, for optimistic updates. Layers run
- * lazily on read, tracked, in insertion order; a layer that throws is skipped.
+ * lazily on read, tracked, in insertion order; a layer that throws is skipped. A removed layer
+ * leaves no trace, so the source must already hold the committed change when the layer is removed,
+ * or the view reverts to the source.
+ *
+ * @example
+ * const [saved, setSaved] = signal(["milk"]);
+ * const [items, layer] = optimistic(saved);
+ *
+ * function add(item: string): void {
+ *   const change = (list: string[]): string[] => [...list, item];
+ *   const drop = layer(change);
+ *   api.add(item).then(() => {
+ *     setSaved(change);
+ *     drop();
+ *   }, drop);
+ * }
  */
 export function optimistic<T>(source: () => T, options?: ComputedOptions): [Getter<T>, Layer<T>] {
   const layers: LayerEntry<T>[] = [];

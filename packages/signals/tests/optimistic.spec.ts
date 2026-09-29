@@ -35,6 +35,20 @@ test("a layer shows at once over the source and removing it restores the source"
   expect(seen).toEqual([10, 11, 10]);
 });
 
+test("committing to the source and removing the layer in one task keeps the value", () => {
+  const [saved, setSaved] = signal(10);
+  const [likes, layer] = optimistic(saved);
+  const seen = observe(likes);
+  const increment = (n: number): number => n + 1;
+
+  const drop = layer(increment);
+  flush();
+  setSaved(increment);
+  drop();
+  flush();
+  expect(seen).toEqual([10, 11]);
+});
+
 test("removing an earlier layer keeps the later one over the source", () => {
   const [items, layer] = optimistic<string[]>(() => []);
   const dropFirst = layer((list) => [...list, "first"]);

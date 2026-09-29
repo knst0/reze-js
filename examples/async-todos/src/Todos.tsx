@@ -29,18 +29,28 @@ export function Todos() {
 
 async function TodoList() {
   const initial = await fetchTodos();
-  const [todos, layer] = optimistic(() => initial);
+  const [saved, setSaved] = signal(initial);
+  const [todos, layer] = optimistic(saved);
   const [draft, setDraft] = signal("");
 
-  const toggle = (todo: Todo) => {
-    layer((list) => list.map((item) => (item.id === todo.id ? { ...item, done: !item.done } : item)), saveTodo({ ...todo, done: !todo.done }));
+  const commit = (change: (list: Todo[]) => Todo[], save: Promise<void>) => {
+    const drop = layer(change);
+    save.then(() => {
+      setSaved(change);
+      drop();
+    }, drop);
   };
+
+  const toggle = (todo: Todo) => {
+    commit((list) => list.map((item) => (item.id === todo.id ? { ...item, done: !item.done } : item)), saveTodo({ ...todo, done: !todo.done }));
+  };
+
   const add = () => {
     const title = draft().trim();
     if (title === "") return;
     const fresh = { id: Math.max(...todos().map((todo) => todo.id)) + 1, title, done: false };
     setDraft("");
-    layer((list) => [...list, fresh], saveTodo(fresh));
+    commit((list) => [...list, fresh], saveTodo(fresh));
   };
 
   return (
