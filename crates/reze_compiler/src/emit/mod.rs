@@ -71,6 +71,7 @@ helpers! {
     Link => "link",
     AsyncComponent => "asyncComponent",
     Loading => "loading",
+    Errored => "errored",
 }
 
 pub struct Emitter<'a, 's> {

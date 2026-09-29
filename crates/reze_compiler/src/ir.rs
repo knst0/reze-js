@@ -334,6 +334,10 @@ pub enum Flow<'a> {
         child: Render<'a>,
         fallback: Option<Render<'a>>,
     },
+    Errored {
+        child: Render<'a>,
+        fallback: Option<Render<'a>>,
+    },
 }
 
 /// A selector created once per `<For>` over the getter at `source`.

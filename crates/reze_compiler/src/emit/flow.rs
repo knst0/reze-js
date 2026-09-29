@@ -14,6 +14,14 @@ impl<'a> Emitter<'a, '_> {
                 self.fallback(out, fallback.as_ref());
                 out.push(")");
             }
+            Flow::Errored { child, fallback } => {
+                let helper = self.helper(Helper::Errored);
+                out.push(helper);
+                out.push("(");
+                self.render(out, child);
+                self.fallback(out, fallback.as_ref());
+                out.push(")");
+            }
             Flow::Switch { whens, children, fallback } => {
                 let choose = self.helper(Helper::Choose);
                 out.push(choose);

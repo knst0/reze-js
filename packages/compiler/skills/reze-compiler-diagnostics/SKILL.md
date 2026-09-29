@@ -62,7 +62,7 @@ export const view = <div />;
 
 Automatic fix: no
 
-`Show`, `For`, `Switch`, `Match` and `Loading` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
+`Show`, `For`, `Switch`, `Match`, `Loading` and `Errored` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
 
 **Repair:** Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and pass that.
 
@@ -92,7 +92,7 @@ export const view = <Show when={open()}><p>open</p></Show>;
 
 Automatic fix: yes
 
-A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Switch fallback>`, `<Match when>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
+A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
 
 **Repair:** Apply the fix to remove the attribute. To key `<For>` rows by a field, use `key={(item) => item.id}`.
 

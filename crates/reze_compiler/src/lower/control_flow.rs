@@ -12,7 +12,7 @@ use crate::ir::{Branch, Child, Embed, Flow, Jsx, Render, Source};
 const FOR_ROW: &str = "one function `(item, index) => …`";
 
 impl<'a> Lowerer<'a, '_> {
-    /// A `Show`, `For`, `Switch`, `Match` or `Loading` tag; after an error, an empty fragment.
+    /// A `Show`, `For`, `Switch`, `Match`, `Loading` or `Errored` tag; after an error, an empty fragment.
     pub(super) fn control_flow(&mut self, el: &JSXElement<'a>, intrinsic: Intrinsic) -> Jsx<'a> {
         self.has_jsx = true;
         self.path.push(format!("<{}>", intrinsic.name()));
@@ -21,6 +21,7 @@ impl<'a> Lowerer<'a, '_> {
             Intrinsic::For => self.for_flow(el),
             Intrinsic::Switch => self.switch(el),
             Intrinsic::Loading => self.loading(el),
+            Intrinsic::Errored => self.errored(el),
             Intrinsic::Match => {
                 self.report(Report::new(Code::MatchOutsideSwitch, el.opening_element.span));
                 None
@@ -169,6 +170,25 @@ impl<'a> Lowerer<'a, '_> {
         let child = self.case_children(el, intrinsic);
         let fallback = self.fallback(&attributes);
         Some(Flow::Loading { child: child?, fallback })
+    }
+
+    fn errored(&mut self, el: &JSXElement<'a>) -> Option<Flow<'a>> {
+        let intrinsic = Intrinsic::Errored;
+        let attributes = self.flow_attributes(el, intrinsic, &["fallback"]);
+        let child = self.case_children(el, intrinsic);
+        let fallback = self.fallback_function(&attributes).or_else(|| self.fallback(&attributes));
+        Some(Flow::Errored { child: child?, fallback })
+    }
+
+    /// A `fallback` written as a function, which takes the arguments of its flow, passed as is.
+    fn fallback_function(
+        &mut self,
+        attributes: &[(&'a str, &JSXAttribute<'a>)],
+    ) -> Option<Render<'a>> {
+        let (_, a) = attributes.iter().rev().find(|(name, _)| *name == "fallback")?;
+        let JSXAttributeValue::ExpressionContainer(c) = a.value.as_ref()? else { return None };
+        let function = c.expression.as_expression().filter(|e| is_function(e))?;
+        Some(Render::Function(self.expr(function)))
     }
 
     fn for_flow(&mut self, el: &JSXElement<'a>) -> Option<Flow<'a>> {

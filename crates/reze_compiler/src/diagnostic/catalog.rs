@@ -103,7 +103,7 @@ catalog! {
         severity: Error,
         title: "Control-flow tag used as a value",
         message: "`{name}` is compiled away and has no runtime value, so this reference would throw. Use `{name}` only as a JSX tag.",
-        explanation: "`Show`, `For`, `Switch`, `Match` and `Loading` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
+        explanation: "`Show`, `For`, `Switch`, `Match`, `Loading` and `Errored` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
         repair: "Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and pass that.",
         fix: None,
         example: Pair {
@@ -116,7 +116,7 @@ catalog! {
         severity: Error,
         title: "Attribute a control-flow tag does not accept",
         message: "`<{tag}>` does not accept `{attribute}`, so it would be silently dropped. Remove it.",
-        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Switch fallback>`, `<Match when>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
+        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
         repair: "Apply the fix to remove the attribute. To key `<For>` rows by a field, use `key={(item) => item.id}`.",
         fix: Some("remove `{attribute}`"),
         example: Pair {

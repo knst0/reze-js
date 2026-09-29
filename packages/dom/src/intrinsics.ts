@@ -30,8 +30,14 @@ export interface LoadingProps {
   children: JSX.Element;
 }
 
+export interface ErroredProps {
+  /** A function written in place as the attribute receives the error and `reset`, which builds the children again; any other value is shown as is. */
+  fallback?: JSX.Element | ((error: unknown, reset: () => void) => JSX.Element);
+  children: JSX.Element;
+}
+
 function compiledAway(): never {
-  throw new Error("[reze] Show, For, Switch, Match and Loading are compiled by @rezejs/vite-plugin and cannot run as functions");
+  throw new Error("[reze] Show, For, Switch, Match, Loading and Errored are compiled by @rezejs/vite-plugin and cannot run as functions");
 }
 
 export function Show<T>(_props: ShowProps<T>): JSX.Element {
@@ -51,5 +57,9 @@ export function Match<T>(_props: MatchProps<T>): JSX.Element {
 }
 
 export function Loading(_props: LoadingProps): JSX.Element {
+  return compiledAway();
+}
+
+export function Errored(_props: ErroredProps): JSX.Element {
   return compiledAway();
 }

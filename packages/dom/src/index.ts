@@ -1,11 +1,25 @@
 export { setAttribute, setAttributeNS, setBoolAttribute } from "./attributes";
 export { className, type ClassValue } from "./class-name";
 export { createComponent, render } from "./component";
+export { errored } from "./errored";
 export { addEventListener, delegateEvents } from "./events";
 export { branch, choose } from "./flow";
 export { hotComponent } from "./hot";
 export { append, insert } from "./insert";
-export { For, Loading, Match, Show, Switch, type ForProps, type LoadingProps, type MatchProps, type ShowProps, type SwitchProps } from "./intrinsics";
+export {
+  Errored,
+  For,
+  Loading,
+  Match,
+  Show,
+  Switch,
+  type ErroredProps,
+  type ForProps,
+  type LoadingProps,
+  type MatchProps,
+  type ShowProps,
+  type SwitchProps,
+} from "./intrinsics";
 export type { JSX } from "./jsx";
 export { list } from "./list";
 export { asyncComponent, loading } from "./loading";
