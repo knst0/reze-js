@@ -142,6 +142,26 @@ const CASES: &[(&str, &str)] = &[
         "auto_selector",
         "import { For, computed, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nconst [hovered, setHovered] = signal(0);\nconst active = computed(() => selected() + 1);\nexport const list = (\n  <For each={rows()}>\n    {(row, index) => {\n      const [local, setLocal] = signal(0);\n      return (\n        <tr class={selected() === row().id ? \"danger\" : \"\"} title={row().id !== selected() ? \"a\" : \"b\"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>\n          {selected() === row().id && <b>on</b>}\n          <td onInput={() => setLocal(1)} data-local={local() === row().id} data-other={selected() === other()} data-loose={selected() == row().id} />\n        </tr>\n      );\n    }}\n  </For>\n);\nexport const unrelated = <p>{selected() === 1}</p>;\nsetHovered(1);",
     ),
+    (
+        "async_component",
+        "import { layeredSignal } from \"reze-js\";\nexport async function Todos(props: { api: Api }): Promise<JSX.Element> {\n  const initial = await props.api.list();\n  const [todos, setTodos] = layeredSignal(initial);\n  return <ul>{todos().length}</ul>;\n}",
+    ),
+    (
+        "async_component_steps",
+        "export const Card = async ({ id }: { id: number }) => {\n  const user = await fetchUser(id);\n  const name = user.name.trim();\n  const { Panel } = await import(\"./panel\");\n  const posts = await { then: (done) => done(load(user.id)) };\n  return <Panel title={name}>{user.role}{posts.length}</Panel>;\n};",
+    ),
+    (
+        "async_component_no_values",
+        "export async function Ping(props) {\n  await props.api.ping();\n  return <p>ok</p>;\n}",
+    ),
+    (
+        "async_component_rejected",
+        "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}",
+    ),
+    (
+        "async_helpers_untouched",
+        "async function load() { const r = await fetch(u); return r.json(); }\nexport function Button() {\n  return <button onClick={async () => { const d = await load(); show(<b>{d}</b>); }}>x</button>;\n}\nexport async function lower() { const d = await load(); return <i>{d}</i>; }",
+    ),
 ];
 
 const HOT: &str = "import { signal } from \"reze-js\"; export function Counter() { const [n, setN] = signal(0); return <button onClick={() => setN(n() + 1)}>{n()}</button>; } export const Label = () => <b/>;";

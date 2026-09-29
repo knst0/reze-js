@@ -35,6 +35,14 @@ impl<'a> Emitter<'a, '_> {
                 out.push(")");
             }
             ScriptEdit::Insert(text) => out.push(text),
+            ScriptEdit::AsyncOpen { context } => {
+                let helper = self.helper(Helper::AsyncComponent);
+                out.push("return ");
+                out.push(helper);
+                out.push("(async (");
+                out.push(context.unwrap_or_default());
+                out.push(") => {");
+            }
             ScriptEdit::Hot(HotEdit::AfterDeclaration { name }) => {
                 out.push("\n");
                 out.push(name);

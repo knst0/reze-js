@@ -425,6 +425,42 @@ const numbers = [1, 2, 3];
 export const view = <ul><For each={numbers}>{(n) => <li>{n()}</li>}</For></ul>;
 ```
 
+## ASYNC_COMPONENT_SHAPE
+
+**Async component in a form that cannot be compiled** · severity `warn`
+
+> `{component}` is an async component the compiler cannot rewrite ({reason}), so it stays an `async` function that returns a Promise and renders nothing. Reshape the awaits or move the work into an `asyncComputed`.
+
+`data` keys: `component`, `reason`
+
+Automatic fix: no
+
+An `async` component compiles to a load step and a body that re-runs when the load re-runs. That needs each top-level `await` to be a whole statement, `const x = await …;` or `await …;` (`await-position`, and `nested-await` when its operand awaits again); between the first and last await only `const`/`let`/`var` declarations may appear (`statement-between-awaits`); nothing up to the last await may `return` (`return-before-await`) or contain JSX (`jsx-before-await`). `data.component` is the component and `data.reason` the rule.
+
+**Repair:** Give every await its own `const x = await …;` statement, keep other statements before the first await or after the last one, and start the JSX after the last await.
+
+Before:
+
+```tsx
+export async function Card(props) {
+  const user = await fetchUser(props.id);
+  log(user);
+  const posts = await fetchPosts(user.id);
+  return <p>{posts.length}</p>;
+}
+```
+
+After:
+
+```tsx
+export async function Card(props) {
+  const user = await fetchUser(props.id);
+  const posts = await fetchPosts(user.id);
+  log(user);
+  return <p>{posts.length}</p>;
+}
+```
+
 ## SIGNAL_FOLDED
 
 **Constant signal folded** · severity `info`

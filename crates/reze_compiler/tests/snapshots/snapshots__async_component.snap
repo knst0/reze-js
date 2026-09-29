@@ -1,0 +1,17 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { layeredSignal } from \"reze-js\";\nexport async function Todos(props: { api: Api }): Promise<JSX.Element> {\n  const initial = await props.api.list();\n  const [todos, setTodos] = layeredSignal(initial);\n  return <ul>{todos().length}</ul>;\n}"
+---
+import { layeredSignal } from "reze-js";
+import { asyncComponent as _$asyncComponent, template as _$template, insert as _$insert } from "reze-js";
+export function Todos(props: { api: Api }): JSX.Element {
+  return _$asyncComponent(async () => {const initial = await props.api.list();
+return [initial];
+}, ([initial]) => {
+  const [todos, setTodos] = layeredSignal(initial);
+  {
+  var _el$ = _$template("<ul>");
+  _$insert(_el$, () => todos().length);
+  return _el$;
+}
+});}

@@ -267,6 +267,19 @@ catalog! {
             good: "import { For } from \"reze-js\";\n\nconst numbers = [1, 2, 3];\nexport const view = <ul><For each={numbers}>{(n) => <li>{n()}</li>}</For></ul>;\n",
         },
     }
+    AsyncComponentShape {
+        name: "ASYNC_COMPONENT_SHAPE",
+        severity: Warn,
+        title: "Async component in a form that cannot be compiled",
+        message: "`{component}` is an async component the compiler cannot rewrite ({reason}), so it stays an `async` function that returns a Promise and renders nothing. Reshape the awaits or move the work into an `asyncComputed`.",
+        explanation: "An `async` component compiles to a load step and a body that re-runs when the load re-runs. That needs each top-level `await` to be a whole statement, `const x = await …;` or `await …;` (`await-position`, and `nested-await` when its operand awaits again); between the first and last await only `const`/`let`/`var` declarations may appear (`statement-between-awaits`); nothing up to the last await may `return` (`return-before-await`) or contain JSX (`jsx-before-await`). `data.component` is the component and `data.reason` the rule.",
+        repair: "Give every await its own `const x = await …;` statement, keep other statements before the first await or after the last one, and start the JSX after the last await.",
+        fix: None,
+        example: Pair {
+            bad: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}\n",
+            good: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  const posts = await fetchPosts(user.id);\n  log(user);\n  return <p>{posts.length}</p>;\n}\n",
+        },
+    }
     SignalFolded {
         name: "SIGNAL_FOLDED",
         severity: Info,

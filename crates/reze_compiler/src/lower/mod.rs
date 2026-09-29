@@ -1,3 +1,4 @@
+mod async_component;
 mod attribute;
 mod children;
 mod component;
@@ -53,6 +54,8 @@ pub struct Lowerer<'a, 'f> {
     props_temporaries: HashMap<u32, &'a str>,
     /// Row callbacks of the `<For>` elements being lowered, innermost last.
     for_scopes: std::vec::Vec<selector::ForScope<'a>>,
+    /// Names of the functions initializing a component's `const`, by the start of the function.
+    component_inits: HashMap<u32, &'a str>,
     hot: hot::HotPlan<'a>,
 }
 
@@ -76,6 +79,7 @@ impl<'a, 'f> Lowerer<'a, 'f> {
             has_jsx: false,
             props_names: HashMap::new(),
             props_temporaries: HashMap::new(),
+            component_inits: HashMap::new(),
             for_scopes: std::vec::Vec::new(),
             hot: hot::HotPlan::default(),
         }
@@ -151,7 +155,7 @@ impl<'a, 'f> Lowerer<'a, 'f> {
         let mut finder = HoleFinder { lowerer: self, holes: std::vec::Vec::new() };
         visit(&mut finder);
         let mut holes = finder.holes;
-        holes.sort_by_key(|hole| hole.span.start);
+        holes.sort_by_key(|hole| (hole.span.start, hole.span.end));
         Embed { span, holes: Vec::from_iter_in(holes, &self.alloc) }
     }
 
@@ -325,6 +329,18 @@ impl<'a> HoleFinder<'_, 'a, '_> {
     fn push_script(&mut self, span: Span, edit: ScriptEdit<'a>) {
         self.holes.push(Hole { span, kind: HoleKind::Script(edit) });
     }
+
+    /// The holes of `body` when it is the block body of an async component.
+    fn async_holes(
+        &mut self,
+        component: Option<&str>,
+        function: async_component::AsyncFunction<'_, 'a>,
+    ) -> std::vec::Vec<Hole<'a>> {
+        match component {
+            Some(name) => self.lowerer.async_component(name, &function),
+            None => std::vec::Vec::new(),
+        }
+    }
 }
 
 impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
@@ -350,24 +366,46 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
 
     fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
         let name = it.id.as_ref().map(|id| id.name.as_str());
+        let component = name
+            .filter(|name| is_component_name(name))
+            .map(|name| self.lowerer.str(name))
+            .or_else(|| self.lowerer.component_inits.get(&it.span.start).copied());
         self.in_component(name, |finder| {
             if let Some(name) = name.filter(|name| is_component_name(name)) {
                 finder.lowerer.component_scope(name, &it.params);
             }
-            if let Some(body) = &it.body
-                && let Some(entry) = finder.lowerer.props_entry(
-                    &it.params,
-                    Span::empty(props::block_start(body)),
-                    None,
-                )
-            {
-                finder.holes.push(entry);
+            if let Some(body) = &it.body {
+                let at = Span::empty(props::block_start(body));
+                if let Some(entry) = finder.lowerer.props_entry(&it.params, at, None) {
+                    finder.holes.push(entry);
+                }
+                if it.r#async && !it.generator {
+                    let function = async_component::AsyncFunction {
+                        span: it.span,
+                        body,
+                        return_type: it.return_type.as_deref(),
+                    };
+                    let holes = finder.async_holes(component, function);
+                    finder.holes.extend(holes);
+                }
             }
             walk::walk_function(finder, it, flags);
         });
     }
 
     fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
+        let async_holes = match &it.body {
+            ArrowFunctionBody::FunctionBody(body) if it.r#async => {
+                let component = self.lowerer.component_inits.get(&it.span.start).copied();
+                let function = async_component::AsyncFunction {
+                    span: it.span,
+                    body,
+                    return_type: it.return_type.as_deref(),
+                };
+                self.async_holes(component, function)
+            }
+            _ => std::vec::Vec::new(),
+        };
         let (entry, body) = match &it.body {
             ArrowFunctionBody::FunctionBody(body) => {
                 let at = Span::empty(props::block_start(body));
@@ -384,6 +422,7 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
             .filter(|_| entry.is_none())
             .and_then(|e| Some((e.span(), native_element(self.lowerer, e)?)));
         if entry.is_none() && block.is_none() {
+            self.holes.extend(async_holes);
             walk::walk_arrow_function_expression(self, it);
             return;
         }
@@ -396,6 +435,7 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
         }
         if let Some(entry) = entry {
             self.holes.push(entry);
+            self.holes.extend(async_holes);
             if let ArrowFunctionBody::FunctionBody(body) = &it.body {
                 self.visit_function_body(body);
             }
@@ -460,6 +500,12 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
             _ => None,
         };
         let component = name.filter(|_| params.is_some());
+        if let (Some(name), Some(init)) =
+            (component.filter(|name| is_component_name(name)), &it.init)
+        {
+            let name = self.lowerer.str(name);
+            self.lowerer.component_inits.insert(init.without_parentheses().span().start, name);
+        }
         let hot_name = it
             .init
             .as_ref()

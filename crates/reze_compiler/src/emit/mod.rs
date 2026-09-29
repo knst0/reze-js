@@ -69,6 +69,7 @@ helpers! {
     Selector => "selector",
     HotComponent => "hotComponent",
     Link => "link",
+    AsyncComponent => "asyncComponent",
 }
 
 pub struct Emitter<'a, 's> {

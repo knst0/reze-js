@@ -1,0 +1,23 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}"
+---
+import { template as _$template, insert as _$insert } from "reze-js";
+export async function Card(props) {
+  const user = await fetchUser(props.id);
+  log(user);
+  const posts = await fetchPosts(user.id);
+  {
+  var _el$ = _$template("<p>");
+  _$insert(_el$, () => posts.length);
+  return _el$;
+}
+}
+// warn
+[ASYNC_COMPONENT_SHAPE] `Card` is an async component the compiler cannot rewrite (statement-between-awaits), so it stays an `async` function that returns a Promise and renders nothing. Reshape the awaits or move the work into an `asyncComputed`.
+  in <Card>
+  at case.tsx:3:3
+  2 |   const user = await fetchUser(props.id);
+> 3 |   log(user);
+    |   ^^^^^^^^^^
+  4 |   const posts = await fetchPosts(user.id);

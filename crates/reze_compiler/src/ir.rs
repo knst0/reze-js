@@ -55,8 +55,12 @@ pub enum ScriptEdit<'a> {
         key: Embed<'a>,
         is_negated: bool,
     },
-    /// Text at an empty span.
+    /// `text` in place of the source at the span: an insertion at an empty span, else a replacement.
     Insert(&'a str),
+    /// `return asyncComponent(async (context) => {`; the context is omitted when no step needs it.
+    AsyncOpen {
+        context: Option<&'a str>,
+    },
     Hot(HotEdit<'a>),
 }
 
