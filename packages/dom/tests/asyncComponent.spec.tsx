@@ -1,4 +1,4 @@
-import { asyncComponent, catchError, effect, flush, Loading, onCleanup, root, signal } from "reze-js";
+import { asyncComponent, asyncComputed, catchError, effect, flush, Loading, onCleanup, root, Show, signal } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 import { cleanup, mount, tick } from "../../../testing/dom";
@@ -212,4 +212,111 @@ test("Loading waits for every async component below it", async () => {
   requests[2].resolve("b");
   await settle();
   expect(el.innerHTML).toBe("<b>a</b><b>b</b>");
+});
+
+test("Loading releases a component disposed before its first settle", async () => {
+  const [on, setOn] = signal(true);
+  const pending = new Map<string, PromiseWithResolvers<string>>();
+  const load = (id: string): Promise<string> => {
+    const request = Promise.withResolvers<string>();
+    pending.set(id, request);
+    return request.promise;
+  };
+  async function User(props: { id: string }) {
+    const name = await load(props.id);
+    return <b>{name}</b>;
+  }
+  const { el } = mount(() => (
+    <Loading fallback={<i>loading</i>}>
+      <div>
+        <Show when={on()}>
+          <User id="a" />
+        </Show>
+        <User id="b" />
+      </div>
+    </Loading>
+  ));
+  setOn(false);
+  tick();
+  pending.get("a")!.resolve("a");
+  pending.get("b")!.resolve("b");
+  await settle();
+  expect(el.innerHTML).toBe("<div><b>b</b></div>");
+});
+
+test("Loading waits for a top-level Show", async () => {
+  const { requests, load } = requestsOf();
+  async function User(props: { id: number }) {
+    const name = await load(props.id);
+    return <b>{name}</b>;
+  }
+  const { el } = mount(() => (
+    <Loading fallback={<i>loading</i>}>
+      <Show when={true}>
+        <User id={7} />
+      </Show>
+    </Loading>
+  ));
+  tick();
+  expect(el.innerHTML).toBe("<i>loading</i>");
+  requests[7].resolve("t");
+  await settle();
+  expect(el.innerHTML).toBe("<b>t</b>");
+});
+
+test("Loading never waits for its fallback", async () => {
+  const pending = new Map<string, PromiseWithResolvers<string>>();
+  const load = (id: string): Promise<string> => {
+    const request = Promise.withResolvers<string>();
+    pending.set(id, request);
+    return request.promise;
+  };
+  async function User(props: { id: string }) {
+    const name = await load(props.id);
+    return <b>{name}</b>;
+  }
+  const { el } = mount(() => (
+    <Loading fallback={<User id="spinner" />}>
+      <User id="content" />
+    </Loading>
+  ));
+  pending.get("content")!.resolve("content");
+  await settle();
+  expect(el.innerHTML).toBe("<b>content</b>");
+});
+
+test("Loading waits for an asyncComputed read by a sync component", async () => {
+  const request = Promise.withResolvers<string>();
+  const name = asyncComputed(() => request.promise);
+  function Label() {
+    return <b>{name.value()}</b>;
+  }
+  const { el } = mount(() => (
+    <Loading fallback={<i>loading</i>}>
+      <Label />
+    </Loading>
+  ));
+  tick();
+  expect(el.innerHTML).toBe("<i>loading</i>");
+  request.resolve("x");
+  await settle();
+  expect(el.innerHTML).toBe("<b>x</b>");
+});
+
+test("a rejected load inside Loading reaches catchError and renders nothing", async () => {
+  const request = Promise.withResolvers<string>();
+  const errors: unknown[] = [];
+  async function User() {
+    const name = await request.promise;
+    return <b>{name}</b>;
+  }
+  const { el } = mount(() => catchError(() => (
+    <Loading fallback={<i>loading</i>}>
+      <User />
+    </Loading>
+  ), (error) => errors.push(error)));
+  request.reject(new Error("nope"));
+  await settle();
+  expect((errors[0] as Error).message).toBe("nope");
+  expect(el.innerHTML).toBe("");
 });

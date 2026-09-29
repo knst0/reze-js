@@ -6,6 +6,14 @@ impl<'a> Emitter<'a, '_> {
     pub(super) fn flow(&mut self, out: &mut Code, flow: &Flow<'a>) {
         match flow {
             Flow::Show(branch) => self.branch(out, branch),
+            Flow::Loading { child, fallback } => {
+                let helper = self.helper(Helper::Loading);
+                out.push(helper);
+                out.push("(");
+                self.render(out, child);
+                self.fallback(out, fallback.as_ref());
+                out.push(")");
+            }
             Flow::Switch { whens, children, fallback } => {
                 let choose = self.helper(Helper::Choose);
                 out.push(choose);

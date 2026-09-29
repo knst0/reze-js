@@ -1,0 +1,12 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { Loading } from \"reze-js\";\nconst a = <Loading fallback={<i>wait</i>}><User id={id()} /></Loading>;\nconst b = <div><Loading><p>x</p>{y()}</Loading></div>;"
+---
+import { Loading } from "reze-js";
+import { loading as _$loading, createComponent as _$createComponent, template as _$template, insert as _$insert } from "reze-js";
+const a = _$loading(() => _$createComponent(User, { get id() { return id(); } }), () => _$template("<i>wait"));
+const b = (() => {
+  var _el$ = _$template("<div>");
+  _$insert(_el$, _$loading(() => [_$template("<p>x"), y]));
+  return _el$;
+})();

@@ -330,6 +330,10 @@ pub enum Flow<'a> {
         key: Option<Embed<'a>>,
         selectors: Vec<'a, Selector<'a>>,
     },
+    Loading {
+        child: Render<'a>,
+        fallback: Option<Render<'a>>,
+    },
 }
 
 /// A selector created once per `<For>` over the getter at `source`.

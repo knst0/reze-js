@@ -29,6 +29,7 @@ pub enum Intrinsic {
     For,
     Switch,
     Match,
+    Loading,
 }
 
 impl Intrinsic {
@@ -38,6 +39,7 @@ impl Intrinsic {
             Intrinsic::For => "For",
             Intrinsic::Switch => "Switch",
             Intrinsic::Match => "Match",
+            Intrinsic::Loading => "Loading",
         }
     }
 }
@@ -51,6 +53,7 @@ impl Primitive {
             "For" => Primitive::Intrinsic(Intrinsic::For),
             "Switch" => Primitive::Intrinsic(Intrinsic::Switch),
             "Match" => Primitive::Intrinsic(Intrinsic::Match),
+            "Loading" => Primitive::Intrinsic(Intrinsic::Loading),
             _ => return None,
         })
     }

@@ -25,8 +25,13 @@ export interface MatchProps<T> {
   children: JSX.Element | ((value: () => T) => JSX.Element);
 }
 
+export interface LoadingProps {
+  fallback?: JSX.Element;
+  children: JSX.Element;
+}
+
 function compiledAway(): never {
-  throw new Error("[reze] Show, For, Switch and Match are compiled by @rezejs/vite-plugin and cannot run as functions");
+  throw new Error("[reze] Show, For, Switch, Match and Loading are compiled by @rezejs/vite-plugin and cannot run as functions");
 }
 
 export function Show<T>(_props: ShowProps<T>): JSX.Element {
@@ -42,5 +47,9 @@ export function Switch(_props: SwitchProps): JSX.Element {
 }
 
 export function Match<T>(_props: MatchProps<T>): JSX.Element {
+  return compiledAway();
+}
+
+export function Loading(_props: LoadingProps): JSX.Element {
   return compiledAway();
 }

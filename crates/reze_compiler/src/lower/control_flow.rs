@@ -12,7 +12,7 @@ use crate::ir::{Branch, Child, Embed, Flow, Jsx, Render, Source};
 const FOR_ROW: &str = "one function `(item, index) => …`";
 
 impl<'a> Lowerer<'a, '_> {
-    /// A `Show`, `For`, `Switch` or `Match` tag; after an error, an empty fragment.
+    /// A `Show`, `For`, `Switch`, `Match` or `Loading` tag; after an error, an empty fragment.
     pub(super) fn control_flow(&mut self, el: &JSXElement<'a>, intrinsic: Intrinsic) -> Jsx<'a> {
         self.has_jsx = true;
         self.path.push(format!("<{}>", intrinsic.name()));
@@ -20,6 +20,7 @@ impl<'a> Lowerer<'a, '_> {
             Intrinsic::Show => self.show(el, intrinsic).map(Flow::Show),
             Intrinsic::For => self.for_flow(el),
             Intrinsic::Switch => self.switch(el),
+            Intrinsic::Loading => self.loading(el),
             Intrinsic::Match => {
                 self.report(Report::new(Code::MatchOutsideSwitch, el.opening_element.span));
                 None
@@ -160,6 +161,14 @@ impl<'a> Lowerer<'a, '_> {
         let child = self.case_children(el, intrinsic);
         let fallback = self.fallback(&attributes);
         Some(Branch { when: when?, child: child?, fallback })
+    }
+
+    fn loading(&mut self, el: &JSXElement<'a>) -> Option<Flow<'a>> {
+        let intrinsic = Intrinsic::Loading;
+        let attributes = self.flow_attributes(el, intrinsic, &["fallback"]);
+        let child = self.case_children(el, intrinsic);
+        let fallback = self.fallback(&attributes);
+        Some(Flow::Loading { child: child?, fallback })
     }
 
     fn for_flow(&mut self, el: &JSXElement<'a>) -> Option<Flow<'a>> {

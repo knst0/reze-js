@@ -70,6 +70,7 @@ helpers! {
     HotComponent => "hotComponent",
     Link => "link",
     AsyncComponent => "asyncComponent",
+    Loading => "loading",
 }
 
 pub struct Emitter<'a, 's> {
