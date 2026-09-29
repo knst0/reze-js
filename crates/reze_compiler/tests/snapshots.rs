@@ -144,7 +144,7 @@ const CASES: &[(&str, &str)] = &[
     ),
     (
         "async_component",
-        "import { layeredSignal } from \"reze-js\";\nexport async function Todos(props: { api: Api }): Promise<JSX.Element> {\n  const initial = await props.api.list();\n  const [todos, setTodos] = layeredSignal(initial);\n  return <ul>{todos().length}</ul>;\n}",
+        "import { optimistic } from \"reze-js\";\nexport async function Todos(props: { api: Api }): Promise<JSX.Element> {\n  const initial = await props.api.list();\n  const [todos, layer] = optimistic(() => initial);\n  return <ul>{todos().length}</ul>;\n}",
     ),
     (
         "async_component_steps",

@@ -1,4 +1,4 @@
-import { asyncComponent, catchError, effect, flush, layeredSignal, Loading, onCleanup, root, signal } from "reze-js";
+import { asyncComponent, catchError, effect, flush, Loading, onCleanup, root, signal } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 import { cleanup, mount, tick } from "../../../testing/dom";
@@ -25,7 +25,7 @@ test("an async component renders once its await settles, keeps its content while
   const { requests, load } = requestsOf();
   async function User(props: { id: number }) {
     const name = await load(props.id);
-    const [likes, setLikes] = layeredSignal(0);
+    const [likes, setLikes] = signal(0);
     return (
       <button onClick={() => setLikes((n) => n + 1)}>
         {name}:{likes()}

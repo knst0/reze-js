@@ -7,7 +7,6 @@ const entry = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const devtools = fileURLToPath(new URL("../src/devtools.ts", import.meta.url));
 const nodeKinds = [
   "SignalNode",
-  "LayeredSignalNode",
   "ComputedNode",
   "EffectNode",
   "EffectScopeNode",
@@ -41,7 +40,7 @@ async function bundledNodeKinds(imports: string): Promise<string[]> {
 
 test.each([
   ["signal", ["SignalNode"]],
-  ["layeredSignal", ["SignalNode", "LayeredSignalNode"]],
+  ["optimistic", ["SignalNode", "ComputedNode"]],
   ["computed", ["ComputedNode"]],
   ["effect", ["EffectNode"]],
   ["effectScope", ["EffectScopeNode"]],

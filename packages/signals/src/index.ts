@@ -5,7 +5,7 @@ export { getOwner, runWithOwner } from "./context";
 export { effect } from "./effect";
 export { effectScope } from "./effectScope";
 export { catchError } from "./error";
-export { type Layer, layeredSignal } from "./layered";
+export { type Layer, optimistic } from "./optimistic";
 export { onCleanup, root, untrack, type Owner } from "./owner";
 export { provideContext, useContext, type ContextKey } from "./provide";
 export { flush } from "./scheduler";
