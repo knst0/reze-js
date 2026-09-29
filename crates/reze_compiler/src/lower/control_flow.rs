@@ -10,15 +10,17 @@ use crate::html::{clean_jsx_text, decode_entities};
 use crate::ir::{Branch, Child, Embed, Flow, Jsx, Render, Source};
 
 const FOR_ROW: &str = "one function `(item, index) => …`";
+const REPEAT_ROW: &str = "one function `(index) => …`";
 
 impl<'a> Lowerer<'a, '_> {
-    /// A `Show`, `For`, `Switch`, `Match`, `Loading` or `Errored` tag; after an error, an empty fragment.
+    /// A `Show`, `For`, `Repeat`, `Switch`, `Match`, `Loading` or `Errored` tag; after an error, an empty fragment.
     pub(super) fn control_flow(&mut self, el: &JSXElement<'a>, intrinsic: Intrinsic) -> Jsx<'a> {
         self.has_jsx = true;
         self.path.push(format!("<{}>", intrinsic.name()));
         let flow = match intrinsic {
             Intrinsic::Show => self.show(el, intrinsic).map(Flow::Show),
             Intrinsic::For => self.for_flow(el),
+            Intrinsic::Repeat => self.repeat(el),
             Intrinsic::Switch => self.switch(el),
             Intrinsic::Loading => self.loading(el),
             Intrinsic::Errored => self.errored(el),
@@ -213,12 +215,37 @@ impl<'a> Lowerer<'a, '_> {
         Some(Flow::For { each: each?, map, fallback, key, selectors })
     }
 
+    fn repeat(&mut self, el: &JSXElement<'a>) -> Option<Flow<'a>> {
+        let intrinsic = Intrinsic::Repeat;
+        let attributes = self.flow_attributes(el, intrinsic, &["count", "fallback", "children"]);
+        let count = self.required_source(el, intrinsic, &attributes, "count");
+        let map = self.row_function(el, &attributes, intrinsic, REPEAT_ROW);
+        let fallback = self.fallback(&attributes);
+        let map = self.expr(map?);
+        Some(Flow::Repeat { count: count?, map, fallback })
+    }
+
     /// The row function of a `For` and the selectors its comparisons read.
     fn row(
         &mut self,
         el: &JSXElement<'a>,
         attributes: &[(&'a str, &JSXAttribute<'a>)],
     ) -> Option<(Embed<'a>, oxc_allocator::Vec<'a, crate::ir::Selector<'a>>)> {
+        let map = self.row_function(el, attributes, Intrinsic::For, FOR_ROW)?;
+        let is_row_scope = self.enter_for(map);
+        let embed = self.expr(map);
+        let selectors = if is_row_scope { self.leave_for() } else { self.vec() };
+        Some((embed, selectors))
+    }
+
+    /// The one child expression of `el`, or else its `children` attribute; reports `expected` when there is none.
+    fn row_function<'b>(
+        &mut self,
+        el: &'b JSXElement<'a>,
+        attributes: &[(&'a str, &'b JSXAttribute<'a>)],
+        intrinsic: Intrinsic,
+        expected: &'static str,
+    ) -> Option<&'b Expression<'a>> {
         let mut children = el.children.iter().filter(|child| is_meaningful(child));
         let nested = match (children.next(), children.next()) {
             (None, _) => None,
@@ -242,21 +269,17 @@ impl<'a> Lowerer<'a, '_> {
             },
             (None, None) => Err(el.opening_element.span),
         };
-        let map = match map {
-            Ok(map) => map,
+        match map {
+            Ok(map) => Some(map),
             Err(span) => {
                 self.report(
                     Report::new(Code::ControlFlowChildren, span)
-                        .arg("tag", Intrinsic::For.name())
-                        .arg("expected", FOR_ROW),
+                        .arg("tag", intrinsic.name())
+                        .arg("expected", expected),
                 );
-                return None;
+                None
             }
-        };
-        let is_row_scope = self.enter_for(map);
-        let embed = self.expr(map);
-        let selectors = if is_row_scope { self.leave_for() } else { self.vec() };
-        Some((embed, selectors))
+        }
     }
 
     fn switch(&mut self, el: &JSXElement<'a>) -> Option<Flow<'a>> {

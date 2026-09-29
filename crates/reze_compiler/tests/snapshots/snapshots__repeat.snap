@@ -1,0 +1,16 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { Repeat } from \"reze-js\";\nconst a = <div><Repeat count={3}>{() => <i />}</Repeat></div>;\nconst b = <Repeat count={rows()} fallback={<p>none</p>}>{(index) => <li>{index}</li>}</Repeat>;"
+---
+import { Repeat } from "reze-js";
+import { template as _$template, insert as _$insert, repeat as _$repeat } from "reze-js";
+const a = (() => {
+  var _el$ = _$template("<div>");
+  _$insert(_el$, _$repeat(() => 3, () => _$template("<i>")));
+  return _el$;
+})();
+const b = _$repeat(() => rows(), (index) => {
+  var _el$2 = _$template("<li>");
+  _$insert(_el$2, index);
+  return _el$2;
+}, () => _$template("<p>none"));

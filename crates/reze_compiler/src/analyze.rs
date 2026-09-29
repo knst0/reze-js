@@ -27,6 +27,7 @@ pub enum Primitive {
 pub enum Intrinsic {
     Show,
     For,
+    Repeat,
     Switch,
     Match,
     Loading,
@@ -38,6 +39,7 @@ impl Intrinsic {
         match self {
             Intrinsic::Show => "Show",
             Intrinsic::For => "For",
+            Intrinsic::Repeat => "Repeat",
             Intrinsic::Switch => "Switch",
             Intrinsic::Match => "Match",
             Intrinsic::Loading => "Loading",
@@ -53,6 +55,7 @@ impl Primitive {
             "computed" => Primitive::Computed,
             "Show" => Primitive::Intrinsic(Intrinsic::Show),
             "For" => Primitive::Intrinsic(Intrinsic::For),
+            "Repeat" => Primitive::Intrinsic(Intrinsic::Repeat),
             "Switch" => Primitive::Intrinsic(Intrinsic::Switch),
             "Match" => Primitive::Intrinsic(Intrinsic::Match),
             "Loading" => Primitive::Intrinsic(Intrinsic::Loading),

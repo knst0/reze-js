@@ -22,6 +22,16 @@ impl<'a> Emitter<'a, '_> {
                 self.fallback(out, fallback.as_ref());
                 out.push(")");
             }
+            Flow::Repeat { count, map, fallback } => {
+                let helper = self.helper(Helper::Repeat);
+                out.push(helper);
+                out.push("(");
+                self.source(out, count);
+                out.push(", ");
+                self.embed(out, map);
+                self.fallback(out, fallback.as_ref());
+                out.push(")");
+            }
             Flow::Switch { whens, children, fallback } => {
                 let choose = self.helper(Helper::Choose);
                 out.push(choose);

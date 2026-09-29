@@ -103,7 +103,7 @@ catalog! {
         severity: Error,
         title: "Control-flow tag used as a value",
         message: "`{name}` is compiled away and has no runtime value, so this reference would throw. Use `{name}` only as a JSX tag.",
-        explanation: "`Show`, `For`, `Switch`, `Match`, `Loading` and `Errored` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
+        explanation: "`Show`, `For`, `Repeat`, `Switch`, `Match`, `Loading` and `Errored` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
         repair: "Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and pass that.",
         fix: None,
         example: Pair {
@@ -116,7 +116,7 @@ catalog! {
         severity: Error,
         title: "Attribute a control-flow tag does not accept",
         message: "`<{tag}>` does not accept `{attribute}`, so it would be silently dropped. Remove it.",
-        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
+        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
         repair: "Apply the fix to remove the attribute. To key `<For>` rows by a field, use `key={(item) => item.id}`.",
         fix: Some("remove `{attribute}`"),
         example: Pair {
@@ -129,8 +129,8 @@ catalog! {
         severity: Error,
         title: "Control-flow tag without its required attribute",
         message: "`<{tag}>` needs `{attribute}` to decide what to render. Add `{attribute}={…}`.",
-        explanation: "`<Show>` and `<Match>` render by `when`, `<For>` by `each`. Without it there is nothing to decide on. `data.tag` is the tag and `data.attribute` the missing attribute.",
-        repair: "Add the attribute with the condition (`when`) or the list (`each`).",
+        explanation: "`<Show>` and `<Match>` render by `when`, `<For>` by `each`, `<Repeat>` by `count`. Without it there is nothing to decide on. `data.tag` is the tag and `data.attribute` the missing attribute.",
+        repair: "Add the attribute with the condition (`when`), the list (`each`) or the number of rows (`count`).",
         fix: None,
         example: Pair {
             bad: "import { Show } from \"reze-js\";\n\nexport const view = <Show fallback={<p>closed</p>}><p>open</p></Show>;\n",
@@ -142,7 +142,7 @@ catalog! {
         severity: Error,
         title: "Control-flow tag with children it cannot render",
         message: "`<{tag}>` expects {expected} as children, so this cannot be compiled.",
-        explanation: "`<Show>` and `<Match>` need at least one child. `<For>` needs exactly one row function `(item, index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.",
+        explanation: "`<Show>`, `<Match>`, `<Loading>` and `<Errored>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.",
         repair: "Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`.",
         fix: None,
         example: Pair {

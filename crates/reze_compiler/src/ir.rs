@@ -330,6 +330,11 @@ pub enum Flow<'a> {
         key: Option<Embed<'a>>,
         selectors: Vec<'a, Selector<'a>>,
     },
+    Repeat {
+        count: Source<'a>,
+        map: Embed<'a>,
+        fallback: Option<Render<'a>>,
+    },
     Loading {
         child: Render<'a>,
         fallback: Option<Render<'a>>,

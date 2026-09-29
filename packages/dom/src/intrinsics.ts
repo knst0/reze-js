@@ -15,6 +15,12 @@ export interface ForProps<T> {
   children: (item: () => T, index: () => number) => JSX.Element;
 }
 
+export interface RepeatProps {
+  count: number;
+  fallback?: JSX.Element;
+  children: (index: number) => JSX.Element;
+}
+
 export interface SwitchProps {
   fallback?: JSX.Element;
   children: JSX.Element;
@@ -37,7 +43,9 @@ export interface ErroredProps {
 }
 
 function compiledAway(): never {
-  throw new Error("[reze] Show, For, Switch, Match, Loading and Errored are compiled by @rezejs/vite-plugin and cannot run as functions");
+  throw new Error(
+    "[reze] Show, For, Repeat, Switch, Match, Loading and Errored are compiled by @rezejs/vite-plugin and cannot run as functions",
+  );
 }
 
 export function Show<T>(_props: ShowProps<T>): JSX.Element {
@@ -45,6 +53,10 @@ export function Show<T>(_props: ShowProps<T>): JSX.Element {
 }
 
 export function For<T>(_props: ForProps<T>): JSX.Element {
+  return compiledAway();
+}
+
+export function Repeat(_props: RepeatProps): JSX.Element {
   return compiledAway();
 }
 

@@ -151,6 +151,10 @@ const CASES: &[(&str, &str)] = &[
         "import { Errored } from \"reze-js\";\nconst a = <Errored fallback={(error, reset) => <p onClick={reset}>{String(error)}</p>}><User id={id()} /></Errored>;\nconst b = <div><Errored fallback={<i>x</i>}><p>y</p>{z()}</Errored></div>;",
     ),
     (
+        "repeat",
+        "import { Repeat } from \"reze-js\";\nconst a = <div><Repeat count={3}>{() => <i />}</Repeat></div>;\nconst b = <Repeat count={rows()} fallback={<p>none</p>}>{(index) => <li>{index}</li>}</Repeat>;",
+    ),
+    (
         "auto_selector",
         "import { For, computed, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nconst [hovered, setHovered] = signal(0);\nconst active = computed(() => selected() + 1);\nexport const list = (\n  <For each={rows()}>\n    {(row, index) => {\n      const [local, setLocal] = signal(0);\n      return (\n        <tr class={selected() === row().id ? \"danger\" : \"\"} title={row().id !== selected() ? \"a\" : \"b\"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>\n          {selected() === row().id && <b>on</b>}\n          <td onInput={() => setLocal(1)} data-local={local() === row().id} data-other={selected() === other()} data-loose={selected() == row().id} />\n        </tr>\n      );\n    }}\n  </For>\n);\nexport const unrelated = <p>{selected() === 1}</p>;\nsetHovered(1);",
     ),

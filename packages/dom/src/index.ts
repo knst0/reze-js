@@ -12,12 +12,14 @@ export {
   Loading,
   Match,
   Show,
+  Repeat,
   Switch,
   type ErroredProps,
   type ForProps,
   type LoadingProps,
   type MatchProps,
   type ShowProps,
+  type RepeatProps,
   type SwitchProps,
 } from "./intrinsics";
 export type { JSX } from "./jsx";
@@ -25,6 +27,7 @@ export { list } from "./list";
 export { asyncComponent, loading } from "./loading";
 export { mergeProps, splitProps } from "./props";
 export { reconcileArrays } from "./reconcile";
+export { repeat } from "./repeat";
 export { use } from "./ref";
 export { spread } from "./spread";
 export { style } from "./style";
