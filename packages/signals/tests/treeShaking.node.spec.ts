@@ -5,7 +5,16 @@ import { expect, test } from "vitest";
 
 const entry = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const devtools = fileURLToPath(new URL("../src/devtools.ts", import.meta.url));
-const nodeKinds = ["SignalNode", "ComputedNode", "EffectNode", "EffectScopeNode", "RenderNode", "SelectorKeyNode", "AsyncComputedNode"];
+const nodeKinds = [
+  "SignalNode",
+  "LayeredSignalNode",
+  "ComputedNode",
+  "EffectNode",
+  "EffectScopeNode",
+  "RenderNode",
+  "SelectorKeyNode",
+  "AsyncComputedNode",
+];
 
 async function bundle(imports: string, nodeEnv = "development", extraSource = ""): Promise<string> {
   const build = await rolldown({
@@ -31,6 +40,7 @@ async function bundledNodeKinds(imports: string): Promise<string[]> {
 
 test.each([
   ["signal", ["SignalNode"]],
+  ["layeredSignal", ["SignalNode", "LayeredSignalNode"]],
   ["computed", ["ComputedNode"]],
   ["effect", ["EffectNode"]],
   ["effectScope", ["EffectScopeNode"]],
