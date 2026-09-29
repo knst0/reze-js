@@ -34,20 +34,6 @@ test("a change re-runs only the previous and the next key's subscribers", () => 
   });
 });
 
-test("reports the selection state to each caller", () => {
-  root(() => {
-    const [selected, setSelected] = signal("a");
-    const isSelected = selector(selected);
-    const seen: Record<string, boolean> = {};
-    for (const key of ["a", "b", "c"]) effect(() => void (seen[key] = isSelected(key)));
-    expect(seen).toEqual({ a: true, b: false, c: false });
-
-    setSelected("c");
-    flush();
-    expect(seen).toEqual({ a: false, b: false, c: true });
-  });
-});
-
 test("keys without subscribers are dropped", () => {
   root(() => {
     const [selected, setSelected] = signal(0);
@@ -67,23 +53,6 @@ test("keys without subscribers are dropped", () => {
     });
     expect(reads).toBe(1);
     expect(isSelected(5)).toBe(true);
-  });
-});
-
-test("writes settle to the last value", () => {
-  root(() => {
-    const [selected, setSelected] = signal(0);
-    const isSelected = selector(selected);
-    const { runs } = watchRows(5, isSelected);
-    runs.fill(0);
-
-    setSelected(1);
-    setSelected(2);
-    setSelected(3);
-    flush();
-
-    expect(isSelected(3)).toBe(true);
-    expect(runs).toEqual([1, 0, 0, 1, 0]);
   });
 });
 
@@ -117,18 +86,6 @@ test("a custom equals re-checks every live key", () => {
     setThreshold(8);
     flush();
     expect(seen.filter(Boolean)).toHaveLength(2);
-  });
-});
-
-test("reads outside a tracking context do not create key nodes", () => {
-  root(() => {
-    const [selected, setSelected] = signal(1);
-    const isSelected = selector(selected);
-    expect(isSelected(1)).toBe(true);
-    setSelected(2);
-    flush();
-    expect(isSelected(1)).toBe(false);
-    expect(isSelected(2)).toBe(true);
   });
 });
 

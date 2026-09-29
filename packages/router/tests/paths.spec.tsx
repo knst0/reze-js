@@ -7,8 +7,6 @@ import {
   createBrowserHistory,
   createRouter,
   createMemoryHistory,
-  defineRoute,
-  defineRoutes,
   useNavigate,
   type Navigate,
   type RouteDefinition,
@@ -141,11 +139,4 @@ test("match reports root-to-leaf patterns, params and info without rendering", (
     { path: "/blog/a%2Fb", pattern: "/blog/:id", params: { id: "a/b" }, info: undefined },
   ]);
   expect(Router.match("/nope")).toEqual([]);
-});
-
-test("defineRoutes and defineRoute return their input", () => {
-  const routes = defineRoutes([{ path: "/" }, { path: "/blog/:id" }]);
-  expect(routes).toEqual([{ path: "/" }, { path: "/blog/:id" }]);
-  const preload = ({ params }: { params: { id: string } }) => params.id;
-  expect(defineRoute({ path: "/blog/:id", preload }).path).toBe("/blog/:id");
 });

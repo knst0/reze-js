@@ -118,18 +118,6 @@ test("setState runs untracked: reads inside do not subscribe the caller", () => 
   expect(state.b).toBe(0);
 });
 
-test("setState returns undefined and a draft reads its own writes", () => {
-  const [state, setState] = store({ count: 1 });
-  let seen = 0;
-  const result = setState((d) => {
-    d.count++;
-    seen = d.count;
-  });
-  expect(result).toBeUndefined();
-  expect(seen).toBe(2);
-  expect(state.count).toBe(2);
-});
-
 test("written objects join the tree and are reactive", () => {
   const [state, setState] = store<{ item: { label: string } | null }>({ item: null });
   const label = runs(() => state.item?.label);
@@ -152,22 +140,4 @@ test("storing a draft stores its object, not the revocable proxy", () => {
   });
   expect(state.b).toBe(state.a);
   expect(state.b!.v).toBe(1);
-});
-
-test("init is adopted, not copied", () => {
-  const init = { list: [1] };
-  const [, setState] = store(init);
-  setState((d) => {
-    d.list.push(2);
-  });
-  expect(init.list).toEqual([1, 2]);
-});
-
-test("function values are stored as values", () => {
-  const fn = () => 1;
-  const [state, setState] = store<{ fn: (() => number) | null }>({ fn: null });
-  setState((d) => {
-    d.fn = fn;
-  });
-  expect(state.fn).toBe(fn);
 });

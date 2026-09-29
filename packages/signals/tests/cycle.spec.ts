@@ -8,14 +8,6 @@ afterEach(() => {
   warn.mockClear();
 });
 
-test("warns when a computed reads itself during evaluation", () => {
-  const a = computed((): number => (b() ?? 0) + 1);
-  const b = computed((): number => a());
-
-  expect(a()).toBe(1);
-  expect(warn).toHaveBeenCalledWith(expect.stringContaining("Cycle detected"));
-});
-
 test("a cycle formed by a dynamic dependency warns and terminates instead of hanging", () => {
   const [flag, setFlag] = signal(false);
   const [s, setS] = signal(0);

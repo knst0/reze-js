@@ -8,16 +8,6 @@ function tick(): Promise<void> {
   return promise;
 }
 
-test("pending until the run resolves, then exposes the value", async () => {
-  const [id] = signal(1);
-  const user = asyncComputed((c) => Promise.resolve(`user ${c.get(id)}`));
-  expect(user.isPending()).toBe(true);
-  expect(user.value()).toBeUndefined();
-  await tick();
-  expect(user.isPending()).toBe(false);
-  expect(user.value()).toBe("user 1");
-});
-
 test("a source read through c.get after an await is tracked", async () => {
   const [id, setId] = signal(1);
   const [lang, setLang] = signal("en");

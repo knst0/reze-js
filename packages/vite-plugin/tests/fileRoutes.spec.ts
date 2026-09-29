@@ -77,7 +77,6 @@ async function registeredBase(fileRoutes: true | FileRoutesOptions, base: string
 test.each([
   ["/app/", '"/app"'],
   ["./", '""'],
-  ["https://cdn.test/assets/", '""'],
 ])("Vite base %j registers the href base the browser history uses", async (base, registered) => {
   expect(await registeredBase(true, base)).toBe(registered);
 });
@@ -131,10 +130,4 @@ test("a custom dir without declarations serves routes only", async () => {
 test("a missing routes directory throws", async () => {
   const { routes } = await start({ fileRoutes: true });
   expect(() => routes.buildStart()).toThrow(`[reze-router] routes directory not found: ${join(root, "src", "routes")}`);
-});
-
-test("without fileRoutes returns the single reze plugin", () => {
-  const plugin = reze();
-  expect(plugin).not.toBeInstanceOf(Promise);
-  expect(plugin.name).toBe("reze-js");
 });

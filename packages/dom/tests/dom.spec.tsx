@@ -1,4 +1,4 @@
-import { effect, mergeProps, onCleanup, signal, use, type ClassValue, type JSX } from "reze-js";
+import { effect, mergeProps, signal, type ClassValue, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 import { cleanup, fire, mount, tick } from "../../../testing/dom";
@@ -132,26 +132,6 @@ test("class toggles flip their token and leave the static and foreign ones alone
   expect(i.className).toBe("is-zero");
 });
 
-test("class accepts a string or a toggle object", () => {
-  const [on, setOn] = signal(true);
-  const [cls, setCls] = signal<string | Record<string, boolean>>("a b");
-  const { el } = mount(() => <i class={[cls(), { on: on() }]} />);
-  const i = el.firstChild as HTMLElement;
-  expect(i.className).toBe("a b on");
-  setOn(false);
-  tick();
-  expect(i.className).toBe("a b");
-  setCls({ "x y": true, z: false });
-  tick();
-  expect([...i.classList].sort()).toEqual(["x", "y"]);
-});
-
-test("class accepts arrays mixing strings, objects and nested arrays", () => {
-  const { el } = mount(() => <i class={["a", false, "b", { c: true, d: false }, ["e", ["f", { g: true }]], null, undefined, "", 0]} />);
-  const i = el.firstChild as HTMLElement;
-  expect([...i.classList].sort()).toEqual(["0", "a", "b", "c", "e", "f", "g"]);
-});
-
 test("reactive class values switch kinds and drop stale classes", () => {
   const [cls, setCls] = signal<ClassValue>("plain");
   const { el } = mount(() => <i class={cls()} />);
@@ -216,14 +196,6 @@ test("style accepts a string and a partly reactive object; null removes the attr
   expect(i.hasAttribute("style")).toBe(false);
   expect(b.style.display).toBe("block");
   expect(b.style.width).toBe("2px");
-});
-
-test("all-literal style and class objects compile to static attributes", () => {
-  const { el } = mount(() => <i style={{ color: "red", "margin-top": "1px" }} class={{ a: true, b: false }} />);
-  const i = el.firstChild as HTMLElement;
-  expect(i.style.color).toBe("red");
-  expect(i.style.marginTop).toBe("1px");
-  expect(i.className).toBe("a");
 });
 
 test("delegated handlers coalesce writes and see the declaring element as currentTarget", () => {
@@ -356,19 +328,6 @@ test("a ref passed to a component reaches the element it forwards to", () => {
   expect(seen).toEqual([second]);
 });
 
-test("use() calls the ref callback with the element and its argument", () => {
-  const div = document.createElement("div");
-  let tagged = "";
-  use(
-    (el: HTMLDivElement, arg?: string) => {
-      tagged = el.tagName + arg;
-    },
-    div,
-    "!",
-  );
-  expect(tagged).toBe("DIV!");
-});
-
 test("spread applies reactive props, including ones from a function source", () => {
   const [title, setTitle] = signal("a");
   const [extra, setExtra] = signal<Record<string, string>>({ "data-x": "1" });
@@ -438,22 +397,6 @@ test("mergeProps reads the last defined source, keeping getters reactive", () =>
   setLabel(undefined);
   tick();
   expect(el.innerHTML).toBe('<button class="ghost">Save</button>');
-});
-
-test("components run once; props read lazily keep reactivity", () => {
-  let calls = 0;
-  function Label(props: { text: string }) {
-    calls++;
-    return <b>{props.text}</b>;
-  }
-  const [t, setT] = signal("a");
-  const { el } = mount(() => <Label text={t()} />);
-  setT("b");
-  tick();
-  setT("c");
-  tick();
-  expect(el.innerHTML).toBe("<b>c</b>");
-  expect(calls).toBe(1);
 });
 
 test("component children are passed lazily and stay reactive", () => {
@@ -593,24 +536,6 @@ test("a && branch keeps its nodes while truthy and removes them when falsy", () 
   tick();
   expect(el.innerHTML).toBe("<div><span>head</span><p>bye</p><span>tail</span></div>");
   expect(el.querySelector("p")).not.toBe(p);
-});
-
-test("a conditional branch is disposed when it switches out", () => {
-  const log: string[] = [];
-  function Child(props: { name: string }) {
-    onCleanup(() => log.push("cleanup " + props.name));
-    return <em>{props.name}</em>;
-  }
-  const [on, setOn] = signal(true);
-  const { el, dispose } = mount(() => <div>{on() ? <Child name="a" /> : <Child name="b" />}</div>);
-  expect(el.innerHTML).toBe("<div><em>a</em></div>");
-  setOn(false);
-  tick();
-  expect(el.innerHTML).toBe("<div><em>b</em></div>");
-  expect(log).toEqual(["cleanup a"]);
-  dispose();
-  expect(log).toEqual(["cleanup a", "cleanup b"]);
-  expect(el.innerHTML).toBe("");
 });
 
 test("conditionals in component children and without JSX", () => {

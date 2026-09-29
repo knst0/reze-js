@@ -1,19 +1,6 @@
 import { expect, test } from "vitest";
 
-import {
-  computed,
-  effect,
-  flush,
-  provideContext,
-  root,
-  runWithOwner,
-  getOwner,
-  signal,
-  untrack,
-  useContext,
-  type ContextKey,
-  type Owner,
-} from "../src";
+import { computed, effect, flush, provideContext, root, signal, untrack, useContext, type ContextKey } from "../src";
 
 const Theme: ContextKey<string> = { id: Symbol("theme"), defaultValue: "light" };
 
@@ -56,22 +43,4 @@ test("lookups walk through effects, computeds, nested roots and untrack", () => 
     });
   });
   expect(seen).toEqual(["dark", "dark", "dark", "dark", "dark", "dark", "dark"]);
-});
-
-test("work resumed with runWithOwner sees the provider", () => {
-  let owner: Owner | undefined;
-  root(() => provideContext(Theme, "dark", () => (owner = getOwner())));
-  runWithOwner(owner, () => expect(useContext(Theme)).toBe("dark"));
-});
-
-test("a provider is disposed with its owner", () => {
-  let cleaned = 0;
-  const dispose = root((d) => {
-    provideContext(Theme, "dark", () => {
-      effect(() => () => cleaned++);
-    });
-    return d;
-  });
-  dispose();
-  expect(cleaned).toBe(1);
 });

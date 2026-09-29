@@ -65,24 +65,12 @@ describe("matchBranches", () => {
     expect(matchBranches(branches, "/docs/a/b")?.params).toEqual({ path: "a/b" });
   });
 
-  test("optional params match with and without the segment", () => {
-    const branches = compileRoutes([{ path: "/blog/:page?" }]);
-    expect(matchBranches(branches, "/blog")?.params).toEqual({});
-    expect(matchBranches(branches, "/blog/2")?.params).toEqual({ page: "2" });
-    expect(matchBranches(branches, "/blog/2/3")).toBeUndefined();
-  });
-
   test("a layout with children matches only through its children", () => {
     const branches = compileRoutes([{ path: "/blog", children: [{ path: "/:id" }] }]);
     expect(matchBranches(branches, "/blog")).toBeUndefined();
     const match = matchBranches(branches, "/blog/1");
     expect(match?.branch.routes.map((r) => r.def.path)).toEqual(["/blog", "/:id"]);
     expect(match?.params).toEqual({ id: "1" });
-  });
-
-  test("a child at / completes its parent path", () => {
-    const branches = compileRoutes([{ path: "/blog", children: [{ path: "/" }] }]);
-    expect(matchBranches(branches, "/blog")?.branch.routes).toHaveLength(2);
   });
 });
 

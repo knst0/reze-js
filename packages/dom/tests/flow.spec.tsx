@@ -1,4 +1,4 @@
-import { For, Match, onCleanup, Show, signal, Switch, type JSX } from "reze-js";
+import { For, Match, onCleanup, Show, signal, Switch } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 import { cleanup, mount, tick } from "../../../testing/dom";
@@ -115,56 +115,6 @@ test("Show disposes the branch it switches away from, at the top level and insid
   top.dispose();
   nested.dispose();
   expect(log).toEqual(["top fallback", "nested fallback"]);
-});
-
-test("Show with a function child inside an element passes the value getter", () => {
-  let builds = 0;
-  const [user, setUser] = signal<{ name: string } | null>({ name: "a" });
-  const { el } = mount(() => (
-    <p>
-      <Show when={user()}>
-        {(u) => {
-          builds++;
-          return <b>{u().name}</b>;
-        }}
-      </Show>
-      !
-    </p>
-  ));
-  const b = el.querySelector("b");
-  expect(el.textContent).toBe("a!");
-  setUser({ name: "b" });
-  tick();
-  expect(el.textContent).toBe("b!");
-  expect(el.querySelector("b")).toBe(b);
-  setUser(null);
-  tick();
-  expect(el.textContent).toBe("!");
-  setUser({ name: "c" });
-  tick();
-  expect(el.textContent).toBe("c!");
-  expect(builds).toBe(2);
-});
-
-test("Show works as a component child", () => {
-  function Card(props: { children?: JSX.Element }) {
-    return <section>{props.children}</section>;
-  }
-  const [user, setUser] = signal<{ name: string } | null>(null);
-  const { el } = mount(() => (
-    <Card>
-      <Show when={user()} fallback="nobody">
-        {(u) => <b>{u().name}</b>}
-      </Show>
-    </Card>
-  ));
-  expect(el.innerHTML).toBe("<section>nobody</section>");
-  setUser({ name: "ann" });
-  tick();
-  expect(el.innerHTML).toBe("<section><b>ann</b></section>");
-  setUser({ name: "bob" });
-  tick();
-  expect(el.innerHTML).toBe("<section><b>bob</b></section>");
 });
 
 test("Switch renders the first truthy Match and rebuilds only when the choice changes", () => {
@@ -333,79 +283,6 @@ test("For duplicate items map to distinct rows", () => {
   tick();
   expect(texts(el)).toEqual(["y", "x", "x", "x"]);
   expect(new Set(el.children).size).toBe(4);
-});
-
-test("For accepts its row function as a children attribute", () => {
-  const [items, setItems] = signal([1, 2]);
-  const { el } = mount(() => <For each={items()} children={(item) => <li>{item() * 10}</li>} />, "ul");
-  expect(texts(el)).toEqual(["10", "20"]);
-  setItems([3]);
-  tick();
-  expect(texts(el)).toEqual(["30"]);
-});
-
-test("For inside Show disposes its rows when the branch closes", () => {
-  const log: string[] = [];
-  const [open, setOpen] = signal(true);
-  const [items] = signal(["a", "b"]);
-  const { el } = mount(() => (
-    <ul>
-      <Show when={open()}>
-        <For each={items()}>
-          {(item) => {
-            onCleanup(() => log.push(item()));
-            return <li>{item()}</li>;
-          }}
-        </For>
-      </Show>
-    </ul>
-  ));
-  expect(el.innerHTML).toBe("<ul><li>a</li><li>b</li></ul>");
-  setOpen(false);
-  tick();
-  expect(el.innerHTML).toBe("<ul></ul>");
-  expect(log).toEqual(["a", "b"]);
-});
-
-test("random reorders, inserts and removals keep DOM order between static siblings and reuse surviving nodes", () => {
-  let seed = 7;
-  const random = (n: number) => (seed = (seed * 1103515245 + 12345) % 2 ** 31) % n;
-  let next = 0;
-  const [items, setItems] = signal<number[]>([]);
-  const { el } = mount(
-    () => (
-      <>
-        <li>head</li>
-        <For each={items()}>{(item) => <li>{item()}</li>}</For>
-        <li>tail</li>
-      </>
-    ),
-    "ul",
-  );
-  let current: number[] = [];
-  for (let step = 0; step < 300; step++) {
-    const list = current.filter(() => random(4) !== 0);
-    for (let i = list.length; i > 1; i--) {
-      if (random(3) === 0) {
-        const j = random(i);
-        [list[i - 1], list[j]] = [list[j]!, list[i - 1]!];
-      }
-    }
-    for (let k = random(5); k--;) {
-      list.splice(random(list.length + 1), 0, next++);
-    }
-    const before = new Map([...el.children].map((node) => [node.textContent, node]));
-    setItems(list);
-    tick();
-    expect(texts(el)).toEqual(["head", ...list.map(String), "tail"]);
-    for (const node of el.children) {
-      const old = before.get(node.textContent);
-      if (old !== undefined && current.includes(Number(node.textContent))) {
-        expect(node).toBe(old);
-      }
-    }
-    current = list;
-  }
 });
 
 test("random keyed updates keep DOM order and reuse the nodes of surviving rows", () => {

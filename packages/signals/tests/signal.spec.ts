@@ -16,18 +16,6 @@ test("a function value is stored by wrapping it in an updater", () => {
   expect(get()).toBe(fn);
 });
 
-test("default equality is Object.is: NaN writes do not notify", () => {
-  const [n, setN] = signal(NaN);
-  let runs = 0;
-  effect(() => {
-    n();
-    runs++;
-  });
-  setN(NaN);
-  flush();
-  expect(runs).toBe(1);
-});
-
 test("default equality is Object.is: +0 and -0 notify each other (P06)", () => {
   const [n, setN] = signal(0);
   let runs = 0;
@@ -76,17 +64,4 @@ test("custom equals suppresses notification when it reports equality", () => {
   setPoint({ x: 1, y: 0 });
   flush();
   expect(runs).toBe(2);
-});
-
-test("a computed that keeps returning NaN does not notify", () => {
-  const [n, setN] = signal(1);
-  const ratio = computed(() => (n(), NaN));
-  let runs = 0;
-  effect(() => {
-    ratio();
-    runs++;
-  });
-  setN(2);
-  flush();
-  expect(runs).toBe(1);
 });

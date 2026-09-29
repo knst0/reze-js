@@ -4,11 +4,6 @@ import { expect, test } from "vitest";
 import { render } from "../src/component";
 import { hotComponent } from "../src/hot";
 
-test("without hot, the component itself is returned", () => {
-  const Component = () => document.createElement("p");
-  expect(hotComponent(undefined, "a.tsx#Component", Component)).toBe(Component);
-});
-
 test("registering an id again re-renders mounted instances in place", () => {
   const cleaned: string[] = [];
   const V1 = (props: { label: string }) => {

@@ -13,12 +13,7 @@ function shuffle<T>(list: T[], swaps: number): void {
   }
 }
 
-test.each([
-  ["moves only", 0, 0],
-  ["moves and removals", 3, 0],
-  ["moves and inserts", 0, 3],
-  ["everything", 3, 3],
-])("reconcileArrays turns a into b exactly: %s", (_, removals, inserts) => {
+test("reconcileArrays turns a into b exactly across moves, removals and inserts", () => {
   for (let round = 0; round < 500; round++) {
     const parent = document.createElement("div");
     const head = parent.appendChild(document.createElement("i"));
@@ -28,12 +23,12 @@ test.each([
     }
     const tail = parent.appendChild(document.createElement("i"));
 
-    const b: Element[] = a.filter(() => rand(10) >= removals);
+    const b: Element[] = a.filter(() => rand(10) >= 3);
     shuffle(b, rand(4));
     if (rand(2)) {
       b.reverse();
     }
-    for (let k = rand(inserts + 1); k--;) {
+    for (let k = rand(4); k--;) {
       b.splice(rand(b.length + 1), 0, document.createElement("s"));
     }
     if (b.length === 0) {

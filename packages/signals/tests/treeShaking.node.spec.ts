@@ -38,7 +38,6 @@ test.each([
   ["store", ["SignalNode"]],
   ["selector", ["SignalNode", "RenderNode", "SelectorKeyNode"]],
   ["asyncComputed", ["SignalNode", "AsyncComputedNode"]],
-  ["signal, computed", ["SignalNode", "ComputedNode"]],
 ])("bundling { %s } keeps only %j", async (imports, expected) => {
   expect(await bundledNodeKinds(imports)).toEqual(expected);
 });

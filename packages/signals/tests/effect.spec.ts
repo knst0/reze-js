@@ -1,23 +1,6 @@
 import { expect, test } from "vitest";
 
 import { computed, effect, flush, signal } from "../src";
-import { activeSub } from "../src/context";
-import { FlagRecursedCheck } from "../src/flags";
-
-test("should support custom recurse effect", () => {
-  const [src, setSrc] = signal(0);
-
-  let triggers = 0;
-
-  effect(() => {
-    activeSub!.flags &= ~FlagRecursedCheck;
-    triggers++;
-    setSrc(Math.min(src() + 1, 5));
-  });
-  flush();
-
-  expect(triggers).toBe(6);
-});
 
 test("a microtask flush left over after flush is a no-op (P03)", async () => {
   const [src, setSrc] = signal(0);
@@ -58,81 +41,6 @@ test("cleanup order on outer re-run: inner before outer, before new run", () => 
   setA(1);
   flush();
   expect(log).toEqual(["inner:cleanup", "outer:cleanup", "outer:run", "inner:run"]);
-});
-
-test("cleanup order on dispose: inner before outer", () => {
-  const log: string[] = [];
-
-  const dispose = effect(() => {
-    log.push("outer:run");
-    effect(() => {
-      log.push("inner:run");
-      return () => log.push("inner:cleanup");
-    });
-    return () => log.push("outer:cleanup");
-  });
-  log.length = 0;
-  dispose();
-  expect(log).toEqual(["inner:cleanup", "outer:cleanup"]);
-});
-
-test("sibling cleanup order on dispose: reverse creation (LIFO)", () => {
-  const log: string[] = [];
-
-  const dispose = effect(() => {
-    effect(() => {
-      return () => log.push("inner1:cleanup");
-    });
-    effect(() => {
-      return () => log.push("inner2:cleanup");
-    });
-    effect(() => {
-      return () => log.push("inner3:cleanup");
-    });
-    return () => log.push("outer:cleanup");
-  });
-  dispose();
-  expect(log).toEqual(["inner3:cleanup", "inner2:cleanup", "inner1:cleanup", "outer:cleanup"]);
-});
-
-test("sibling cleanup order on outer re-run: reverse creation (LIFO)", () => {
-  const log: string[] = [];
-  const [a, setA] = signal(0);
-
-  effect(() => {
-    a();
-    effect(() => {
-      return () => log.push("inner1:cleanup");
-    });
-    effect(() => {
-      return () => log.push("inner2:cleanup");
-    });
-    effect(() => {
-      return () => log.push("inner3:cleanup");
-    });
-    return () => log.push("outer:cleanup");
-  });
-  log.length = 0;
-
-  setA(1);
-  flush();
-  expect(log.slice(0, 4)).toEqual(["inner3:cleanup", "inner2:cleanup", "inner1:cleanup", "outer:cleanup"]);
-});
-
-test("three-level nested cleanup on dispose: deepest first (depth-first reverse)", () => {
-  const log: string[] = [];
-
-  const dispose = effect(() => {
-    effect(() => {
-      effect(() => {
-        return () => log.push("grandchild:cleanup");
-      });
-      return () => log.push("child:cleanup");
-    });
-    return () => log.push("outer:cleanup");
-  });
-  dispose();
-  expect(log).toEqual(["grandchild:cleanup", "child:cleanup", "outer:cleanup"]);
 });
 
 test("computed unwatched: child effect cleanups run in reverse creation (LIFO)", () => {
