@@ -101,6 +101,20 @@ export function reportError(node: ReactiveNode, error: unknown): void {
   }
 }
 
+let pendingReadHook: ((reader: ReactiveNode) => void) | undefined;
+
+/** Installs what a tracked read of an async computation whose first run has not settled does (`boundary`). */
+export function setPendingReadHook(hook: (reader: ReactiveNode) => void): void {
+  pendingReadHook = hook;
+}
+
+/** Hands the active sub to the pending-read hook, if both exist. */
+export function trackPendingRead(): void {
+  if (pendingReadHook !== undefined && activeSub !== undefined) {
+    pendingReadHook(activeSub);
+  }
+}
+
 /** Starts a tracked re-run of `sub`; pair with `endTracking` in a `finally`. */
 export function startTracking(sub: ReactiveNode, flags: number): ReactiveNode | undefined {
   if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {

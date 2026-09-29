@@ -1,4 +1,4 @@
-import { adopt, enterEffect, exitEffect, getOwner, reportError, setActiveSub, startTracking } from "./context";
+import { adopt, enterEffect, exitEffect, getOwner, reportError, setActiveSub, startTracking, trackPendingRead } from "./context";
 import { debugHook } from "./devtools";
 import { FlagDirty, FlagNone, FlagOwnsChildren, FlagPending, FlagRecursedCheck, FlagWatching } from "./flags";
 import { checkDirty, disposeChildren, disposeNode, type Link, purgeDeps, type ReactiveNode } from "./graph";
@@ -15,7 +15,11 @@ export interface AsyncContext {
 
 /** The state of an async computation; every getter is tracked. */
 export interface AsyncComputed<T> {
-  /** The latest resolved value; `undefined` until the first run resolves. Kept while a re-run is pending. */
+  /**
+   * The latest resolved value; `undefined` until the first run resolves. Kept while a re-run is pending.
+   * A tracked read before the first run settles makes the nearest enclosing `boundary` pending until the
+   * reader re-runs or is disposed.
+   */
   value(): T | undefined;
   /** Whether the latest run has not settled yet. */
   isPending(): boolean;
@@ -53,6 +57,7 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
   fn: (c: AsyncContext) => PromiseLike<T> | T;
   resolved = new SignalNode<T | undefined>(undefined, Object.is);
   pending = new SignalNode<boolean>(true, Object.is);
+  hasSettled = false;
   rejection = new SignalNode<unknown>(undefined, Object.is);
 
   constructor(fn: (c: AsyncContext) => PromiseLike<T> | T) {
@@ -60,6 +65,10 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
   }
 
   value(): T | undefined {
+    if (!this.hasSettled) {
+      this.pending.read();
+      trackPendingRead();
+    }
     return this.resolved.read();
   }
 
@@ -105,6 +114,7 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
     Promise.resolve(result).then(
       (value) => {
         if (generation === this.generation) {
+          this.hasSettled = true;
           purgeDeps(this);
           this.resolved.write(value);
           this.rejection.write(undefined);
@@ -113,6 +123,7 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
       },
       (error: unknown) => {
         if (generation === this.generation) {
+          this.hasSettled = true;
           purgeDeps(this);
           this.rejection.write(error);
           this.pending.write(false);

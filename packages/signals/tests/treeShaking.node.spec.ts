@@ -14,6 +14,7 @@ const nodeKinds = [
   "RenderNode",
   "SelectorKeyNode",
   "AsyncComputedNode",
+  "BoundaryNode",
 ];
 
 async function bundle(imports: string, nodeEnv = "development", extraSource = ""): Promise<string> {
@@ -48,6 +49,7 @@ test.each([
   ["store", ["SignalNode"]],
   ["selector", ["SignalNode", "RenderNode", "SelectorKeyNode"]],
   ["asyncComputed", ["SignalNode", "AsyncComputedNode"]],
+  ["boundary", ["SignalNode", "BoundaryNode"]],
 ])("bundling { %s } keeps only %j", async (imports, expected) => {
   expect(await bundledNodeKinds(imports)).toEqual(expected);
 });

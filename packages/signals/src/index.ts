@@ -1,4 +1,5 @@
 export { asyncComputed, type AsyncComputed, type AsyncContext } from "./async";
+export { boundary, isInBoundary, type Boundary } from "./boundary";
 export { computed, type ComputedOptions } from "./computed";
 export { getOwner, runWithOwner } from "./context";
 export { effect } from "./effect";
