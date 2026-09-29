@@ -335,6 +335,11 @@ pub enum Flow<'a> {
         map: Embed<'a>,
         fallback: Option<Render<'a>>,
     },
+    /// `map` for each index below the constant `times`.
+    Rows {
+        times: u32,
+        map: Embed<'a>,
+    },
     Loading {
         child: Render<'a>,
         fallback: Option<Render<'a>>,

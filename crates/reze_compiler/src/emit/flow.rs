@@ -32,6 +32,13 @@ impl<'a> Emitter<'a, '_> {
                 self.fallback(out, fallback.as_ref());
                 out.push(")");
             }
+            Flow::Rows { times, map } => {
+                out.push("Array.from(Array(");
+                out.push(&times.to_string());
+                out.push(").keys(), ");
+                self.embed(out, map);
+                out.push(")");
+            }
             Flow::Switch { whens, children, fallback } => {
                 let choose = self.helper(Helper::Choose);
                 out.push(choose);

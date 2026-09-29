@@ -152,7 +152,11 @@ const CASES: &[(&str, &str)] = &[
     ),
     (
         "repeat",
-        "import { Repeat } from \"reze-js\";\nconst a = <div><Repeat count={3}>{() => <i />}</Repeat></div>;\nconst b = <Repeat count={rows()} fallback={<p>none</p>}>{(index) => <li>{index}</li>}</Repeat>;",
+        "import { Repeat, signal } from \"reze-js\";\nconst [size] = signal(4);\nconst [page, setPage] = signal(1);\nsetPage(2);\nconst a = <div><Repeat count={3}>{() => <i />}</Repeat></div>;\nconst b = <Repeat count={size()} fallback={<p>none</p>}>{(index) => <Card n={index} onPick={() => pick(index)} />}</Repeat>;\nconst c = <Repeat count={page()} fallback={<p>none</p>}>{(index) => <li>{index}</li>}</Repeat>;\nconst d = <Repeat count={rows()}>{() => <i />}</Repeat>;\nconst e = <Repeat count={0}>{() => <i />}</Repeat>;\nconst f = <Repeat count={2.5}>{() => <i />}</Repeat>;",
+    ),
+    (
+        "repeat_eager_rows",
+        "import { Repeat } from \"reze-js\";\nconst a = <Repeat count={2}>{() => <i ref={r} />}</Repeat>;\nconst b = <Repeat count={2}>{() => <b onClick={handler()} />}</Repeat>;\nconst c = <Repeat count={2}>{() => { const x = read(); return <b>{x}</b>; }}</Repeat>;\nconst d = <Repeat count={2}>{() => <b {...rest()} />}</Repeat>;\nconst e = <Repeat count={2}>{function () { return <b />; }}</Repeat>;\nconst f = <Repeat count={2}>{(index = 1) => <b />}</Repeat>;\nfunction shadowed(Array) {\n  return <Repeat count={2}>{() => <i />}</Repeat>;\n}",
     ),
     (
         "auto_selector",

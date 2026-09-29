@@ -53,3 +53,44 @@ test("Repeat shows its fallback while count is not a positive number, and trunca
   tick();
   expect(el.innerHTML).toBe("<p>none</p>");
 });
+
+test("Repeat with a constant count renders its rows once, indexed, and disposes them with the owner", () => {
+  const cleaned: number[] = [];
+  function Cell(props: { index: number }) {
+    onCleanup(() => cleaned.push(props.index));
+    return <li>{props.index}</li>;
+  }
+  const { el, dispose } = mount(() => (
+    <ul>
+      <Repeat count={3} fallback={<p>none</p>}>
+        {(index) => <Cell index={index} />}
+      </Repeat>
+    </ul>
+  ));
+  expect(el.innerHTML).toBe("<ul><li>0</li><li>1</li><li>2</li></ul>");
+  dispose();
+  expect(cleaned.toSorted()).toEqual([0, 1, 2]);
+});
+
+test("Repeat with a constant count is not rebuilt by what its rows read, even inside a tracked child", () => {
+  let builds = 0;
+  const [label, setLabel] = signal("a");
+  function Cell(props: { label: string }) {
+    builds++;
+    return <b>{props.label}</b>;
+  }
+  const view = () => <Repeat count={2}>{(index) => <Cell label={label() + index} />}</Repeat>;
+  const { el } = mount(() => <div>{view()}</div>);
+  expect(el.innerHTML).toBe("<div><b>a0</b><b>a1</b></div>");
+  setLabel("b");
+  tick();
+  expect(el.innerHTML).toBe("<div><b>b0</b><b>b1</b></div>");
+  expect(builds).toBe(2);
+});
+
+test("Repeat rows that take a ref keep working with a constant count", () => {
+  const refs: Element[] = [];
+  const { el } = mount(() => <Repeat count={2}>{() => <i ref={(node: Element) => refs.push(node)} />}</Repeat>);
+  expect(el.innerHTML).toBe("<i></i><i></i>");
+  expect(refs).toEqual([...el.children]);
+});

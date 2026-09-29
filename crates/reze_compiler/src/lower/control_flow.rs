@@ -1,13 +1,15 @@
 use oxc_ast::ast::*;
-use oxc_ast_visit::Visit;
+use oxc_ast_visit::{Visit, walk};
 use oxc_span::GetSpan;
 
 use super::children::render_child;
+use super::constant::static_text;
 use super::{Lowerer, Tag, attribute_name, is_function};
 use crate::analyze::Intrinsic;
 use crate::diagnostic::{Code, Report};
 use crate::html::{clean_jsx_text, decode_entities};
 use crate::ir::{Branch, Child, Embed, Flow, Jsx, Render, Source};
+use crate::kind::{Kind, static_kind};
 
 const FOR_ROW: &str = "one function `(item, index) => …`";
 const REPEAT_ROW: &str = "one function `(index) => …`";
@@ -219,10 +221,50 @@ impl<'a> Lowerer<'a, '_> {
         let intrinsic = Intrinsic::Repeat;
         let attributes = self.flow_attributes(el, intrinsic, &["count", "fallback", "children"]);
         let count = self.required_source(el, intrinsic, &attributes, "count");
-        let map = self.row_function(el, &attributes, intrinsic, REPEAT_ROW);
+        let row = self.row_function(el, &attributes, intrinsic, REPEAT_ROW);
         let fallback = self.fallback(&attributes);
-        let map = self.expr(map?);
-        Some(Flow::Repeat { count: count?, map, fallback })
+        let row = row?;
+        let times = self.static_count(&attributes).filter(|_| self.is_unrollable_row(row));
+        let map = self.expr(row);
+        match times {
+            Some(times) => Some(Flow::Rows { times, map }),
+            None => Some(Flow::Repeat { count: count?, map, fallback }),
+        }
+    }
+
+    /// The `count` of a `Repeat` when it is a positive integer known at compile time.
+    fn static_count(&self, attributes: &[(&'a str, &JSXAttribute<'a>)]) -> Option<u32> {
+        let (_, a) = attributes.iter().rev().find(|(name, _)| *name == "count")?;
+        let JSXAttributeValue::ExpressionContainer(c) = a.value.as_ref()? else { return None };
+        let count = c.expression.as_expression()?;
+        if static_kind(count, self.analysis) != Some(Kind::Numeric) {
+            return None;
+        }
+        static_text(count, self.analysis)?.parse().ok().filter(|times| *times > 0)
+    }
+
+    /// Whether calling `row` outside a root and outside `untrack` is unobservable: it is an arrow with at most one
+    /// plain parameter and a JSX body that creates nodes without running user code, and `Array` is the global.
+    fn is_unrollable_row(&self, row: &Expression<'a>) -> bool {
+        let Expression::ArrowFunctionExpression(arrow) = row.without_parentheses() else {
+            return false;
+        };
+        let params = &arrow.params;
+        let has_plain_params = params.rest.is_none()
+            && params.items.len() <= 1
+            && params.items.iter().all(|param| {
+                matches!(param.pattern, BindingPattern::BindingIdentifier(_))
+                    && param.initializer.is_none()
+            });
+        let Some(body) = arrow.body.as_expression().map(Expression::without_parentheses) else {
+            return false;
+        };
+        let mut eager = EagerCheck { found: false };
+        eager.visit_expression(body);
+        has_plain_params
+            && matches!(body, Expression::JSXElement(_) | Expression::JSXFragment(_))
+            && !eager.found
+            && !self.analysis.scoping.symbol_names().any(|name| name == "Array")
     }
 
     /// The row function of a `For` and the selectors its comparisons read.
@@ -334,5 +376,35 @@ fn is_meaningful(child: &JSXChild<'_>) -> bool {
         JSXChild::Text(text) => !clean_jsx_text(&decode_entities(text.value.as_str())).is_empty(),
         JSXChild::ExpressionContainer(c) => c.expression.as_expression().is_some(),
         _ => true,
+    }
+}
+
+/// Finds what creating JSX runs eagerly: a spread, a `ref`, a namespaced attribute or an event handler expression.
+struct EagerCheck {
+    found: bool,
+}
+
+impl<'a> Visit<'a> for EagerCheck {
+    fn visit_jsx_spread_attribute(&mut self, _: &JSXSpreadAttribute<'a>) {
+        self.found = true;
+    }
+
+    fn visit_jsx_spread_child(&mut self, _: &JSXSpreadChild<'a>) {
+        self.found = true;
+    }
+
+    fn visit_jsx_attribute(&mut self, it: &JSXAttribute<'a>) {
+        let JSXAttributeName::Identifier(name) = &it.name else {
+            self.found = true;
+            return;
+        };
+        let is_handler = name.name.starts_with("on")
+            && matches!(&it.value, Some(JSXAttributeValue::ExpressionContainer(c))
+                if c.expression.as_expression().is_none_or(|e| !is_function(e)));
+        if name.name == "ref" || is_handler {
+            self.found = true;
+        } else {
+            walk::walk_jsx_attribute(self, it);
+        }
     }
 }
