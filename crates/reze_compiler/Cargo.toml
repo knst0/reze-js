@@ -17,4 +17,9 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 
 [dev-dependencies]
+codspeed-divan-compat = "5.0.2"
 insta = "1"
+
+[[bench]]
+name = "compile"
+harness = false

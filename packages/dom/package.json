@@ -27,6 +27,7 @@
     "access": "public"
   },
   "scripts": {
+    "bench:codspeed": "NODE_ENV=production node benches/codspeed.ts",
     "build": "tsdown",
     "test": "vitest run"
   },
@@ -34,7 +35,9 @@
     "@rezejs/signals": "workspace:*"
   },
   "devDependencies": {
+    "@codspeed/tinybench-plugin": "^5.7.1",
     "@rezejs/compiler": "workspace:*",
-    "happy-dom": "^20.0.0"
+    "happy-dom": "^20.0.0",
+    "tinybench": "^6.2.0"
   }
 }

@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  benchmarks:
-    name: Benchmarks
+  js:
+    name: JS benchmarks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,11 +23,34 @@ jobs:
           node-version: 24
           cache: pnpm
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter . --filter @rezejs/signals
-      - name: Build signals
-        run: pnpm --filter @rezejs/signals build
+        run: pnpm install --frozen-lockfile --filter . --filter @rezejs/signals --filter @rezejs/dom --filter @rezejs/router
+      - name: Build packages
+        run: |
+          pnpm --filter @rezejs/signals build
+          pnpm --filter @rezejs/dom build
+          pnpm --filter @rezejs/router build
       - name: Run benchmarks
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
           mode: simulation
-          run: pnpm --filter @rezejs/signals bench:codspeed
+          run: pnpm bench:codspeed
+
+  rust:
+    name: Rust benchmarks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-codspeed
+      - name: Build benchmarks
+        run: cargo codspeed build -p reze_compiler
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
+        with:
+          mode: simulation
+          run: cargo codspeed run -p reze_compiler

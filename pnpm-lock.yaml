@@ -717,12 +717,18 @@ importers:
         specifier: workspace:*
         version: link:../signals
     devDependencies:
+      '@codspeed/tinybench-plugin':
+        specifier: ^5.7.1
+        version: 5.7.1(debug@4.4.3)(tinybench@6.2.0)
       '@rezejs/compiler':
         specifier: workspace:*
         version: link:../compiler
       happy-dom:
         specifier: ^20.0.0
         version: 20.14.5
+      tinybench:
+        specifier: ^6.2.0
+        version: 6.2.0
 
   packages/reze-js:
     dependencies:
@@ -742,6 +748,9 @@ importers:
         specifier: workspace:*
         version: link:../signals
     devDependencies:
+      '@codspeed/tinybench-plugin':
+        specifier: ^5.7.1
+        version: 5.7.1(debug@4.4.3)(tinybench@6.2.0)
       '@rezejs/compiler':
         specifier: workspace:*
         version: link:../compiler
@@ -751,6 +760,9 @@ importers:
       reze-js:
         specifier: workspace:*
         version: link:../reze-js
+      tinybench:
+        specifier: ^6.2.0
+        version: 6.2.0
       vite:
         specifier: ^8.3.0
         version: 8.3.1(@types/node@26.6.2)(esbuild@0.28.2)(jiti@2.7.0)
