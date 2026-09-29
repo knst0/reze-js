@@ -16,6 +16,7 @@ export namespace JSX {
   export interface FunctionElement {
     (): Element;
   }
+  export type ElementType = keyof IntrinsicElements | ((props: Loose) => Element | Promise<Element>);
   export interface ElementChildrenAttribute {
     children: {};
   }

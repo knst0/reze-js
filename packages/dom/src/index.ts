@@ -8,6 +8,7 @@ export { append, insert } from "./insert";
 export { For, Match, Show, Switch, type ForProps, type MatchProps, type ShowProps, type SwitchProps } from "./intrinsics";
 export type { JSX } from "./jsx";
 export { list } from "./list";
+export { asyncComponent, Loading, type LoadingProps } from "./loading";
 export { mergeProps, splitProps } from "./props";
 export { reconcileArrays } from "./reconcile";
 export { use } from "./ref";
