@@ -127,6 +127,10 @@ const CASES: &[(&str, &str)] = &[
         "import { Show } from \"reze-js\";\nconst a = <div><Show when={!x() || (k() in o && Boolean(v()))}><b /></Show></div>;\nconst b = <div><Show when={{} instanceof X}><i /></Show></div>;\nconst c = <div><Show when={a() ?? b() === 1}><u /></Show></div>;\nconst d = <p class={{ on: s() ? t() > 1 : !u() }} />;",
     ),
     (
+        "show_components",
+        "import { Show } from \"reze-js\";\nconst a = <div><Show when={a()} fallback={<B />}><C /></Show></div>;",
+    ),
+    (
         "flow_sources",
         "import { computed, For, Match, Show, signal, Switch } from \"reze-js\";\nconst [open, setOpen] = signal(false);\nsetOpen(true);\nlet [moved] = signal(1);\nmoved = other;\nconst [fixed] = signal(true);\nconst rows = computed(() => []);\nconst a = <For each={rows()}>{(row) => <li>{row().name}</li>}</For>;\nconst b = <Show when={open()}><b /></Show>;\nconst c = <Switch><Match when={open()}><i /></Match><Match when={moved()}><u /></Match></Switch>;\nconst d = <Show when={fixed()}><s /></Show>;\nconst e = <Show when={plain()}><em /></Show>;\nconst f = <p>{open() && <b />}</p>;",
     ),

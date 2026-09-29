@@ -320,3 +320,77 @@ test("a rejected load inside Loading reaches catchError and renders nothing", as
   expect((errors[0] as Error).message).toBe("nope");
   expect(el.innerHTML).toBe("");
 });
+
+test("Loading holds the old side of a Show until the new side loads", async () => {
+  const [tab, setTab] = signal("a");
+  const pending = new Map<string, PromiseWithResolvers<string>>();
+  const load = (id: string): Promise<string> => {
+    const request = Promise.withResolvers<string>();
+    pending.set(id, request);
+    return request.promise;
+  };
+  async function Tab(props: { id: string }) {
+    const name = await load(props.id);
+    return <b>{name}</b>;
+  }
+  const { el } = mount(() => (
+    <Loading fallback={<i>loading</i>}>
+      <div>
+        <Show when={tab() === "a"} fallback={<Tab id="b" />}>
+          <Tab id="a" />
+        </Show>
+      </div>
+    </Loading>
+  ));
+  tick();
+  expect(el.innerHTML).toBe("<i>loading</i>");
+  pending.get("a")!.resolve("A");
+  await settle();
+  expect(el.innerHTML).toBe("<div><b>A</b></div>");
+
+  setTab("b");
+  tick();
+  expect(el.innerHTML).toBe("<div><b>A</b></div>");
+
+  pending.get("b")!.resolve("B");
+  await settle();
+  expect(el.innerHTML).toBe("<div><b>B</b></div>");
+});
+
+test("Loading keeps the old side when switching back before the new side loads", async () => {
+  const [tab, setTab] = signal("a");
+  const pending = new Map<string, PromiseWithResolvers<string>>();
+  const load = (id: string): Promise<string> => {
+    const request = Promise.withResolvers<string>();
+    pending.set(id, request);
+    return request.promise;
+  };
+  async function Tab(props: { id: string }) {
+    const name = await load(props.id);
+    return <b>{name}</b>;
+  }
+  const { el } = mount(() => (
+    <Loading fallback={<i>loading</i>}>
+      <div>
+        <Show when={tab() === "a"} fallback={<Tab id="b" />}>
+          <Tab id="a" />
+        </Show>
+      </div>
+    </Loading>
+  ));
+  pending.get("a")!.resolve("A");
+  await settle();
+  expect(el.innerHTML).toBe("<div><b>A</b></div>");
+
+  setTab("b");
+  tick();
+  expect(el.innerHTML).toBe("<div><b>A</b></div>");
+
+  setTab("a");
+  tick();
+  expect(el.innerHTML).toBe("<div><b>A</b></div>");
+
+  pending.get("b")!.resolve("B");
+  await settle();
+  expect(el.innerHTML).toBe("<div><b>A</b></div>");
+});

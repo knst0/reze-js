@@ -3,6 +3,27 @@ import { computed, untrack } from "@rezejs/signals";
 import type { JSX } from "./jsx";
 
 /**
+ * Replaces a flow's shown side: builds `build(key())` untracked whenever `key()` changes.
+ */
+export type Swap = <K>(key: () => K, build: (key: K) => JSX.Element) => () => JSX.Element;
+
+export function swapNow<K>(key: () => K, build: (key: K) => JSX.Element): () => JSX.Element {
+  return computed(() => {
+    const current = key();
+    return untrack(() => build(current));
+  });
+}
+
+let swap: Swap = swapNow;
+
+/**
+ * Sets how `branch` and `choose` swap sides; `loading` installs the holding swap.
+ */
+export function setSwap(next: Swap): void {
+  swap = next;
+}
+
+/**
  * Shows `child` while `when()` is truthy, else `fallback`. The shown side is rebuilt, untracked, only when truthiness
  * flips; `child` receives a cached getter of `when()`.
  */
@@ -10,7 +31,7 @@ export function branch<T>(when: () => T, child: (value: () => T) => JSX.Element,
   const isShown = computed(() => !!when());
   let value: (() => T) | undefined;
   const read = (): T => (value ??= computed(when))();
-  return computed(() => (isShown() ? untrack(() => child(read)) : fallback === undefined ? undefined : untrack(fallback)));
+  return swap(isShown, (shown) => (shown ? child(read) : fallback === undefined ? undefined : fallback()));
 }
 
 /**
@@ -30,11 +51,5 @@ export function choose(
     }
     return -1;
   });
-  return computed(() => {
-    const i = index();
-    if (i < 0) {
-      return fallback === undefined ? undefined : untrack(fallback);
-    }
-    return untrack(() => children[i]!(whens[i]!));
-  });
+  return swap(index, (i) => (i < 0 ? (fallback === undefined ? undefined : fallback()) : children[i]!(whens[i]!)));
 }

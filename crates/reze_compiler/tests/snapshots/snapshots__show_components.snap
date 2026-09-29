@@ -1,0 +1,11 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { Show } from \"reze-js\";\nconst a = <div><Show when={a()} fallback={<B />}><C /></Show></div>;"
+---
+import { Show } from "reze-js";
+import { template as _$template, insert as _$insert, branch as _$branch, createComponent as _$createComponent } from "reze-js";
+const a = (() => {
+  var _el$ = _$template("<div>");
+  _$insert(_el$, _$branch(() => a(), () => _$createComponent(C, {}), () => _$createComponent(B, {})));
+  return _el$;
+})();

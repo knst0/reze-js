@@ -1,6 +1,6 @@
 use oxc_allocator::Vec;
 use oxc_ast::ast::*;
-use oxc_ast_visit::Visit;
+use oxc_ast_visit::{Visit, walk};
 use oxc_span::GetSpan;
 
 use super::constant::{is_dynamic, literal_truthy, static_text};
@@ -263,8 +263,9 @@ impl<'a> Lowerer<'a, '_> {
         }
     }
 
-    /// A flow tag inserted into a native element; a `<Show>` without a function child becomes a
-    /// conditional over one memo of `when`'s truthiness.
+    /// A flow tag inserted into a native element; a `<Show>` without a function child or components
+    /// becomes a conditional over one memo of `when`'s truthiness, while one holding a component
+    /// or intrinsic element stays a `branch` so `loading` can hold its side until the new one is ready.
     fn native_flow(&mut self, el: &JSXElement<'a>, intrinsic: Intrinsic) -> Child<'a> {
         let jsx = self.control_flow(el, intrinsic);
         let Jsx::Flow(flow) = jsx else { return Child::Jsx(jsx) };
@@ -273,7 +274,7 @@ impl<'a> Lowerer<'a, '_> {
                 when,
                 child: Render::Child(consequent),
                 fallback: fallback @ (None | Some(Render::Child(_))),
-            }) => {
+            }) if !self.contains_component(el) => {
                 let alternate = match fallback {
                     Some(Render::Child(child)) => Some(inline(child)),
                     _ => None,
@@ -304,6 +305,28 @@ impl<'a> Lowerer<'a, '_> {
         container.expression.as_expression().is_some_and(|e| {
             is_boolean(e, self.analysis) && self.source.as_bytes()[e.span().start as usize] != b'{'
         })
+    }
+
+    /// Whether `el` holds a component or intrinsic element among its children or its attribute
+    /// values; such a `<Show>` stays a `branch` instead of becoming a conditional.
+    fn contains_component(&self, el: &JSXElement<'a>) -> bool {
+        let mut check = ComponentCheck { lowerer: self, found: false };
+        for child in &el.children {
+            check.visit_jsx_child(child);
+            if check.found {
+                return true;
+            }
+        }
+        for item in &el.opening_element.attributes {
+            let JSXAttributeItem::Attribute(a) = item else { continue };
+            if let Some(value) = a.value.as_ref() {
+                check.visit_jsx_attribute_value(value);
+                if check.found {
+                    return true;
+                }
+            }
+        }
+        check.found
     }
 
     /// The value an `insert` receives for a child expression.
@@ -379,6 +402,25 @@ impl<'a> Lowerer<'a, '_> {
             Child::Expr(ExprChild::Getter(self.getter(e)))
         } else {
             Child::Expr(ExprChild::Static(self.expr(e)))
+        }
+    }
+}
+
+/// Finds a component or intrinsic element for `contains_component`.
+struct ComponentCheck<'l, 'a, 'f> {
+    lowerer: &'l Lowerer<'a, 'f>,
+    found: bool,
+}
+
+impl<'a, 'f> Visit<'a> for ComponentCheck<'_, 'a, 'f> {
+    fn visit_jsx_element(&mut self, el: &JSXElement<'a>) {
+        if self.found {
+            return;
+        }
+        if !matches!(self.lowerer.tag_of(&el.opening_element.name), Tag::Native(_)) {
+            self.found = true;
+        } else {
+            walk::walk_jsx_element(self, el);
         }
     }
 }
