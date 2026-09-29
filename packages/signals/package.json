@@ -32,12 +32,15 @@
   },
   "scripts": {
     "bench": "vitest bench --run",
+    "bench:codspeed": "NODE_ENV=production node benches/codspeed.ts",
     "bench:update": "REZE_BENCH_UPDATE=1 vitest bench --run",
     "build": "tsdown",
     "test": "vitest run && vitest run --config vitest.node.config.mts"
   },
   "devDependencies": {
+    "@codspeed/tinybench-plugin": "^5.7.1",
     "reactive-framework-test-suite": "0.0.2",
-    "rolldown": "^1.2.11"
+    "rolldown": "^1.2.11",
+    "tinybench": "^6.2.0"
   }
 }
