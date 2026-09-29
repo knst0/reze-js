@@ -672,6 +672,16 @@ importers:
         specifier: ^8.3.0
         version: 8.3.1(@types/node@26.6.2)(esbuild@0.28.2)(jiti@2.7.0)
 
+  examples/async-todos:
+    dependencies:
+      reze-js:
+        specifier: workspace:*
+        version: link:../../packages/reze-js
+    devDependencies:
+      '@rezejs/vite-plugin':
+        specifier: workspace:*
+        version: link:../../packages/vite-plugin
+
   examples/counter:
     dependencies:
       reze-js:
