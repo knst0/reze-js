@@ -10,6 +10,7 @@ use oxc_syntax::symbol::SymbolId;
 
 use crate::diagnostic::{Code, Report};
 use crate::kind::{Kind, static_kind};
+use crate::lower::async_component::AsyncFacts;
 use crate::lower::constant::static_text;
 use crate::lower::props::PropsFacts;
 
@@ -66,6 +67,7 @@ pub struct Fold {
 pub struct Analysis<'s> {
     pub scoping: &'s Scoping,
     pub props: PropsFacts,
+    pub asyncs: AsyncFacts,
     named: HashMap<SymbolId, Primitive>,
     namespaces: HashSet<SymbolId>,
     getter_refs: HashSet<ReferenceId>,
@@ -151,6 +153,7 @@ pub fn analyze<'a, 's>(
     let mut analysis = Analysis {
         scoping,
         props: PropsFacts::collect(program, scoping),
+        asyncs: AsyncFacts::collect(program, scoping, nodes),
         named: HashMap::new(),
         namespaces: HashSet::new(),
         getter_refs: HashSet::new(),

@@ -20,7 +20,7 @@ function requestsOf(): { requests: Record<number, PromiseWithResolvers<string>>;
   return { requests, load };
 }
 
-test("an async component renders once its await settles, keeps its content while reloading, and holds state built after the await", async () => {
+test("an async component renders once its await settles, and a reload updates its values in place, keeping the nodes and state its body built", async () => {
   const [id, setId] = signal(1);
   const { requests, load } = requestsOf();
   async function User(props: { id: number }) {
@@ -42,6 +42,7 @@ test("an async component renders once its await settles, keeps its content while
   el.querySelector("button")!.click();
   tick();
   expect(el.innerHTML).toBe("<button>a:1</button>");
+  const button = el.querySelector("button");
 
   setId(2);
   tick();
@@ -49,7 +50,8 @@ test("an async component renders once its await settles, keeps its content while
 
   requests[2].resolve("b");
   await settle();
-  expect(el.innerHTML).toBe("<button>b:0</button>");
+  expect(el.innerHTML).toBe("<button>b:1</button>");
+  expect(el.querySelector("button")).toBe(button);
 });
 
 test("a source read by a later await reloads the component", async () => {
@@ -83,13 +85,13 @@ test("the body of an async component never re-runs for the sources it reads", as
   root(() => {
     const child = asyncComponent(
       async (c) => [c.get(id) * 10],
-      ([n]) => {
-        bodies.push(`${n}${label()}`);
-        return n;
+      (values) => {
+        bodies.push(`${values()[0]}${label()}`);
+        return () => values()[0];
       },
     );
     effect(() => {
-      seen.push(child());
+      seen.push(child()?.());
     });
   });
   await settle();
@@ -100,18 +102,20 @@ test("the body of an async component never re-runs for the sources it reads", as
   await settle();
 
   expect(seen).toEqual([undefined, 10, 20]);
-  expect(bodies).toEqual(["10a", "20b"]);
+  expect(bodies).toEqual(["10a"]);
 });
 
-test("a new load disposes what the previous body created", async () => {
+test("a reload keeps what the body created until the component is disposed", async () => {
   const [id, setId] = signal(1);
-  const cleaned: number[] = [];
-  root(() => {
+  const cleaned: string[] = [];
+  let dispose!: () => void;
+  root((d) => {
+    dispose = d;
     const child = asyncComponent(
       async (c) => [c.get(id)],
-      ([n]) => {
-        onCleanup(() => cleaned.push(n!));
-        return n;
+      (values) => {
+        onCleanup(() => cleaned.push("body"));
+        return values()[0];
       },
     );
     effect(() => {
@@ -123,7 +127,9 @@ test("a new load disposes what the previous body created", async () => {
   flush();
   await settle();
 
-  expect(cleaned).toEqual([1]);
+  expect(cleaned).toEqual([]);
+  dispose();
+  expect(cleaned).toEqual(["body"]);
 });
 
 test("a rejected load reaches catchError and the previous content stays", async () => {
@@ -139,7 +145,7 @@ test("a rejected load reaches catchError and the previous content stays", async 
             if (current === 2) throw new Error("boom");
             return [current];
           },
-          ([n]) => n,
+          (values) => values()[0],
         );
         effect(() => {
           child();

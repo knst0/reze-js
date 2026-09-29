@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use oxc_span::Span;
 
 use super::{Emitter, Helper};
@@ -42,6 +44,14 @@ impl<'a> Emitter<'a, '_> {
                 out.push("(async (");
                 out.push(context.unwrap_or_default());
                 out.push(") => {");
+            }
+            ScriptEdit::AsyncRead { values, index, shorthand } => {
+                if *shorthand {
+                    self.src(out, span);
+                    out.push(": ");
+                }
+                out.push(values);
+                let _ = write!(out, "()[{index}]");
             }
             ScriptEdit::Hot(HotEdit::AfterDeclaration { name }) => {
                 out.push("\n");

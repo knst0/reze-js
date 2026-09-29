@@ -1,13 +1,15 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, walk};
-use oxc_semantic::Scoping;
+use oxc_semantic::{AstNodes, Scoping};
 use oxc_span::{GetSpan, Span};
+use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 
-use super::{Lowerer, has_jsx};
+use super::props::is_declared_component;
+use super::{Lowerer, has_jsx, is_component_name};
 use crate::diagnostic::{Code, Report};
 use crate::ir::{Hole, HoleKind, ScriptEdit};
 
@@ -17,7 +19,8 @@ pub struct AsyncFunction<'b, 'a> {
     pub return_type: Option<&'b TSTypeAnnotation<'a>>,
 }
 
-struct Reject {
+#[derive(Clone, Copy)]
+pub(crate) struct Reject {
     reason: &'static str,
     span: Span,
 }
@@ -63,6 +66,8 @@ impl<'a> Visit<'a> for ReturnCheck {
 struct References<'s> {
     scoping: &'s Scoping,
     symbols: HashSet<SymbolId>,
+    /// Value references in visit order, with the symbol each resolves to.
+    ordered: std::vec::Vec<(ReferenceId, SymbolId)>,
 }
 
 impl<'a> Visit<'a> for References<'_> {
@@ -71,8 +76,189 @@ impl<'a> Visit<'a> for References<'_> {
             && let Some(symbol) = self.scoping.get_reference(reference).symbol_id()
         {
             self.symbols.insert(symbol);
+            if self.scoping.get_reference(reference).flags().is_value() {
+                self.ordered.push((reference, symbol));
+            }
         }
     }
+}
+
+/// How an `async` component splits: the load step runs `statements[..=last]` once per load,
+/// and the body reads each awaited value through a getter.
+pub struct AsyncPlan {
+    pub first: usize,
+    pub last: usize,
+    pub tracked: std::vec::Vec<Span>,
+    /// Awaited bindings read after the last await, in declaration order.
+    pub values: std::vec::Vec<String>,
+}
+
+/// The split of every `async` component in a module, collected in the analysis phase:
+/// by the start of the component function its plan (or why it cannot be rewritten),
+/// and every awaited-value reference in a body → (component function start, values index).
+#[derive(Default)]
+pub struct AsyncFacts {
+    plans: HashMap<u32, Result<AsyncPlan, Reject>>,
+    reads: HashMap<ReferenceId, (u32, usize)>,
+}
+
+impl AsyncFacts {
+    pub fn collect(program: &Program<'_>, scoping: &Scoping, nodes: &AstNodes<'_>) -> Self {
+        let mut collector = AsyncCollector { scoping, nodes, facts: AsyncFacts::default() };
+        collector.visit_program(program);
+        collector.facts
+    }
+
+    pub fn plan(&self, function_start: u32) -> Option<&Result<AsyncPlan, Reject>> {
+        self.plans.get(&function_start)
+    }
+
+    pub fn is_read(&self, id: &IdentifierReference<'_>) -> bool {
+        id.reference_id.get().is_some_and(|r| self.reads.contains_key(&r))
+    }
+
+    pub fn read(&self, id: &IdentifierReference<'_>) -> Option<(u32, usize)> {
+        id.reference_id.get().and_then(|r| self.reads.get(&r)).copied()
+    }
+}
+
+/// Components as the lowering sees them: `async function C` with a capitalized name, or
+/// `const C = …` with an async arrow with a block body or an async function expression
+/// that is not itself named as a component.
+struct AsyncCollector<'c, 's> {
+    scoping: &'s Scoping,
+    nodes: &'c AstNodes<'c>,
+    facts: AsyncFacts,
+}
+
+impl AsyncCollector<'_, '_> {
+    fn component(&mut self, start: u32, statements: &[Statement<'_>]) {
+        let Some(result) = plan(start, statements, self.scoping, self.nodes) else { return };
+        match result {
+            Ok((plan, reads)) => {
+                self.facts.reads.extend(reads);
+                self.facts.plans.insert(start, Ok(plan));
+            }
+            Err(reject) => {
+                self.facts.plans.insert(start, Err(reject));
+            }
+        }
+    }
+}
+
+impl<'a> Visit<'a> for AsyncCollector<'_, '_> {
+    fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
+        if it.r#async
+            && !it.generator
+            && let Some(id) = &it.id
+            && is_component_name(id.name.as_str())
+            && let Some(body) = &it.body
+        {
+            self.component(it.span.start, &body.statements);
+        }
+        walk::walk_function(self, it, flags);
+    }
+
+    fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
+        if let BindingPattern::BindingIdentifier(id) = &it.id
+            && is_component_name(id.name.as_str())
+            && let Some(init) = it.init.as_ref().map(Expression::without_parentheses)
+        {
+            match init {
+                Expression::ArrowFunctionExpression(arrow) if arrow.r#async => {
+                    if let ArrowFunctionBody::FunctionBody(body) = &arrow.body {
+                        self.component(arrow.span.start, &body.statements);
+                    }
+                }
+                Expression::FunctionExpression(function)
+                    if function.r#async
+                        && !function.generator
+                        && is_declared_component(function) =>
+                {
+                    if let Some(body) = &function.body {
+                        self.component(function.span.start, &body.statements);
+                    }
+                }
+                _ => {}
+            }
+        }
+        walk::walk_variable_declarator(self, it);
+    }
+}
+
+/// An awaited-value reference → (component function start, values index).
+type AsyncReads = std::vec::Vec<(ReferenceId, (u32, usize))>;
+
+/// The plan for `statements`, `None` when nothing awaits. `values` keeps declaration order,
+/// deduplicated by symbol; every value-position reference after the last await is recorded
+/// with its index. A value assigned anywhere is rejected (`value-reassigned`).
+fn plan(
+    function_start: u32,
+    statements: &[Statement<'_>],
+    scoping: &Scoping,
+    nodes: &AstNodes<'_>,
+) -> Option<Result<(AsyncPlan, AsyncReads), Reject>> {
+    let (first, last) = await_range(statements)?;
+    let mut tracked = std::vec::Vec::new();
+    for (i, statement) in statements[..=last].iter().enumerate() {
+        let reject = |reason| Reject { reason, span: statement.span() };
+        if has_jsx(|check| check.visit_statement(statement)) {
+            return Some(Err(reject("jsx-before-await")));
+        }
+        if contains_return(statement) {
+            return Some(Err(reject("return-before-await")));
+        }
+        if i < first {
+            continue;
+        }
+        if contains_await(statement) {
+            let operand = match await_operand(statement) {
+                Ok(operand) => operand,
+                Err(reject) => return Some(Err(reject)),
+            };
+            if i > first {
+                tracked.push(operand.span());
+            }
+        } else if let Statement::VariableDeclaration(declaration) = statement {
+            tracked.extend(
+                declaration.declarations.iter().filter_map(|d| d.init.as_ref()).map(GetSpan::span),
+            );
+        } else {
+            return Some(Err(reject("statement-between-awaits")));
+        }
+    }
+
+    let mut declared = std::vec::Vec::new();
+    statements[..=last].iter().for_each(|statement| declared_symbols(statement, &mut declared));
+    let mut references =
+        References { scoping, symbols: HashSet::new(), ordered: std::vec::Vec::new() };
+    statements[last + 1..].iter().for_each(|statement| references.visit_statement(statement));
+    let mut seen = HashSet::new();
+    let kept: std::vec::Vec<(SymbolId, &str)> = declared
+        .into_iter()
+        .filter(|(symbol, _)| references.symbols.contains(symbol) && seen.insert(*symbol))
+        .collect();
+    for (symbol, _) in &kept {
+        if let Some(&r) = scoping
+            .get_resolved_reference_ids(*symbol)
+            .iter()
+            .find(|r| scoping.get_reference(**r).is_write())
+        {
+            let span = nodes.kind(scoping.get_reference(r).node_id()).span();
+            return Some(Err(Reject { reason: "value-reassigned", span }));
+        }
+    }
+    let mut positions = HashMap::new();
+    for (index, (symbol, _)) in kept.iter().enumerate() {
+        positions.insert(*symbol, index);
+    }
+    let values = kept.iter().map(|(_, name)| name.to_string()).collect();
+    let reads = references
+        .ordered
+        .into_iter()
+        .filter_map(|(r, symbol)| positions.get(&symbol).map(|&index| (r, (function_start, index))))
+        .collect();
+    Some(Ok((AsyncPlan { first, last, tracked, values }, reads)))
 }
 
 fn contains_await(statement: &Statement<'_>) -> bool {
@@ -140,76 +326,50 @@ fn declared_symbols<'s, 'a>(statement: &'s Statement<'a>, out: &mut Vec<(SymbolI
 
 impl<'a> Lowerer<'a, '_> {
     /// The holes turning `async` component `function` into
-    /// `return asyncComponent(async (c) => { …awaits; return [values]; }, ([values]) => { …rest });`,
+    /// `return asyncComponent(async (c) => { …awaits; return [values]; }, (v) => { …rest reading v()[i] });`,
     /// none when the body never awaits or has a shape that cannot be rewritten (reported).
     pub(super) fn async_component(
         &mut self,
         name: &str,
         function: &AsyncFunction<'_, 'a>,
     ) -> std::vec::Vec<Hole<'a>> {
-        let Some((first, last)) = await_range(&function.body.statements) else {
-            return std::vec::Vec::new();
-        };
-        match self.async_holes(function, first, last) {
-            Ok(holes) => holes,
-            Err(Reject { reason, span }) => {
+        let analysis = self.analysis;
+        match analysis.asyncs.plan(function.span.start) {
+            None => std::vec::Vec::new(),
+            Some(Err(reject)) => {
+                let Reject { reason, span } = *reject;
                 let report = Report::new(Code::AsyncComponentShape, span);
                 self.report(report.arg("component", name).arg("reason", reason));
                 std::vec::Vec::new()
             }
+            Some(Ok(plan)) => self.async_holes(function, plan),
         }
+    }
+
+    /// The read replacing `id` at `span` with `values()[index]`; `key: ` first when `shorthand`.
+    /// `None` when the component never split (it stays `async`, or never awaited).
+    pub(super) fn async_read(
+        &mut self,
+        id: &IdentifierReference<'a>,
+        span: Span,
+        shorthand: bool,
+    ) -> Option<Hole<'a>> {
+        let (start, index) = self.analysis.asyncs.read(id)?;
+        let values = *self.async_values.get(&start)?;
+        Some(Hole {
+            span,
+            kind: HoleKind::Script(ScriptEdit::AsyncRead { values, index, shorthand }),
+        })
     }
 
     fn async_holes(
         &mut self,
         function: &AsyncFunction<'_, 'a>,
-        first: usize,
-        last: usize,
-    ) -> Result<std::vec::Vec<Hole<'a>>, Reject> {
+        plan: &AsyncPlan,
+    ) -> std::vec::Vec<Hole<'a>> {
         let statements = &function.body.statements;
-        let mut tracked = std::vec::Vec::new();
-        for (i, statement) in statements[..=last].iter().enumerate() {
-            let reject = |reason| Reject { reason, span: statement.span() };
-            if has_jsx(|check| check.visit_statement(statement)) {
-                return Err(reject("jsx-before-await"));
-            }
-            if contains_return(statement) {
-                return Err(reject("return-before-await"));
-            }
-            if i < first {
-                continue;
-            }
-            if contains_await(statement) {
-                let operand = await_operand(statement)?;
-                if i > first {
-                    tracked.push(operand.span());
-                }
-            } else if let Statement::VariableDeclaration(declaration) = statement {
-                tracked.extend(
-                    declaration
-                        .declarations
-                        .iter()
-                        .filter_map(|d| d.init.as_ref())
-                        .map(GetSpan::span),
-                );
-            } else {
-                return Err(reject("statement-between-awaits"));
-            }
-        }
-
-        let mut declared = std::vec::Vec::new();
-        statements[..=last].iter().for_each(|statement| declared_symbols(statement, &mut declared));
-        let mut references = References { scoping: self.analysis.scoping, symbols: HashSet::new() };
-        statements[last + 1..].iter().for_each(|statement| references.visit_statement(statement));
-        let mut seen = HashSet::new();
-        let values: std::vec::Vec<&str> = declared
-            .into_iter()
-            .filter(|(symbol, _)| references.symbols.contains(symbol) && seen.insert(*symbol))
-            .map(|(_, name)| name)
-            .collect();
-        let values = values.join(", ");
-
-        let context = (!tracked.is_empty()).then(|| self.fresh("_c$"));
+        debug_assert!(plan.first <= plan.last && plan.last < statements.len());
+        let context = (!plan.tracked.is_empty()).then(|| self.fresh("_c$"));
         let mut holes = std::vec::Vec::new();
 
         let start = function.span.start as usize;
@@ -232,7 +392,7 @@ impl<'a> Lowerer<'a, '_> {
             kind: HoleKind::Script(ScriptEdit::AsyncOpen { context }),
         });
         if let Some(context) = context {
-            for span in tracked {
+            for span in &plan.tracked {
                 let is_object = self.source.as_bytes()[span.start as usize] == b'{';
                 let (open, close) = if is_object { ("(", "))") } else { ("", ")") };
                 let call = self.str(&format!("{context}.get(() => {open}"));
@@ -240,14 +400,16 @@ impl<'a> Lowerer<'a, '_> {
                 holes.push(insertion(Span::empty(span.end), close));
             }
         }
-        let split = if values.is_empty() {
+        let split = if plan.values.is_empty() {
             "\nreturn [];\n}, () => {".to_string()
         } else {
-            format!("\nreturn [{values}];\n}}, ([{values}]) => {{")
+            let values_name = self.fresh("_v$");
+            self.async_values.insert(function.span.start, values_name);
+            format!("\nreturn [{}];\n}}, ({values_name}) => {{", plan.values.join(", "))
         };
-        holes.push(insertion(Span::empty(statements[last].span().end), self.str(&split)));
+        holes.push(insertion(Span::empty(statements[plan.last].span().end), self.str(&split)));
         holes.push(insertion(Span::empty(function.body.span.end - 1), "});"));
-        Ok(holes)
+        holes
     }
 }
 

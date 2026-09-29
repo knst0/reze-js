@@ -7,8 +7,8 @@ import { asyncComponent as _$asyncComponent, template as _$template, insert as _
 export function Todos(props: { api: Api }): JSX.Element {
   return _$asyncComponent(async () => {const initial = await props.api.list();
 return [initial];
-}, ([initial]) => {
-  const [todos, layer] = optimistic(() => initial);
+}, (_v$) => {
+  const [todos, layer] = optimistic(() => _v$()[0]);
   {
   var _el$ = _$template("<ul>");
   _$insert(_el$, () => todos().length);

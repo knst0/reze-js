@@ -61,6 +61,13 @@ pub enum ScriptEdit<'a> {
     AsyncOpen {
         context: Option<&'a str>,
     },
+    /// An awaited binding read in an async component body → `values()[index]`; `key: ` first
+    /// when `shorthand`.
+    AsyncRead {
+        values: &'a str,
+        index: usize,
+        shorthand: bool,
+    },
     Hot(HotEdit<'a>),
 }
 

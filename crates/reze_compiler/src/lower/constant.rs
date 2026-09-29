@@ -206,7 +206,7 @@ impl<'a> Visit<'a> for DynamicCheck<'_, '_> {
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
-        self.found |= self.analysis.props.is_read(it);
+        self.found |= self.analysis.props.is_read(it) || self.analysis.asyncs.is_read(it);
     }
 
     fn visit_jsx_element(&mut self, _: &JSXElement<'a>) {

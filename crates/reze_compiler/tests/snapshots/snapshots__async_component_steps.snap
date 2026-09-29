@@ -9,8 +9,8 @@ export const Card = (_props$: { id: number }) => {
   const { Panel } = await _c$.get(() => import("./panel"));
   const posts = await _c$.get(() => ({ then: (done) => done(load(user.id)) }));
 return [user, name, Panel, posts];
-}, ([user, name, Panel, posts]) => {
-  return _$createComponent(Panel, { title: name, get children() { return [() => user.role, () => posts.length]; } });
+}, (_v$) => {
+  return _$createComponent(_v$()[2], { get title() { return _v$()[1]; }, get children() { return [() => _v$()[0].role, () => _v$()[3].length]; } });
 });};
 // info
 [PROPS_REWRITTEN] `Card` destructures its props, so the pattern became one props object and each destructured name a lazy read of it.

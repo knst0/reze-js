@@ -159,6 +159,14 @@ const CASES: &[(&str, &str)] = &[
         "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}",
     ),
     (
+        "async_component_reads",
+        "import { optimistic } from \"reze-js\";\nexport async function Card(props) {\n  const user = await fetchUser(props.id);\n  const [shown] = optimistic(() => user);\n  return <Panel data={{ user }} name={user.name} onPick={() => pick(user)}>{shown().id}</Panel>;\n}",
+    ),
+    (
+        "async_component_reassigned",
+        "export async function Card(props) {\n  let user = await fetchUser(props.id);\n  user = normalize(user);\n  return <p>{user.name}</p>;\n}",
+    ),
+    (
         "async_helpers_untouched",
         "async function load() { const r = await fetch(u); return r.json(); }\nexport function Button() {\n  return <button onClick={async () => { const d = await load(); show(<b>{d}</b>); }}>x</button>;\n}\nexport async function lower() { const d = await load(); return <i>{d}</i>; }",
     ),

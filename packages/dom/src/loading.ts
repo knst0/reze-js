@@ -58,26 +58,28 @@ function releaseOnFirstSettle(track: (delta: number) => void, step: AsyncCompute
 }
 
 /**
- * The child of an async component: `body` runs untracked with the values `load` resolved with, and again with the next
- * ones when `load` re-runs. Renders `undefined` until the first run settles, keeps the previous content while a re-run
- * is pending, and throws the rejection of the latest run into the surrounding `catchError`. Inside a {@link Loading}
- * the boundary waits for the first run.
+ * The child of an async component: `body` runs once, untracked, after the first run of `load` resolves, and reads
+ * the resolved values through `values()`, so a re-run updates them in place. Renders `undefined` until then and
+ * throws the rejection of the latest run into the surrounding `catchError`.
  */
 export function asyncComponent<V extends unknown[], R>(
   load: (c: AsyncContext) => PromiseLike<V>,
-  body: (values: V) => R,
+  body: (values: () => V) => R,
 ): () => R | undefined {
   const track = useContext(loadingContext);
   const step = asyncComputed(load);
   if (track !== undefined) {
     releaseOnFirstSettle(track, step);
   }
+  const values = (): V => step.value()!;
+  const isLoaded = computed(() => step.value() !== undefined);
+  const view = computed(() => (isLoaded() ? untrack(() => body(values)) : undefined));
   return computed(() => {
+    const current = view();
     const error = step.error();
     if (error !== undefined) {
       throw error;
     }
-    const values = step.value();
-    return values === undefined ? undefined : untrack(() => body(values));
+    return current;
   });
 }

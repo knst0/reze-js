@@ -1,4 +1,4 @@
-mod async_component;
+pub(crate) mod async_component;
 mod attribute;
 mod children;
 mod component;
@@ -54,6 +54,8 @@ pub struct Lowerer<'a, 'f> {
     props_temporaries: HashMap<u32, &'a str>,
     /// Row callbacks of the `<For>` elements being lowered, innermost last.
     for_scopes: std::vec::Vec<selector::ForScope<'a>>,
+    /// Values getters of split `async` components, by the start of the component function.
+    async_values: HashMap<u32, &'a str>,
     /// Names of the functions initializing a component's `const`, by the start of the function.
     component_inits: HashMap<u32, &'a str>,
     hot: hot::HotPlan<'a>,
@@ -81,6 +83,7 @@ impl<'a, 'f> Lowerer<'a, 'f> {
             props_temporaries: HashMap::new(),
             component_inits: HashMap::new(),
             for_scopes: std::vec::Vec::new(),
+            async_values: HashMap::new(),
             hot: hot::HotPlan::default(),
         }
     }
@@ -171,6 +174,7 @@ impl<'a, 'f> Lowerer<'a, 'f> {
             && !call.optional
             && call.type_arguments.is_none()
             && !self.analysis.props.is_read(id)
+            && !self.analysis.asyncs.is_read(id)
         {
             return Getter::Call(id.span);
         }
@@ -462,13 +466,18 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
         if let Some(hole) = self.lowerer.props_read(it, it.span, false) {
             self.holes.push(hole);
+        } else if let Some(hole) = self.lowerer.async_read(it, it.span, false) {
+            self.holes.push(hole);
         }
     }
 
     fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
         if it.shorthand
             && let Expression::Identifier(id) = &it.value
-            && let Some(hole) = self.lowerer.props_read(id, it.span, true)
+            && let Some(hole) = self
+                .lowerer
+                .props_read(id, it.span, true)
+                .or_else(|| self.lowerer.async_read(id, it.span, true))
         {
             self.holes.push(hole);
             return;
