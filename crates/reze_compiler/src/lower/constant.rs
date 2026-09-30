@@ -169,7 +169,7 @@ impl ClassKeys {
 
 /// Whether evaluating `e` can read reactive state: a call, tagged template or member access
 /// outside nested functions, a rewritten props read, or with `jsx_is_dynamic` any JSX. Reads
-/// of folded signals are constants.
+/// of folded signals and of the key property of a keyed row are constants.
 pub fn is_dynamic(e: &Expression<'_>, jsx_is_dynamic: bool, analysis: &Analysis<'_>) -> bool {
     let mut check = DynamicCheck { jsx_is_dynamic, analysis, found: false };
     check.visit_expression(e);
@@ -193,8 +193,10 @@ impl<'a> Visit<'a> for DynamicCheck<'_, '_> {
         self.found = true;
     }
 
-    fn visit_static_member_expression(&mut self, _: &StaticMemberExpression<'a>) {
-        self.found = true;
+    fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
+        if !self.analysis.keyed.is_key_read(it) {
+            self.found = true;
+        }
     }
 
     fn visit_computed_member_expression(&mut self, _: &ComputedMemberExpression<'a>) {

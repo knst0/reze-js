@@ -12,6 +12,7 @@ use crate::diagnostic::{Code, Report};
 use crate::kind::{Kind, static_kind};
 use crate::lower::async_component::AsyncFacts;
 use crate::lower::constant::static_text;
+use crate::lower::keyed::KeyedRows;
 use crate::lower::props::PropsFacts;
 
 const RUNTIME_MODULES: [&str; 3] = ["reze-js", "@rezejs/dom", "@rezejs/signals"];
@@ -77,6 +78,7 @@ pub struct Analysis<'s> {
     pub scoping: &'s Scoping,
     pub props: PropsFacts,
     pub asyncs: AsyncFacts,
+    pub keyed: KeyedRows,
     named: HashMap<SymbolId, Primitive>,
     namespaces: HashSet<SymbolId>,
     getter_refs: HashSet<ReferenceId>,
@@ -163,6 +165,7 @@ pub fn analyze<'a, 's>(
         scoping,
         props: PropsFacts::collect(program, scoping),
         asyncs: AsyncFacts::collect(program, scoping, nodes),
+        keyed: KeyedRows::default(),
         named: HashMap::new(),
         namespaces: HashSet::new(),
         getter_refs: HashSet::new(),
@@ -175,6 +178,7 @@ pub fn analyze<'a, 's>(
         return analysis;
     }
     report_intrinsic_values(&analysis, nodes, reports);
+    analysis.keyed = KeyedRows::collect(program, &analysis, nodes);
     let mut collector = Collector {
         analysis: &analysis,
         called: HashSet::new(),

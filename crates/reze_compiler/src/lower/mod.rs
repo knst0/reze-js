@@ -7,6 +7,7 @@ mod control_flow;
 mod debug_name;
 mod element;
 mod hot;
+pub mod keyed;
 pub mod props;
 mod selector;
 

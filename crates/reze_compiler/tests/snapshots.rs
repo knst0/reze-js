@@ -139,6 +139,10 @@ const CASES: &[(&str, &str)] = &[
         "import { For } from \"reze-js\";\nconst a = <ul><For each={rows()} fallback={<li>none</li>}>{(row, i) => <li>{i()}</li>}</For></ul>;\nconst b = <For each={rows()} key={(row) => row.id}>{(row) => <li>{row().name}</li>}</For>;",
     ),
     (
+        "keyed_rows",
+        "import { For } from \"reze-js\";\nconst a = <For each={rows()} key={(r) => r.id}>{(row, i) => <li class={row().id} title={`#${row().id}`} onClick={() => pick(row().id)}>{row().id}{row().name}{row().id.length}{row()?.id}{cond() ? row().id : 0}</li>}</For>;\nconst b = <For each={rows()} key={(r) => r.id} children={(row) => <li>{row().id}</li>} />;\nconst c = <For each={rows()} key={(r) => r.name}>{(row) => <li>{row().id}</li>}</For>;\nconst d = <For each={rows()}>{(row) => <li>{row().id}</li>}</For>;\nconst e = <For each={rows()} key={(r) => r.id}>{(row) => <li>{(row().id = 5)}{row().id++}{delete row().id}{[row().id] = xs}{row(1).id}</li>}</For>;\nconst f = <For each={rows()} key={(r) => r.id}>{(row) => { row = other; return <li>{row().id}</li>; }}</For>;",
+    ),
+    (
         "switch_match",
         "import { Match, Switch } from \"reze-js\";\nconst a = <div><Switch fallback={<i/>}><Match when={a()}><b/></Match><Match when={b()}>{(v) => <u>{v()}</u>}</Match></Switch></div>;",
     ),

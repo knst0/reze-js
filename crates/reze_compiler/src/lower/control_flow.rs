@@ -371,7 +371,7 @@ impl<'a> Lowerer<'a, '_> {
 }
 
 /// Whitespace-only text and empty `{}` render nothing.
-fn is_meaningful(child: &JSXChild<'_>) -> bool {
+pub(super) fn is_meaningful(child: &JSXChild<'_>) -> bool {
     match child {
         JSXChild::Text(text) => !clean_jsx_text(&decode_entities(text.value.as_str())).is_empty(),
         JSXChild::ExpressionContainer(c) => c.expression.as_expression().is_some(),

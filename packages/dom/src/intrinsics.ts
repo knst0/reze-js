@@ -11,6 +11,10 @@ export interface ShowProps<T> {
 export interface ForProps<T> {
   each: readonly T[] | null | undefined | false;
   fallback?: JSX.Element;
+  /**
+   * A row is kept while its key stays equal. With `key={(item) => item.prop}`, the compiler reads `item().prop` in
+   * that row once, when it is created, so a key property must not be changed in place.
+   */
   key?: (item: T) => unknown;
   children: (item: () => T, index: () => number) => JSX.Element;
 }
