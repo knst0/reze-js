@@ -1,6 +1,7 @@
 node_modules
 /target
 *.node
+/packages/compiler/npm
 dist
 .turbo
 

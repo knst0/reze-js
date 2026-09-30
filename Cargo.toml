@@ -4,4 +4,5 @@ members = ["crates/*"]
 
 [workspace.package]
 edition = "2024"
+publish = false
 license = "MIT"

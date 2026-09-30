@@ -21,6 +21,7 @@
     "test:webkit": "cross-env VITEST_ENV=webkit vitest run"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.3",
     "@types/node": "^26.6.2",
     "@vitest/browser-playwright": "5.0.1",
     "cross-env": "^10.1.0",

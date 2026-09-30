@@ -6,6 +6,7 @@ packages:
   - benches/router/apps/*
   - examples/*
   - packages/*
+  - packages/compiler/npm/*
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
