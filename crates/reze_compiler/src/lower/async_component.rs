@@ -113,6 +113,11 @@ impl AsyncFacts {
         self.plans.get(&function_start)
     }
 
+    /// Whether `reference` reads a binding of the load step from the body, through the values array.
+    pub fn is_awaited_value(&self, reference: ReferenceId) -> bool {
+        self.reads.contains_key(&reference)
+    }
+
     pub fn is_read(&self, id: &IdentifierReference<'_>) -> bool {
         id.reference_id.get().is_some_and(|r| self.reads.contains_key(&r))
     }

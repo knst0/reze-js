@@ -103,6 +103,10 @@ const CASES: &[(&str, &str)] = &[
         "import { signal } from \"reze-js\";\nconst [title] = signal(\"Reze\");\nconst [count, setCount] = signal(0);\nexport const a = <h1 onClick={() => setCount(count() + 1)}>{title()}: {count()}</h1>;",
     ),
     (
+        "async_component_unwritten_signal",
+        "import { signal } from \"reze-js\";\nexport async function Card(props) {\n  const [n] = signal(1);\n  const [m] = signal(2);\n  const user = await fetchUser(props.id);\n  return <p title={n()}>{user.name}{m()}{props.id}</p>;\n}\nconst [top] = signal(3);\nexport async function Other() {\n  const user = await fetchUser(top());\n  return <p>{user.name}{top()}</p>;\n}",
+    ),
+    (
         "dead_branches",
         "const DEBUG = false;\nconst a = <div>{false && <b>never</b>}{true ? <i>y</i> : <u>n</u>}{DEBUG && <p />}</div>;",
     ),
@@ -168,7 +172,7 @@ const CASES: &[(&str, &str)] = &[
     ),
     (
         "async_component",
-        "import { optimistic } from \"reze-js\";\nexport async function Todos(props: { api: Api }): Promise<JSX.Element> {\n  const initial = await props.api.list();\n  const [todos, layer] = optimistic(() => initial);\n  return <ul>{todos().length}</ul>;\n}",
+        "import { overlay } from \"reze-js\";\nexport async function Todos(props: { api: Api }): Promise<JSX.Element> {\n  const initial = await props.api.list();\n  const [todos, layer] = overlay(() => initial);\n  return <ul>{todos().length}</ul>;\n}",
     ),
     (
         "async_component_steps",
@@ -184,7 +188,7 @@ const CASES: &[(&str, &str)] = &[
     ),
     (
         "async_component_reads",
-        "import { optimistic } from \"reze-js\";\nexport async function Card(props) {\n  const user = await fetchUser(props.id);\n  const [shown] = optimistic(() => user);\n  return <Panel data={{ user }} name={user.name} onPick={() => pick(user)}>{shown().id}</Panel>;\n}",
+        "import { overlay } from \"reze-js\";\nexport async function Card(props) {\n  const user = await fetchUser(props.id);\n  const [shown] = overlay(() => user);\n  return <Panel data={{ user }} name={user.name} onPick={() => pick(user)}>{shown().id}</Panel>;\n}",
     ),
     (
         "async_component_reassigned",

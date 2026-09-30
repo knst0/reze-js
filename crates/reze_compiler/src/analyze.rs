@@ -199,7 +199,13 @@ pub fn analyze<'a, 's>(
         let is_setter_unused =
             signal.setter.is_none_or(|s| scoping.get_resolved_reference_ids(s).is_empty());
         let is_only_called = getter_refs.iter().all(|r| called.contains(r));
-        if !signal.is_foldable_shape || is_exported || !is_setter_unused || !is_only_called {
+        let is_awaited_value = getter_refs.iter().any(|&r| analysis.asyncs.is_awaited_value(r));
+        if !signal.is_foldable_shape
+            || is_exported
+            || !is_setter_unused
+            || !is_only_called
+            || is_awaited_value
+        {
             continue;
         }
         let fold = analysis.folds.len();
