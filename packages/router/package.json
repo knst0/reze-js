@@ -15,12 +15,12 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./fs": {
-      "import": "./dist/fs/index.js",
-      "types": "./dist/fs/index.d.ts"
+      "types": "./dist/fs/index.d.ts",
+      "import": "./dist/fs/index.js"
     }
   },
   "publishConfig": {
@@ -32,8 +32,8 @@
     "test": "vitest run && vitest run --config vitest.node.config.mts"
   },
   "dependencies": {
-    "@rezejs/dom": "workspace:*",
-    "@rezejs/signals": "workspace:*"
+    "@rezejs/dom": "workspace:^",
+    "@rezejs/signals": "workspace:^"
   },
   "devDependencies": {
     "@codspeed/tinybench-plugin": "^5.7.1",

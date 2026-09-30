@@ -15,12 +15,16 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./jsx-runtime": {
-      "import": "./dist/jsx-runtime.js",
-      "types": "./dist/jsx-runtime.d.ts"
+      "types": "./dist/jsx-runtime.d.ts",
+      "import": "./dist/jsx-runtime.js"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./dist/jsx-dev-runtime.d.ts",
+      "import": "./dist/jsx-dev-runtime.js"
     }
   },
   "publishConfig": {
@@ -32,7 +36,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@rezejs/signals": "workspace:*"
+    "@rezejs/signals": "workspace:^"
   },
   "devDependencies": {
     "@codspeed/tinybench-plugin": "^5.7.1",

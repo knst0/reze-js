@@ -88,9 +88,7 @@ function heldSwap<K>(key: () => K, build: (key: K) => JSX.Element): () => JSX.El
         previous.dispose();
       }
       setCandidate(
-        shown !== undefined && Object.is(next, shown.key)
-          ? shown
-          : runWithOwner(owner, () => openSide(next, build, shown === undefined)),
+        shown !== undefined && Object.is(next, shown.key) ? shown : runWithOwner(owner, () => openSide(next, build, shown === undefined)),
       );
     });
   });

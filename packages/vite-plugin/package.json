@@ -15,8 +15,8 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "publishConfig": {
@@ -27,7 +27,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@rezejs/compiler": "workspace:*"
+    "@rezejs/compiler": "workspace:^"
   },
   "devDependencies": {
     "@rezejs/router": "workspace:*",
@@ -35,6 +35,7 @@
   },
   "peerDependencies": {
     "@rezejs/router": "*",
+    "reze-js": "*",
     "vite": "^6.4.0 || ^7.0.0 || ^8.0.0"
   },
   "peerDependenciesMeta": {

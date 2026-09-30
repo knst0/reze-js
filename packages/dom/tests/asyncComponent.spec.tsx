@@ -310,11 +310,16 @@ test("a rejected load inside Loading reaches catchError and renders nothing", as
     const name = await request.promise;
     return <b>{name}</b>;
   }
-  const { el } = mount(() => catchError(() => (
-    <Loading fallback={<i>loading</i>}>
-      <User />
-    </Loading>
-  ), (error) => errors.push(error)));
+  const { el } = mount(() =>
+    catchError(
+      () => (
+        <Loading fallback={<i>loading</i>}>
+          <User />
+        </Loading>
+      ),
+      (error) => errors.push(error),
+    ),
+  );
   request.reject(new Error("nope"));
   await settle();
   expect((errors[0] as Error).message).toBe("nope");

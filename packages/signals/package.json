@@ -15,16 +15,16 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./devtools": {
-      "import": "./dist/devtools.js",
-      "types": "./dist/devtools.d.ts"
+      "types": "./dist/devtools.d.ts",
+      "import": "./dist/devtools.js"
     },
     "./render": {
-      "import": "./dist/render.js",
-      "types": "./dist/render.d.ts"
+      "types": "./dist/render.d.ts",
+      "import": "./dist/render.js"
     }
   },
   "publishConfig": {

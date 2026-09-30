@@ -717,7 +717,7 @@ importers:
   packages/dom:
     dependencies:
       '@rezejs/signals':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../signals
     devDependencies:
       '@codspeed/tinybench-plugin':
@@ -736,19 +736,19 @@ importers:
   packages/reze-js:
     dependencies:
       '@rezejs/dom':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../dom
       '@rezejs/signals':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../signals
 
   packages/router:
     dependencies:
       '@rezejs/dom':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../dom
       '@rezejs/signals':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../signals
     devDependencies:
       '@codspeed/tinybench-plugin':
@@ -788,8 +788,11 @@ importers:
   packages/vite-plugin:
     dependencies:
       '@rezejs/compiler':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler
+      reze-js:
+        specifier: '*'
+        version: 0.0.0
     devDependencies:
       '@rezejs/router':
         specifier: workspace:*
@@ -4004,6 +4007,9 @@ packages:
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
 
+  reze-js@0.0.0:
+    resolution: {integrity: sha512-NJrPQfx5B8eHMbe58lyUXXsUmOq6ujYEL01arzZEbSPMFQ3ZuRMZgJ33jf0wgYxcBziQA2S8z6nSZ860SV4VHg==}
+
   rolldown-plugin-dts@0.28.6:
     resolution: {integrity: sha512-qKrFtBfRfR2hP233m7Ic9zf3wv6MSYdZghWKMdEO6dRYZGlNfINJAa1P5ZVvyHh3mrcd7IJQvIY8L9vnm+v5rQ==}
     engines: {node: ^22.18.0 || ^24.11.0 || >=26.0.0}
@@ -7202,6 +7208,8 @@ snapshots:
   redux@5.0.1: {}
 
   resolve-pkg-maps@1.0.0: {}
+
+  reze-js@0.0.0: {}
 
   rolldown-plugin-dts@0.28.6(@volar/typescript@2.4.28(typescript@7.0.2))(rolldown@1.2.11)(typescript@7.0.2):
     dependencies:

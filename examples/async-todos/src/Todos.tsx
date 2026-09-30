@@ -42,7 +42,10 @@ async function TodoList() {
   };
 
   const toggle = (todo: Todo) => {
-    commit((list) => list.map((item) => (item.id === todo.id ? { ...item, done: !item.done } : item)), saveTodo({ ...todo, done: !todo.done }));
+    commit(
+      (list) => list.map((item) => (item.id === todo.id ? { ...item, done: !item.done } : item)),
+      saveTodo({ ...todo, done: !todo.done }),
+    );
   };
 
   const add = () => {
@@ -69,7 +72,11 @@ async function TodoList() {
         </For>
       </ul>
       <div class="add">
-        <input value={draft()} onInput={(e: InputEvent) => setDraft((e.currentTarget as HTMLInputElement).value)} placeholder="Something to do" />
+        <input
+          value={draft()}
+          onInput={(e: InputEvent) => setDraft((e.currentTarget as HTMLInputElement).value)}
+          placeholder="Something to do"
+        />
         <button onClick={add}>Add</button>
       </div>
     </section>
