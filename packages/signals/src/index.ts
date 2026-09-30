@@ -6,7 +6,6 @@ export { $signal } from "./dollarSignal";
 export { effect } from "./effect";
 export { effectScope } from "./effectScope";
 export { catchError } from "./error";
-export { type Layer, optimistic } from "./optimistic";
 export { onCleanup, root, untrack, type Owner } from "./owner";
 export { provideContext, useContext, type ContextKey } from "./provide";
 export { flush } from "./scheduler";

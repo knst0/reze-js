@@ -40,7 +40,6 @@ async function bundledNodeKinds(imports: string): Promise<string[]> {
 
 test.each([
   ["signal", ["SignalNode"]],
-  ["optimistic", ["SignalNode", "ComputedNode"]],
   ["computed", ["ComputedNode"]],
   ["effect", ["EffectNode"]],
   ["effectScope", ["EffectScopeNode"]],

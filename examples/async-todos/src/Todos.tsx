@@ -1,4 +1,4 @@
-import { $signal, For, Loading, optimistic } from "reze-js";
+import { $signal, For, Loading, Show } from "reze-js";
 
 interface Todo {
   id: number;
@@ -6,17 +6,23 @@ interface Todo {
   done: boolean;
 }
 
+function delay(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
+}
+
 async function fetchTodos(): Promise<Todo[]> {
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  await delay(600);
   return [
     { id: 1, title: "Learn async components", done: true },
-    { id: 2, title: "Try optimistic updates", done: false },
+    { id: 2, title: "Try async components", done: false },
     { id: 3, title: "Ship the redesign", done: false },
   ];
 }
 
 async function saveTodo(todo: Todo): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 800));
+  await delay(800);
 }
 
 export function Todos() {
@@ -29,38 +35,38 @@ export function Todos() {
 
 async function TodoList() {
   const initial = await fetchTodos();
-  let saved = $signal(initial);
-  const [todos, layer] = optimistic(() => saved);
+  let todos = $signal(initial);
   let draft = $signal("");
+  let saving = $signal(0);
 
-  const commit = (change: (list: Todo[]) => Todo[], save: Promise<void>) => {
-    const drop = layer(change);
-    save.then(() => {
-      saved = change(saved);
-      drop();
-    }, drop);
+  const commit = async (change: (list: Todo[]) => Todo[], todo: Todo) => {
+    saving += 1;
+    try {
+      await saveTodo(todo);
+      todos = change(todos);
+    } finally {
+      saving -= 1;
+    }
   };
 
   const toggle = (todo: Todo) => {
-    commit(
-      (list) => list.map((item) => (item.id === todo.id ? { ...item, done: !item.done } : item)),
-      saveTodo({ ...todo, done: !todo.done }),
-    );
+    const next = { ...todo, done: !todo.done };
+    return commit((list) => list.map((item) => (item.id === todo.id ? next : item)), next);
   };
 
   const add = () => {
     const title = draft.trim();
     if (title === "") return;
-    const fresh = { id: Math.max(...todos().map((todo) => todo.id)) + 1, title, done: false };
+    const fresh = { id: Math.max(...todos.map((todo) => todo.id)) + 1, title, done: false };
     draft = "";
-    commit((list) => [...list, fresh], saveTodo(fresh));
+    return commit((list) => [...list, fresh], fresh);
   };
 
   return (
     <section class="todos">
       <h1>Todos</h1>
       <ul>
-        <For each={todos()}>
+        <For each={todos}>
           {(todo) => (
             <li class={{ done: todo().done }}>
               <label>
@@ -71,6 +77,9 @@ async function TodoList() {
           )}
         </For>
       </ul>
+      <Show when={saving > 0}>
+        <p class="saving">Saving…</p>
+      </Show>
       <div class="add">
         <input
           value={draft}

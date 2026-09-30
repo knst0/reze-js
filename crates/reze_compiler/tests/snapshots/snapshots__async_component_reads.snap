@@ -1,13 +1,13 @@
 ---
 source: crates/reze_compiler/tests/snapshots.rs
-expression: "import { optimistic } from \"reze-js\";\nexport async function Card(props) {\n  const user = await fetchUser(props.id);\n  const [shown] = optimistic(() => user);\n  return <Panel data={{ user }} name={user.name} onPick={() => pick(user)}>{shown().id}</Panel>;\n}"
+expression: "import { overlay } from \"reze-js\";\nexport async function Card(props) {\n  const user = await fetchUser(props.id);\n  const [shown] = overlay(() => user);\n  return <Panel data={{ user }} name={user.name} onPick={() => pick(user)}>{shown().id}</Panel>;\n}"
 ---
-import { optimistic } from "reze-js";
+import { overlay } from "reze-js";
 import { asyncComponent as _$asyncComponent, createComponent as _$createComponent } from "reze-js";
 export function Card(props) {
   return _$asyncComponent(async () => {const user = await fetchUser(props.id);
 return [user];
 }, (_v$) => {
-  const [shown] = optimistic(() => _v$()[0]);
+  const [shown] = overlay(() => _v$()[0]);
   return _$createComponent(Panel, { get data() { return { user: _v$()[0] }; }, get name() { return _v$()[0].name; }, onPick: () => pick(_v$()[0]), get children() { return shown().id; } });
 });}

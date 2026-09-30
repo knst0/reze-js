@@ -7,7 +7,6 @@ import {
   effectScope,
   flush,
   getOwner,
-  optimistic,
   provideContext,
   root,
   runWithOwner,
@@ -17,7 +16,6 @@ import {
   trigger,
   useContext,
   type ContextKey,
-  type Layer,
 } from "@rezejs/signals";
 import { Bench, type FnOptions } from "tinybench";
 
@@ -329,48 +327,6 @@ bench.add("create: effect scopes with signal + effect", () => {
       dispose();
     });
   });
-}
-
-{
-  const LAYERS = 50;
-  const RELAYER_WRITES = 100;
-  const RELAYER_CYCLES = 100;
-  let setBase!: (value: number) => void;
-  let addLayer!: Layer<number>;
-  const hooks = withGraph(() => {
-    const [base, set] = signal(0);
-    setBase = set;
-    const [shown, layer] = optimistic(base);
-    addLayer = layer;
-    for (let i = 0; i < LAYERS; i++) {
-      layer((value) => value + 1);
-    }
-    effect(() => void shown());
-  });
-  let next = 0;
-  bench.add(
-    `optimistic: source write re-applies ${LAYERS} layers`,
-    () => {
-      for (let i = 0; i < RELAYER_WRITES; i++) {
-        next += 1;
-        setBase(next);
-        flush();
-      }
-    },
-    hooks,
-  );
-  bench.add(
-    "optimistic: layer add + remove",
-    () => {
-      for (let i = 0; i < RELAYER_CYCLES; i++) {
-        const drop = addLayer((value) => value + 1);
-        flush();
-        drop();
-        flush();
-      }
-    },
-    hooks,
-  );
 }
 
 await bench.run();
