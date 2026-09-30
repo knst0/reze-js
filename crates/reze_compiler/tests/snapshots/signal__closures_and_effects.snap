@@ -1,0 +1,13 @@
+---
+source: crates/reze_compiler/tests/signal.rs
+expression: "import { $signal, effect } from \"reze-js\";\nlet count = $signal(0);\neffect(() => console.log(count, { count }, [count]));\nexport const inc = () => { count++; };\nexport function reset() {\n  const log = () => count;\n  count = 0;\n  return log;\n}"
+---
+import { signal, effect } from "reze-js";
+const [count, setCount] = signal(0);
+effect(() => console.log(count(), { count: count() }, [count()]));
+export const inc = () => { setCount(count() + 1); };
+export function reset() {
+  const log = () => count();
+  setCount(0);
+  return log;
+}

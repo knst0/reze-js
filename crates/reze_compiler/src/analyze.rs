@@ -15,7 +15,7 @@ use crate::lower::constant::static_text;
 use crate::lower::keyed::KeyedRows;
 use crate::lower::props::PropsFacts;
 
-const RUNTIME_MODULES: [&str; 3] = ["reze-js", "@rezejs/dom", "@rezejs/signals"];
+pub(crate) const RUNTIME_MODULES: [&str; 3] = ["reze-js", "@rezejs/dom", "@rezejs/signals"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Primitive {
@@ -289,7 +289,7 @@ fn report_intrinsic_values(
 }
 
 /// Symbols exported by `export` declarations and local `export { … }` specifiers.
-fn exported_symbols(program: &Program<'_>, scoping: &Scoping) -> HashSet<SymbolId> {
+pub(crate) fn exported_symbols(program: &Program<'_>, scoping: &Scoping) -> HashSet<SymbolId> {
     let mut exported = HashSet::new();
     let resolved = |local: &IdentifierReference<'_>| {
         scoping.get_reference(local.reference_id.get()?).symbol_id()

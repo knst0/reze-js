@@ -1,4 +1,4 @@
-import { For, Loading, optimistic, signal } from "reze-js";
+import { $signal, For, Loading, optimistic } from "reze-js";
 
 interface Todo {
   id: number;
@@ -29,14 +29,14 @@ export function Todos() {
 
 async function TodoList() {
   const initial = await fetchTodos();
-  const [saved, setSaved] = signal(initial);
-  const [todos, layer] = optimistic(saved);
-  const [draft, setDraft] = signal("");
+  let saved = $signal(initial);
+  const [todos, layer] = optimistic(() => saved);
+  let draft = $signal("");
 
   const commit = (change: (list: Todo[]) => Todo[], save: Promise<void>) => {
     const drop = layer(change);
     save.then(() => {
-      setSaved(change);
+      saved = change(saved);
       drop();
     }, drop);
   };
@@ -49,10 +49,10 @@ async function TodoList() {
   };
 
   const add = () => {
-    const title = draft().trim();
+    const title = draft.trim();
     if (title === "") return;
     const fresh = { id: Math.max(...todos().map((todo) => todo.id)) + 1, title, done: false };
-    setDraft("");
+    draft = "";
     commit((list) => [...list, fresh], saveTodo(fresh));
   };
 
@@ -73,8 +73,8 @@ async function TodoList() {
       </ul>
       <div class="add">
         <input
-          value={draft()}
-          onInput={(e: InputEvent) => setDraft((e.currentTarget as HTMLInputElement).value)}
+          value={draft}
+          onInput={(e: InputEvent) => (draft = (e.currentTarget as HTMLInputElement).value)}
           placeholder="Something to do"
         />
         <button onClick={add}>Add</button>

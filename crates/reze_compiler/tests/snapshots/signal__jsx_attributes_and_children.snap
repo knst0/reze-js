@@ -1,0 +1,29 @@
+---
+source: crates/reze_compiler/tests/signal.rs
+expression: "import { $signal } from \"reze-js\";\nlet size = $signal(1);\nlet text = $signal(\"\");\nexport const view = (\n  <div class={size > 1 ? \"big\" : \"\"} style={{ width: size * 10 + \"px\" }}>\n    <input value={text} onInput={(e) => text = e.currentTarget.value} />\n    <Card size={size}>{size} {text}</Card>\n  </div>\n);"
+---
+import { signal } from "reze-js";
+import { template as _$template, child as _$child, setAttribute as _$setAttribute, style as _$style, append as _$append, createComponent as _$createComponent, renderEffect as _$renderEffect, delegateEvents as _$delegateEvents } from "reze-js";
+const size = 1;
+const [text, setText] = signal("");
+export const view = (
+  (() => {
+  var _el$ = _$template("<div><input>"),
+    _el$2 = _$child(_el$);
+  _$setAttribute(_el$, "class", size > 1 ? "big" : "");
+  _$style(_el$, { width: size * 10 + "px" });
+  _el$2.$$input = (e) => setText(() => e.currentTarget.value);
+  _$append(_el$, _$createComponent(Card, { size: size, get children() { return [size, " ", text]; } }));
+  _$renderEffect(() => _el$2.value = text());
+  return _el$;
+})()
+);
+_$delegateEvents(["input"]);
+
+// info
+[SIGNAL_FOLDED] `size` is never written and every read is a call, so it compiled to a plain constant.
+  at case.tsx:2:5
+  1 | import { $signal } from "reze-js";
+> 2 | let size = $signal(1);
+    |     ^^^^^^^^^^^^^^^^^
+  3 | let text = $signal("");

@@ -51,6 +51,38 @@ const ASYNC_COMPONENT_STEPS: &str = r##"export const Card = async ({ id }: { id:
   return <Panel title={name}>{user.role}{posts.length}</Panel>;
 };"##;
 
+const COUNTER_MANUAL: &str = r##"import { computed, Show, signal } from "reze-js";
+export function Counter(props) {
+  const [count, setCount] = signal(0);
+  const doubled = computed(() => count() * 2);
+  return (
+    <section class="counter">
+      <output class={{ negative: count() < 0 }}>{count()}</output>
+      <p>doubled: {doubled()}</p>
+      <button onClick={() => setCount(count() - props.step)}>minus</button>
+      <button onClick={() => setCount(0)} disabled={count() === 0}>reset</button>
+      <button onClick={() => setCount(count() + props.step)}>plus</button>
+      <Show when={count() >= 10}><p class="note">a lot</p></Show>
+    </section>
+  );
+}"##;
+
+const COUNTER_DSL: &str = r##"import { $signal, computed, Show } from "reze-js";
+export function Counter(props) {
+  let count = $signal(0);
+  const doubled = computed(() => count * 2);
+  return (
+    <section class="counter">
+      <output class={{ negative: count < 0 }}>{count}</output>
+      <p>doubled: {doubled()}</p>
+      <button onClick={() => count -= props.step}>minus</button>
+      <button onClick={() => count = 0} disabled={count === 0}>reset</button>
+      <button onClick={() => count += props.step}>plus</button>
+      <Show when={count >= 10}><p class="note">a lot</p></Show>
+    </section>
+  );
+}"##;
+
 static LARGE_SOURCE: LazyLock<String> = LazyLock::new(|| {
     let mut source = String::from("const a = <div>");
     for i in 0..500 {
@@ -114,4 +146,14 @@ fn async_component_steps(bencher: divan::Bencher) {
 #[divan::bench]
 fn large_tree(bencher: divan::Bencher) {
     bench_source(&LARGE_SOURCE, bencher);
+}
+
+#[divan::bench]
+fn counter_signal_tuple(bencher: divan::Bencher) {
+    bench_source(COUNTER_MANUAL, bencher);
+}
+
+#[divan::bench]
+fn counter_signal_syntax(bencher: divan::Bencher) {
+    bench_source(COUNTER_DSL, bencher);
 }

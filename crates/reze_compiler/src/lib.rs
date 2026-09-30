@@ -3,6 +3,7 @@
 mod analyze;
 mod code;
 mod diagnostic;
+mod dsl;
 mod emit;
 mod html;
 mod ir;
@@ -61,8 +62,30 @@ pub fn compile(
     options: &Options,
 ) -> Result<Option<Output>, Vec<Diagnostic>> {
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::tsx());
+    let (rewritten, first_pass) = if source.contains("$signal") {
+        match dsl::rewrite(source, source_type) {
+            Ok(Some((rewritten, reports))) => (Some(rewritten), reports),
+            Ok(None) => (None, Vec::new()),
+            Err(reports) => return Err(diagnostic::resolve(reports, source, filename)),
+        }
+    } else {
+        (None, Vec::new())
+    };
+    compile_module(source, rewritten, first_pass, filename, source_type, options)
+}
+
+/// The ordinary pass over `source`, or over the text the first pass rewrote it into.
+fn compile_module(
+    source: &str,
+    rewritten: Option<dsl::Rewritten>,
+    first_pass: Vec<Report>,
+    filename: &str,
+    source_type: SourceType,
+    options: &Options,
+) -> Result<Option<Output>, Vec<Diagnostic>> {
+    let text = rewritten.as_ref().map_or(source, |r| r.code.text.as_str());
     let allocator = Allocator::default();
-    let parsed = Parser::new(&allocator, source, source_type).parse();
+    let parsed = Parser::new(&allocator, text, source_type).parse();
     if !parsed.diagnostics.is_empty() {
         let reports = parsed
             .diagnostics
@@ -75,7 +98,7 @@ pub fn compile(
                 Report::new(Code::ParseError, span).arg("detail", d.message.to_string())
             })
             .collect();
-        return Err(diagnostic::resolve(reports, source, filename));
+        return Err(diagnostic::resolve(reports, text, filename));
     }
 
     let program = allocator.alloc(parsed.program);
@@ -92,17 +115,33 @@ pub fn compile(
         links: options.links.is_some(),
     };
     let lowerer =
-        lower::Lowerer::new(&allocator, source, &analysis, settings, Namer::new(&scoping), reports);
+        lower::Lowerer::new(&allocator, text, &analysis, settings, Namer::new(&scoping), reports);
     let lowered = lowerer.program(program, header_position(program));
-    let diagnostics = diagnostic::resolve(lowered.reports, source, filename);
+    let mut reports = lowered.reports;
+    if let Some(rewritten) = &rewritten {
+        for report in &mut reports {
+            report.remap(|offset| rewritten.start(offset), |offset| rewritten.end(offset));
+        }
+    }
+    reports.extend(first_pass);
+    let diagnostics = diagnostic::resolve(reports, source, filename);
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(diagnostics);
     }
-    let Some(body) = lowered.body else { return Ok(None) };
     let filename = allocator.alloc_str(filename);
-    let code =
-        emit::Emitter::new(&allocator, source, filename, lowered.namer, options.links.as_deref())
+    let Some(body) = lowered.body else {
+        return Ok(rewritten.map(|rewritten| Output {
+            map: options.source_map.then(|| rewritten.code.source_map(filename, source)),
+            code: rewritten.code.text,
+            diagnostics,
+        }));
+    };
+    let mut code =
+        emit::Emitter::new(&allocator, text, filename, lowered.namer, options.links.as_deref())
             .module(&lowered.head, &body);
+    if let Some(rewritten) = &rewritten {
+        code.remap_marks(|offset| rewritten.start(offset));
+    }
     let map = options.source_map.then(|| code.source_map(filename, source));
     Ok(Some(Output { code: code.text, map, diagnostics }))
 }

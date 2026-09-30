@@ -163,6 +163,71 @@ catalog! {
             good: "import { Match, Switch } from \"reze-js\";\n\nexport const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Switch></div>;\n",
         },
     }
+    SignalNotDeclared {
+        name: "SIGNAL_NOT_DECLARED",
+        severity: Error,
+        title: "`$signal` outside a variable declaration",
+        message: "`$signal` is only valid as the initializer of `let name = $signal(…)` or `const name = $signal(…)`. The compiler rewrites every use of that name, so it needs the declaration to see it.",
+        explanation: "`$signal(…)` is compiler syntax, not a function: the declared variable becomes a getter and a setter, and each read and write of it is rewritten. A call anywhere else, a `var` declaration, `$signal` passed around as a value or re-exported has no variable to rewrite.",
+        repair: "Declare the signal with `let name = $signal(…)` or `const name = $signal(…)` and use `name` where the value is needed. Use `signal(…)` when you need the getter and setter as values.",
+        fix: None,
+        example: Pair {
+            bad: "import { $signal } from \"reze-js\";\n\nexport const view = <p>{$signal(0)}</p>;\n",
+            good: "import { $signal } from \"reze-js\";\n\nlet count = $signal(0);\nexport const view = <button onClick={() => (count += 1)}>{count}</button>;\n",
+        },
+    }
+    SignalPattern {
+        name: "SIGNAL_PATTERN",
+        severity: Error,
+        title: "`$signal` destructured",
+        message: "`$signal(…)` initializes a destructuring pattern. A signal is one variable: declare `let name = $signal(…)`.",
+        explanation: "The declared name is rewritten into a getter and a setter, which needs exactly one identifier to rename.",
+        repair: "Declare one name per `$signal`, for example `let count = $signal(0)`. Use `signal(…)` to get the getter and setter as a tuple.",
+        fix: None,
+        example: Pair {
+            bad: "import { $signal } from \"reze-js\";\n\nlet [count] = $signal([0]);\nexport const view = <p>{count}</p>;\n",
+            good: "import { $signal } from \"reze-js\";\n\nlet count = $signal([0]);\nexport const view = <p>{count}</p>;\n",
+        },
+    }
+    SignalExported {
+        name: "SIGNAL_EXPORTED",
+        severity: Error,
+        title: "`$signal` exported",
+        message: "`{signal}` is a `$signal` and cannot be exported: an importing module cannot know it is reactive, so it would read a getter function or lose updates.",
+        explanation: "`$signal` variables exist only in the file that declares them; the compiler rewrites their uses there and nowhere else. `data.signal` is the exported variable.",
+        repair: "Keep the `$signal` private and export a function that reads it, or export the tuple of a plain `signal(…)`.",
+        fix: None,
+        example: Pair {
+            bad: "import { $signal } from \"reze-js\";\n\nexport let count = $signal(0);\n",
+            good: "import { $signal } from \"reze-js\";\n\nlet count = $signal(0);\nexport const readCount = () => count;\n",
+        },
+    }
+    SignalAssignPattern {
+        name: "SIGNAL_ASSIGN_PATTERN",
+        severity: Error,
+        title: "`$signal` written through a pattern",
+        message: "`{signal}` is written through a destructuring pattern or a `for` loop head, which the compiler cannot turn into a setter call. Assign with `{signal} = value`.",
+        explanation: "A write to a `$signal` becomes a setter call. In `[a] = list`, `({ a } = obj)` and `for (a of list)` the assignment is done by the language, not by an expression the compiler can replace. `data.signal` is the written variable.",
+        repair: "Read the value into a temporary and assign it with `name = value` in a statement.",
+        fix: None,
+        example: Pair {
+            bad: "import { $signal } from \"reze-js\";\n\nlet count = $signal(0);\nexport function pick(list) {\n  [count] = list;\n}\nexport const view = <p>{count}</p>;\n",
+            good: "import { $signal } from \"reze-js\";\n\nlet count = $signal(0);\nexport function pick(list) {\n  count = list[0];\n}\nexport const view = <p>{count}</p>;\n",
+        },
+    }
+    SignalUpdateInExpression {
+        name: "SIGNAL_UPDATE_IN_EXPRESSION",
+        severity: Error,
+        title: "`++`/`--` on a `$signal` inside an expression",
+        message: "`{signal}` is incremented or decremented as part of an expression. Use it as a statement, or write `{signal} += 1`, which is an expression with the new value.",
+        explanation: "`count++` as a statement becomes `setCount(count() + 1)`. Inside a larger expression, for example `() => count++` or `use(count++)`, the value of the old `++` would change meaning, so it is not accepted. `data.signal` is the updated variable.",
+        repair: "Put the update in its own statement, or use `count += 1` (value: the new count) or `count -= 1`.",
+        fix: None,
+        example: Pair {
+            bad: "import { $signal } from \"reze-js\";\n\nlet count = $signal(0);\nexport const view = <button onClick={() => count++}>{count}</button>;\n",
+            good: "import { $signal } from \"reze-js\";\n\nlet count = $signal(0);\nexport const view = <button onClick={() => { count++; }}>{count}</button>;\n",
+        },
+    }
     ChildrenPropIgnored {
         name: "CHILDREN_PROP_IGNORED",
         severity: Warn,
@@ -278,6 +343,19 @@ catalog! {
         example: Pair {
             bad: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}\n",
             good: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  const posts = await fetchPosts(user.id);\n  log(user);\n  return <p>{posts.length}</p>;\n}\n",
+        },
+    }
+    SignalReadOnce {
+        name: "SIGNAL_READ_ONCE",
+        severity: Warn,
+        title: "`$signal` copied once in a component body",
+        message: "`{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `computed(() => …)`.",
+        explanation: "A component function runs once, so a `$signal` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `computed` and JSX are reactive and are not reported. `data.signal` is the signal and `data.variable` the declared variable.",
+        repair: "Move the read to where the value is used, or wrap the expression in `computed(() => …)` and call the result.",
+        fix: None,
+        example: Pair {
+            bad: "import { $signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = $signal(0);\n  const doubled = count * 2;\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
+            good: "import { $signal, computed } from \"reze-js\";\n\nexport function Counter() {\n  let count = $signal(0);\n  const doubled = computed(() => count * 2);\n  return <button onClick={() => (count += 1)}>{doubled()}</button>;\n}\n",
         },
     }
     SignalFolded {

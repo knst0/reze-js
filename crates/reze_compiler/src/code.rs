@@ -54,6 +54,13 @@ impl Code {
         self.text.push_str(&other.text);
     }
 
+    /// Moves every source offset through `f`, for text compiled from a rewrite of the source.
+    pub fn remap_marks(&mut self, f: impl Fn(u32) -> u32) {
+        for (_, source) in &mut self.marks {
+            *source = f(*source);
+        }
+    }
+
     /// Source map v3 JSON.
     pub fn source_map(&self, filename: &str, source: &str) -> String {
         let mut builder = SourceMapBuilder::default();
