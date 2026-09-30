@@ -27,7 +27,7 @@
     "access": "public"
   },
   "scripts": {
-    "bench:codspeed": "NODE_ENV=production node benches/codspeed.ts",
+    "bench:codspeed": "node --import ../../benches/kit/production-env.mjs benches/codspeed.ts",
     "build": "tsdown",
     "test": "vitest run && vitest run --config vitest.node.config.mts"
   },
