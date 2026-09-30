@@ -171,18 +171,6 @@ bench.add("create: row roots with a signal", () => {
 
 {
   const ROWS = 1000;
-  const rows = store({ items: Array.from({ length: ROWS }, (_, v) => ({ v })) });
-  bench.add("store: tracked reads of a list", () => {
-    const dispose = effect(() => {
-      const items = rows.items;
-      for (let i = 0; i < items.length; i++) void items[i]!.v;
-    });
-    dispose();
-  });
-}
-
-{
-  const ROWS = 1000;
   const MOVES = 60;
   let moveSelection!: (value: number) => void;
   const hooks = withGraph(() => {
@@ -334,6 +322,18 @@ bench.add("create: effect scopes with signal + effect", () => {
       }
       dispose();
     });
+  });
+}
+
+{
+  const ROWS = 1000;
+  const rows = store({ items: Array.from({ length: ROWS }, (_, v) => ({ v })) });
+  bench.add("store: tracked reads of a list", () => {
+    const dispose = effect(() => {
+      const items = rows.items;
+      for (let i = 0; i < items.length; i++) void items[i]!.v;
+    });
+    dispose();
   });
 }
 
