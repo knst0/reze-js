@@ -10,7 +10,7 @@ export type Swap = <K>(key: () => K, build: (key: K) => JSX.Element) => () => JS
 export function swapNow<K>(key: () => K, build: (key: K) => JSX.Element): () => JSX.Element {
   return computed(() => {
     const current = key();
-    return untrack(() => build(current));
+    return untrack(build, current);
   });
 }
 

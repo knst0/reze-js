@@ -51,11 +51,15 @@ export function root<T>(fn: (dispose: () => void) => T): T {
   const prevSub = setActiveSub(undefined);
   const prevOwner = setActiveOwner(node);
   try {
-    return fn(() => disposeNode(node));
+    return fn(disposeRoot.bind(node));
   } finally {
     setActiveSub(prevSub);
     setActiveOwner(prevOwner);
   }
+}
+
+function disposeRoot(this: RootNode): void {
+  disposeNode(this);
 }
 
 /**
@@ -69,15 +73,20 @@ export function onCleanup(fn: () => void): void {
   }
 }
 
-/** Runs `fn` without tracking reads; computations created inside stay owned by the current owner. */
-export function untrack<T>(fn: () => T): T {
+/**
+ * Runs `fn` without tracking reads; computations created inside stay owned by the current owner.
+ * `untrack(fn, arg)` calls `fn(arg)`, which saves the closure `untrack(() => fn(arg))` allocates.
+ */
+export function untrack<T>(fn: () => T): T;
+export function untrack<T, A>(fn: (arg: A) => T, arg: A): T;
+export function untrack<T, A>(fn: (arg?: A) => T, arg?: A): T {
   const prevSub = setActiveSub(undefined);
   if (prevSub === undefined) {
-    return fn();
+    return fn(arg);
   }
   const prevOwner = setActiveOwner(prevSub);
   try {
-    return fn();
+    return fn(arg);
   } finally {
     setActiveSub(prevSub);
     setActiveOwner(prevOwner);

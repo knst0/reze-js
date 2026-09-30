@@ -124,7 +124,7 @@ export function asyncComponent<V extends unknown[], R>(
   const step = asyncComputed(load);
   const values = (): V => step.value()!;
   const isLoaded = computed(() => step.value() !== undefined);
-  const view = computed(() => (isLoaded() ? untrack(() => body(values)) : undefined));
+  const view = computed(() => (isLoaded() ? untrack(body, values) : undefined));
   return computed(() => {
     const current = view();
     const error = step.error();

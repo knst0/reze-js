@@ -9,7 +9,7 @@ export function createComponent<P>(Comp: (props: P) => JSX.Element, props: P): J
   if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
     return debugHook.component(Comp.name, () => untrack(() => Comp(props)));
   }
-  return untrack(() => Comp(props));
+  return untrack(Comp, props);
 }
 
 /** Mounts `code()` after the existing children of `element`; the returned function disposes it and empties `element`. */
