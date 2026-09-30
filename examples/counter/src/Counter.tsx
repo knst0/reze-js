@@ -1,12 +1,12 @@
-import { $signal, computed, Show } from "reze-js";
+import { $computed, $signal, Show } from "reze-js";
 
 export function Counter(props: { step: number }) {
   let count = $signal(0);
-  const doubled = computed(() => count * 2);
+  const doubled = $computed(count * 2);
   return (
     <section class="counter">
       <output class={{ negative: count < 0 }}>{count}</output>
-      <p>doubled: {doubled()}</p>
+      <p>doubled: {doubled}</p>
       <div class="buttons">
         <button onClick={() => (count -= props.step)}>&minus;{props.step}</button>
         <button onClick={() => (count = 0)} disabled={count === 0}>

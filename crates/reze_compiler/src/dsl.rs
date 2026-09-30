@@ -1,5 +1,6 @@
-//! First pass of `$signal`: rewrites the syntax into the `signal` tuple a person would write.
-//! The second pass is the ordinary compiler, run on the rewritten text.
+//! First pass of `$signal` and `$computed`: rewrites the syntax into the `signal` tuple and the
+//! `computed` getter a person would write. The second pass is the ordinary compiler, run on the
+//! rewritten text.
 
 use std::collections::{HashMap, HashSet};
 
@@ -19,7 +20,43 @@ use crate::diagnostic::{self, Report};
 use crate::lower::is_component_name;
 use crate::namer::Namer;
 
-const DOLLAR_SIGNAL: &str = "$signal";
+/// Compiler syntax and the runtime function it compiles to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Primitive {
+    Signal,
+    Computed,
+}
+
+impl Primitive {
+    const ALL: [Primitive; 2] = [Primitive::Signal, Primitive::Computed];
+
+    fn dollar(self) -> &'static str {
+        match self {
+            Primitive::Signal => "$signal",
+            Primitive::Computed => "$computed",
+        }
+    }
+
+    fn runtime(self) -> &'static str {
+        match self {
+            Primitive::Signal => "signal",
+            Primitive::Computed => "computed",
+        }
+    }
+
+    fn from_dollar(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.dollar() == name)
+    }
+
+    fn from_runtime(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.runtime() == name)
+    }
+}
+
+/// Whether `source` may use the syntax; files without it skip the first pass.
+pub fn mentions_syntax(source: &str) -> bool {
+    Primitive::ALL.into_iter().any(|p| source.contains(p.dollar()))
+}
 
 struct Patch {
     start: u32,
@@ -69,9 +106,9 @@ impl Rewritten {
     }
 }
 
-/// `Ok(None)` when the file does not use `$signal`, or does not parse: the ordinary pass reports
-/// syntax errors. `Err` holds the reports of the first pass when one is an error; `Ok` carries
-/// its warnings.
+/// `Ok(None)` when the file does not use `$signal` or `$computed`, or does not parse: the
+/// ordinary pass reports syntax errors. `Err` holds the reports of the first pass when one is an
+/// error; `Ok` carries its warnings.
 pub fn rewrite(
     source: &str,
     source_type: SourceType,
@@ -95,15 +132,15 @@ pub fn rewrite(
         scoping: &scoping,
         imports: &imports,
         namer: &mut namer,
-        signals: HashMap::new(),
+        variables: HashMap::new(),
         declarators: HashMap::new(),
         consumed: HashSet::new(),
         reports: Vec::new(),
         in_for_init: false,
     };
     declarations.visit_program(program);
-    let Declarations { signals, declarators, reports, .. } = declarations;
-    if signals.is_empty() && reports.is_empty() {
+    let Declarations { variables, declarators, reports, .. } = declarations;
+    if variables.is_empty() && reports.is_empty() {
         return Ok(None);
     }
 
@@ -112,7 +149,7 @@ pub fn rewrite(
         scoping: &scoping,
         imports: &imports,
         callees: &callees,
-        signals: &signals,
+        variables: &variables,
         declarators: &declarators,
         patches,
         reports,
@@ -124,11 +161,12 @@ pub fn rewrite(
     let Rewriter { mut patches, mut reports, .. } = rewriter;
 
     let exported = exported_symbols(program, &scoping);
-    for (symbol, signal) in &signals {
+    for (symbol, variable) in &variables {
         if exported.contains(symbol) {
             reports.push(
-                Report::new(diagnostic::Code::SignalExported, signal.declarator)
-                    .arg("signal", scoping.symbol_name(*symbol)),
+                Report::new(diagnostic::Code::SignalExported, variable.declarator)
+                    .arg("signal", scoping.symbol_name(*symbol))
+                    .arg("primitive", variable.primitive.dollar()),
             );
         }
     }
@@ -164,6 +202,7 @@ fn apply(source: &str, patches: &mut [Patch]) -> Rewritten {
 struct DollarImport {
     specifier: Span,
     symbol: SymbolId,
+    primitive: Primitive,
     local: String,
     is_aliased: bool,
 }
@@ -171,12 +210,12 @@ struct DollarImport {
 struct Imports {
     dollar: Vec<DollarImport>,
     namespaces: HashSet<SymbolId>,
-    /// The local name of a value import of `signal`.
-    signal: Option<String>,
+    /// The local name of a value import of each runtime function, by `Primitive`.
+    runtime: [Option<String>; Primitive::ALL.len()],
     declarations: Vec<ImportRange>,
 }
 
-/// The named specifiers of an import declaration that mentions `$signal`.
+/// The named specifiers of an import declaration that mentions compiler syntax.
 struct ImportRange {
     span: Span,
     named: Span,
@@ -189,7 +228,7 @@ impl Imports {
         let mut imports = Imports {
             dollar: Vec::new(),
             namespaces: HashSet::new(),
-            signal: None,
+            runtime: Default::default(),
             declarations: Vec::new(),
         };
         for statement in &program.body {
@@ -216,20 +255,19 @@ impl Imports {
                         if named.import_kind.is_type() {
                             continue;
                         }
-                        match named.imported.name().as_str() {
-                            DOLLAR_SIGNAL => {
-                                has_dollar = true;
-                                imports.dollar.push(DollarImport {
-                                    specifier: named.span,
-                                    symbol: named.local.symbol_id(),
-                                    local: named.local.name.to_string(),
-                                    is_aliased: named.local.name != DOLLAR_SIGNAL,
-                                });
-                            }
-                            "signal" if imports.signal.is_none() => {
-                                imports.signal = Some(named.local.name.to_string());
-                            }
-                            _ => {}
+                        let imported = named.imported.name();
+                        if let Some(primitive) = Primitive::from_dollar(&imported) {
+                            has_dollar = true;
+                            imports.dollar.push(DollarImport {
+                                specifier: named.span,
+                                symbol: named.local.symbol_id(),
+                                primitive,
+                                local: named.local.name.to_string(),
+                                is_aliased: named.local.name != imported,
+                            });
+                        } else if let Some(primitive) = Primitive::from_runtime(&imported) {
+                            imports.runtime[primitive as usize]
+                                .get_or_insert_with(|| named.local.name.to_string());
                         }
                     }
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
@@ -249,12 +287,13 @@ impl Imports {
         imports
     }
 
-    fn is_dollar(&self, symbol: SymbolId) -> bool {
-        self.dollar.iter().any(|import| import.symbol == symbol)
+    fn primitive_of(&self, symbol: SymbolId) -> Option<Primitive> {
+        self.dollar.iter().find(|import| import.symbol == symbol).map(|import| import.primitive)
     }
 
-    /// Rewrites the `$signal` specifiers: the first becomes `signal` unless the file already
-    /// imports it, the others are dropped. Returns the name each `$signal` local stands for.
+    /// Rewrites the syntax specifiers: per primitive, the first becomes its runtime function
+    /// unless the file already imports it, the others are dropped. Returns the name each syntax
+    /// local stands for.
     fn patch(
         &self,
         source: &str,
@@ -262,25 +301,27 @@ impl Imports {
         patches: &mut Vec<Patch>,
     ) -> HashMap<SymbolId, String> {
         let mut callees = HashMap::new();
-        let mut target = self.signal.clone();
+        let mut targets = self.runtime.clone();
         let mut replaced: HashMap<u32, Option<String>> = HashMap::new();
         for import in &self.dollar {
-            let text = match &target {
+            let runtime = import.primitive.runtime();
+            let target = &mut targets[import.primitive as usize];
+            let text = match target {
                 Some(name) => {
                     callees.insert(import.symbol, name.clone());
                     None
                 }
                 None if import.is_aliased => {
                     callees.insert(import.symbol, import.local.clone());
-                    target = Some(import.local.clone());
-                    Some(format!("signal as {}", import.local))
+                    *target = Some(import.local.clone());
+                    Some(format!("{runtime} as {}", import.local))
                 }
                 None => {
-                    let name = namer.fresh("signal");
+                    let name = namer.fresh(runtime);
                     let text =
-                        if name == "signal" { name.clone() } else { format!("signal as {name}") };
+                        if name == runtime { name.clone() } else { format!("{runtime} as {name}") };
                     callees.insert(import.symbol, name.clone());
-                    target = Some(name);
+                    *target = Some(name);
                     Some(text)
                 }
             };
@@ -320,9 +361,11 @@ impl Imports {
     }
 }
 
-/// What the first pass knows about one `$signal` variable.
-struct Signal {
+/// What the first pass knows about one `$signal` or `$computed` variable.
+struct Reactive {
     declarator: Span,
+    primitive: Primitive,
+    /// Only a `$signal` that is written has one.
     setter: Option<String>,
 }
 
@@ -343,24 +386,24 @@ struct Declarations<'p, 's, 'n> {
     scoping: &'s Scoping,
     imports: &'p Imports,
     namer: &'p mut Namer<'n>,
-    signals: HashMap<SymbolId, Signal>,
+    variables: HashMap<SymbolId, Reactive>,
     declarators: HashMap<u32, Declarator>,
-    /// Start offsets of `$signal` callees that initialize a declaration.
+    /// Start offsets of syntax callees that initialize a declaration.
     consumed: HashSet<u32>,
     reports: Vec<Report>,
     in_for_init: bool,
 }
 
 impl Declarations<'_, '_, '_> {
-    fn is_dollar_callee(&self, callee: &Expression<'_>) -> bool {
+    fn callee_primitive(&self, callee: &Expression<'_>) -> Option<Primitive> {
         match callee.without_parentheses() {
             Expression::Identifier(id) => {
-                symbol_of(self.scoping, id).is_some_and(|s| self.imports.is_dollar(s))
+                symbol_of(self.scoping, id).and_then(|s| self.imports.primitive_of(s))
             }
             Expression::StaticMemberExpression(member) => {
-                is_namespace_member(self.scoping, self.imports, member)
+                namespace_member(self.scoping, self.imports, member)
             }
-            _ => false,
+            _ => None,
         }
     }
 
@@ -378,24 +421,28 @@ impl Declarations<'_, '_, '_> {
     ) {
         let Some(init) = &declarator.init else { return };
         let Some(call) = dollar_call(init) else { return };
-        if !self.is_dollar_callee(&call.callee) {
-            return;
-        }
+        let Some(primitive) = self.callee_primitive(&call.callee) else { return };
         self.consumed.insert(call.callee.without_parentheses().span().start);
         if !matches!(
             declaration.kind,
             VariableDeclarationKind::Let | VariableDeclarationKind::Const
         ) {
-            self.reports.push(Report::new(diagnostic::Code::SignalNotDeclared, call.span));
+            self.reports.push(
+                Report::new(diagnostic::Code::SignalNotDeclared, call.span)
+                    .arg("primitive", primitive.dollar()),
+            );
             return;
         }
         let BindingPattern::BindingIdentifier(id) = &declarator.id else {
-            self.reports.push(Report::new(diagnostic::Code::SignalPattern, declarator.id.span()));
+            self.reports.push(
+                Report::new(diagnostic::Code::SignalPattern, declarator.id.span())
+                    .arg("primitive", primitive.dollar()),
+            );
             return;
         };
         let symbol = id.symbol_id();
         let name = self.scoping.symbol_name(symbol);
-        let setter = self.is_written(symbol).then(|| {
+        let setter = (primitive == Primitive::Signal && self.is_written(symbol)).then(|| {
             let mut base = String::from("set");
             let mut chars = name.chars();
             base.extend(chars.next().map(|c| c.to_ascii_uppercase()));
@@ -406,7 +453,7 @@ impl Declarations<'_, '_, '_> {
         let keyword =
             (is_sole && !self.in_for_init && declaration.kind == VariableDeclarationKind::Let)
                 .then(|| Span::sized(declaration.span.start, 3));
-        self.signals.insert(symbol, Signal { declarator: declarator.span, setter });
+        self.variables.insert(symbol, Reactive { declarator: declarator.span, primitive, setter });
         self.declarators.insert(declarator.span.start, Declarator { symbol, keyword });
     }
 }
@@ -415,16 +462,18 @@ fn symbol_of(scoping: &Scoping, id: &IdentifierReference<'_>) -> Option<SymbolId
     scoping.get_reference(id.reference_id.get()?).symbol_id()
 }
 
-fn is_namespace_member(
+/// The primitive `member` names when it is `ns.$signal` or `ns.$computed` of a runtime namespace.
+fn namespace_member(
     scoping: &Scoping,
     imports: &Imports,
     member: &StaticMemberExpression<'_>,
-) -> bool {
-    if member.optional || member.property.name != DOLLAR_SIGNAL {
-        return false;
+) -> Option<Primitive> {
+    if member.optional {
+        return None;
     }
-    let Expression::Identifier(object) = &member.object else { return false };
-    symbol_of(scoping, object).is_some_and(|s| imports.namespaces.contains(&s))
+    let primitive = Primitive::from_dollar(&member.property.name)?;
+    let Expression::Identifier(object) = &member.object else { return None };
+    symbol_of(scoping, object).is_some_and(|s| imports.namespaces.contains(&s)).then_some(primitive)
 }
 
 impl<'a> Visit<'a> for Declarations<'_, '_, '_> {
@@ -451,17 +500,24 @@ impl<'a> Visit<'a> for Declarations<'_, '_, '_> {
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
-        if symbol_of(self.scoping, it).is_some_and(|s| self.imports.is_dollar(s))
+        if let Some(primitive) =
+            symbol_of(self.scoping, it).and_then(|s| self.imports.primitive_of(s))
             && !self.consumed.contains(&it.span.start)
         {
-            self.reports.push(Report::new(diagnostic::Code::SignalNotDeclared, it.span));
+            self.reports.push(
+                Report::new(diagnostic::Code::SignalNotDeclared, it.span)
+                    .arg("primitive", primitive.dollar()),
+            );
         }
     }
 
     fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
-        if is_namespace_member(self.scoping, self.imports, it) {
+        if let Some(primitive) = namespace_member(self.scoping, self.imports, it) {
             if !self.consumed.contains(&it.span.start) {
-                self.reports.push(Report::new(diagnostic::Code::SignalNotDeclared, it.span));
+                self.reports.push(
+                    Report::new(diagnostic::Code::SignalNotDeclared, it.span)
+                        .arg("primitive", primitive.dollar()),
+                );
             }
             return;
         }
@@ -476,7 +532,7 @@ struct Rewriter<'p, 's> {
     scoping: &'s Scoping,
     imports: &'p Imports,
     callees: &'p HashMap<SymbolId, String>,
-    signals: &'p HashMap<SymbolId, Signal>,
+    variables: &'p HashMap<SymbolId, Reactive>,
     declarators: &'p HashMap<u32, Declarator>,
     patches: Vec<Patch>,
     reports: Vec<Report>,
@@ -488,9 +544,9 @@ struct Rewriter<'p, 's> {
 }
 
 impl Rewriter<'_, '_> {
-    fn signal_of(&self, id: &IdentifierReference<'_>) -> Option<(SymbolId, &Signal)> {
+    fn reactive_of(&self, id: &IdentifierReference<'_>) -> Option<(SymbolId, &Reactive)> {
         let symbol = symbol_of(self.scoping, id)?;
-        self.signals.get(&symbol).map(|signal| (symbol, signal))
+        self.variables.get(&symbol).map(|variable| (symbol, variable))
     }
 
     fn name(&self, symbol: SymbolId) -> &str {
@@ -534,7 +590,13 @@ impl Rewriter<'_, '_> {
     }
 
     fn setter(&self, symbol: SymbolId) -> &str {
-        self.signals[&symbol].setter.as_deref().unwrap_or_default()
+        self.variables[&symbol].setter.as_deref().unwrap_or_default()
+    }
+
+    fn computed_written(&mut self, span: Span, symbol: SymbolId) {
+        self.reports.push(
+            Report::new(diagnostic::Code::ComputedWritten, span).arg("computed", self.name(symbol)),
+        );
     }
 
     fn assign(&mut self, it: &AssignmentExpression<'_>, symbol: SymbolId) {
@@ -604,14 +666,23 @@ impl Rewriter<'_, '_> {
         let (Some(init), Some(call)) = (&it.init, it.init.as_ref().and_then(dollar_call)) else {
             return;
         };
-        let signal = &self.signals[&plan.symbol];
-        let mut target = format!("[{}", self.name(plan.symbol));
-        if let Some(setter) = &signal.setter {
-            target.push_str(", ");
-            target.push_str(setter);
+        let variable = &self.variables[&plan.symbol];
+        let primitive = variable.primitive;
+        match primitive {
+            Primitive::Signal => {
+                let mut target = format!("[{}", self.name(plan.symbol));
+                if let Some(setter) = &variable.setter {
+                    target.push_str(", ");
+                    target.push_str(setter);
+                }
+                target.push_str("] = ");
+                self.patch(it.id.span().start, init.span().start, target);
+            }
+            Primitive::Computed if it.type_annotation.is_some() => {
+                self.patch(it.id.span().end, init.span().start, " = ");
+            }
+            Primitive::Computed => {}
         }
-        target.push_str("] = ");
-        self.patch(it.id.span().start, init.span().start, target);
         if let Some(keyword) = plan.keyword {
             self.patch(keyword.start, keyword.end, "const");
         }
@@ -625,7 +696,7 @@ impl Rewriter<'_, '_> {
             }
             Expression::StaticMemberExpression(member) => {
                 let property = member.property.span;
-                self.patch(property.start, property.end, "signal");
+                self.patch(property.start, property.end, primitive.runtime());
             }
             _ => {}
         }
@@ -634,8 +705,54 @@ impl Rewriter<'_, '_> {
             let at = call.callee.span().end;
             self.patch(at, at, text);
         }
-        for argument in &call.arguments {
+        let mut arguments = call.arguments.iter();
+        if primitive == Primitive::Computed
+            && let Some(value) = arguments.next()
+        {
+            match value.as_expression() {
+                Some(value) => self.computed_value(value),
+                None => self.visit_argument(value),
+            }
+        }
+        for argument in arguments {
             self.visit_argument(argument);
+        }
+    }
+
+    /// Wraps the value of a `$computed` into the getter `computed` runs.
+    fn computed_value(&mut self, value: &Expression<'_>) {
+        match value.without_parentheses() {
+            Expression::ArrowFunctionExpression(arrow) => {
+                let mut report = Report::new(diagnostic::Code::ComputedFunction, arrow.span);
+                if let (false, true, Some(body)) =
+                    (arrow.r#async, arrow.params.is_empty(), arrow.get_expression())
+                {
+                    let edit = diagnostic::Edit {
+                        start: arrow.span.start,
+                        end: body.span().start,
+                        text: String::new(),
+                    };
+                    report = report.fix(vec![edit]);
+                }
+                self.reports.push(report);
+                return;
+            }
+            Expression::FunctionExpression(function) => {
+                self.reports.push(Report::new(diagnostic::Code::ComputedFunction, function.span));
+                return;
+            }
+            _ => {}
+        }
+        if suspends(value) {
+            self.reports.push(Report::new(diagnostic::Code::ComputedAwait, value.span()));
+            return;
+        }
+        let span = value.span();
+        let is_object_first = self.text(span).starts_with('{');
+        self.patch(span.start, span.start, if is_object_first { "() => (" } else { "() => " });
+        self.visit_expression(value);
+        if is_object_first {
+            self.patch(span.end, span.end, ")");
         }
     }
 
@@ -663,7 +780,7 @@ impl Rewriter<'_, '_> {
     }
 }
 
-/// The first read of a `$signal` variable that runs when the initializer does.
+/// The first read of a `$signal` or `$computed` variable that runs when the initializer does.
 struct FirstRead<'r, 'p, 's> {
     rewriter: &'r Rewriter<'p, 's>,
     found: Option<(Span, SymbolId)>,
@@ -672,7 +789,7 @@ struct FirstRead<'r, 'p, 's> {
 impl<'a> Visit<'a> for FirstRead<'_, '_, '_> {
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
         if self.found.is_none()
-            && let Some((symbol, _)) = self.rewriter.signal_of(it)
+            && let Some((symbol, _)) = self.rewriter.reactive_of(it)
             && let Some(reference) = it.reference_id.get()
             && !self.rewriter.scoping.get_reference(reference).flags().is_write()
         {
@@ -753,9 +870,12 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
         if let AssignmentTarget::AssignmentTargetIdentifier(id) = &it.left
-            && let Some((symbol, _)) = self.signal_of(id)
+            && let Some((symbol, variable)) = self.reactive_of(id)
         {
-            self.assign(it, symbol);
+            match variable.primitive {
+                Primitive::Signal => self.assign(it, symbol),
+                Primitive::Computed => self.computed_written(it.span, symbol),
+            }
             return;
         }
         walk::walk_assignment_expression(self, it);
@@ -763,9 +883,12 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
 
     fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
         if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &it.argument
-            && let Some((symbol, _)) = self.signal_of(id)
+            && let Some((symbol, variable)) = self.reactive_of(id)
         {
-            self.update(it, symbol);
+            match variable.primitive {
+                Primitive::Signal => self.update(it, symbol),
+                Primitive::Computed => self.computed_written(it.span, symbol),
+            }
             return;
         }
         walk::walk_update_expression(self, it);
@@ -774,7 +897,7 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
     fn visit_object_property(&mut self, it: &ObjectProperty<'a>) {
         if it.shorthand
             && let Expression::Identifier(id) = &it.value
-            && let Some((symbol, _)) = self.signal_of(id)
+            && let Some((symbol, _)) = self.reactive_of(id)
             && id
                 .reference_id
                 .get()
@@ -788,16 +911,16 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
-        let Some((symbol, _)) = self.signal_of(it) else { return };
+        let Some((symbol, variable)) = self.reactive_of(it) else { return };
         let is_write =
             it.reference_id.get().is_some_and(|r| self.scoping.get_reference(r).flags().is_write());
-        if is_write {
-            self.reports.push(
+        match (is_write, variable.primitive) {
+            (false, _) => self.patch(it.span.end, it.span.end, "()"),
+            (true, Primitive::Signal) => self.reports.push(
                 Report::new(diagnostic::Code::SignalAssignPattern, it.span)
                     .arg("signal", self.name(symbol)),
-            );
-        } else {
-            self.patch(it.span.end, it.span.end, "()");
+            ),
+            (true, Primitive::Computed) => self.computed_written(it.span, symbol),
         }
     }
 
@@ -812,7 +935,7 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
     fn visit_import_declaration(&mut self, _: &ImportDeclaration<'a>) {}
 
     fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
-        if is_namespace_member(self.scoping, self.imports, it) {
+        if namespace_member(self.scoping, self.imports, it).is_some() {
             return;
         }
         walk::walk_static_member_expression(self, it);

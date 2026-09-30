@@ -166,10 +166,10 @@ catalog! {
     SignalNotDeclared {
         name: "SIGNAL_NOT_DECLARED",
         severity: Error,
-        title: "`$signal` outside a variable declaration",
-        message: "`$signal` is only valid as the initializer of `let name = $signal(…)` or `const name = $signal(…)`. The compiler rewrites every use of that name, so it needs the declaration to see it.",
-        explanation: "`$signal(…)` is compiler syntax, not a function: the declared variable becomes a getter and a setter, and each read and write of it is rewritten. A call anywhere else, a `var` declaration, `$signal` passed around as a value or re-exported has no variable to rewrite.",
-        repair: "Declare the signal with `let name = $signal(…)` or `const name = $signal(…)` and use `name` where the value is needed. Use `signal(…)` when you need the getter and setter as values.",
+        title: "`$signal` or `$computed` outside a variable declaration",
+        message: "`{primitive}` is only valid as the initializer of `let name = {primitive}(…)` or `const name = {primitive}(…)`. The compiler rewrites every use of that name, so it needs the declaration to see it.",
+        explanation: "`$signal(…)` and `$computed(…)` are compiler syntax, not functions: the declared variable becomes a getter (and, for a written `$signal`, a setter), and each read and write of it is rewritten. A call anywhere else, a `var` declaration, the syntax passed around as a value or re-exported has no variable to rewrite. `data.primitive` is the syntax used.",
+        repair: "Declare the variable with `let name = $signal(…)` or `const name = $computed(…)` and use `name` where the value is needed. Use `signal(…)` or `computed(…)` when you need the getter as a value.",
         fix: None,
         example: Pair {
             bad: "import { $signal } from \"reze-js\";\n\nexport const view = <p>{$signal(0)}</p>;\n",
@@ -179,10 +179,10 @@ catalog! {
     SignalPattern {
         name: "SIGNAL_PATTERN",
         severity: Error,
-        title: "`$signal` destructured",
-        message: "`$signal(…)` initializes a destructuring pattern. A signal is one variable: declare `let name = $signal(…)`.",
-        explanation: "The declared name is rewritten into a getter and a setter, which needs exactly one identifier to rename.",
-        repair: "Declare one name per `$signal`, for example `let count = $signal(0)`. Use `signal(…)` to get the getter and setter as a tuple.",
+        title: "`$signal` or `$computed` destructured",
+        message: "`{primitive}(…)` initializes a destructuring pattern. A reactive variable is one name: declare `const name = {primitive}(…)`.",
+        explanation: "The declared name is rewritten into a getter (and, for a written `$signal`, a setter), which needs exactly one identifier to rename. `data.primitive` is the syntax used.",
+        repair: "Declare one name per `$signal` or `$computed`, for example `let count = $signal(0)`, and read its fields where they are used. Use `signal(…)` to get the getter and setter as a tuple.",
         fix: None,
         example: Pair {
             bad: "import { $signal } from \"reze-js\";\n\nlet [count] = $signal([0]);\nexport const view = <p>{count}</p>;\n",
@@ -192,10 +192,10 @@ catalog! {
     SignalExported {
         name: "SIGNAL_EXPORTED",
         severity: Error,
-        title: "`$signal` exported",
-        message: "`{signal}` is a `$signal` and cannot be exported: an importing module cannot know it is reactive, so it would read a getter function or lose updates.",
-        explanation: "`$signal` variables exist only in the file that declares them; the compiler rewrites their uses there and nowhere else. `data.signal` is the exported variable.",
-        repair: "Keep the `$signal` private and export a function that reads it, or export the tuple of a plain `signal(…)`.",
+        title: "`$signal` or `$computed` exported",
+        message: "`{signal}` is a `{primitive}` and cannot be exported: an importing module cannot know it is reactive, so it would read a getter function or lose updates.",
+        explanation: "`$signal` and `$computed` variables exist only in the file that declares them; the compiler rewrites their uses there and nowhere else. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.",
+        repair: "Keep the variable private and export a function that reads it, or export the getter of a plain `signal(…)` or `computed(…)`.",
         fix: None,
         example: Pair {
             bad: "import { $signal } from \"reze-js\";\n\nexport let count = $signal(0);\n",
@@ -226,6 +226,45 @@ catalog! {
         example: Pair {
             bad: "import { $signal } from \"reze-js\";\n\nlet count = $signal(0);\nexport const view = <button onClick={() => count++}>{count}</button>;\n",
             good: "import { $signal } from \"reze-js\";\n\nlet count = $signal(0);\nexport const view = <button onClick={() => { count++; }}>{count}</button>;\n",
+        },
+    }
+    ComputedWritten {
+        name: "COMPUTED_WRITTEN",
+        severity: Error,
+        title: "`$computed` written",
+        message: "`{computed}` is a `$computed` and cannot be written: its value is derived from what its expression reads. Write to those signals instead.",
+        explanation: "A `$computed` compiles to a `computed` getter, which has no setter. Assignments, compound assignments, `++`/`--` and writes through a pattern or a `for` loop head are refused. `data.computed` is the written variable.",
+        repair: "Write the `$signal` the expression reads, or declare the variable with `$signal` when it is meant to be set directly.",
+        fix: None,
+        example: Pair {
+            bad: "import { $computed, $signal } from \"reze-js\";\n\nlet count = $signal(0);\nconst doubled = $computed(count * 2);\nexport const view = <button onClick={() => (doubled = 0)}>{doubled}</button>;\n",
+            good: "import { $computed, $signal } from \"reze-js\";\n\nlet count = $signal(0);\nconst doubled = $computed(count * 2);\nexport const view = <button onClick={() => (count = 0)}>{doubled}</button>;\n",
+        },
+    }
+    ComputedFunction {
+        name: "COMPUTED_FUNCTION",
+        severity: Error,
+        title: "Function literal passed to `$computed`",
+        message: "`$computed` takes the expression itself and wraps it in a function, so a function literal here would make the derived value that function. Write `$computed(expression)` without `() =>`.",
+        explanation: "`const doubled = $computed(count * 2)` compiles to `computed(() => count() * 2)`. A function literal as the argument is refused rather than quietly deriving a function. A derived value that is a function comes from another expression: a call, a conditional or an identifier.",
+        repair: "Apply the fix to remove `() =>`. For several statements, move them into a function and derive its call: `$computed(compute())`.",
+        fix: Some("remove `() =>`"),
+        example: Pair {
+            bad: "import { $computed, $signal } from \"reze-js\";\n\nlet count = $signal(0);\nconst doubled = $computed(() => count * 2);\nexport const view = <button onClick={() => (count += 1)}>{doubled}</button>;\n",
+            good: "import { $computed, $signal } from \"reze-js\";\n\nlet count = $signal(0);\nconst doubled = $computed(count * 2);\nexport const view = <button onClick={() => (count += 1)}>{doubled}</button>;\n",
+        },
+    }
+    ComputedAwait {
+        name: "COMPUTED_AWAIT",
+        severity: Error,
+        title: "`await` or `yield` in `$computed`",
+        message: "The expression of `$computed` awaits or yields, but it runs inside a synchronous getter where `await` and `yield` are not valid. Derive from a value that is already loaded, or use `asyncComputed`.",
+        explanation: "`$computed(expression)` compiles to `computed(() => expression)`. The getter is an ordinary arrow function, so an `await` or `yield` outside a nested function cannot move into it.",
+        repair: "Load the value with `asyncComputed(() => load(…))` and derive from its `value()`, or await it in an async component before the derivation.",
+        fix: None,
+        example: Pair {
+            bad: "import { $computed, $signal } from \"reze-js\";\n\nlet id = $signal(1);\nconst label = $computed(await describe(id));\nexport const view = <p onClick={() => (id += 1)}>{label}</p>;\n",
+            good: "import { $computed, $signal, asyncComputed } from \"reze-js\";\n\nlet id = $signal(1);\nconst described = asyncComputed(() => describe(id));\nconst label = $computed(described.value() ?? \"…\");\nexport const view = <p onClick={() => (id += 1)}>{label}</p>;\n",
         },
     }
     ChildrenPropIgnored {
@@ -348,14 +387,14 @@ catalog! {
     SignalReadOnce {
         name: "SIGNAL_READ_ONCE",
         severity: Warn,
-        title: "`$signal` copied once in a component body",
-        message: "`{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `computed(() => …)`.",
-        explanation: "A component function runs once, so a `$signal` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `computed` and JSX are reactive and are not reported. `data.signal` is the signal and `data.variable` the declared variable.",
-        repair: "Move the read to where the value is used, or wrap the expression in `computed(() => …)` and call the result.",
+        title: "`$signal` or `$computed` copied once in a component body",
+        message: "`{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `$computed(…)`.",
+        explanation: "A component function runs once, so a `$signal` or `$computed` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `$computed`, `computed` and JSX are reactive and are not reported. `data.signal` is the variable read and `data.variable` the declared variable.",
+        repair: "Move the read to where the value is used, or declare `const name = $computed(expression)` and read `name`. Mark an intended one-time read with `untrack(() => …)`.",
         fix: None,
         example: Pair {
             bad: "import { $signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = $signal(0);\n  const doubled = count * 2;\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
-            good: "import { $signal, computed } from \"reze-js\";\n\nexport function Counter() {\n  let count = $signal(0);\n  const doubled = computed(() => count * 2);\n  return <button onClick={() => (count += 1)}>{doubled()}</button>;\n}\n",
+            good: "import { $computed, $signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = $signal(0);\n  const doubled = $computed(count * 2);\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
         },
     }
     SignalFolded {

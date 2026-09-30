@@ -204,17 +204,17 @@ export const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Swi
 
 ## SIGNAL_NOT_DECLARED
 
-**`$signal` outside a variable declaration** · severity `error`
+**`$signal` or `$computed` outside a variable declaration** · severity `error`
 
-> `$signal` is only valid as the initializer of `let name = $signal(…)` or `const name = $signal(…)`. The compiler rewrites every use of that name, so it needs the declaration to see it.
+> `{primitive}` is only valid as the initializer of `let name = {primitive}(…)` or `const name = {primitive}(…)`. The compiler rewrites every use of that name, so it needs the declaration to see it.
 
-`data` keys: none
+`data` keys: `primitive`
 
 Automatic fix: no
 
-`$signal(…)` is compiler syntax, not a function: the declared variable becomes a getter and a setter, and each read and write of it is rewritten. A call anywhere else, a `var` declaration, `$signal` passed around as a value or re-exported has no variable to rewrite.
+`$signal(…)` and `$computed(…)` are compiler syntax, not functions: the declared variable becomes a getter (and, for a written `$signal`, a setter), and each read and write of it is rewritten. A call anywhere else, a `var` declaration, the syntax passed around as a value or re-exported has no variable to rewrite. `data.primitive` is the syntax used.
 
-**Repair:** Declare the signal with `let name = $signal(…)` or `const name = $signal(…)` and use `name` where the value is needed. Use `signal(…)` when you need the getter and setter as values.
+**Repair:** Declare the variable with `let name = $signal(…)` or `const name = $computed(…)` and use `name` where the value is needed. Use `signal(…)` or `computed(…)` when you need the getter as a value.
 
 Before:
 
@@ -235,17 +235,17 @@ export const view = <button onClick={() => (count += 1)}>{count}</button>;
 
 ## SIGNAL_PATTERN
 
-**`$signal` destructured** · severity `error`
+**`$signal` or `$computed` destructured** · severity `error`
 
-> `$signal(…)` initializes a destructuring pattern. A signal is one variable: declare `let name = $signal(…)`.
+> `{primitive}(…)` initializes a destructuring pattern. A reactive variable is one name: declare `const name = {primitive}(…)`.
 
-`data` keys: none
+`data` keys: `primitive`
 
 Automatic fix: no
 
-The declared name is rewritten into a getter and a setter, which needs exactly one identifier to rename.
+The declared name is rewritten into a getter (and, for a written `$signal`, a setter), which needs exactly one identifier to rename. `data.primitive` is the syntax used.
 
-**Repair:** Declare one name per `$signal`, for example `let count = $signal(0)`. Use `signal(…)` to get the getter and setter as a tuple.
+**Repair:** Declare one name per `$signal` or `$computed`, for example `let count = $signal(0)`, and read its fields where they are used. Use `signal(…)` to get the getter and setter as a tuple.
 
 Before:
 
@@ -267,17 +267,17 @@ export const view = <p>{count}</p>;
 
 ## SIGNAL_EXPORTED
 
-**`$signal` exported** · severity `error`
+**`$signal` or `$computed` exported** · severity `error`
 
-> `{signal}` is a `$signal` and cannot be exported: an importing module cannot know it is reactive, so it would read a getter function or lose updates.
+> `{signal}` is a `{primitive}` and cannot be exported: an importing module cannot know it is reactive, so it would read a getter function or lose updates.
 
-`data` keys: `signal`
+`data` keys: `primitive`, `signal`
 
 Automatic fix: no
 
-`$signal` variables exist only in the file that declares them; the compiler rewrites their uses there and nowhere else. `data.signal` is the exported variable.
+`$signal` and `$computed` variables exist only in the file that declares them; the compiler rewrites their uses there and nowhere else. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.
 
-**Repair:** Keep the `$signal` private and export a function that reads it, or export the tuple of a plain `signal(…)`.
+**Repair:** Keep the variable private and export a function that reads it, or export the getter of a plain `signal(…)` or `computed(…)`.
 
 Before:
 
@@ -364,6 +364,109 @@ import { $signal } from "reze-js";
 
 let count = $signal(0);
 export const view = <button onClick={() => { count++; }}>{count}</button>;
+```
+
+## COMPUTED_WRITTEN
+
+**`$computed` written** · severity `error`
+
+> `{computed}` is a `$computed` and cannot be written: its value is derived from what its expression reads. Write to those signals instead.
+
+`data` keys: `computed`
+
+Automatic fix: no
+
+A `$computed` compiles to a `computed` getter, which has no setter. Assignments, compound assignments, `++`/`--` and writes through a pattern or a `for` loop head are refused. `data.computed` is the written variable.
+
+**Repair:** Write the `$signal` the expression reads, or declare the variable with `$signal` when it is meant to be set directly.
+
+Before:
+
+```tsx
+import { $computed, $signal } from "reze-js";
+
+let count = $signal(0);
+const doubled = $computed(count * 2);
+export const view = <button onClick={() => (doubled = 0)}>{doubled}</button>;
+```
+
+After:
+
+```tsx
+import { $computed, $signal } from "reze-js";
+
+let count = $signal(0);
+const doubled = $computed(count * 2);
+export const view = <button onClick={() => (count = 0)}>{doubled}</button>;
+```
+
+## COMPUTED_FUNCTION
+
+**Function literal passed to `$computed`** · severity `error`
+
+> `$computed` takes the expression itself and wraps it in a function, so a function literal here would make the derived value that function. Write `$computed(expression)` without `() =>`.
+
+`data` keys: none
+
+Automatic fix: yes
+
+`const doubled = $computed(count * 2)` compiles to `computed(() => count() * 2)`. A function literal as the argument is refused rather than quietly deriving a function. A derived value that is a function comes from another expression: a call, a conditional or an identifier.
+
+**Repair:** Apply the fix to remove `() =>`. For several statements, move them into a function and derive its call: `$computed(compute())`.
+
+Before:
+
+```tsx
+import { $computed, $signal } from "reze-js";
+
+let count = $signal(0);
+const doubled = $computed(() => count * 2);
+export const view = <button onClick={() => (count += 1)}>{doubled}</button>;
+```
+
+After:
+
+```tsx
+import { $computed, $signal } from "reze-js";
+
+let count = $signal(0);
+const doubled = $computed(count * 2);
+export const view = <button onClick={() => (count += 1)}>{doubled}</button>;
+```
+
+## COMPUTED_AWAIT
+
+**`await` or `yield` in `$computed`** · severity `error`
+
+> The expression of `$computed` awaits or yields, but it runs inside a synchronous getter where `await` and `yield` are not valid. Derive from a value that is already loaded, or use `asyncComputed`.
+
+`data` keys: none
+
+Automatic fix: no
+
+`$computed(expression)` compiles to `computed(() => expression)`. The getter is an ordinary arrow function, so an `await` or `yield` outside a nested function cannot move into it.
+
+**Repair:** Load the value with `asyncComputed(() => load(…))` and derive from its `value()`, or await it in an async component before the derivation.
+
+Before:
+
+```tsx
+import { $computed, $signal } from "reze-js";
+
+let id = $signal(1);
+const label = $computed(await describe(id));
+export const view = <p onClick={() => (id += 1)}>{label}</p>;
+```
+
+After:
+
+```tsx
+import { $computed, $signal, asyncComputed } from "reze-js";
+
+let id = $signal(1);
+const described = asyncComputed(() => describe(id));
+const label = $computed(described.value() ?? "…");
+export const view = <p onClick={() => (id += 1)}>{label}</p>;
 ```
 
 ## CHILDREN_PROP_IGNORED
@@ -627,17 +730,17 @@ export async function Card(props) {
 
 ## SIGNAL_READ_ONCE
 
-**`$signal` copied once in a component body** · severity `warn`
+**`$signal` or `$computed` copied once in a component body** · severity `warn`
 
-> `{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `computed(() => …)`.
+> `{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `$computed(…)`.
 
 `data` keys: `signal`, `variable`
 
 Automatic fix: no
 
-A component function runs once, so a `$signal` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `computed` and JSX are reactive and are not reported. `data.signal` is the signal and `data.variable` the declared variable.
+A component function runs once, so a `$signal` or `$computed` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `$computed`, `computed` and JSX are reactive and are not reported. `data.signal` is the variable read and `data.variable` the declared variable.
 
-**Repair:** Move the read to where the value is used, or wrap the expression in `computed(() => …)` and call the result.
+**Repair:** Move the read to where the value is used, or declare `const name = $computed(expression)` and read `name`. Mark an intended one-time read with `untrack(() => …)`.
 
 Before:
 
@@ -654,12 +757,12 @@ export function Counter() {
 After:
 
 ```tsx
-import { $signal, computed } from "reze-js";
+import { $computed, $signal } from "reze-js";
 
 export function Counter() {
   let count = $signal(0);
-  const doubled = computed(() => count * 2);
-  return <button onClick={() => (count += 1)}>{doubled()}</button>;
+  const doubled = $computed(count * 2);
+  return <button onClick={() => (count += 1)}>{doubled}</button>;
 }
 ```
 

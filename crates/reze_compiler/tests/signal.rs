@@ -19,7 +19,9 @@ fn compiled(source: &str, options: &Options) -> String {
     assert!(parsed.diagnostics.is_empty(), "{:?}\n{code}", parsed.diagnostics);
     let semantic = SemanticBuilder::new().with_check_syntax_error(true).build(&parsed.program);
     assert!(semantic.diagnostics.is_empty(), "{:?}\n{code}", semantic.diagnostics);
-    assert!(!code.contains("$signal"), "{code}");
+    let names_syntax = code.contains("$signal")
+        || code.match_indices("$computed").any(|(at, _)| !code[..at].ends_with('_'));
+    assert!(!names_syntax, "{code}");
     code
 }
 
@@ -312,4 +314,170 @@ fn a_file_that_mentions_the_name_without_importing_it_is_left_alone() {
             .unwrap()
             .is_none()
     );
+}
+
+/// Each pair is a `$computed` module and what a person writes with `computed`; both must compile
+/// to the same text.
+const COMPUTED_INVARIANT: &[(&str, &str, &str)] = &[
+    (
+        "reads_in_jsx_handler_and_shorthand",
+        "import { $computed, $signal } from \"reze-js\";\nlet count = $signal(0);\nconst doubled = $computed(count * 2);\nexport const view = <button title={doubled} onClick={() => { log({ doubled }); count += doubled; }}>{doubled}</button>;",
+        "import { computed, signal } from \"reze-js\";\nconst [count, setCount] = signal(0);\nconst doubled = computed(() => count() * 2);\nexport const view = <button title={doubled()} onClick={() => { log({ doubled: doubled() }); setCount(count() + doubled()); }}>{doubled()}</button>;",
+    ),
+    (
+        "derived_from_derived_object_and_options",
+        "import { $computed, $signal } from \"reze-js\";\nlet w = $signal(1);\nconst area = $computed(w * w, { name: \"area\" });\nconst box = $computed({ w, area }, { name: `box${w}` });\nexport const view = <p onClick={() => { w++; }}>{box.area}</p>;",
+        "import { computed, signal } from \"reze-js\";\nconst [w, setW] = signal(1);\nconst area = computed(() => w() * w(), { name: \"area\" });\nconst box = computed(() => ({ w: w(), area: area() }), { name: `box${w()}` });\nexport const view = <p onClick={() => { setW(w() + 1); }}>{box().area}</p>;",
+    ),
+    (
+        "let_and_type_annotation",
+        "import { $computed, $signal } from \"reze-js\";\nlet n = $signal(1);\nlet half: number = $computed(n / 2);\nexport const view = <p onClick={() => { n++; }}>{half}</p>;",
+        "import { computed, signal } from \"reze-js\";\nconst [n, setN] = signal(1);\nconst half = computed<number>(() => n() / 2);\nexport const view = <p onClick={() => { setN(n() + 1); }}>{half()}</p>;",
+    ),
+    (
+        "merged_with_computed_import",
+        "import { $computed, computed, signal } from \"reze-js\";\nconst [a, setA] = signal(1);\nconst b = computed(() => a() + 1);\nconst c = $computed(a() + b());\nexport const view = <p onClick={() => setA(2)}>{c}</p>;",
+        "import { computed, signal } from \"reze-js\";\nconst [a, setA] = signal(1);\nconst b = computed(() => a() + 1);\nconst c = computed(() => a() + b());\nexport const view = <p onClick={() => setA(2)}>{c()}</p>;",
+    ),
+    (
+        "only_computed_imported",
+        "import { $computed } from \"reze-js\";\nimport { signal } from \"@rezejs/signals\";\nconst [a, setA] = signal(1);\nconst c = $computed(a() * 3);\nexport const view = <p onClick={() => setA(2)}>{c}</p>;",
+        "import { computed } from \"reze-js\";\nimport { signal } from \"@rezejs/signals\";\nconst [a, setA] = signal(1);\nconst c = computed(() => a() * 3);\nexport const view = <p onClick={() => setA(2)}>{c()}</p>;",
+    ),
+    (
+        "aliased_import",
+        "import { $computed as derive, $signal } from \"reze-js\";\nlet a = $signal(1);\nconst c = derive(a + 1);\nexport const view = <p onClick={() => { a++; }}>{c}</p>;",
+        "import { computed as derive, signal } from \"reze-js\";\nconst [a, setA] = signal(1);\nconst c = derive(() => a() + 1);\nexport const view = <p onClick={() => { setA(a() + 1); }}>{c()}</p>;",
+    ),
+    (
+        "namespace_import",
+        "import * as R from \"reze-js\";\nlet a = R.$signal(1);\nconst c = R.$computed(a + 1);\nexport const view = <p onClick={() => { a++; }}>{c}</p>;",
+        "import * as R from \"reze-js\";\nconst [a, setA] = R.signal(1);\nconst c = R.computed(() => a() + 1);\nexport const view = <p onClick={() => { setA(a() + 1); }}>{c()}</p>;",
+    ),
+    (
+        "for_selector_and_show",
+        "import { $computed, $signal, For, Show } from \"reze-js\";\nlet picked = $signal(0);\nconst selected = $computed(picked + 1);\nconst big = $computed(picked > 3);\nexport const view = (\n  <ul>\n    <For each={rows()}>{(row) => <li class={selected === row().id ? \"on\" : \"\"} onClick={() => picked = row().id} />}</For>\n    <Show when={big}><p>big</p></Show>\n  </ul>\n);",
+        "import { computed, signal, For, Show } from \"reze-js\";\nconst [picked, setPicked] = signal(0);\nconst selected = computed(() => picked() + 1);\nconst big = computed(() => picked() > 3);\nexport const view = (\n  <ul>\n    <For each={rows()}>{(row) => <li class={selected() === row().id ? \"on\" : \"\"} onClick={() => setPicked(() => row().id)} />}</For>\n    <Show when={big()}><p>big</p></Show>\n  </ul>\n);",
+    ),
+    (
+        "async_component_read_after_await",
+        "import { $computed, $signal } from \"reze-js\";\nexport async function Card(props) {\n  let n = $signal(1);\n  const twice = $computed(n * 2);\n  const user = await fetchUser(props.id);\n  return <p onClick={() => n += 1}>{user.name}{twice}</p>;\n}",
+        "import { computed, signal } from \"reze-js\";\nexport async function Card(props) {\n  const [n, setN] = signal(1);\n  const twice = computed(() => n() * 2);\n  const user = await fetchUser(props.id);\n  return <p onClick={() => setN(n() + 1)}>{user.name}{twice()}</p>;\n}",
+    ),
+];
+
+#[test]
+fn computed_compiles_to_what_a_person_writes_with_computed() {
+    for (name, dsl, manual) in COMPUTED_INVARIANT {
+        assert_eq!(compiled(dsl, &options()), compiled(manual, &options()), "{name}");
+    }
+}
+
+#[test]
+fn computed_debug_names_name_the_declared_variable() {
+    let options = Options { debug_names: true, ..options() };
+    let dsl = "import { $computed, $signal } from \"reze-js\";\nlet count = $signal(0);\nconst doubled = $computed(count * 2);\nexport const view = <button onClick={() => count += 1}>{doubled}</button>;";
+    let manual = "import { computed, signal } from \"reze-js\";\nconst [count, setCount] = signal(0);\nconst doubled = computed(() => count() * 2);\nexport const view = <button onClick={() => setCount(count() + 1)}>{doubled()}</button>;";
+    let code = compiled(dsl, &options);
+    assert!(code.contains("{ name: \"doubled\" }"), "{code}");
+    assert_eq!(code, compiled(manual, &options));
+}
+
+#[test]
+fn computed_output_snapshots() {
+    let cases = [
+        (
+            "computed_counter",
+            "import { $computed, $signal } from \"reze-js\";\nlet count = $signal(0);\nconst doubled = $computed(count * 2);\nconst label = $computed({ text: `x${doubled}` }, { name: \"label\" });\nexport const view = <button onClick={() => count += 1}>{label.text}: {doubled}</button>;",
+        ),
+        (
+            "computed_async_component",
+            "import { $computed, $signal } from \"reze-js\";\nexport async function Card(props) {\n  let n = $signal(1);\n  const user = await fetchUser(props.id);\n  const title = $computed(user.name + n);\n  return <p title={title} onClick={() => n += 1}>{title}</p>;\n}",
+        ),
+    ];
+    for (name, source) in cases {
+        insta::assert_snapshot!(name, render(source), source);
+    }
+}
+
+fn computed_module(body: &str) -> String {
+    format!(
+        "import {{ $computed, $signal }} from \"reze-js\";\nlet count = $signal(0);\nconst d = $computed(count * 2);\n{body}"
+    )
+}
+
+#[test]
+fn every_write_to_a_computed_is_refused() {
+    for write in [
+        "export const f = () => { d = 1; };",
+        "export const f = () => { d += 1; };",
+        "export const f = () => { d ||= 1; };",
+        "export const f = () => { d++; };",
+        "export const f = (list) => { [d] = list; };",
+        "export const f = (list) => { for (d of list) {} };",
+    ] {
+        let d = only(&computed_module(write), Code::ComputedWritten);
+        assert_eq!(d.data["computed"], "d", "{write}");
+    }
+}
+
+#[test]
+fn a_function_literal_argument_is_refused_and_the_fix_unwraps_it() {
+    let source = "import { $computed, $signal } from \"reze-js\";\nlet count = $signal(0);\nconst d = $computed(() => ({ n: count }));\nexport const v = <p onClick={() => { count++; }}>{d.n}</p>;";
+    let d = only(source, Code::ComputedFunction);
+    let edit = &d.fixes[0].edits[0];
+    let mut fixed = source.to_string();
+    fixed.replace_range(edit.start as usize..edit.end as usize, &edit.text);
+    assert!(fixed.contains("$computed(({ n: count }))"), "{fixed}");
+    assert!(compiled(&fixed, &options()).contains("computed(() => ({ n: count() }))"));
+
+    for literal in [
+        "async () => count",
+        "(x) => count",
+        "() => { return count; }",
+        "function () { return count; }",
+    ] {
+        let source = computed_module(&format!(
+            "const e = $computed({literal});\nexport const v = <p>{{e}}</p>;"
+        ));
+        assert!(only(&source, Code::ComputedFunction).fixes.is_empty(), "{literal}");
+    }
+}
+
+#[test]
+fn awaiting_inside_the_expression_is_refused_but_inside_a_nested_function_is_not() {
+    let source = "import { $computed } from \"reze-js\";\nexport async function load(id) {\n  const d = $computed(await fetchUser(id));\n  return d;\n}";
+    only(source, Code::ComputedAwait);
+    let nested = "import { $computed } from \"reze-js\";\nexport function load(id) {\n  const d = $computed(pick(async () => await fetchUser(id)));\n  return d;\n}";
+    assert!(
+        compiled(nested, &options())
+            .contains("computed(() => pick(async () => await fetchUser(id)))")
+    );
+}
+
+#[test]
+fn computed_declaration_errors_name_the_primitive() {
+    let d = only(
+        "import { $computed } from \"reze-js\";\nexport const view = <p>{$computed(1)}</p>;",
+        Code::SignalNotDeclared,
+    );
+    assert_eq!(d.data["primitive"], "$computed");
+    assert!(d.message.contains("`$computed` is only valid"), "{}", d.message);
+    only("import { $computed } from \"reze-js\";\nvar a = $computed(1);", Code::SignalNotDeclared);
+    let d = only(
+        "import { $computed } from \"reze-js\";\nconst { a } = $computed({ a: 1 });",
+        Code::SignalPattern,
+    );
+    assert_eq!(d.data["primitive"], "$computed");
+    let d = only(&computed_module("export { d };"), Code::SignalExported);
+    assert_eq!((d.data["signal"].as_str(), d.data["primitive"].as_str()), ("d", "$computed"));
+}
+
+#[test]
+fn reading_a_computed_once_warns_and_declaring_one_does_not() {
+    let source = "import { $computed, $signal, untrack } from \"reze-js\";\nlet count = $signal(0);\nexport function Counter() {\n  const doubled = $computed(count * 2);\n  const copy = doubled;\n  const seed = untrack(() => doubled);\n  return <p onClick={() => { count++; }}>{copy}{seed}</p>;\n}";
+    let out = compile(source, "test.tsx", &options()).unwrap().unwrap();
+    let once: Vec<_> = out.diagnostics.iter().filter(|d| d.code == Code::SignalReadOnce).collect();
+    assert_eq!(once.len(), 1, "{once:?}");
+    assert_eq!((once[0].start.line, once[0].data["signal"].as_str()), (5, "doubled"));
 }

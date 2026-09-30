@@ -25,7 +25,7 @@ export function Counter() {
 _$delegateEvents(["click"]);
 
 // warn
-[SIGNAL_READ_ONCE] `doubled` copies `count` once, when the component runs, and never updates. Read `count` where the value is used, or derive it with `computed(() => …)`.
+[SIGNAL_READ_ONCE] `doubled` copies `count` once, when the component runs, and never updates. Read `count` where the value is used, or derive it with `$computed(…)`.
   at case.tsx:4:19
   3 | export function Counter() {
 > 4 |   const doubled = count * 2;

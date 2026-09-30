@@ -62,7 +62,7 @@ pub fn compile(
     options: &Options,
 ) -> Result<Option<Output>, Vec<Diagnostic>> {
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::tsx());
-    let (rewritten, first_pass) = if source.contains("$signal") {
+    let (rewritten, first_pass) = if dsl::mentions_syntax(source) {
         match dsl::rewrite(source, source_type) {
             Ok(Some((rewritten, reports))) => (Some(rewritten), reports),
             Ok(None) => (None, Vec::new()),
