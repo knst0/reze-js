@@ -1,4 +1,4 @@
-import { endTracking, enterEffect, enterOwner, exitEffect, reportError, setActiveSub, startTracking } from "./context";
+import { endTracking, enterEffect, enterOwner, exitEffect, markPure, reportError, setActiveSub, startTracking } from "./context";
 import { debugHook } from "./devtools";
 import { FlagDirty, FlagOwnsChildren, FlagPending, FlagRecursedCheck, FlagWatching } from "./flags";
 import { checkDirty, disposeChildren, disposeNode, type Link, type ReactiveNode } from "./graph";
@@ -64,8 +64,11 @@ class RenderNode<T> implements ReactiveNode {
  */
 export function renderEffect<T>(fn: (prev: T) => T, init?: T): void {
   const node = new RenderNode(fn, init as T);
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
-    debugHook.created(node, "render", undefined, () => node.value);
+  if (process.env.NODE_ENV !== "production") {
+    markPure(node);
+    if (debugHook !== undefined) {
+      debugHook.created(node, "render", undefined, () => node.value);
+    }
   }
   const prevSub = enterOwner(node);
   try {

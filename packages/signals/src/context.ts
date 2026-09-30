@@ -29,6 +29,18 @@ export function getOwner(): ReactiveNode | undefined {
   return activeSub ?? activeOwner;
 }
 
+let pureNodes: WeakSet<ReactiveNode> | undefined;
+
+/** Development only: marks `node` as a computation whose run must not write data or call actions. */
+export function markPure(node: ReactiveNode): void {
+  (pureNodes ??= new WeakSet()).add(node);
+}
+
+/** Development only: whether the active sub is a computation marked by `markPure`. */
+export function isPureRun(): boolean {
+  return activeSub !== undefined && pureNodes !== undefined && pureNodes.has(activeSub);
+}
+
 /** Records `node` as owned by `owner`: disposed before the owner re-runs and when it is disposed. */
 export function adopt(node: ReactiveNode, owner: ReactiveNode): void {
   link(node, owner, 0);

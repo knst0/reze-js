@@ -30,7 +30,7 @@ pub const RUNTIME_MODULE: &str = "reze-js";
 pub struct Options {
     /// Emit a v3 source map.
     pub source_map: bool,
-    /// Pass `{ name }` to `signal`/`computed` after the declared variable, for devtools.
+    /// Pass `{ name }` to `signal`/`computed`/`action` after the declared variable, for devtools.
     pub debug_names: bool,
     /// Register components for hot-swap through `import.meta.hot`.
     pub hot: bool,

@@ -1,0 +1,28 @@
+---
+source: crates/reze_compiler/tests/action.rs
+expression: "import { $action, For, Show, store } from \"reze-js\";\nconst todos = store([{ id: 1, done: false }]);\nconst toggle = $action(async (todo) => {\n  todo.done = !todo.done;\n  const saved = await api.toggle(todo.id);\n  todo.updatedAt = saved.updatedAt;\n});\nexport const view = (\n  <ul>\n    <For each={todos}>{(todo) => <li><input type=\"checkbox\" checked={todo().done} onChange={() => toggle(todo())} /></li>}</For>\n    <Show when={toggle.pending > 0}><p>Saving…</p></Show>\n  </ul>\n);"
+---
+import { action, For, Show, store } from "reze-js";
+import { template as _$template, append as _$append, list as _$list, child as _$child, renderEffect as _$renderEffect, computed as _$computed, delegateEvents as _$delegateEvents } from "reze-js";
+const todos = store([{ id: 1, done: false }]);
+const toggle = action(async (_a$, todo) => { try {
+  todo.done = !todo.done;
+  const saved = _a$.resume(await _a$.suspend(api.toggle(todo.id)));
+  todo.updatedAt = saved.updatedAt;
+} finally { _a$.end(); } });
+export const view = (
+  (() => {
+  var _el$ = _$template("<ul>");
+  _$append(_el$, _$list(() => todos, (todo) => {
+  var _el$2 = _$template("<li><input type=checkbox>"),
+    _el$3 = _$child(_el$2);
+  _el$3.$$change = () => toggle(todo());
+  _$renderEffect(() => _el$3.checked = todo().done);
+  return _el$2;
+}));
+  var _c$ = _$computed(() => toggle.pending > 0);
+  _$append(_el$, () => _c$() && _$template("<p>Saving…"));
+  return _el$;
+})()
+);
+_$delegateEvents(["change"]);

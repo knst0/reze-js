@@ -1,6 +1,6 @@
-//! First pass of `$signal` and `$computed`: rewrites the syntax into the `signal` tuple and the
-//! `computed` getter a person would write. The second pass is the ordinary compiler, run on the
-//! rewritten text.
+//! First pass of `$signal`, `$computed` and `$action`: rewrites the syntax into the `signal`
+//! tuple, the `computed` getter and the `action` body a person would write. The second pass is
+//! the ordinary compiler, run on the rewritten text.
 
 use std::collections::{HashMap, HashSet};
 
@@ -25,15 +25,17 @@ use crate::namer::Namer;
 enum Primitive {
     Signal,
     Computed,
+    Action,
 }
 
 impl Primitive {
-    const ALL: [Primitive; 2] = [Primitive::Signal, Primitive::Computed];
+    const ALL: [Primitive; 3] = [Primitive::Signal, Primitive::Computed, Primitive::Action];
 
     fn dollar(self) -> &'static str {
         match self {
             Primitive::Signal => "$signal",
             Primitive::Computed => "$computed",
+            Primitive::Action => "$action",
         }
     }
 
@@ -41,6 +43,7 @@ impl Primitive {
         match self {
             Primitive::Signal => "signal",
             Primitive::Computed => "computed",
+            Primitive::Action => "action",
         }
     }
 
@@ -106,7 +109,7 @@ impl Rewritten {
     }
 }
 
-/// `Ok(None)` when the file does not use `$signal` or `$computed`, or does not parse: the
+/// `Ok(None)` when the file does not use the syntax, or does not parse: the
 /// ordinary pass reports syntax errors. `Err` holds the reports of the first pass when one is an
 /// error; `Ok` carries its warnings.
 pub fn rewrite(
@@ -137,10 +140,11 @@ pub fn rewrite(
         consumed: HashSet::new(),
         reports: Vec::new(),
         in_for_init: false,
+        has_action: false,
     };
     declarations.visit_program(program);
-    let Declarations { variables, declarators, reports, .. } = declarations;
-    if variables.is_empty() && reports.is_empty() {
+    let Declarations { variables, declarators, reports, has_action, .. } = declarations;
+    if variables.is_empty() && !has_action && reports.is_empty() {
         return Ok(None);
     }
 
@@ -156,6 +160,9 @@ pub fn rewrite(
         top: HashSet::new(),
         discarded: HashSet::new(),
         component_inits: HashSet::new(),
+        run: if has_action { namer.fresh("_a$") } else { String::new() },
+        frame: None,
+        later: HashMap::new(),
     };
     rewriter.visit_program(program);
     let Rewriter { mut patches, mut reports, .. } = rewriter;
@@ -388,25 +395,36 @@ struct Declarations<'p, 's, 'n> {
     namer: &'p mut Namer<'n>,
     variables: HashMap<SymbolId, Reactive>,
     declarators: HashMap<u32, Declarator>,
-    /// Start offsets of syntax callees that initialize a declaration.
+    /// Start offsets of syntax callees that initialize a declaration or call `$action`.
     consumed: HashSet<u32>,
     reports: Vec<Report>,
     in_for_init: bool,
+    has_action: bool,
+}
+
+/// The primitive `callee` names: an imported syntax function, or `ns.$name` of a runtime namespace.
+fn callee_primitive(
+    scoping: &Scoping,
+    imports: &Imports,
+    callee: &Expression<'_>,
+) -> Option<Primitive> {
+    match callee.without_parentheses() {
+        Expression::Identifier(id) => symbol_of(scoping, id).and_then(|s| imports.primitive_of(s)),
+        Expression::StaticMemberExpression(member) => namespace_member(scoping, imports, member),
+        _ => None,
+    }
+}
+
+/// The report for syntax used anywhere but where it is valid.
+fn misused(primitive: Primitive, span: Span) -> Report {
+    match primitive {
+        Primitive::Action => Report::new(diagnostic::Code::ActionNotCalled, span),
+        _ => Report::new(diagnostic::Code::SignalNotDeclared, span)
+            .arg("primitive", primitive.dollar()),
+    }
 }
 
 impl Declarations<'_, '_, '_> {
-    fn callee_primitive(&self, callee: &Expression<'_>) -> Option<Primitive> {
-        match callee.without_parentheses() {
-            Expression::Identifier(id) => {
-                symbol_of(self.scoping, id).and_then(|s| self.imports.primitive_of(s))
-            }
-            Expression::StaticMemberExpression(member) => {
-                namespace_member(self.scoping, self.imports, member)
-            }
-            _ => None,
-        }
-    }
-
     fn is_written(&self, symbol: SymbolId) -> bool {
         self.scoping
             .get_resolved_reference_ids(symbol)
@@ -421,7 +439,12 @@ impl Declarations<'_, '_, '_> {
     ) {
         let Some(init) = &declarator.init else { return };
         let Some(call) = dollar_call(init) else { return };
-        let Some(primitive) = self.callee_primitive(&call.callee) else { return };
+        let Some(primitive) = callee_primitive(self.scoping, self.imports, &call.callee) else {
+            return;
+        };
+        if primitive == Primitive::Action {
+            return;
+        }
         self.consumed.insert(call.callee.without_parentheses().span().start);
         if !matches!(
             declaration.kind,
@@ -462,7 +485,8 @@ fn symbol_of(scoping: &Scoping, id: &IdentifierReference<'_>) -> Option<SymbolId
     scoping.get_reference(id.reference_id.get()?).symbol_id()
 }
 
-/// The primitive `member` names when it is `ns.$signal` or `ns.$computed` of a runtime namespace.
+/// The primitive `member` names when it is `ns.$signal`, `ns.$computed` or `ns.$action` of a
+/// runtime namespace.
 fn namespace_member(
     scoping: &Scoping,
     imports: &Imports,
@@ -499,25 +523,27 @@ impl<'a> Visit<'a> for Declarations<'_, '_, '_> {
         walk::walk_variable_declaration(self, it);
     }
 
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if callee_primitive(self.scoping, self.imports, &it.callee) == Some(Primitive::Action) {
+            self.consumed.insert(it.callee.without_parentheses().span().start);
+            self.has_action = true;
+        }
+        walk::walk_call_expression(self, it);
+    }
+
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
         if let Some(primitive) =
             symbol_of(self.scoping, it).and_then(|s| self.imports.primitive_of(s))
             && !self.consumed.contains(&it.span.start)
         {
-            self.reports.push(
-                Report::new(diagnostic::Code::SignalNotDeclared, it.span)
-                    .arg("primitive", primitive.dollar()),
-            );
+            self.reports.push(misused(primitive, it.span));
         }
     }
 
     fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
         if let Some(primitive) = namespace_member(self.scoping, self.imports, it) {
             if !self.consumed.contains(&it.span.start) {
-                self.reports.push(
-                    Report::new(diagnostic::Code::SignalNotDeclared, it.span)
-                        .arg("primitive", primitive.dollar()),
-                );
+                self.reports.push(misused(primitive, it.span));
             }
             return;
         }
@@ -541,6 +567,20 @@ struct Rewriter<'p, 's> {
     /// Expressions whose value nothing reads.
     discarded: HashSet<u32>,
     component_inits: HashSet<u32>,
+    /// The name of the run parameter every `$action` body gets.
+    run: String,
+    frame: Option<ActionFrame>,
+    /// Start offsets of functions passed where they run later, with how to name them.
+    later: HashMap<u32, &'static str>,
+}
+
+/// Where the rewriter is inside the body of the innermost `$action`.
+#[derive(Default)]
+struct ActionFrame {
+    /// Functions entered inside the body; their `await`s are their own.
+    nested: u32,
+    /// The outermost entered function that likely runs after the action moved on.
+    later: Option<&'static str>,
 }
 
 impl Rewriter<'_, '_> {
@@ -682,24 +722,12 @@ impl Rewriter<'_, '_> {
                 self.patch(it.id.span().end, init.span().start, " = ");
             }
             Primitive::Computed => {}
+            Primitive::Action => unreachable!("`$action` declares no variable"),
         }
         if let Some(keyword) = plan.keyword {
             self.patch(keyword.start, keyword.end, "const");
         }
-        match call.callee.without_parentheses() {
-            Expression::Identifier(id) => {
-                if let Some(name) = symbol_of(self.scoping, id).and_then(|s| self.callees.get(&s))
-                    && name.as_str() != id.name.as_str()
-                {
-                    self.patch(id.span.start, id.span.end, name.clone());
-                }
-            }
-            Expression::StaticMemberExpression(member) => {
-                let property = member.property.span;
-                self.patch(property.start, property.end, primitive.runtime());
-            }
-            _ => {}
-        }
+        self.rename_callee(&call.callee, primitive);
         if let (Some(annotation), None) = (&it.type_annotation, &call.type_arguments) {
             let text = format!("<{}>", self.text(annotation.type_annotation.span()));
             let at = call.callee.span().end;
@@ -716,6 +744,136 @@ impl Rewriter<'_, '_> {
         }
         for argument in arguments {
             self.visit_argument(argument);
+        }
+    }
+
+    /// Points the syntax callee at its runtime function.
+    fn rename_callee(&mut self, callee: &Expression<'_>, primitive: Primitive) {
+        match callee.without_parentheses() {
+            Expression::Identifier(id) => {
+                if let Some(name) = symbol_of(self.scoping, id).and_then(|s| self.callees.get(&s))
+                    && name.as_str() != id.name.as_str()
+                {
+                    self.patch(id.span.start, id.span.end, name.clone());
+                }
+            }
+            Expression::StaticMemberExpression(member) => {
+                let property = member.property.span;
+                self.patch(property.start, property.end, primitive.runtime());
+            }
+            _ => {}
+        }
+    }
+
+    /// Rewrites `$action(fn, …)` into `action(fn', …)`, where `fn'` takes the run first and
+    /// resumes it after each `await`.
+    fn action(&mut self, call: &CallExpression<'_>) {
+        self.rename_callee(&call.callee, Primitive::Action);
+        let mut arguments = call.arguments.iter();
+        let body = arguments.next();
+        match body.and_then(Argument::as_expression).map(Expression::without_parentheses) {
+            Some(Expression::ArrowFunctionExpression(arrow)) => {
+                let outer = self.frame.replace(ActionFrame::default());
+                self.run_parameter(&arrow.params, None);
+                self.visit_formal_parameters(&arrow.params);
+                match &arrow.body {
+                    ArrowFunctionBody::FunctionBody(body) => self.action_block(body),
+                    body => {
+                        if let Some(expression) = body.as_expression() {
+                            self.action_expression(expression);
+                        }
+                    }
+                }
+                self.frame = outer;
+            }
+            Some(Expression::FunctionExpression(function)) if function.generator => {
+                self.reports.push(
+                    Report::new(diagnostic::Code::ActionUnsupported, function.span)
+                        .arg("construct", "generator"),
+                );
+            }
+            Some(Expression::FunctionExpression(function)) => {
+                let outer = self.frame.replace(ActionFrame::default());
+                self.run_parameter(&function.params, function.this_param.as_deref());
+                self.visit_formal_parameters(&function.params);
+                if let Some(body) = &function.body {
+                    self.action_block(body);
+                }
+                self.frame = outer;
+            }
+            _ => {
+                let span = body.map_or(call.span, GetSpan::span);
+                self.reports.push(Report::new(diagnostic::Code::ActionArgument, span));
+                if let Some(body) = body {
+                    self.visit_argument(body);
+                }
+            }
+        }
+        for argument in arguments {
+            self.visit_argument(argument);
+        }
+    }
+
+    fn run_parameter(&mut self, params: &FormalParameters<'_>, this: Option<&TSThisParameter<'_>>) {
+        let run = self.run.clone();
+        if let Some(this) = this {
+            self.patch(this.span.end, this.span.end, format!(", {run}"));
+        } else if self.text(params.span).starts_with('(') {
+            let at = params.span.start + 1;
+            let is_empty = params.items.is_empty() && params.rest.is_none();
+            self.patch(at, at, if is_empty { run } else { format!("{run}, ") });
+        } else {
+            self.patch(params.span.start, params.span.start, format!("({run}, "));
+            self.patch(params.span.end, params.span.end, ")");
+        }
+    }
+
+    /// `=> expression` becomes `=> { try { return expression; } finally { run.end(); } }`.
+    fn action_expression(&mut self, expression: &Expression<'_>) {
+        let span = expression.span();
+        self.patch(span.start, span.start, "{ try { return ");
+        self.visit_expression(expression);
+        let end = format!("; }} finally {{ {}.end(); }} }}", self.run);
+        self.patch(span.end, span.end, end);
+    }
+
+    /// `{ body }` becomes `{ try { body } finally { run.end(); } }`, directives kept first.
+    fn action_block(&mut self, body: &FunctionBody<'_>) {
+        let at = body.directives.last().map_or(body.span.start + 1, |d| d.span.end);
+        self.patch(at, at, " try {");
+        for statement in &body.statements {
+            self.visit_statement(statement);
+        }
+        let end = body.span.end - 1;
+        self.patch(end, end, format!("}} finally {{ {}.end(); }} ", self.run));
+    }
+
+    /// Enters a function nested in an action body; the result restores the frame on `leave`.
+    fn enter(&mut self, start: u32, is_async: bool) -> Option<Option<&'static str>> {
+        let later = self.later.get(&start).copied();
+        let frame = self.frame.as_mut()?;
+        let outer = frame.later;
+        frame.nested += 1;
+        frame.later = outer.or(later).or(is_async.then_some("an async function"));
+        Some(outer)
+    }
+
+    fn leave(&mut self, outer: Option<Option<&'static str>>) {
+        if let (Some(frame), Some(later)) = (self.frame.as_mut(), outer) {
+            frame.nested -= 1;
+            frame.later = later;
+        }
+    }
+
+    /// The body level of an action, where `await` suspends the action itself.
+    fn in_action_body(&self) -> bool {
+        self.frame.as_ref().is_some_and(|frame| frame.nested == 0)
+    }
+
+    fn check_nested_write(&mut self, span: Span, target_is_member: bool) {
+        if let (true, Some(via)) = (target_is_member, self.frame.as_ref().and_then(|f| f.later)) {
+            self.reports
+                .push(Report::new(diagnostic::Code::ActionNestedWrite, span).arg("via", via));
         }
     }
 
@@ -827,10 +985,85 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
     }
 
     fn visit_unary_expression(&mut self, it: &UnaryExpression<'a>) {
-        if it.operator == UnaryOperator::Void {
-            self.mark_discarded(&it.argument);
+        match it.operator {
+            UnaryOperator::Void => self.mark_discarded(&it.argument),
+            UnaryOperator::Delete => {
+                self.check_nested_write(it.span, it.argument.is_member_expression())
+            }
+            _ => {}
         }
         walk::walk_unary_expression(self, it);
+    }
+
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if callee_primitive(self.scoping, self.imports, &it.callee) == Some(Primitive::Action) {
+            self.action(it);
+            return;
+        }
+        if let (true, Some(via)) = (self.frame.is_some(), runs_later(&it.callee)) {
+            for argument in &it.arguments {
+                if let Some(
+                    Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_),
+                ) = argument.as_expression().map(Expression::without_parentheses)
+                {
+                    self.later.insert(argument.span().start, via);
+                }
+            }
+        }
+        walk::walk_call_expression(self, it);
+    }
+
+    fn visit_await_expression(&mut self, it: &AwaitExpression<'a>) {
+        if !self.in_action_body() {
+            walk::walk_await_expression(self, it);
+            return;
+        }
+        let argument = it.argument.span();
+        let (resume, suspend) = (format!("{}.resume(", self.run), format!("{}.suspend(", self.run));
+        self.patch(it.span.start, it.span.start, resume);
+        self.patch(argument.start, argument.start, suspend);
+        self.visit_expression(&it.argument);
+        self.patch(argument.end, argument.end, "))");
+    }
+
+    fn visit_try_statement(&mut self, it: &TryStatement<'a>) {
+        if self.in_action_body() {
+            let try_awaits = block_awaits(&it.block);
+            let resume = format!(" {}.resume();", self.run);
+            if let (true, Some(handler)) = (try_awaits, &it.handler) {
+                let at = handler.body.span.start + 1;
+                self.patch(at, at, resume.clone());
+            }
+            let catch_awaits =
+                it.handler.as_ref().is_some_and(|handler| block_awaits(&handler.body));
+            if let (true, Some(finalizer)) = (try_awaits || catch_awaits, &it.finalizer) {
+                let at = finalizer.span.start + 1;
+                self.patch(at, at, resume);
+            }
+        }
+        walk::walk_try_statement(self, it);
+    }
+
+    fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
+        if it.r#await && self.in_action_body() {
+            let span = Span::sized(it.span.start, 9);
+            self.reports.push(
+                Report::new(diagnostic::Code::ActionUnsupported, span)
+                    .arg("construct", "for await"),
+            );
+        }
+        walk::walk_for_of_statement(self, it);
+    }
+
+    fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
+        if it.kind == VariableDeclarationKind::AwaitUsing && self.in_action_body() {
+            let span = Span::sized(it.span.start, 11);
+            self.reports.push(
+                Report::new(diagnostic::Code::ActionUnsupported, span)
+                    .arg("construct", "await using"),
+            );
+        }
+        walk::walk_variable_declaration(self, it);
     }
 
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
@@ -856,7 +1089,9 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
         if let (true, Some(body)) = (is_component, &it.body) {
             self.check_read_once(body);
         }
+        let outer = self.enter(it.span.start, it.r#async);
         walk::walk_function(self, it, flags);
+        self.leave(outer);
     }
 
     fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
@@ -865,7 +1100,9 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
         {
             self.check_read_once(body);
         }
+        let outer = self.enter(it.span.start, it.r#async);
         walk::walk_arrow_function_expression(self, it);
+        self.leave(outer);
     }
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
@@ -875,9 +1112,11 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
             match variable.primitive {
                 Primitive::Signal => self.assign(it, symbol),
                 Primitive::Computed => self.computed_written(it.span, symbol),
+                Primitive::Action => unreachable!("`$action` declares no variable"),
             }
             return;
         }
+        self.check_nested_write(it.span, it.left.is_member_expression());
         walk::walk_assignment_expression(self, it);
     }
 
@@ -888,9 +1127,11 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
             match variable.primitive {
                 Primitive::Signal => self.update(it, symbol),
                 Primitive::Computed => self.computed_written(it.span, symbol),
+                Primitive::Action => unreachable!("`$action` declares no variable"),
             }
             return;
         }
+        self.check_nested_write(it.span, it.argument.is_member_expression());
         walk::walk_update_expression(self, it);
     }
 
@@ -921,6 +1162,7 @@ impl<'a> Visit<'a> for Rewriter<'_, '_> {
                     .arg("signal", self.name(symbol)),
             ),
             (true, Primitive::Computed) => self.computed_written(it.span, symbol),
+            (true, Primitive::Action) => unreachable!("`$action` declares no variable"),
         }
     }
 
@@ -1003,21 +1245,52 @@ fn is_tight(e: &Expression<'_>) -> bool {
     )
 }
 
+/// Finds an `await` or `yield` outside nested functions.
+#[derive(Default)]
+struct Suspends(bool);
+
+impl<'a> Visit<'a> for Suspends {
+    fn visit_await_expression(&mut self, _: &AwaitExpression<'a>) {
+        self.0 = true;
+    }
+    fn visit_yield_expression(&mut self, _: &YieldExpression<'a>) {
+        self.0 = true;
+    }
+    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
+    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
+}
+
 /// Whether `e` awaits or yields outside a nested function, so an arrow around it would not parse.
 fn suspends(e: &Expression<'_>) -> bool {
-    #[derive(Default)]
-    struct Suspends(bool);
-    impl<'a> Visit<'a> for Suspends {
-        fn visit_await_expression(&mut self, _: &AwaitExpression<'a>) {
-            self.0 = true;
-        }
-        fn visit_yield_expression(&mut self, _: &YieldExpression<'a>) {
-            self.0 = true;
-        }
-        fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
-        fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
-    }
     let mut check = Suspends::default();
     check.visit_expression(e);
     check.0
+}
+
+/// Whether `block` awaits outside a nested function, so code after it may run without the action.
+fn block_awaits(block: &BlockStatement<'_>) -> bool {
+    let mut check = Suspends::default();
+    check.visit_block_statement(block);
+    check.0
+}
+
+/// How to name a function passed to `callee` when `callee` likely calls it after the caller moved on.
+fn runs_later(callee: &Expression<'_>) -> Option<&'static str> {
+    match callee.without_parentheses() {
+        Expression::StaticMemberExpression(member) => match member.property.name.as_str() {
+            "then" => Some("a `.then` callback"),
+            "catch" => Some("a `.catch` callback"),
+            "finally" => Some("a `.finally` callback"),
+            _ => None,
+        },
+        Expression::Identifier(id) => match id.name.as_str() {
+            "setTimeout" => Some("a `setTimeout` callback"),
+            "setInterval" => Some("a `setInterval` callback"),
+            "queueMicrotask" => Some("a `queueMicrotask` callback"),
+            "requestAnimationFrame" => Some("a `requestAnimationFrame` callback"),
+            "requestIdleCallback" => Some("a `requestIdleCallback` callback"),
+            _ => None,
+        },
+        _ => None,
+    }
 }

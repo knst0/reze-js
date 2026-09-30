@@ -1,36 +1,45 @@
-import { untrack } from "./owner";
+import { isPureRun } from "./context";
 import { SignalNode } from "./signal";
 
-type Key = string | symbol;
+export type Key = string | symbol;
 
 interface TrackedObject {
   properties: Map<Key, SignalNode>;
   keys: SignalNode | undefined;
 }
 
+/** The value of a key an object does not have. */
+export const ABSENT: unique symbol = Symbol("absent");
+
+/**
+ * Sees every write of a store data property before it lands; `prev` and `next` are `ABSENT` for a
+ * missing key. Returns `true` when it took over the write, which then must not be applied.
+ */
+export type WriteHook = (target: object, key: Key, prev: unknown, next: unknown) => boolean;
+
+let writeHook: WriteHook | undefined;
+
+export function setWriteHook(hook: WriteHook): void {
+  writeHook = hook;
+}
+
 const tracked = new WeakMap<object, TrackedObject>();
-const stateProxies = new WeakMap<object, object>();
+const mutableProxies = new WeakMap<object, object>();
+const readonlyProxies = new WeakMap<object, object>();
 const targetOfProxy = new WeakMap<object, object>();
 
 /**
- * A deep reactive object: `state` reads as if every own property of every object and array in
- * the tree were a `signal` (plus one signal per key set), and throws `TypeError` on writes.
- * `setState(fn)` runs `fn(draft)` untracked; writes through `draft` notify immediately, and
- * `draft` proxies throw `TypeError` once `fn` returns. `init` is adopted, not copied.
+ * A deep reactive object: reads track every own property of every plain object and array in the
+ * tree as if it were a `signal` (plus one signal per key set), and writes (assignment, `delete`,
+ * array methods) change the object in place and notify immediately. `init` is adopted, not copied.
  */
-export function store<T extends object>(init: T): [state: T, setState: (fn: (draft: T) => void) => void] {
-  const target = toTarget(init) as T;
-  return [
-    stateProxy(target),
-    (fn) => {
-      const drafts = new DraftHandler();
-      try {
-        untrack(() => fn(drafts.proxy(target)));
-      } finally {
-        drafts.revoke();
-      }
-    },
-  ];
+export function store<T extends object>(init: T): T {
+  return proxyOf(toTarget(init), mutableProxies, mutableHandler);
+}
+
+/** A view of `state` that reads the same signals and throws `TypeError` on every write. */
+export function readonly<T extends object>(state: T): T {
+  return proxyOf(toTarget(state), readonlyProxies, readonlyHandler);
 }
 
 function toTarget<T>(value: T): T {
@@ -61,113 +70,152 @@ function isFrozenData(desc: PropertyDescriptor): boolean {
   return !desc.writable && !desc.configurable;
 }
 
-function stateProxy<T extends object>(target: T): T {
-  let proxy = stateProxies.get(target);
+function proxyOf<T extends object>(target: T, proxies: WeakMap<object, object>, handler: ProxyHandler<object>): T {
+  let proxy = proxies.get(target);
   if (proxy === undefined) {
-    proxy = new Proxy(target, stateHandler);
-    stateProxies.set(target, proxy);
+    proxy = new Proxy(target, handler);
+    proxies.set(target, proxy);
     targetOfProxy.set(proxy, target);
   }
   return proxy as T;
 }
 
-function rejectWrite(): never {
-  throw new TypeError("store state is read-only; write through setState");
+function read(target: object, key: Key, receiver: unknown, proxies: WeakMap<object, object>, handler: ProxyHandler<object>): unknown {
+  const properties = trackedObject(target).properties;
+  let property = properties.get(key);
+  if (property === undefined) {
+    const desc = Reflect.getOwnPropertyDescriptor(target, key);
+    if (desc ? !("value" in desc) || isFrozenData(desc) : key in target) {
+      return Reflect.get(target, key, receiver);
+    }
+    property = new SignalNode<unknown>(toTarget(desc?.value), Object.is);
+    properties.set(key, property);
+  }
+  const value = property.read();
+  return isWrappable(value) ? proxyOf(value, proxies, handler) : value;
 }
 
-const stateHandler: ProxyHandler<object> = {
-  get(target, key, receiver) {
-    const properties = trackedObject(target).properties;
-    let property = properties.get(key);
-    if (property === undefined) {
-      const desc = Reflect.getOwnPropertyDescriptor(target, key);
-      if (desc ? !("value" in desc) || isFrozenData(desc) : key in target) {
-        return Reflect.get(target, key, receiver);
-      }
-      property = new SignalNode<unknown>(toTarget(desc?.value), Object.is);
-      properties.set(key, property);
+function ownValue(target: object, key: Key): unknown {
+  const desc = Reflect.getOwnPropertyDescriptor(target, key);
+  return desc === undefined ? ABSENT : desc.value;
+}
+
+const PURE_WRITE = "store written while a computed or render binding runs; derive the value instead, or write from an event or effect";
+
+/** Writes `value` to `key` of the raw object `target` and notifies its readers, bypassing the write hook. */
+export function writeKey(target: object, key: Key, value: unknown): void {
+  if (value === ABSENT) {
+    deleteKey(target, key);
+  } else if (Object.hasOwn(target, key)) {
+    defineKey(target, key, { value });
+  } else {
+    defineKey(target, key, { value, writable: true, enumerable: true, configurable: true });
+  }
+}
+
+function defineKey(target: object, key: Key, desc: PropertyDescriptor): boolean {
+  const hadKey = Object.hasOwn(target, key);
+  const prevLength = Array.isArray(target) ? target.length : 0;
+  if (!Reflect.defineProperty(target, key, desc)) return false;
+  const entry = tracked.get(target);
+  if (entry === undefined) return true;
+  const property = entry.properties.get(key);
+  if (property !== undefined) property.write((target as Record<Key, unknown>)[key]);
+  let keysChanged = !hadKey;
+  if (Array.isArray(target) && target.length !== prevLength) {
+    const length = entry.properties.get("length");
+    if (length !== undefined) length.write(target.length);
+    for (let i = target.length; i < prevLength; i++) {
+      const removed = entry.properties.get(String(i));
+      if (removed !== undefined) removed.write(undefined);
+      keysChanged = true;
     }
-    const value = toTarget(property.read());
-    return isWrappable(value) ? stateProxy(value) : value;
+  }
+  if (keysChanged && entry.keys !== undefined) entry.keys.write(undefined);
+  return true;
+}
+
+function deleteKey(target: object, key: Key): boolean {
+  const hadKey = Object.hasOwn(target, key);
+  if (!Reflect.deleteProperty(target, key)) return false;
+  const entry = tracked.get(target);
+  if (hadKey && entry !== undefined) {
+    const property = entry.properties.get(key);
+    if (property !== undefined) property.write(undefined);
+    if (entry.keys !== undefined) entry.keys.write(undefined);
+  }
+  return true;
+}
+
+/**
+ * Hands the hook what a write to an array changes besides `key`: the indices a shorter `length`
+ * removes, or the `length` an index past the end grows, so undoing each key undoes the write.
+ */
+function hookArrayLength(hook: WriteHook, target: unknown[], key: Key, value: unknown): void {
+  if (key === "length") {
+    if (typeof value !== "number") return;
+    for (let i = value; i < target.length; i++) {
+      if (Object.hasOwn(target, i)) hook(target, String(i), target[i], ABSENT);
+    }
+  } else if (typeof key === "string") {
+    const index = Number(key);
+    if (index >= target.length && String(index >>> 0) === key) hook(target, "length", target.length, index + 1);
+  }
+}
+
+function rejectWrite(): never {
+  throw new TypeError("readonly store state cannot be written");
+}
+
+function rejectShapeChange(): never {
+  throw new TypeError("store state keeps its prototype and stays extensible");
+}
+
+function hasKey(target: object, key: Key): boolean {
+  readKeys(target);
+  return Reflect.has(target, key);
+}
+
+function ownKeys(target: object): Key[] {
+  readKeys(target);
+  return Reflect.ownKeys(target);
+}
+
+const mutableHandler: ProxyHandler<object> = {
+  get(target, key, receiver) {
+    return read(target, key, receiver, mutableProxies, mutableHandler);
   },
-  has(target, key) {
-    readKeys(target);
-    return Reflect.has(target, key);
+  has: hasKey,
+  ownKeys,
+  defineProperty(target, key, desc) {
+    if (process.env.NODE_ENV !== "production" && isPureRun()) throw new TypeError(PURE_WRITE);
+    if (!("value" in desc)) return defineKey(target, key, desc);
+    const value = (desc.value = toTarget(desc.value));
+    const hook = writeHook;
+    if (hook !== undefined) {
+      if (hook(target, key, ownValue(target, key), value)) return true;
+      if (Array.isArray(target)) hookArrayLength(hook, target, key, value);
+    }
+    return defineKey(target, key, desc);
   },
-  ownKeys(target) {
-    readKeys(target);
-    return Reflect.ownKeys(target);
+  deleteProperty(target, key) {
+    if (process.env.NODE_ENV !== "production" && isPureRun()) throw new TypeError(PURE_WRITE);
+    if (writeHook !== undefined && Object.hasOwn(target, key) && writeHook(target, key, ownValue(target, key), ABSENT)) return true;
+    return deleteKey(target, key);
   },
+  setPrototypeOf: rejectShapeChange,
+  preventExtensions: rejectShapeChange,
+};
+
+const readonlyHandler: ProxyHandler<object> = {
+  get(target, key, receiver) {
+    return read(target, key, receiver, readonlyProxies, readonlyHandler);
+  },
+  has: hasKey,
+  ownKeys,
   set: rejectWrite,
   deleteProperty: rejectWrite,
   defineProperty: rejectWrite,
   setPrototypeOf: rejectWrite,
   preventExtensions: rejectWrite,
 };
-
-class DraftHandler implements ProxyHandler<object> {
-  private readonly drafts = new Map<object, { proxy: object; revoke: () => void }>();
-
-  proxy<T extends object>(target: T): T {
-    let draft = this.drafts.get(target);
-    if (draft === undefined) {
-      draft = Proxy.revocable(target, this);
-      this.drafts.set(target, draft);
-      targetOfProxy.set(draft.proxy, target);
-    }
-    return draft.proxy as T;
-  }
-
-  revoke(): void {
-    for (const draft of this.drafts.values()) draft.revoke();
-    this.drafts.clear();
-  }
-
-  get(target: object, key: Key, receiver: unknown): unknown {
-    const desc = Reflect.getOwnPropertyDescriptor(target, key);
-    if (desc === undefined || !("value" in desc) || isFrozenData(desc)) {
-      return Reflect.get(target, key, receiver);
-    }
-    const value = toTarget(desc.value);
-    return isWrappable(value) ? this.proxy(value) : value;
-  }
-
-  set(target: object, key: Key, value: unknown, receiver: unknown): boolean {
-    return Reflect.set(target, key, toTarget(value), receiver);
-  }
-
-  defineProperty(target: object, key: Key, desc: PropertyDescriptor): boolean {
-    const hadKey = Object.hasOwn(target, key);
-    const prevLength = Array.isArray(target) ? target.length : 0;
-    if ("value" in desc) desc.value = toTarget(desc.value);
-    if (!Reflect.defineProperty(target, key, desc)) return false;
-    const entry = tracked.get(target);
-    if (entry === undefined) return true;
-    const property = entry.properties.get(key);
-    if (property !== undefined) property.write((target as Record<Key, unknown>)[key]);
-    let keysChanged = !hadKey;
-    if (Array.isArray(target) && target.length !== prevLength) {
-      const length = entry.properties.get("length");
-      if (length !== undefined) length.write(target.length);
-      for (let i = target.length; i < prevLength; i++) {
-        const removed = entry.properties.get(String(i));
-        if (removed !== undefined) removed.write(undefined);
-        keysChanged = true;
-      }
-    }
-    if (keysChanged && entry.keys !== undefined) entry.keys.write(undefined);
-    return true;
-  }
-
-  deleteProperty(target: object, key: Key): boolean {
-    const hadKey = Object.hasOwn(target, key);
-    if (!Reflect.deleteProperty(target, key)) return false;
-    const entry = tracked.get(target);
-    if (hadKey && entry !== undefined) {
-      const property = entry.properties.get(key);
-      if (property !== undefined) property.write(undefined);
-      if (entry.keys !== undefined) entry.keys.write(undefined);
-    }
-    return true;
-  }
-}

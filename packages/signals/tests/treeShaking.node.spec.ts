@@ -45,6 +45,8 @@ test.each([
   ["effectScope", ["EffectScopeNode"]],
   ["trigger", []],
   ["store", ["SignalNode"]],
+  ["readonly", ["SignalNode"]],
+  ["action", ["SignalNode"]],
   ["selector", ["SignalNode", "RenderNode", "SelectorKeyNode"]],
   ["asyncComputed", ["SignalNode", "AsyncComputedNode"]],
   ["boundary", ["SignalNode", "BoundaryNode"]],
@@ -57,6 +59,17 @@ test("production bundles drop dev-only cycle detection", async () => {
   expect(await bundle(imports, "development")).toMatch(/Cycle detected/);
   const production = await bundle(imports, "production");
   expect(production).not.toMatch(/Cycle detected|isOnCheckPath|process\.env/);
+});
+
+test("a store without `action` carries only the empty write hook, not the journal", async () => {
+  expect(await bundle("store")).not.toMatch(/journalWrite|ActionRun|layers/);
+  expect(await bundle("store, action")).toMatch(/journalWrite/);
+});
+
+test("production bundles drop the dev-only write and call checks", async () => {
+  const imports = "store, computed, action";
+  expect(await bundle(imports, "development")).toMatch(/pureNodes/);
+  expect(await bundle(imports, "production")).not.toMatch(/pureNodes|isPureRun|markPure|render binding/);
 });
 
 test("production bundles drop the devtools hook even when devtools can install it", async () => {

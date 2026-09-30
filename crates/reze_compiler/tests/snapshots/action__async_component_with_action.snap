@@ -1,0 +1,22 @@
+---
+source: crates/reze_compiler/tests/action.rs
+expression: "import { $action } from \"reze-js\";\nexport async function Card(props) {\n  const user = await fetchUser(props.id);\n  const rename = $action(async (name) => {\n    user.name = name;\n    await saveUser(user);\n  });\n  return <button onClick={() => rename(\"x\")}>{user.name}</button>;\n}"
+---
+import { action } from "reze-js";
+import { asyncComponent as _$asyncComponent, template as _$template, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+export function Card(props) {
+  return _$asyncComponent(async () => {const user = await fetchUser(props.id);
+return [user];
+}, (_v$) => {
+  const rename = action(async (_a$, name) => { try {
+    _v$()[0].name = name;
+    _a$.resume(await _a$.suspend(saveUser(_v$()[0])));
+  } finally { _a$.end(); } });
+  {
+  var _el$ = _$template("<button>");
+  _el$.$$click = () => rename("x");
+  _$insert(_el$, () => _v$()[0].name);
+  return _el$;
+}
+});}
+_$delegateEvents(["click"]);

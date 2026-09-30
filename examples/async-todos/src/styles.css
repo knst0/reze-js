@@ -69,3 +69,13 @@ button {
 .loading {
   color: #6a1b9a;
 }
+
+.error {
+  margin: 0;
+  color: #b3261e;
+}
+
+.offline {
+  color: #555;
+  font-size: 0.9rem;
+}

@@ -144,15 +144,14 @@ bench.add("create: row roots with a signal", () => {
 }
 
 {
-  interface DraftState {
+  interface State {
     user: { name: string; age: number };
     tags: string[];
   }
-  let setDraft!: (fn: (draft: DraftState) => void) => void;
+  let state!: State;
   let next = 0;
   const hooks = withGraph(() => {
-    const [state, setState] = store({ user: { name: "a", age: 1 }, tags: ["x", "y"] });
-    setDraft = setState;
+    state = store({ user: { name: "a", age: 1 }, tags: ["x", "y"] });
     effect(() => void state.user.name);
     effect(() => void state.user.age);
     effect(() => void state.tags.length);
@@ -162,15 +161,24 @@ bench.add("create: row roots with a signal", () => {
     () => {
       for (let i = 0; i < WRITE_ITERS; i++) {
         next += 1;
-        const name = `n${next}`;
-        setDraft((draft) => {
-          draft.user.name = name;
-        });
+        state.user.name = `n${next}`;
         flush();
       }
     },
     hooks,
   );
+}
+
+{
+  const ROWS = 1000;
+  const rows = store({ items: Array.from({ length: ROWS }, (_, v) => ({ v })) });
+  bench.add("store: tracked reads of a list", () => {
+    const dispose = effect(() => {
+      const items = rows.items;
+      for (let i = 0; i < items.length; i++) void items[i]!.v;
+    });
+    dispose();
+  });
 }
 
 {

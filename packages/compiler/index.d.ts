@@ -18,7 +18,7 @@ export declare function compile(source: string, filename: string, options?: Comp
 export interface CompileOptions {
   /** Default: `true`. */
   sourceMap?: boolean
-  /** Pass `{ name }` to `signal`/`computed` for devtools. Default: `false`. */
+  /** Pass `{ name }` to `signal`/`computed`/`action` for devtools. Default: `false`. */
   debugNames?: boolean
   /** Register components for hot-swap through `import.meta.hot`. Default: `false`. */
   hot?: boolean

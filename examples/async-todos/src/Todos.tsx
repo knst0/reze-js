@@ -1,4 +1,4 @@
-import { $signal, For, Loading, Show } from "reze-js";
+import { $action, $computed, $signal, For, Loading, Show, store } from "reze-js";
 
 interface Todo {
   id: number;
@@ -21,9 +21,12 @@ async function fetchTodos(): Promise<Todo[]> {
   ];
 }
 
-async function saveTodo(todo: Todo): Promise<void> {
+async function saveTodo(todo: Todo, isOffline: boolean): Promise<void> {
   await delay(800);
+  if (isOffline) throw new Error(`Could not save “${todo.title}”: offline`);
 }
+
+function ignore(): void {}
 
 export function Todos() {
   return (
@@ -35,32 +38,29 @@ export function Todos() {
 
 async function TodoList() {
   const initial = await fetchTodos();
-  let todos = $signal(initial);
+  const todos = store(initial);
   let draft = $signal("");
-  let saving = $signal(0);
+  let isOffline = $signal(false);
 
-  const commit = async (change: (list: Todo[]) => Todo[], todo: Todo) => {
-    saving += 1;
-    try {
-      await saveTodo(todo);
-      todos = change(todos);
-    } finally {
-      saving -= 1;
-    }
-  };
+  const toggle = $action(async (todo: Todo) => {
+    todo.done = !todo.done;
+    await saveTodo(todo, isOffline);
+  });
 
-  const toggle = (todo: Todo) => {
-    const next = { ...todo, done: !todo.done };
-    return commit((list) => list.map((item) => (item.id === todo.id ? next : item)), next);
-  };
+  const add = $action(async (title: string) => {
+    const fresh = { id: Math.max(0, ...todos.map((todo) => todo.id)) + 1, title, done: false };
+    todos.push(fresh);
+    await saveTodo(fresh, isOffline);
+  });
 
-  const add = () => {
+  const submit = () => {
     const title = draft.trim();
     if (title === "") return;
-    const fresh = { id: Math.max(...todos.map((todo) => todo.id)) + 1, title, done: false };
     draft = "";
-    return commit((list) => [...list, fresh], fresh);
+    add(title).catch(ignore);
   };
+
+  const failure = $computed(toggle.error ?? add.error);
 
   return (
     <section class="todos">
@@ -70,23 +70,30 @@ async function TodoList() {
           {(todo) => (
             <li class={{ done: todo().done }}>
               <label>
-                <input type="checkbox" checked={todo().done} onChange={() => toggle(todo())} />
+                <input type="checkbox" checked={todo().done} onChange={() => toggle(todo()).catch(ignore)} />
                 {todo().title}
               </label>
             </li>
           )}
         </For>
       </ul>
-      <Show when={saving > 0}>
+      <Show when={toggle.pending + add.pending > 0}>
         <p class="saving">Saving…</p>
       </Show>
+      <Show when={failure !== undefined}>
+        <p class="error">{String(failure)}</p>
+      </Show>
+      <label class="offline">
+        <input type="checkbox" checked={isOffline} onChange={() => (isOffline = !isOffline)} />
+        Offline: saves fail and changes roll back
+      </label>
       <div class="add">
         <input
           value={draft}
           onInput={(e: InputEvent) => (draft = (e.currentTarget as HTMLInputElement).value)}
           placeholder="Something to do"
         />
-        <button onClick={add}>Add</button>
+        <button onClick={submit}>Add</button>
       </div>
     </section>
   );

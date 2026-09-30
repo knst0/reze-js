@@ -6,7 +6,7 @@ use napi_derive::napi;
 pub struct CompileOptions {
     /// Default: `true`.
     pub source_map: Option<bool>,
-    /// Pass `{ name }` to `signal`/`computed` for devtools. Default: `false`.
+    /// Pass `{ name }` to `signal`/`computed`/`action` for devtools. Default: `false`.
     pub debug_names: Option<bool>,
     /// Register components for hot-swap through `import.meta.hot`. Default: `false`.
     pub hot: Option<bool>,

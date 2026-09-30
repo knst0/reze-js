@@ -1,0 +1,37 @@
+---
+source: crates/reze_compiler/tests/action.rs
+expression: "import { $action } from \"reze-js\";\nexport const bump = $action((state) => {\n  state.n += 1;\n});\nexport const save = $action(async (todo) => {\n  api.save(todo).then((saved) => {\n    todo.at = saved.at;\n  });\n  setTimeout(() => { delete todo.draft; });\n  const later = async () => { todo.count++; };\n  await later();\n});"
+---
+import { action } from "reze-js";
+export const bump = action((_a$, state) => { try {
+  state.n += 1;
+} finally { _a$.end(); } });
+export const save = action(async (_a$, todo) => { try {
+  api.save(todo).then((saved) => {
+    todo.at = saved.at;
+  });
+  setTimeout(() => { delete todo.draft; });
+  const later = async () => { todo.count++; };
+  _a$.resume(await _a$.suspend(later()));
+} finally { _a$.end(); } });
+// warn
+[ACTION_NESTED_WRITE] This write is in a `.then` callback inside a `$action` body, which runs after the action moved on, so it is not undone when the action fails. Await the value and write it in the body.
+  at case.tsx:7:5
+  6 |   api.save(todo).then((saved) => {
+> 7 |     todo.at = saved.at;
+    |     ^^^^^^^^^^^^^^^^^^
+  8 |   });
+// warn
+[ACTION_NESTED_WRITE] This write is in a `setTimeout` callback inside a `$action` body, which runs after the action moved on, so it is not undone when the action fails. Await the value and write it in the body.
+  at case.tsx:9:22
+   8 |   });
+>  9 |   setTimeout(() => { delete todo.draft; });
+     |                      ^^^^^^^^^^^^^^^^^
+  10 |   const later = async () => { todo.count++; };
+// warn
+[ACTION_NESTED_WRITE] This write is in an async function inside a `$action` body, which runs after the action moved on, so it is not undone when the action fails. Await the value and write it in the body.
+  at case.tsx:10:31
+   9 |   setTimeout(() => { delete todo.draft; });
+> 10 |   const later = async () => { todo.count++; };
+     |                               ^^^^^^^^^^^^
+  11 |   await later();

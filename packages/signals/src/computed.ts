@@ -1,5 +1,5 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
-import { endTracking, getOwner, isErrorHandled, setActiveSub, startTracking, track } from "./context";
+import { endTracking, getOwner, isErrorHandled, markPure, setActiveSub, startTracking, track } from "./context";
 import { debugHook } from "./devtools";
 import { FlagDirty, FlagMutable, FlagNone, FlagOwnsChildren, FlagPending, FlagRecursedCheck } from "./flags";
 import { checkDirty, disposeAllDepsInReverse, disposeChildren, type Link, type ReactiveNode, shallowPropagate } from "./graph";
@@ -87,8 +87,11 @@ export interface ComputedOptions {
  */
 export function computed<T>(getter: (previousValue?: T) => T, options?: ComputedOptions): () => T {
   const node = new ComputedNode(getter, getOwner());
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
-    debugHook.created(node, "computed", options?.name, () => node.value);
+  if (process.env.NODE_ENV !== "production") {
+    markPure(node);
+    if (debugHook !== undefined) {
+      debugHook.created(node, "computed", options?.name, () => node.value);
+    }
   }
   return node.read.bind(node);
 }

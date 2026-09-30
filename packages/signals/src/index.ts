@@ -1,7 +1,9 @@
-export { asyncComputed, type AsyncComputed, type AsyncContext } from "./async";
+export { action, type Action, type ActionOptions, type Run } from "./action";
+export { asyncComputed, type AsyncComputed, type AsyncContext } from "./asyncComputed";
 export { boundary, isInBoundary, type Boundary } from "./boundary";
 export { computed, type ComputedOptions } from "./computed";
 export { getOwner, runWithOwner } from "./context";
+export { $action } from "./dollarAction";
 export { $computed } from "./dollarComputed";
 export { $signal } from "./dollarSignal";
 export { effect } from "./effect";
@@ -12,5 +14,5 @@ export { provideContext, useContext, type ContextKey } from "./provide";
 export { flush } from "./scheduler";
 export { selector } from "./selector";
 export { signal, type Equals, type Getter, type Setter, type SignalOptions } from "./signal";
-export { store } from "./store";
+export { readonly, store } from "./store";
 export { trigger } from "./trigger";

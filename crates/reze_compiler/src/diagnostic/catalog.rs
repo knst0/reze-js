@@ -267,6 +267,45 @@ catalog! {
             good: "import { $computed, $signal, asyncComputed } from \"reze-js\";\n\nlet id = $signal(1);\nconst described = asyncComputed(() => describe(id));\nconst label = $computed(described.value() ?? \"…\");\nexport const view = <p onClick={() => (id += 1)}>{label}</p>;\n",
         },
     }
+    ActionArgument {
+        name: "ACTION_ARGUMENT",
+        severity: Error,
+        title: "`$action` without a function literal",
+        message: "`$action` needs its body written at the call, as an arrow function or function expression, so the compiler can keep the action current across each `await`. Write `$action(async (…) => { … })`.",
+        explanation: "`$action(fn)` compiles to `action(fn)` with `fn` rewritten: it takes the run as its first parameter, every `await` in its body resumes the run, and the body ends it. An identifier, a call or a missing argument hides the body from the compiler.",
+        repair: "Write the body in the call and call the existing function from it: `$action(async (todo) => { await save(todo); })`. To thread the run by hand, use `action((run, …) => …)`.",
+        fix: None,
+        example: Pair {
+            bad: "import { $action } from \"reze-js\";\n\nexport const save = $action(saveTodo);\n",
+            good: "import { $action } from \"reze-js\";\n\nexport const save = $action(async (todo) => {\n  await saveTodo(todo);\n});\n",
+        },
+    }
+    ActionUnsupported {
+        name: "ACTION_UNSUPPORTED",
+        severity: Error,
+        title: "`for await`, `await using` or a generator in `$action`",
+        message: "`{construct}` suspends the `$action` body where the compiler cannot resume the action, so writes after it would escape the action. Use a plain `await` instead.",
+        explanation: "The compiler resumes the action after each `await` expression. `for await` and `await using` suspend without one, and a generator suspends at every `yield`. `data.construct` is what was found: `for await`, `await using` or `generator`.",
+        repair: "Loop with `for (…) { const item = await next(); … }`, dispose with `try { … } finally { await resource[Symbol.asyncDispose](); }`, and pass an `async` function instead of a generator.",
+        fix: None,
+        example: Pair {
+            bad: "import { $action } from \"reze-js\";\n\nexport const load = $action(async (list) => {\n  for await (const item of stream()) list.push(item);\n});\n",
+            good: "import { $action } from \"reze-js\";\n\nexport const load = $action(async (list) => {\n  for (const item of await fetchAll()) list.push(item);\n});\n",
+        },
+    }
+    ActionNotCalled {
+        name: "ACTION_NOT_CALLED",
+        severity: Error,
+        title: "`$action` used as a value",
+        message: "`$action` is compiler syntax and has no runtime value, so this reference would throw. Call it with the body: `$action(async (…) => { … })`.",
+        explanation: "Only a call `$action(fn)` is rewritten. Passing `$action` around, storing it or re-exporting it would reach the function that only throws.",
+        repair: "Call `$action` where the action is defined. To make actions from a function at runtime, use `action((run, …) => …)`.",
+        fix: None,
+        example: Pair {
+            bad: "import { $action } from \"reze-js\";\n\nexport const make = $action;\n",
+            good: "import { $action } from \"reze-js\";\n\nexport const save = $action(async (todo) => {\n  await saveTodo(todo);\n});\n",
+        },
+    }
     ChildrenPropIgnored {
         name: "CHILDREN_PROP_IGNORED",
         severity: Warn,
@@ -395,6 +434,19 @@ catalog! {
         example: Pair {
             bad: "import { $signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = $signal(0);\n  const doubled = count * 2;\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
             good: "import { $computed, $signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = $signal(0);\n  const doubled = $computed(count * 2);\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
+        },
+    }
+    ActionNestedWrite {
+        name: "ACTION_NESTED_WRITE",
+        severity: Warn,
+        title: "Write in a function of `$action` that runs later",
+        message: "This write is in {via} inside a `$action` body, which runs after the action moved on, so it is not undone when the action fails. Await the value and write it in the body.",
+        explanation: "Only the `$action` body is kept inside the action across its `await`s; nested functions are not rewritten. A write to a member in an async function, or in a callback of `.then`, `.catch`, `.finally`, `setTimeout`, `setInterval`, `queueMicrotask`, `requestAnimationFrame` or `requestIdleCallback`, likely runs outside the action and is a real write. The compiler cannot tell a store from a plain object, so this is a heuristic. `data.via` is the enclosing function.",
+        repair: "Replace `.then((saved) => { todo.at = saved.at; })` with `const saved = await …; todo.at = saved.at;` in the body. A write outside the action on purpose can stay; move it out of the body to silence the warning.",
+        fix: None,
+        example: Pair {
+            bad: "import { $action } from \"reze-js\";\n\nexport const save = $action(async (todo) => {\n  todo.done = true;\n  api.save(todo).then((saved) => {\n    todo.at = saved.at;\n  });\n});\n",
+            good: "import { $action } from \"reze-js\";\n\nexport const save = $action(async (todo) => {\n  todo.done = true;\n  const saved = await api.save(todo);\n  todo.at = saved.at;\n});\n",
         },
     }
     SignalFolded {

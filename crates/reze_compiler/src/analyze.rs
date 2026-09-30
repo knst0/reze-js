@@ -21,6 +21,7 @@ pub(crate) const RUNTIME_MODULES: [&str; 3] = ["reze-js", "@rezejs/dom", "@rezej
 pub enum Primitive {
     Signal,
     Computed,
+    Action,
     Intrinsic(Intrinsic),
 }
 
@@ -54,6 +55,7 @@ impl Primitive {
         Some(match name {
             "signal" => Primitive::Signal,
             "computed" => Primitive::Computed,
+            "action" => Primitive::Action,
             "Show" => Primitive::Intrinsic(Intrinsic::Show),
             "For" => Primitive::Intrinsic(Intrinsic::For),
             "Repeat" => Primitive::Intrinsic(Intrinsic::Repeat),

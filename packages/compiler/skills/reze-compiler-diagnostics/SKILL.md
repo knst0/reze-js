@@ -469,6 +469,104 @@ const label = $computed(described.value() ?? "…");
 export const view = <p onClick={() => (id += 1)}>{label}</p>;
 ```
 
+## ACTION_ARGUMENT
+
+**`$action` without a function literal** · severity `error`
+
+> `$action` needs its body written at the call, as an arrow function or function expression, so the compiler can keep the action current across each `await`. Write `$action(async (…) => { … })`.
+
+`data` keys: none
+
+Automatic fix: no
+
+`$action(fn)` compiles to `action(fn)` with `fn` rewritten: it takes the run as its first parameter, every `await` in its body resumes the run, and the body ends it. An identifier, a call or a missing argument hides the body from the compiler.
+
+**Repair:** Write the body in the call and call the existing function from it: `$action(async (todo) => { await save(todo); })`. To thread the run by hand, use `action((run, …) => …)`.
+
+Before:
+
+```tsx
+import { $action } from "reze-js";
+
+export const save = $action(saveTodo);
+```
+
+After:
+
+```tsx
+import { $action } from "reze-js";
+
+export const save = $action(async (todo) => {
+  await saveTodo(todo);
+});
+```
+
+## ACTION_UNSUPPORTED
+
+**`for await`, `await using` or a generator in `$action`** · severity `error`
+
+> `{construct}` suspends the `$action` body where the compiler cannot resume the action, so writes after it would escape the action. Use a plain `await` instead.
+
+`data` keys: `construct`
+
+Automatic fix: no
+
+The compiler resumes the action after each `await` expression. `for await` and `await using` suspend without one, and a generator suspends at every `yield`. `data.construct` is what was found: `for await`, `await using` or `generator`.
+
+**Repair:** Loop with `for (…) { const item = await next(); … }`, dispose with `try { … } finally { await resource[Symbol.asyncDispose](); }`, and pass an `async` function instead of a generator.
+
+Before:
+
+```tsx
+import { $action } from "reze-js";
+
+export const load = $action(async (list) => {
+  for await (const item of stream()) list.push(item);
+});
+```
+
+After:
+
+```tsx
+import { $action } from "reze-js";
+
+export const load = $action(async (list) => {
+  for (const item of await fetchAll()) list.push(item);
+});
+```
+
+## ACTION_NOT_CALLED
+
+**`$action` used as a value** · severity `error`
+
+> `$action` is compiler syntax and has no runtime value, so this reference would throw. Call it with the body: `$action(async (…) => { … })`.
+
+`data` keys: none
+
+Automatic fix: no
+
+Only a call `$action(fn)` is rewritten. Passing `$action` around, storing it or re-exporting it would reach the function that only throws.
+
+**Repair:** Call `$action` where the action is defined. To make actions from a function at runtime, use `action((run, …) => …)`.
+
+Before:
+
+```tsx
+import { $action } from "reze-js";
+
+export const make = $action;
+```
+
+After:
+
+```tsx
+import { $action } from "reze-js";
+
+export const save = $action(async (todo) => {
+  await saveTodo(todo);
+});
+```
+
 ## CHILDREN_PROP_IGNORED
 
 **`children` attribute next to nested children** · severity `warn`
@@ -764,6 +862,45 @@ export function Counter() {
   const doubled = $computed(count * 2);
   return <button onClick={() => (count += 1)}>{doubled}</button>;
 }
+```
+
+## ACTION_NESTED_WRITE
+
+**Write in a function of `$action` that runs later** · severity `warn`
+
+> This write is in {via} inside a `$action` body, which runs after the action moved on, so it is not undone when the action fails. Await the value and write it in the body.
+
+`data` keys: `via`
+
+Automatic fix: no
+
+Only the `$action` body is kept inside the action across its `await`s; nested functions are not rewritten. A write to a member in an async function, or in a callback of `.then`, `.catch`, `.finally`, `setTimeout`, `setInterval`, `queueMicrotask`, `requestAnimationFrame` or `requestIdleCallback`, likely runs outside the action and is a real write. The compiler cannot tell a store from a plain object, so this is a heuristic. `data.via` is the enclosing function.
+
+**Repair:** Replace `.then((saved) => { todo.at = saved.at; })` with `const saved = await …; todo.at = saved.at;` in the body. A write outside the action on purpose can stay; move it out of the body to silence the warning.
+
+Before:
+
+```tsx
+import { $action } from "reze-js";
+
+export const save = $action(async (todo) => {
+  todo.done = true;
+  api.save(todo).then((saved) => {
+    todo.at = saved.at;
+  });
+});
+```
+
+After:
+
+```tsx
+import { $action } from "reze-js";
+
+export const save = $action(async (todo) => {
+  todo.done = true;
+  const saved = await api.save(todo);
+  todo.at = saved.at;
+});
 ```
 
 ## SIGNAL_FOLDED
