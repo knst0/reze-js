@@ -6,14 +6,14 @@ import { checkDirty, disposeAllDepsInReverse, disposeChildren, type Link, type R
 import { differs } from "./signal";
 
 class ComputedNode<T = unknown> implements ReactiveNode {
-  value: T | undefined;
-  subs: Link | undefined;
-  subsTail: Link | undefined;
-  deps: Link | undefined;
-  depsTail: Link | undefined;
-  flags: number;
-  getter: (previousValue?: T) => T;
-  parent: ReactiveNode | undefined;
+  declare value: T | undefined;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare deps: Link | undefined;
+  declare depsTail: Link | undefined;
+  declare flags: number;
+  declare getter: (previousValue?: T) => T;
+  declare parent: ReactiveNode | undefined;
 
   constructor(getter: (previousValue?: T) => T, parent: ReactiveNode | undefined) {
     this.value = undefined;

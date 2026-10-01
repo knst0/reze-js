@@ -11,12 +11,12 @@ export interface Boundary {
 }
 
 class BoundaryNode implements ReactiveNode, Boundary {
-  deps: Link | undefined;
-  depsTail: Link | undefined;
-  subs: Link | undefined;
-  subsTail: Link | undefined;
-  flags: number;
-  pendingReads: SignalNode<number>;
+  declare deps: Link | undefined;
+  declare depsTail: Link | undefined;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare flags: number;
+  declare pendingReads: SignalNode<number>;
 
   constructor() {
     this.deps = undefined;
@@ -41,10 +41,10 @@ class BoundaryNode implements ReactiveNode, Boundary {
 }
 
 class PendingReadNode implements ReactiveNode {
-  subs: Link | undefined;
-  subsTail: Link | undefined;
-  flags: number;
-  boundary: BoundaryNode;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare flags: number;
+  declare boundary: BoundaryNode;
 
   constructor(boundary: BoundaryNode) {
     this.subs = undefined;

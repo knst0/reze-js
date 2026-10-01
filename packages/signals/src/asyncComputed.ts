@@ -28,8 +28,8 @@ export interface AsyncComputed<T> {
 }
 
 class AsyncRun implements AsyncContext {
-  node: AsyncComputedNode<unknown>;
-  generation: number;
+  declare node: AsyncComputedNode<unknown>;
+  declare generation: number;
 
   constructor(node: AsyncComputedNode<unknown>, generation: number) {
     this.node = node;
@@ -48,17 +48,17 @@ class AsyncRun implements AsyncContext {
 }
 
 class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
-  deps: Link | undefined;
-  depsTail: Link | undefined;
-  subs: Link | undefined;
-  subsTail: Link | undefined;
-  flags: number;
-  generation: number;
-  fn: (c: AsyncContext) => PromiseLike<T> | T;
-  resolved: SignalNode<T | undefined>;
-  pending: SignalNode<boolean>;
-  hasSettled: boolean;
-  rejection: SignalNode<unknown>;
+  declare deps: Link | undefined;
+  declare depsTail: Link | undefined;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare flags: number;
+  declare generation: number;
+  declare fn: (c: AsyncContext) => PromiseLike<T> | T;
+  declare resolved: SignalNode<T | undefined>;
+  declare pending: SignalNode<boolean>;
+  declare hasSettled: boolean;
+  declare rejection: SignalNode<unknown>;
 
   constructor(fn: (c: AsyncContext) => PromiseLike<T> | T) {
     this.deps = undefined;

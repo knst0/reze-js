@@ -7,13 +7,13 @@ import { checkDirty, disposeChildren, disposeNode, type Link, type ReactiveNode 
 type EffectCleanup = (() => void) | void;
 
 class EffectNode implements ReactiveNode {
-  deps: Link | undefined;
-  depsTail: Link | undefined;
-  subs: Link | undefined;
-  subsTail: Link | undefined;
-  flags: number;
-  cleanup: EffectCleanup;
-  fn: () => EffectCleanup;
+  declare deps: Link | undefined;
+  declare depsTail: Link | undefined;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare flags: number;
+  declare cleanup: EffectCleanup;
+  declare fn: () => EffectCleanup;
 
   constructor(fn: () => EffectCleanup) {
     this.deps = undefined;

@@ -18,12 +18,12 @@ export interface SignalOptions<T> {
 }
 
 export class SignalNode<T = unknown> implements ReactiveNode {
-  subs: Link | undefined;
-  subsTail: Link | undefined;
-  flags: number;
-  currentValue: T;
-  pendingValue: T;
-  equals: Equals<T>;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare flags: number;
+  declare currentValue: T;
+  declare pendingValue: T;
+  declare equals: Equals<T>;
 
   constructor(value: T, equals: Equals<T>) {
     this.subs = undefined;

@@ -8,13 +8,13 @@ import { checkDirty, disposeChildren, disposeNode, type Link, type ReactiveNode 
  * No disposer handle and no cleanup slot; it lives exactly as long as its owner.
  */
 class RenderNode<T> implements ReactiveNode {
-  deps: Link | undefined;
-  depsTail: Link | undefined;
-  subs: Link | undefined;
-  subsTail: Link | undefined;
-  flags: number;
-  fn: (prev: T) => T;
-  value: T;
+  declare deps: Link | undefined;
+  declare depsTail: Link | undefined;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare flags: number;
+  declare fn: (prev: T) => T;
+  declare value: T;
 
   constructor(fn: (prev: T) => T, value: T) {
     this.deps = undefined;
