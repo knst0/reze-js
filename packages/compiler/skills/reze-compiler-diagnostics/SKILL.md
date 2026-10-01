@@ -62,9 +62,9 @@ export const view = <div />;
 
 Automatic fix: no
 
-`Show`, `For`, `Repeat`, `Switch`, `Match`, `Loading` and `Errored` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
+`Show`, `For`, `Repeat`, `Switch`, `Match`, `Loading`, `Errored` and `Portal` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
 
-**Repair:** Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and pass that.
+**Repair:** Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and select that with `dynamic(() => …)`.
 
 Before:
 
@@ -92,7 +92,7 @@ export const view = <Show when={open()}><p>open</p></Show>;
 
 Automatic fix: yes
 
-A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
+A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
 
 **Repair:** Apply the fix to remove the attribute. To key `<For>` rows by a field, use `key={(item) => item.id}`.
 
@@ -152,7 +152,7 @@ export const view = <Show when={open()} fallback={<p>closed</p>}><p>open</p></Sh
 
 Automatic fix: no
 
-`<Show>`, `<Match>`, `<Loading>` and `<Errored>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.
+`<Show>`, `<Match>`, `<Loading>`, `<Errored>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.
 
 **Repair:** Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`.
 

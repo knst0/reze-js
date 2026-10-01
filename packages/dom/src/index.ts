@@ -1,6 +1,9 @@
 export { setAttribute, setAttributeNS, setBoolAttribute } from "./attributes";
 export { className, type ClassValue } from "./class-name";
 export { createComponent, render } from "./component";
+export { dynamic } from "./dynamic";
+export { dynamicElement } from "./dynamic-element";
+export { element, elementMathML, elementSVG } from "./element";
 export { errored } from "./errored";
 export { addEventListener, delegateEvents } from "./events";
 export { branch, choose } from "./flow";
@@ -11,6 +14,7 @@ export {
   For,
   Loading,
   Match,
+  Portal,
   Show,
   Repeat,
   Switch,
@@ -18,13 +22,16 @@ export {
   type ForProps,
   type LoadingProps,
   type MatchProps,
+  type PortalProps,
   type ShowProps,
   type RepeatProps,
   type SwitchProps,
 } from "./intrinsics";
 export type { JSX } from "./jsx";
+export { lazy, type LazyComponent } from "./lazy";
 export { list } from "./list";
 export { asyncComponent, loading } from "./loading";
+export { portal } from "./portal";
 export { mergeProps, splitProps } from "./props";
 export { reconcileArrays } from "./reconcile";
 export { repeat } from "./repeat";

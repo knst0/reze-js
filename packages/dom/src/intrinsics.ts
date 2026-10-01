@@ -46,9 +46,15 @@ export interface ErroredProps {
   children: JSX.Element;
 }
 
+export interface PortalProps {
+  /** Where the children are kept, the document body when absent or `null`; the same nodes move when it changes. */
+  mount?: Node | null;
+  children: JSX.Element;
+}
+
 function compiledAway(): never {
   throw new Error(
-    "[reze] Show, For, Repeat, Switch, Match, Loading and Errored are compiled by @rezejs/vite-plugin and cannot run as functions",
+    "[reze] Show, For, Repeat, Switch, Match, Loading, Errored and Portal are compiled by @rezejs/vite-plugin and cannot run as functions",
   );
 }
 
@@ -77,5 +83,9 @@ export function Loading(_props: LoadingProps): JSX.Element {
 }
 
 export function Errored(_props: ErroredProps): JSX.Element {
+  return compiledAway();
+}
+
+export function Portal(_props: PortalProps): JSX.Element {
   return compiledAway();
 }

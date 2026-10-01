@@ -72,7 +72,11 @@ helpers! {
     AsyncComponent => "asyncComponent",
     Loading => "loading",
     Errored => "errored",
+    Portal => "portal",
     Repeat => "repeat",
+    Element => "element",
+    ElementSvg => "elementSVG",
+    ElementMathMl => "elementMathML",
 }
 
 pub struct Emitter<'a, 's> {

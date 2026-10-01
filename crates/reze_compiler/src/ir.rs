@@ -68,6 +68,10 @@ pub enum ScriptEdit<'a> {
         index: usize,
         shorthand: bool,
     },
+    /// A tag name string literal a `dynamic` source returns → the element component of its namespace.
+    ElementTag {
+        namespace: Namespace,
+    },
     Hot(HotEdit<'a>),
 }
 
@@ -347,6 +351,11 @@ pub enum Flow<'a> {
     Errored {
         child: Render<'a>,
         fallback: Option<Render<'a>>,
+    },
+    /// `mount` is tracked: the content moves when it changes; without it the portal mounts on the body.
+    Portal {
+        child: Render<'a>,
+        mount: Option<Source<'a>>,
     },
 }
 

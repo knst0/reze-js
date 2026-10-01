@@ -5,7 +5,7 @@ use oxc_span::Span;
 use super::{Emitter, Helper};
 use crate::code::Code;
 use crate::html::{is_identifier_name, push_js_string};
-use crate::ir::{Embed, HotEdit, PropsFallback, PropsSplit, PropsTemporary, ScriptEdit};
+use crate::ir::{Embed, HotEdit, Namespace, PropsFallback, PropsSplit, PropsTemporary, ScriptEdit};
 
 impl<'a> Emitter<'a, '_> {
     pub(super) fn script(&mut self, out: &mut Code, span: Span, edit: &ScriptEdit<'a>) {
@@ -68,6 +68,17 @@ impl<'a> Emitter<'a, '_> {
             }
             ScriptEdit::Hot(HotEdit::Accept) => {
                 out.push("\nif (import.meta.hot) import.meta.hot.accept();\n")
+            }
+            ScriptEdit::ElementTag { namespace } => {
+                let factory = self.helper(match namespace {
+                    Namespace::Html => Helper::Element,
+                    Namespace::Svg => Helper::ElementSvg,
+                    Namespace::MathMl => Helper::ElementMathMl,
+                });
+                out.push(factory);
+                out.push("(");
+                self.src(out, span);
+                out.push(")");
             }
         }
     }

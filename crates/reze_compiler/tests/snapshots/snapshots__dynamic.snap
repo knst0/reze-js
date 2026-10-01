@@ -1,0 +1,17 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { dynamic, dynamicElement as pick } from \"reze-js\";\nconst A = dynamic(() => (wide() ? \"section\" : compact() && Card) || `math`);\nconst B = pick(function () {\n  if (round()) return \"circle\" as const;\n  const inner = () => \"span\";\n  return (log(), tag());\n});\nconst C = dynamic(() => {\n  return empty() ? \"\" : \"svg\";\n});\nconst D = other(() => \"div\");\nconst E = pick(source);"
+---
+import { dynamic, dynamicElement as pick } from "reze-js";
+import { element as _$element, elementMathML as _$elementMathML, elementSVG as _$elementSVG } from "reze-js";
+const A = dynamic(() => (wide() ? _$element("section") : compact() && Card) || _$elementMathML(`math`));
+const B = pick(function () {
+  if (round()) return _$elementSVG("circle") as const;
+  const inner = () => "span";
+  return (log(), tag());
+});
+const C = dynamic(() => {
+  return empty() ? "" : _$elementSVG("svg");
+});
+const D = other(() => "div");
+const E = pick(source);

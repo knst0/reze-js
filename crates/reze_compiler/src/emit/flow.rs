@@ -22,6 +22,17 @@ impl<'a> Emitter<'a, '_> {
                 self.fallback(out, fallback.as_ref());
                 out.push(")");
             }
+            Flow::Portal { child, mount } => {
+                let helper = self.helper(Helper::Portal);
+                out.push(helper);
+                out.push("(");
+                self.render(out, child);
+                if let Some(mount) = mount {
+                    out.push(", ");
+                    self.source(out, mount);
+                }
+                out.push(")");
+            }
             Flow::Repeat { count, map, fallback } => {
                 let helper = self.helper(Helper::Repeat);
                 out.push(helper);

@@ -22,6 +22,8 @@ pub enum Primitive {
     Signal,
     Computed,
     Action,
+    /// `dynamic` or `dynamicElement`: string literals its source returns are tag names.
+    Dynamic,
     Intrinsic(Intrinsic),
 }
 
@@ -34,6 +36,7 @@ pub enum Intrinsic {
     Match,
     Loading,
     Errored,
+    Portal,
 }
 
 impl Intrinsic {
@@ -46,6 +49,7 @@ impl Intrinsic {
             Intrinsic::Match => "Match",
             Intrinsic::Loading => "Loading",
             Intrinsic::Errored => "Errored",
+            Intrinsic::Portal => "Portal",
         }
     }
 }
@@ -56,6 +60,7 @@ impl Primitive {
             "signal" => Primitive::Signal,
             "computed" => Primitive::Computed,
             "action" => Primitive::Action,
+            "dynamic" | "dynamicElement" => Primitive::Dynamic,
             "Show" => Primitive::Intrinsic(Intrinsic::Show),
             "For" => Primitive::Intrinsic(Intrinsic::For),
             "Repeat" => Primitive::Intrinsic(Intrinsic::Repeat),
@@ -63,6 +68,7 @@ impl Primitive {
             "Match" => Primitive::Intrinsic(Intrinsic::Match),
             "Loading" => Primitive::Intrinsic(Intrinsic::Loading),
             "Errored" => Primitive::Intrinsic(Intrinsic::Errored),
+            "Portal" => Primitive::Intrinsic(Intrinsic::Portal),
             _ => return None,
         })
     }

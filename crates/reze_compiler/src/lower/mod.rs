@@ -5,6 +5,7 @@ mod component;
 pub mod constant;
 mod control_flow;
 mod debug_name;
+mod dynamic;
 mod element;
 mod hot;
 pub mod keyed;
@@ -545,6 +546,8 @@ impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
             self.push_script(it.span, ScriptEdit::ConstSignalRead { getter });
             return;
         }
+        let tags = self.lowerer.element_tags(it);
+        self.holes.extend(tags);
         walk::walk_call_expression(self, it);
     }
 

@@ -26,6 +26,7 @@ impl<'a> Lowerer<'a, '_> {
             Intrinsic::Switch => self.switch(el),
             Intrinsic::Loading => self.loading(el),
             Intrinsic::Errored => self.errored(el),
+            Intrinsic::Portal => self.portal(el),
             Intrinsic::Match => {
                 self.report(Report::new(Code::MatchOutsideSwitch, el.opening_element.span));
                 None
@@ -92,6 +93,17 @@ impl<'a> Lowerer<'a, '_> {
         value
     }
 
+    fn optional_source(
+        &mut self,
+        attributes: &[(&'a str, &JSXAttribute<'a>)],
+        name: &'static str,
+    ) -> Option<Source<'a>> {
+        let (_, a) = attributes.iter().rev().find(|(n, _)| *n == name)?;
+        let expr = self.attribute_value(a)?;
+        let getter = self.stable_getter(a);
+        Some(Source { expr, getter })
+    }
+
     fn required_source(
         &mut self,
         el: &JSXElement<'a>,
@@ -100,16 +112,17 @@ impl<'a> Lowerer<'a, '_> {
         name: &'static str,
     ) -> Option<Source<'a>> {
         let expr = self.required(el, intrinsic, attributes, name)?;
-        let getter = attributes
-            .iter()
-            .rev()
-            .find(|(n, _)| *n == name)
-            .and_then(|(_, a)| match a.value.as_ref()? {
-                JSXAttributeValue::ExpressionContainer(c) => c.expression.as_expression(),
-                _ => None,
-            })
-            .and_then(|e| self.stable_getter_callee(e));
+        let (_, a) = attributes.iter().rev().find(|(n, _)| *n == name)?;
+        let getter = self.stable_getter(a);
         Some(Source { expr, getter })
+    }
+
+    fn stable_getter(&self, a: &JSXAttribute<'a>) -> Option<oxc_span::Span> {
+        match a.value.as_ref()? {
+            JSXAttributeValue::ExpressionContainer(c) => c.expression.as_expression(),
+            _ => None,
+        }
+        .and_then(|e| self.stable_getter_callee(e))
     }
 
     fn attribute_value(&mut self, a: &JSXAttribute<'a>) -> Option<Embed<'a>> {
@@ -182,6 +195,14 @@ impl<'a> Lowerer<'a, '_> {
         let child = self.case_children(el, intrinsic);
         let fallback = self.fallback_function(&attributes).or_else(|| self.fallback(&attributes));
         Some(Flow::Errored { child: child?, fallback })
+    }
+
+    fn portal(&mut self, el: &JSXElement<'a>) -> Option<Flow<'a>> {
+        let intrinsic = Intrinsic::Portal;
+        let attributes = self.flow_attributes(el, intrinsic, &["mount"]);
+        let child = self.case_children(el, intrinsic);
+        let mount = self.optional_source(&attributes, "mount");
+        Some(Flow::Portal { child: child?, mount })
     }
 
     /// A `fallback` written as a function, which takes the arguments of its flow, passed as is.

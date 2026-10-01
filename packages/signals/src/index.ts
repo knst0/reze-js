@@ -15,4 +15,5 @@ export { flush } from "./scheduler";
 export { selector } from "./selector";
 export { signal, type Equals, type Getter, type Setter, type SignalOptions } from "./signal";
 export { readonly, store } from "./store";
+export { createUniqueId } from "./uniqueId";
 export { trigger } from "./trigger";

@@ -159,6 +159,14 @@ const CASES: &[(&str, &str)] = &[
         "import { Errored } from \"reze-js\";\nconst a = <Errored fallback={(error, reset) => <p onClick={reset}>{String(error)}</p>}><User id={id()} /></Errored>;\nconst b = <div><Errored fallback={<i>x</i>}><p>y</p>{z()}</Errored></div>;",
     ),
     (
+        "portal",
+        "import { Portal, signal } from \"reze-js\";\nconst [target, setTarget] = signal(document.body);\nsetTarget(document.head);\nconst a = <Portal><Dialog /></Portal>;\nconst b = <div><Portal mount={target()}><p>y</p>{z()}</Portal></div>;\nconst c = <Portal mount={document.getElementById(\"modal\")}>{() => <i />}</Portal>;",
+    ),
+    (
+        "dynamic",
+        "import { dynamic, dynamicElement as pick } from \"reze-js\";\nconst A = dynamic(() => (wide() ? \"section\" : compact() && Card) || `math`);\nconst B = pick(function () {\n  if (round()) return \"circle\" as const;\n  const inner = () => \"span\";\n  return (log(), tag());\n});\nconst C = dynamic(() => {\n  return empty() ? \"\" : \"svg\";\n});\nconst D = other(() => \"div\");\nconst E = pick(source);",
+    ),
+    (
         "repeat",
         "import { Repeat, signal } from \"reze-js\";\nconst [size] = signal(4);\nconst [page, setPage] = signal(1);\nsetPage(2);\nconst a = <div><Repeat count={3}>{() => <i />}</Repeat></div>;\nconst b = <Repeat count={size()} fallback={<p>none</p>}>{(index) => <Card n={index} onPick={() => pick(index)} />}</Repeat>;\nconst c = <Repeat count={page()} fallback={<p>none</p>}>{(index) => <li>{index}</li>}</Repeat>;\nconst d = <Repeat count={rows()}>{() => <i />}</Repeat>;\nconst e = <Repeat count={0}>{() => <i />}</Repeat>;\nconst f = <Repeat count={2.5}>{() => <i />}</Repeat>;",
     ),

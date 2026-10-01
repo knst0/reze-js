@@ -48,8 +48,9 @@ pub fn is_void(tag: &str) -> bool {
     )
 }
 
-/// SVG elements that need an `<svg>` wrapper to parse as SVG when they root a template.
-/// Names shared with HTML (`a`, `script`, `style`, `title`) parse as HTML.
+/// SVG elements that need an `<svg>` wrapper to parse as SVG when they root a template; `SVGElements` of
+/// `dynamicElement` in `@rezejs/dom` holds the same names plus `svg`. Names shared with HTML (`a`, `script`, `style`,
+/// `title`) parse as HTML.
 pub fn is_svg_element(tag: &str) -> bool {
     matches!(
         tag,
