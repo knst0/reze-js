@@ -2,10 +2,10 @@
 source: crates/reze_compiler/tests/snapshots.rs
 expression: "const a = <p>{s() + \"\"}</p>;"
 ---
-import { template as _$template, child as _$child, renderEffect as _$renderEffect } from "reze-js";
+import { template as _$template, renderEffect as _$renderEffect } from "reze-js";
 const a = (() => {
   var _el$ = _$template("<p> "),
-    _el$2 = _$child(_el$);
+    _el$2 = _el$.firstChild;
   _$renderEffect(() => _el$2.data = "" + (s() + ""));
   return _el$;
 })();

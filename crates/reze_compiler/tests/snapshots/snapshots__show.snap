@@ -3,7 +3,7 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "import { Show } from \"reze-js\";\nconst a = <div><Show when={n() >= 10}><p>big</p></Show></div>;\nconst b = <div>x<Show when={user()} fallback={<i>guest</i>}><>{user().name}<b/></></Show>y</div>;\nconst c = <Card><Show when={u()}>{(v) => <b>{v().name}</b>}</Show></Card>;"
 ---
 import { Show } from "reze-js";
-import { template as _$template, insert as _$insert, computed as _$computed, next as _$next, child as _$child, createComponent as _$createComponent, branch as _$branch } from "reze-js";
+import { template as _$template, insert as _$insert, computed as _$computed, createComponent as _$createComponent, branch as _$branch } from "reze-js";
 const a = (() => {
   var _el$ = _$template("<div>");
   var _c$ = _$computed(() => n() >= 10);
@@ -12,7 +12,7 @@ const a = (() => {
 })();
 const b = (() => {
   var _el$2 = _$template("<div>x<!>y"),
-    _el$3 = _$next(_$child(_el$2));
+    _el$3 = _el$2.firstChild.nextSibling;
   var _c$2 = _$computed(() => !!(user()));
   _$insert(_el$2, () => _c$2() ? [() => user().name, _$template("<b>")] : _$template("<i>guest"), _el$3);
   return _el$2;

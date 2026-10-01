@@ -24,22 +24,14 @@ impl<'a> Emitter<'a, '_> {
             let name = self.fresh("_el$");
             names[walk.node.index()] = name;
             let _ = write!(out, ",\n    {name} = ");
-            if walk.next_siblings > 0 {
-                let next = self.helper(Helper::Next);
-                for _ in 0..walk.next_siblings {
-                    out.push(next);
-                    out.push("(");
-                }
-            }
             match walk.from {
                 From::FirstChildOf(parent) => {
-                    let child = self.helper(Helper::Child);
-                    let _ = write!(out, "{child}({})", names[parent.index()]);
+                    let _ = write!(out, "{}.firstChild", names[parent.index()]);
                 }
                 From::Node(previous) => out.push(names[previous.index()]),
             }
             for _ in 0..walk.next_siblings {
-                out.push(")");
+                out.push(".nextSibling");
             }
         }
         let previous: std::vec::Vec<&'a str> = if template.binds.len() > 1 {

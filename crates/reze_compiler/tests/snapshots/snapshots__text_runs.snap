@@ -2,10 +2,10 @@
 source: crates/reze_compiler/tests/snapshots.rs
 expression: "const a = <p>doubled: {n() * 2}</p>;\nconst b = <p>{n() + 1}</p>;\nconst c = <p>{`${name()}`}</p>;\nconst d = <p>a {\"<\"} b &amp; {n() - 1} items</p>;\nconst e = <div>{n() * 2}<b />{x()}total: {n() % 3}<i />{(n() | 0) + 1}{-n()}</div>;\nconst f = <p>{label()}: {n() / 2}</p>;\nconst g = <p>size {SIZE * 2}</p>;\nconst h = <p>{on() ? \"yes\" : \"no\"}</p>;\nconst i = <p>state: {on() ? \"yes\" : \"no\"}</p>;"
 ---
-import { template as _$template, child as _$child, renderEffect as _$renderEffect, insert as _$insert, next as _$next } from "reze-js";
+import { template as _$template, renderEffect as _$renderEffect, insert as _$insert } from "reze-js";
 const a = (() => {
   var _el$ = _$template("<p> "),
-    _el$2 = _$child(_el$);
+    _el$2 = _el$.firstChild;
   _$renderEffect(() => _el$2.data = "doubled: " + (n() * 2));
   return _el$;
 })();
@@ -16,21 +16,21 @@ const b = (() => {
 })();
 const c = (() => {
   var _el$4 = _$template("<p> "),
-    _el$5 = _$child(_el$4);
+    _el$5 = _el$4.firstChild;
   _$renderEffect(() => _el$5.data = "" + (`${name()}`));
   return _el$4;
 })();
 const d = (() => {
   var _el$6 = _$template("<p> "),
-    _el$7 = _$child(_el$6);
+    _el$7 = _el$6.firstChild;
   _$renderEffect(() => _el$7.data = "a < b & " + (n() - 1) + " items");
   return _el$6;
 })();
 const e = (() => {
   var _el$8 = _$template("<div> <b></b> <i></i> "),
-    _el$9 = _$child(_el$8),
-    _el$10 = _$next(_$next(_el$9)),
-    _el$11 = _$next(_$next(_el$10)),
+    _el$9 = _el$8.firstChild,
+    _el$10 = _el$9.nextSibling.nextSibling,
+    _el$11 = _el$10.nextSibling.nextSibling,
     _p$,
     _p$2,
     _p$3;
@@ -47,26 +47,26 @@ const e = (() => {
 })();
 const f = (() => {
   var _el$12 = _$template("<p> "),
-    _el$13 = _$child(_el$12);
+    _el$13 = _el$12.firstChild;
   _$insert(_el$12, label, _el$13);
   _$renderEffect(() => _el$13.data = ": " + (n() / 2));
   return _el$12;
 })();
 const g = (() => {
   var _el$14 = _$template("<p> "),
-    _el$15 = _$child(_el$14);
+    _el$15 = _el$14.firstChild;
   _el$15.data = "size " + (SIZE * 2);
   return _el$14;
 })();
 const h = (() => {
   var _el$16 = _$template("<p> "),
-    _el$17 = _$child(_el$16);
+    _el$17 = _el$16.firstChild;
   _$renderEffect(() => _el$17.data = "" + (on() ? "yes" : "no"));
   return _el$16;
 })();
 const i = (() => {
   var _el$18 = _$template("<p> "),
-    _el$19 = _$child(_el$18);
+    _el$19 = _el$18.firstChild;
   _$renderEffect(() => _el$19.data = "state: " + (on() ? "yes" : "no"));
   return _el$18;
 })();

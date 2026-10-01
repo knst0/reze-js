@@ -3,10 +3,10 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "import { Errored } from \"reze-js\";\nconst a = <Errored fallback={(error, reset) => <p onClick={reset}>{String(error)}</p>}><User id={id()} /></Errored>;\nconst b = <div><Errored fallback={<i>x</i>}><p>y</p>{z()}</Errored></div>;"
 ---
 import { Errored } from "reze-js";
-import { errored as _$errored, createComponent as _$createComponent, template as _$template, child as _$child, addEventListener as _$addEventListener, renderEffect as _$renderEffect, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
+import { errored as _$errored, createComponent as _$createComponent, template as _$template, addEventListener as _$addEventListener, renderEffect as _$renderEffect, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
 const a = _$errored(() => _$createComponent(User, { get id() { return id(); } }), (error, reset) => {
   var _el$ = _$template("<p> "),
-    _el$2 = _$child(_el$);
+    _el$2 = _el$.firstChild;
   _$addEventListener(_el$, "click", reset, true);
   _$renderEffect(() => _el$2.data = "" + (String(error)));
   return _el$;

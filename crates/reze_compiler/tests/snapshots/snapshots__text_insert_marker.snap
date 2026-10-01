@@ -2,10 +2,10 @@
 source: crates/reze_compiler/tests/snapshots.rs
 expression: "const a = <p>hi {name()}!</p>;"
 ---
-import { template as _$template, next as _$next, child as _$child, insert as _$insert } from "reze-js";
+import { template as _$template, insert as _$insert } from "reze-js";
 const a = (() => {
   var _el$ = _$template("<p>hi <!>!"),
-    _el$2 = _$next(_$child(_el$));
+    _el$2 = _el$.firstChild.nextSibling;
   _$insert(_el$, name, _el$2);
   return _el$;
 })();

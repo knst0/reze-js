@@ -3,14 +3,14 @@ source: crates/reze_compiler/tests/signal.rs
 expression: "import { $signal, For, Show } from \"reze-js\";\nlet rows = $signal([{ id: 1 }, { id: 2 }]);\nlet selected = $signal(0);\nlet open = $signal(false);\nexport const view = (\n  <ul>\n    <For each={rows}>{(row) => <li class={selected === row().id ? \"on\" : \"\"} onClick={() => selected = row().id} />}</For>\n    <Show when={open} fallback={<i>closed</i>}><p onClick={() => open = false}>open</p></Show>\n    <button onClick={() => { rows = [...rows, { id: rows.length }]; open = !open; }} />\n  </ul>\n);"
 ---
 import { signal, For, Show } from "reze-js";
-import { template as _$template, child as _$child, insert as _$insert, list as _$list, renderEffect as _$renderEffect, setAttribute as _$setAttribute, selector as _$selector, computed as _$computed, delegateEvents as _$delegateEvents } from "reze-js";
+import { template as _$template, insert as _$insert, list as _$list, renderEffect as _$renderEffect, setAttribute as _$setAttribute, selector as _$selector, computed as _$computed, delegateEvents as _$delegateEvents } from "reze-js";
 const [rows, setRows] = signal([{ id: 1 }, { id: 2 }]);
 const [selected, setSelected] = signal(0);
 const [open, setOpen] = signal(false);
 export const view = (
   (() => {
   var _el$ = _$template("<ul><button>"),
-    _el$2 = _$child(_el$);
+    _el$2 = _el$.firstChild;
   _$insert(_el$, ((_sel$) => _$list(rows, (row) => {
   var _el$3 = _$template("<li>");
   _el$3.$$click = () => setSelected(() => row().id);
