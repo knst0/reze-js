@@ -1,0 +1,9 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { $props } from \"reze-js\";\nconst m = $props.merge({ a: 1 }, { b: 2 });\nconst r = $props.merge(a, b);\nconst [x, rest] = $props.splitByGroups(props, [\"x\"]);\nconst o = $props.omit(props, \"x\");"
+---
+import { mergeProps, splitProps, omitProps } from "reze-js";
+const m = { a: 1, b: 2 };
+const r = mergeProps(a, b);
+const [x, rest] = splitProps(props, ["x"]);
+const o = omitProps(props, "x");

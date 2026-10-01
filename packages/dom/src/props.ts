@@ -1,4 +1,4 @@
-type Props = Record<string, unknown>;
+export type Props = Record<string, unknown>;
 
 /**
  * Merges props objects lazily: each key reads the last source holding a non-`undefined` value, so getters stay
@@ -74,7 +74,7 @@ function mergeDynamic(sources: readonly unknown[]): Props {
   );
 }
 
-type SplitProps<T, K extends readonly (readonly PropertyKey[])[]> = [
+export type SplitProps<T, K extends readonly (readonly PropertyKey[])[]> = [
   ...{ [I in keyof K]: Pick<T, Extract<K[I][number], keyof T>> },
   Omit<T, K[number][number]>,
 ];
@@ -97,4 +97,22 @@ export function splitProps<T extends object, const K extends readonly (readonly 
     });
   }
   return views as unknown as SplitProps<T, K>;
+}
+
+/**
+ * The rest of `props` without `keys`: a lazy view like the last result of `splitProps`, so
+ * getters stay reactive. The key set is fixed when called.
+ */
+export function omitProps(props: Props, ...keys: readonly PropertyKey[]): Props {
+  const rest: Props = {};
+  for (const key of Object.keys(props)) {
+    if (!(keys as readonly unknown[]).includes(key)) {
+      Object.defineProperty(rest, key, {
+        configurable: true,
+        enumerable: true,
+        get: () => (props as Props)[key],
+      });
+    }
+  }
+  return rest;
 }

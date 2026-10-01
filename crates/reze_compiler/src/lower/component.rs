@@ -4,7 +4,7 @@ use oxc_ast_visit::Visit;
 use oxc_span::Span;
 
 use super::children::Item;
-use super::constant::{is_defined, is_dynamic, static_property};
+use super::constant::{inline_entries, is_defined, is_dynamic};
 use super::{Lowerer, attribute_name, is_function};
 use crate::html::decode_entities;
 use crate::ir::{Component, Embed, Flow, Jsx, Prop, PropValue, Props, PropsPart};
@@ -71,20 +71,6 @@ pub(super) fn spread_inline<'a>(
         }));
     }
     inline
-}
-
-fn inline_entries<'x, 'a>(
-    arg: &'x Expression<'a>,
-) -> Option<std::vec::Vec<(&'a str, &'x Expression<'a>)>> {
-    let Expression::ObjectExpression(object) = arg.without_parentheses() else { return None };
-    object
-        .properties
-        .iter()
-        .map(|property| {
-            let (key, value) = static_property(property)?;
-            (key != "__proto__" && is_defined(value)).then_some((key, value))
-        })
-        .collect()
 }
 
 fn attr_defined(a: &JSXAttribute) -> Option<bool> {

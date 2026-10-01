@@ -1,3 +1,4 @@
+export { $props } from "./dollarProps";
 export { setAttribute, setAttributeNS, setBoolAttribute } from "./attributes";
 export { className, type ClassValue } from "./class-name";
 export { createComponent, render } from "./component";
@@ -32,7 +33,7 @@ export { lazy, type LazyComponent } from "./lazy";
 export { list } from "./list";
 export { asyncComponent, loading } from "./loading";
 export { portal } from "./portal";
-export { mergeProps, splitProps } from "./props";
+export { mergeProps, splitProps, omitProps } from "./props";
 export { reconcileArrays } from "./reconcile";
 export { repeat } from "./repeat";
 export { use } from "./ref";

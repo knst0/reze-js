@@ -306,6 +306,19 @@ catalog! {
             good: "import { $action } from \"reze-js\";\n\nexport const save = $action(async (todo) => {\n  await saveTodo(todo);\n});\n",
         },
     }
+    PropsAsValue {
+        name: "PROPS_AS_VALUE",
+        severity: Error,
+        title: "`$props` used as a value",
+        message: "`$props` is compiler syntax and has no runtime value, so this reference would throw. Call `$props.merge(…)`, `$props.splitByGroups(…)` or `$props.omit(…)` instead.",
+        explanation: "Only the three `$props` calls are rewritten: dissolvable merges become object literals, the rest compiles to direct `mergeProps`, `splitProps` and `omitProps` calls. Passing `$props` around, storing it, re-exporting it or calling another method would reach a binding with no value.",
+        repair: "Call one of the three where the props are handled. To merge an unknown shape at runtime, import `mergeProps` directly.",
+        fix: None,
+        example: Pair {
+            bad: "import { $props } from \"reze-js\";\n\nexport const view = $props;\n",
+            good: "import { $props } from \"reze-js\";\n\nexport const view = $props.omit(props, \"id\");\n",
+        },
+    }
     ChildrenPropIgnored {
         name: "CHILDREN_PROP_IGNORED",
         severity: Warn,

@@ -567,6 +567,36 @@ export const save = $action(async (todo) => {
 });
 ```
 
+## PROPS_AS_VALUE
+
+**`$props` used as a value** · severity `error`
+
+> `$props` is compiler syntax and has no runtime value, so this reference would throw. Call `$props.merge(…)`, `$props.splitByGroups(…)` or `$props.omit(…)` instead.
+
+`data` keys: none
+
+Automatic fix: no
+
+Only the three `$props` calls are rewritten: dissolvable merges become object literals, the rest compiles to direct `mergeProps`, `splitProps` and `omitProps` calls. Passing `$props` around, storing it, re-exporting it or calling another method would reach a binding with no value.
+
+**Repair:** Call one of the three where the props are handled. To merge an unknown shape at runtime, import `mergeProps` directly.
+
+Before:
+
+```tsx
+import { $props } from "reze-js";
+
+export const view = $props;
+```
+
+After:
+
+```tsx
+import { $props } from "reze-js";
+
+export const view = $props.omit(props, "id");
+```
+
 ## CHILDREN_PROP_IGNORED
 
 **`children` attribute next to nested children** · severity `warn`

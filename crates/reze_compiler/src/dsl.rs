@@ -1,6 +1,6 @@
-//! First pass of `$signal`, `$computed` and `$action`: rewrites the syntax into the `signal`
-//! tuple, the `computed` getter and the `action` body a person would write. The second pass is
-//! the ordinary compiler, run on the rewritten text.
+//! First pass of `$signal`, `$computed`, `$action` and `$props.merge`: rewrites the syntax into
+//! the `signal` tuple, the `computed` getter, the `action` body and the merged object literal a
+//! person would write. The second pass is the ordinary compiler, run on the rewritten text.
 
 use std::collections::{HashMap, HashSet};
 
@@ -17,7 +17,10 @@ use oxc_syntax::symbol::SymbolId;
 use crate::analyze::{RUNTIME_MODULES, exported_symbols};
 use crate::code::Code;
 use crate::diagnostic::{self, Report};
-use crate::lower::is_component_name;
+use crate::lower::{
+    constant::{inline_entries, static_property},
+    is_component_name,
+};
 use crate::namer::Namer;
 
 /// Compiler syntax and the runtime function it compiles to.
@@ -58,7 +61,7 @@ impl Primitive {
 
 /// Whether `source` may use the syntax; files without it skip the first pass.
 pub fn mentions_syntax(source: &str) -> bool {
-    Primitive::ALL.into_iter().any(|p| source.contains(p.dollar()))
+    Primitive::ALL.into_iter().any(|p| source.contains(p.dollar())) || source.contains("$props")
 }
 
 struct Patch {
@@ -124,12 +127,16 @@ pub fn rewrite(
     let program = allocator.alloc(parsed.program);
     let scoping = SemanticBuilder::new().build(program).semantic.into_scoping();
     let imports = Imports::collect(program);
-    if imports.dollar.is_empty() && imports.namespaces.is_empty() {
+    if imports.dollar.is_empty() && imports.namespaces.is_empty() && imports.props.is_empty() {
         return Ok(None);
     }
+    let PropsScanned { patches: props_patches, pending, needed, misuse } =
+        scan_props_calls(source, program, &scoping, &imports);
+    let has_props = !props_patches.is_empty() || !pending.is_empty();
     let mut namer = Namer::new(&scoping);
     let mut patches = Vec::new();
-    let callees = imports.patch(source, &mut namer, &mut patches);
+    let callees = imports.patch(source, &mut namer, &mut patches, &needed, &pending);
+    patches.extend(props_patches);
 
     let mut declarations = Declarations {
         scoping: &scoping,
@@ -143,8 +150,9 @@ pub fn rewrite(
         has_action: false,
     };
     declarations.visit_program(program);
-    let Declarations { variables, declarators, reports, has_action, .. } = declarations;
-    if variables.is_empty() && !has_action && reports.is_empty() {
+    let Declarations { variables, declarators, mut reports, has_action, .. } = declarations;
+    reports.extend(misuse);
+    if variables.is_empty() && !has_action && reports.is_empty() && !has_props {
         return Ok(None);
     }
 
@@ -217,9 +225,19 @@ struct DollarImport {
 struct Imports {
     dollar: Vec<DollarImport>,
     namespaces: HashSet<SymbolId>,
+    props: Vec<PropsImport>,
+    /// The local name of a value import of each `$props` runtime function, by method index.
+    props_runtime: [Option<String>; 3],
     /// The local name of a value import of each runtime function, by `Primitive`.
     runtime: [Option<String>; Primitive::ALL.len()],
     declarations: Vec<ImportRange>,
+}
+
+/// A `$props` named import: the compiler dissolves `$props.merge` of object literals, the rest
+/// runs.
+struct PropsImport {
+    specifier: Span,
+    symbol: SymbolId,
 }
 
 /// The named specifiers of an import declaration that mentions compiler syntax.
@@ -235,6 +253,8 @@ impl Imports {
         let mut imports = Imports {
             dollar: Vec::new(),
             namespaces: HashSet::new(),
+            props: Vec::new(),
+            props_runtime: [None, None, None],
             runtime: Default::default(),
             declarations: Vec::new(),
         };
@@ -248,6 +268,7 @@ impl Imports {
             let mut range: Option<ImportRange> = None;
             let mut has_other_bindings = false;
             let mut has_dollar = false;
+            let mut has_props = false;
             for specifier in import.specifiers.iter().flatten() {
                 match specifier {
                     ImportDeclarationSpecifier::ImportSpecifier(named) => {
@@ -272,6 +293,17 @@ impl Imports {
                                 local: named.local.name.to_string(),
                                 is_aliased: named.local.name != imported,
                             });
+                        } else if imported == "$props" {
+                            has_props = true;
+                            imports.props.push(PropsImport {
+                                specifier: named.span,
+                                symbol: named.local.symbol_id(),
+                            });
+                        } else if let Some(index) =
+                            PROPS_RUNTIME.iter().position(|name| *name == imported)
+                        {
+                            imports.props_runtime[index]
+                                .get_or_insert_with(|| named.local.name.to_string());
                         } else if let Some(primitive) = Primitive::from_runtime(&imported) {
                             imports.runtime[primitive as usize]
                                 .get_or_insert_with(|| named.local.name.to_string());
@@ -286,7 +318,7 @@ impl Imports {
                     }
                 }
             }
-            if let (Some(mut range), true) = (range, has_dollar) {
+            if let (Some(mut range), true) = (range, has_dollar || has_props) {
                 range.has_other_bindings = has_other_bindings;
                 imports.declarations.push(range);
             }
@@ -299,13 +331,16 @@ impl Imports {
     }
 
     /// Rewrites the syntax specifiers: per primitive, the first becomes its runtime function
-    /// unless the file already imports it, the others are dropped. Returns the name each syntax
-    /// local stands for.
+    /// unless the file already imports it, the others are dropped. Every `$props` call is
+    /// rewritten, so its specifiers go: the first becomes the runtime functions `needed`
+    /// residue calls use, the rest is dropped. Returns the name each syntax local stands for
     fn patch(
         &self,
         source: &str,
         namer: &mut Namer<'_>,
         patches: &mut Vec<Patch>,
+        needed: &[bool; 3],
+        pending: &[(Span, usize)],
     ) -> HashMap<SymbolId, String> {
         let mut callees = HashMap::new();
         let mut targets = self.runtime.clone();
@@ -333,6 +368,47 @@ impl Imports {
                 }
             };
             replaced.insert(import.specifier.start, text);
+        }
+        let mut locals: [Option<String>; 3] = [None, None, None];
+        if !self.props.is_empty() {
+            let mut targets = self.props_runtime.clone();
+            let mut texts = Vec::new();
+            for (index, want) in needed.iter().enumerate() {
+                if !want {
+                    continue;
+                }
+                match &targets[index] {
+                    Some(name) => locals[index] = Some(name.clone()),
+                    None => {
+                        let runtime = PROPS_RUNTIME[index];
+                        let name = namer.fresh(runtime);
+                        texts.push(if name == runtime {
+                            name.clone()
+                        } else {
+                            format!("{runtime} as {name}")
+                        });
+                        targets[index] = Some(name.clone());
+                        locals[index] = Some(name);
+                    }
+                }
+            }
+            let mut first = true;
+            for import in &self.props {
+                if first {
+                    first = false;
+                    replaced.insert(
+                        import.specifier.start,
+                        (!texts.is_empty()).then(|| texts.join(", ")),
+                    );
+                } else {
+                    replaced.insert(import.specifier.start, None);
+                }
+            }
+            for (span, index) in pending {
+                if let Some(name) = &locals[*index] {
+                    patches.push(Patch { start: span.start, end: span.end, text: name.clone() });
+                }
+            }
         }
         for declaration in &self.declarations {
             let kept: Vec<&str> = declaration
@@ -365,6 +441,295 @@ impl Imports {
             }
         }
         callees
+    }
+}
+
+/// `$props` calls of one file: dissolve patches, residue rewrites into runtime calls, and uses
+/// no call explains.
+struct PropsCalls<'s> {
+    source: &'s str,
+    scoping: &'s Scoping,
+    props: &'s [PropsImport],
+    patches: Vec<Patch>,
+    pending: Vec<(Span, usize)>,
+    needed: [bool; 3],
+    used: Vec<Span>,
+    misuse: Vec<Report>,
+}
+
+/// Runtime functions `$props` calls compile to, by method index: `merge`, `splitByGroups`, `omit`.
+const PROPS_RUNTIME: [&str; 3] = ["mergeProps", "splitProps", "omitProps"];
+
+fn trim_start(source: &str, mut at: u32) -> u32 {
+    while source.as_bytes().get(at as usize).is_some_and(|b| b.is_ascii_whitespace()) {
+        at += 1;
+    }
+    at
+}
+
+fn trim_end(source: &str, mut at: u32) -> u32 {
+    while at > 0 && source.as_bytes().get(at as usize - 1).is_some_and(|b| b.is_ascii_whitespace())
+    {
+        at -= 1;
+    }
+    at
+}
+
+struct PropsScanned {
+    patches: Vec<Patch>,
+    pending: Vec<(Span, usize)>,
+    needed: [bool; 3],
+    misuse: Vec<Report>,
+}
+
+fn scan_props_calls(
+    source: &str,
+    program: &Program<'_>,
+    scoping: &Scoping,
+    imports: &Imports,
+) -> PropsScanned {
+    if imports.props.is_empty() {
+        return PropsScanned {
+            patches: Vec::new(),
+            pending: Vec::new(),
+            needed: [false; 3],
+            misuse: Vec::new(),
+        };
+    }
+    let mut calls = PropsCalls {
+        source,
+        scoping,
+        props: &imports.props,
+        patches: Vec::new(),
+        pending: Vec::new(),
+        needed: [false; 3],
+        used: Vec::new(),
+        misuse: Vec::new(),
+    };
+    calls.visit_program(program);
+    let PropsCalls { patches, pending, needed, misuse, .. } = calls;
+    PropsScanned { patches, pending, needed, misuse }
+}
+
+impl PropsCalls<'_> {
+    /// The runtime function index of a `$props` call: `merge`, `splitByGroups`, `omit`.
+    fn method(&self, callee: &Expression<'_>) -> Option<usize> {
+        let Expression::StaticMemberExpression(member) = callee.without_parentheses() else {
+            return None;
+        };
+        if member.optional {
+            return None;
+        }
+        let Expression::Identifier(object) = &member.object else { return None };
+        let symbol = symbol_of(self.scoping, object)?;
+        if !self.props.iter().any(|p| p.symbol == symbol) {
+            return None;
+        }
+        match member.property.name.as_str() {
+            "merge" => Some(0),
+            "splitByGroups" => Some(1),
+            "omit" => Some(2),
+            _ => None,
+        }
+    }
+
+    /// Rewrites `$props.merge` of object literals into the literal a person would write, keeping
+    /// every inner span: the call wrapper becomes braces, object boundaries become commas.
+    fn dissolve(&mut self, call: &CallExpression<'_>) -> bool {
+        if call.optional || call.type_arguments.is_some() {
+            return false;
+        }
+        let mut objects = Vec::with_capacity(call.arguments.len());
+        for arg in &call.arguments {
+            let Some(e) = arg.as_expression() else { return false };
+            if inline_entries(e).is_none() {
+                return false;
+            }
+            let Expression::ObjectExpression(object) = e.without_parentheses() else {
+                return false;
+            };
+            objects.push(object.span);
+        }
+        if objects.is_empty() {
+            self.patches.push(Patch {
+                start: call.span.start,
+                end: call.span.end,
+                text: String::from("{}"),
+            });
+        } else {
+            let mut inner = Vec::with_capacity(objects.len());
+            for span in objects {
+                let (start, end) =
+                    (trim_start(self.source, span.start + 1), trim_end(self.source, span.end - 1));
+                inner.push(if start <= end {
+                    (start, end)
+                } else {
+                    (span.start + 1, span.end - 1)
+                });
+            }
+            self.patches.push(Patch {
+                start: call.span.start,
+                end: inner[0].0,
+                text: String::from("{ "),
+            });
+            for pair in inner.windows(2) {
+                self.patches.push(Patch {
+                    start: pair[0].1,
+                    end: pair[1].0,
+                    text: String::from(", "),
+                });
+            }
+            let last = inner[inner.len() - 1];
+            self.patches.push(Patch {
+                start: last.1,
+                end: call.span.end,
+                text: String::from(" }"),
+            });
+        }
+        true
+    }
+
+    /// Rewrites `$props.splitByGroups` over an object literal into the views a person would
+    /// write: one literal per group plus the rest, the first group claiming a repeated key.
+    /// Values move verbatim, so only static keys matter — one source, no cross-part shadowing.
+    fn dissolve_split(&mut self, call: &CallExpression<'_>) -> bool {
+        if call.optional || call.type_arguments.is_some() || call.arguments.len() < 2 {
+            return false;
+        }
+        let mut args = call.arguments.iter();
+        let Some(props) = args.next().and_then(|arg| arg.as_expression()) else { return false };
+        let Expression::ObjectExpression(object) = props.without_parentheses() else {
+            return false;
+        };
+        let mut entries = Vec::with_capacity(object.properties.len());
+        for property in &object.properties {
+            let Some((key, _)) = static_property(property) else { return false };
+            if key == "__proto__" {
+                return false;
+            }
+            entries.push((key, property.span()));
+        }
+        let mut groups = Vec::with_capacity(call.arguments.len() - 1);
+        for arg in args {
+            let Some(list) = arg.as_expression() else { return false };
+            let Expression::ArrayExpression(array) = list.without_parentheses() else {
+                return false;
+            };
+            let mut keys = Vec::with_capacity(array.elements.len());
+            for element in &array.elements {
+                let Some(e) = element.as_expression() else { return false };
+                let Expression::StringLiteral(key) = e.without_parentheses() else {
+                    return false;
+                };
+                keys.push(key.value.as_str());
+            }
+            groups.push(keys);
+        }
+        let mut views: Vec<Vec<Span>> = groups.iter().map(|_| Vec::new()).collect();
+        views.push(Vec::new());
+        for (key, span) in entries {
+            let mut placed = views.len() - 1;
+            for (index, group) in groups.iter().enumerate() {
+                if group.contains(&key) {
+                    placed = index;
+                    break;
+                }
+            }
+            views[placed].push(span);
+        }
+        let mut text = String::from("[");
+        for (index, view) in views.iter().enumerate() {
+            if index > 0 {
+                text.push_str(", ");
+            }
+            push_entries(&mut text, self.source, view);
+        }
+        text.push(']');
+        self.patches.push(Patch { start: call.span.start, end: call.span.end, text });
+        true
+    }
+
+    /// Rewrites `$props.omit` over an object literal into the rest a person would write.
+    fn dissolve_omit(&mut self, call: &CallExpression<'_>) -> bool {
+        if call.optional || call.type_arguments.is_some() || call.arguments.len() < 2 {
+            return false;
+        }
+        let mut args = call.arguments.iter();
+        let Some(props) = args.next().and_then(|arg| arg.as_expression()) else { return false };
+        let Expression::ObjectExpression(object) = props.without_parentheses() else {
+            return false;
+        };
+        let mut entries = Vec::with_capacity(object.properties.len());
+        for property in &object.properties {
+            let Some((key, _)) = static_property(property) else { return false };
+            if key == "__proto__" {
+                return false;
+            }
+            entries.push((key, property.span()));
+        }
+        let mut keys = Vec::with_capacity(call.arguments.len() - 1);
+        for arg in args {
+            let Some(key) = arg.as_expression() else { return false };
+            let Expression::StringLiteral(literal) = key.without_parentheses() else {
+                return false;
+            };
+            keys.push(literal.value.as_str());
+        }
+        let rest: Vec<Span> = entries
+            .into_iter()
+            .filter(|(key, _)| !keys.contains(key))
+            .map(|(_, span)| span)
+            .collect();
+        let mut text = String::new();
+        push_entries(&mut text, self.source, &rest);
+        self.patches.push(Patch { start: call.span.start, end: call.span.end, text });
+        true
+    }
+}
+
+fn push_entries(text: &mut String, source: &str, props: &[Span]) {
+    if props.is_empty() {
+        text.push_str("{}");
+        return;
+    }
+    text.push_str("{ ");
+    for (index, span) in props.iter().enumerate() {
+        if index > 0 {
+            text.push_str(", ");
+        }
+        text.push_str(&source[span.start as usize..span.end as usize]);
+    }
+    text.push_str(" }");
+}
+
+impl<'a> Visit<'a> for PropsCalls<'_> {
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if let Some(index) = self.method(&it.callee) {
+            let callee = it.callee.without_parentheses().span();
+            self.used.push(callee);
+            let dissolved = match index {
+                0 => self.dissolve(it),
+                1 => self.dissolve_split(it),
+                _ => self.dissolve_omit(it),
+            };
+            if !dissolved {
+                self.pending.push((callee, index));
+                self.needed[index] = true;
+            }
+        }
+        walk::walk_call_expression(self, it);
+    }
+
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        let Some(symbol) = symbol_of(self.scoping, it) else { return };
+        if self.props.iter().any(|p| p.symbol == symbol)
+            && !self
+                .used
+                .iter()
+                .any(|callee| callee.start <= it.span.start && it.span.end <= callee.end)
+        {
+            self.misuse.push(Report::new(diagnostic::Code::PropsAsValue, it.span));
+        }
     }
 }
 

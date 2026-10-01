@@ -118,6 +118,22 @@ pub fn is_defined(e: &Expression<'_>) -> bool {
     }
 }
 
+/// The entries of an object literal whose spread dissolves: static keys but `__proto__`, and
+/// values that never evaluate to `undefined`. `None` keeps the generic spread.
+pub fn inline_entries<'x, 'a>(
+    arg: &'x Expression<'a>,
+) -> Option<std::vec::Vec<(&'a str, &'x Expression<'a>)>> {
+    let Expression::ObjectExpression(object) = arg.without_parentheses() else { return None };
+    object
+        .properties
+        .iter()
+        .map(|property| {
+            let (key, value) = static_property(property)?;
+            (key != "__proto__" && is_defined(value)).then_some((key, value))
+        })
+        .collect()
+}
+
 /// `style={{…}}` with only literal values, as `a:b;c:d`.
 pub fn static_style(e: &Expression<'_>, analysis: &Analysis<'_>) -> Option<String> {
     let Expression::ObjectExpression(object) = e.without_parentheses() else { return None };

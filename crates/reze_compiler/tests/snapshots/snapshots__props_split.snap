@@ -1,0 +1,6 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "import { $props } from \"reze-js\";\nconst [a, rest] = $props.splitByGroups({ x: 1, y: 2 }, [\"x\"]);\nconst r = $props.omit({ x: 1, y: 2 }, \"x\");"
+---
+const [a, rest] = [{ x: 1 }, { y: 2 }];
+const r = { y: 2 };

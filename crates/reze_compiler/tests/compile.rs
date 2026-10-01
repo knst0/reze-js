@@ -234,6 +234,101 @@ fn static_spreads_dissolve_in_elements_but_spread_stays() {
 }
 
 #[test]
+fn props_merge_of_literals_dissolves() {
+    let code =
+        run("import { $props } from \"reze-js\";\nconst m = $props.merge({ a: 1 }, { b: 2 });");
+    assert!(code.contains("const m = { a: 1, b: 2 };"), "{code}");
+    assert!(!code.contains("$props"), "{code}");
+    let code = run("import { $props } from \"reze-js\";\nconst m = $props.merge();");
+    assert!(code.contains("const m = {};"), "{code}");
+    assert!(!code.contains("$props"), "{code}");
+    let code =
+        run("import { $props as P } from \"reze-js\";\nconst m = P.merge({ a: 1 }, { b: \"x\" });");
+    assert!(code.contains("{ a: 1, b: \"x\" }"), "{code}");
+    assert!(!code.contains("$props"), "{code}");
+}
+
+#[test]
+fn props_residue_compiles_to_runtime_calls() {
+    let code = run("import { $props } from \"reze-js\";\nconst r = $props.merge(a, { b: 2 });");
+    assert!(code.contains("import { mergeProps }"), "{code}");
+    assert!(code.contains("const r = mergeProps(a, { b: 2 });"), "{code}");
+    let code = run(
+        "import { $props } from \"reze-js\";\nconst [a, rest] = $props.splitByGroups(props, [\"x\"]);",
+    );
+    assert!(code.contains("import { splitProps }"), "{code}");
+    assert!(!code.contains("$props"), "{code}");
+    assert!(code.contains("splitProps(props, [\"x\"])"), "{code}");
+    let code = run("import { $props } from \"reze-js\";\nconst r = $props.omit(props, \"x\");");
+    assert!(code.contains("import { omitProps }"), "{code}");
+    assert!(code.contains("omitProps(props, \"x\")"), "{code}");
+    let code = run(
+        "import { $props } from \"reze-js\";\nconst m = $props.merge({ a: 1 });\nconst r = $props.merge(a, { b: 2 });",
+    );
+    assert!(code.contains("const m = { a: 1 };"), "{code}");
+    assert!(code.contains("mergeProps(a, { b: 2 })"), "{code}");
+    let code =
+        run("import { $props, mergeProps } from \"reze-js\";\nconst r = $props.merge(a, b);");
+    assert!(code.contains("import { mergeProps }"), "{code}");
+    assert!(!code.contains("$props"), "{code}");
+    assert!(code.contains("mergeProps(a, b)"), "{code}");
+}
+
+#[test]
+fn props_used_as_a_value_is_an_error() {
+    for source in [
+        "import { $props } from \"reze-js\";\n\nexport const view = $props;\n",
+        "import { $props } from \"reze-js\";\n\nexport const pick = $props.pick;\n",
+        "import { $props } from \"reze-js\";\n\nexport const m = $props.mix(a, b);\n",
+    ] {
+        let diagnostics = errors(source);
+        assert_eq!(diagnostics.len(), 1, "{source}: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, Code::PropsAsValue, "{source}");
+    }
+}
+
+#[test]
+fn a_local_props_object_is_not_syntax() {
+    let source = "const $props = { merge: (...a) => a };\nconst m = $props.merge({ a: 1 });";
+    assert!(compile(source, "test.tsx", &Options::default()).unwrap().is_none(), "{source}");
+}
+
+#[test]
+fn props_split_of_literals_dissolves() {
+    let code = run(
+        "import { $props } from \"reze-js\";\nconst [a, rest] = $props.splitByGroups({ x: 1, y: 2 }, [\"x\"]);",
+    );
+    assert!(code.contains("const [a, rest] = [{ x: 1 }, { y: 2 }];"), "{code}");
+    assert!(!code.contains("$props"), "{code}");
+    let code = run(
+        "import { $props } from \"reze-js\";\nconst [a, b, rest] = $props.splitByGroups({ x: 1, y: 2 }, [\"y\", \"z\"], [\"x\", \"y\"]);",
+    );
+    assert!(code.contains("const [a, b, rest] = [{ y: 2 }, { x: 1 }, {}];"), "{code}");
+    let code = run(
+        "import { $props } from \"reze-js\";\nconst [a, rest] = $props.splitByGroups({ a: f() }, [\"a\"]);",
+    );
+    assert!(code.contains("const [a, rest] = [{ a: f() }, {}];"), "{code}");
+    let code = run(
+        "import { $props } from \"reze-js\";\nconst [a, rest] = $props.splitByGroups(props, keys);",
+    );
+    assert!(code.contains("splitProps(props, keys)"), "{code}");
+    assert!(code.contains("import { splitProps }"), "{code}");
+}
+
+#[test]
+fn props_omit_of_literals_dissolves() {
+    let code =
+        run("import { $props } from \"reze-js\";\nconst r = $props.omit({ x: 1, y: 2 }, \"x\");");
+    assert!(code.contains("const r = { y: 2 };"), "{code}");
+    assert!(!code.contains("$props"), "{code}");
+    let code = run("import { $props } from \"reze-js\";\nconst r = $props.omit({ x: 1 }, \"x\");");
+    assert!(code.contains("const r = {};"), "{code}");
+    let code = run("import { $props } from \"reze-js\";\nconst r = $props.omit(props, key);");
+    assert!(code.contains("omitProps(props, key)"), "{code}");
+    assert!(code.contains("import { omitProps }"), "{code}");
+}
+
+#[test]
 fn a_control_flow_attribute_fix_removes_it() {
     let source =
         "import { Show } from \"reze-js\";\nconst a = <Show when={x()} keyed><b /></Show>;";
