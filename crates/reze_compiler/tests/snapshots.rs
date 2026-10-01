@@ -55,6 +55,11 @@ const CASES: &[(&str, &str)] = &[
     ("native_spread", "const a = <div {...attrs} class=\"x\" ref={el}>{kids()}</div>;"),
     ("spread_children", "const a = <div {...attrs()} />;\nconst b = <p {...rest}><b /></p>;"),
     (
+        "static_spread",
+        "const a = <Card a={1} {...{ b: 2 }} c=\"x\" />;\nconst b = <div {...{ id: \"a\" }} class=\"x\" />;",
+    ),
+    ("spread_shadowed", "const a = <Card {...{ a: 1 }} a={value} />;"),
+    (
         "children_attribute",
         "const a = <div children={kids()} />;\nconst b = <div children={x()}><b /></div>;",
     ),

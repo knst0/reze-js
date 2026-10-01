@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use oxc_ast::ast::*;
 use oxc_span::GetSpan;
 
-use super::component::PropsBuilder;
+use super::component::{PropsBuilder, spread_inline};
 use super::constant::{
     ClassKeys, Literal, is_dynamic, literal, literal_truthy, static_property, static_style,
 };
@@ -652,12 +652,11 @@ impl<'a> Lowerer<'a, '_> {
         has_children: bool,
     ) {
         let mut props = PropsBuilder::new(self.alloc);
-        for attr in attrs {
+        let inline = spread_inline(self, attrs, &[]);
+        for (attr, &dissolve) in attrs.iter().zip(&inline) {
             match attr {
                 JSXAttributeItem::SpreadAttribute(s) => {
-                    let is_reactive = is_dynamic(&s.argument, false, self.analysis);
-                    let value = self.expr(&s.argument);
-                    props.spread(value, is_reactive);
+                    self.spread_attr(&mut props, &s.argument, dissolve, false);
                 }
                 JSXAttributeItem::Attribute(a) => {
                     let name = attribute_name(self, a);

@@ -1,0 +1,11 @@
+---
+source: crates/reze_compiler/tests/snapshots.rs
+expression: "const a = <Card a={1} {...{ b: 2 }} c=\"x\" />;\nconst b = <div {...{ id: \"a\" }} class=\"x\" />;"
+---
+import { createComponent as _$createComponent, template as _$template, spread as _$spread } from "reze-js";
+const a = _$createComponent(Card, { a: 1, b: 2, c: "x" });
+const b = (() => {
+  var _el$ = _$template("<div>");
+  _$spread(_el$, { id: "a", class: "x" }, false, false);
+  return _el$;
+})();

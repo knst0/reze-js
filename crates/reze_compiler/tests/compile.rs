@@ -206,6 +206,34 @@ fn a_local_function_named_like_an_intrinsic_is_a_component() {
 }
 
 #[test]
+fn static_spreads_dissolve_into_one_props_object() {
+    let code = run(r#"const a = <Card a={1} {...{ b: 2 }} c="x" />;"#);
+    assert!(code.contains(r#"{ a: 1, b: 2, c: "x" }"#), "{code}");
+    assert!(!code.contains("mergeProps"), "{code}");
+    let code = run(r#"const a = <Card a={1} {...{}} />;"#);
+    assert!(code.contains("{ a: 1 }"), "{code}");
+    assert!(!code.contains("mergeProps"), "{code}");
+}
+
+#[test]
+fn spreads_shadowed_by_maybe_undefined_stay_generic() {
+    let code = run(r#"const a = <Card {...{ a: 1 }} a={value} />;"#);
+    assert!(code.contains("mergeProps"), "{code}");
+    let code = run(r#"const a = <Card b={2} {...{ __proto__: x }} />;"#);
+    assert!(code.contains("mergeProps"), "{code}");
+    let code = run(r#"const a = <Card {...dyn} {...{ a: 1 }} />;"#);
+    assert!(code.contains("mergeProps"), "{code}");
+    assert!(code.contains("{ a: 1 }"), "{code}");
+}
+
+#[test]
+fn static_spreads_dissolve_in_elements_but_spread_stays() {
+    let code = run(r#"const a = <div {...{ id: "a" }} class="x" />;"#);
+    assert!(code.contains(r#"{ id: "a", class: "x" }"#), "{code}");
+    assert!(!code.contains("mergeProps"), "{code}");
+}
+
+#[test]
 fn a_control_flow_attribute_fix_removes_it() {
     let source =
         "import { Show } from \"reze-js\";\nconst a = <Show when={x()} keyed><b /></Show>;";
