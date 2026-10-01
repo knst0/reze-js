@@ -7,23 +7,29 @@ import { disposeNode, type Link, type ReactiveNode } from "./graph";
 export type Owner = ReactiveNode;
 
 class RootNode implements ReactiveNode {
-  deps: Link | undefined = undefined;
-  depsTail: Link | undefined = undefined;
-  flags: number = FlagNone;
+  deps: Link | undefined;
+  depsTail: Link | undefined;
+  flags: number;
   parent: ReactiveNode | undefined;
 
   constructor(parent: ReactiveNode | undefined) {
+    this.deps = undefined;
+    this.depsTail = undefined;
+    this.flags = FlagNone;
     this.parent = parent;
   }
 }
 
 class CleanupNode implements ReactiveNode {
-  subs: Link | undefined = undefined;
-  subsTail: Link | undefined = undefined;
-  flags: number = FlagNone;
+  subs: Link | undefined;
+  subsTail: Link | undefined;
+  flags: number;
   fn: () => void;
 
   constructor(fn: () => void) {
+    this.subs = undefined;
+    this.subsTail = undefined;
+    this.flags = FlagNone;
     this.fn = fn;
   }
 

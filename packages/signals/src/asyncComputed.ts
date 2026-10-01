@@ -48,20 +48,30 @@ class AsyncRun implements AsyncContext {
 }
 
 class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
-  deps: Link | undefined = undefined;
-  depsTail: Link | undefined = undefined;
-  subs: Link | undefined = undefined;
-  subsTail: Link | undefined = undefined;
-  flags: number = FlagWatching;
-  generation = 0;
+  deps: Link | undefined;
+  depsTail: Link | undefined;
+  subs: Link | undefined;
+  subsTail: Link | undefined;
+  flags: number;
+  generation: number;
   fn: (c: AsyncContext) => PromiseLike<T> | T;
-  resolved = new SignalNode<T | undefined>(undefined, Object.is);
-  pending = new SignalNode<boolean>(true, Object.is);
-  hasSettled = false;
-  rejection = new SignalNode<unknown>(undefined, Object.is);
+  resolved: SignalNode<T | undefined>;
+  pending: SignalNode<boolean>;
+  hasSettled: boolean;
+  rejection: SignalNode<unknown>;
 
   constructor(fn: (c: AsyncContext) => PromiseLike<T> | T) {
+    this.deps = undefined;
+    this.depsTail = undefined;
+    this.subs = undefined;
+    this.subsTail = undefined;
+    this.flags = FlagWatching;
+    this.generation = 0;
     this.fn = fn;
+    this.resolved = new SignalNode<T | undefined>(undefined, Object.is);
+    this.pending = new SignalNode<boolean>(true, Object.is);
+    this.hasSettled = false;
+    this.rejection = new SignalNode<unknown>(undefined, Object.is);
   }
 
   value(): T | undefined {

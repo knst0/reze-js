@@ -11,12 +11,21 @@ export interface Boundary {
 }
 
 class BoundaryNode implements ReactiveNode, Boundary {
-  deps: Link | undefined = undefined;
-  depsTail: Link | undefined = undefined;
-  subs: Link | undefined = undefined;
-  subsTail: Link | undefined = undefined;
-  flags: number = FlagNone;
-  pendingReads = new SignalNode<number>(0, Object.is);
+  deps: Link | undefined;
+  depsTail: Link | undefined;
+  subs: Link | undefined;
+  subsTail: Link | undefined;
+  flags: number;
+  pendingReads: SignalNode<number>;
+
+  constructor() {
+    this.deps = undefined;
+    this.depsTail = undefined;
+    this.subs = undefined;
+    this.subsTail = undefined;
+    this.flags = FlagNone;
+    this.pendingReads = new SignalNode<number>(0, Object.is);
+  }
 
   isPending(): boolean {
     return this.pendingReads.read() > 0;
@@ -32,12 +41,15 @@ class BoundaryNode implements ReactiveNode, Boundary {
 }
 
 class PendingReadNode implements ReactiveNode {
-  subs: Link | undefined = undefined;
-  subsTail: Link | undefined = undefined;
-  flags: number = FlagNone;
+  subs: Link | undefined;
+  subsTail: Link | undefined;
+  flags: number;
   boundary: BoundaryNode;
 
   constructor(boundary: BoundaryNode) {
+    this.subs = undefined;
+    this.subsTail = undefined;
+    this.flags = FlagNone;
     this.boundary = boundary;
   }
 

@@ -7,15 +7,21 @@ import { checkDirty, disposeChildren, disposeNode, type Link, type ReactiveNode 
 type EffectCleanup = (() => void) | void;
 
 class EffectNode implements ReactiveNode {
-  deps: Link | undefined = undefined;
-  depsTail: Link | undefined = undefined;
-  subs: Link | undefined = undefined;
-  subsTail: Link | undefined = undefined;
-  flags: number = FlagWatching | FlagRecursedCheck;
-  cleanup: EffectCleanup = undefined;
+  deps: Link | undefined;
+  depsTail: Link | undefined;
+  subs: Link | undefined;
+  subsTail: Link | undefined;
+  flags: number;
+  cleanup: EffectCleanup;
   fn: () => EffectCleanup;
 
   constructor(fn: () => EffectCleanup) {
+    this.deps = undefined;
+    this.depsTail = undefined;
+    this.subs = undefined;
+    this.subsTail = undefined;
+    this.flags = FlagWatching | FlagRecursedCheck;
+    this.cleanup = undefined;
     this.fn = fn;
   }
 
