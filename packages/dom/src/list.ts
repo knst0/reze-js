@@ -8,18 +8,22 @@ interface Rendered {
 }
 
 class Row<T> {
-  key: unknown;
-  index: number;
-  dispose: () => void;
-  value: JSX.Element = undefined;
-  setItem: Setter<T> | undefined = undefined;
-  setIndex: Setter<number> | undefined = undefined;
-  next: Row<T> | undefined = undefined;
+  declare key: unknown;
+  declare index: number;
+  declare dispose: () => void;
+  declare value: JSX.Element;
+  declare setItem: Setter<T> | undefined;
+  declare setIndex: Setter<number> | undefined;
+  declare next: Row<T> | undefined;
 
   constructor(key: unknown, index: number, dispose: () => void) {
     this.key = key;
     this.index = index;
     this.dispose = dispose;
+    this.value = undefined;
+    this.setItem = undefined;
+    this.setIndex = undefined;
+    this.next = undefined;
   }
 
   update(item: T, index: number): void {

@@ -71,6 +71,69 @@ pub fn literal_truthy(e: &Expression<'_>, analysis: &Analysis<'_>) -> Option<boo
     }
 }
 
+/// Whether the syntax proves `e` never evaluates to `undefined`: literals, templates, fresh
+/// objects, functions and JSX, `new` and promises, and operators whose result excludes it.
+pub fn is_defined(e: &Expression<'_>) -> bool {
+    match e.without_parentheses() {
+        Expression::StringLiteral(_)
+        | Expression::NumericLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::BigIntLiteral(_)
+        | Expression::RegExpLiteral(_)
+        | Expression::TemplateLiteral(_)
+        | Expression::ObjectExpression(_)
+        | Expression::ArrayExpression(_)
+        | Expression::FunctionExpression(_)
+        | Expression::ArrowFunctionExpression(_)
+        | Expression::ClassExpression(_)
+        | Expression::JSXElement(_)
+        | Expression::JSXFragment(_)
+        | Expression::ImportExpression(_)
+        | Expression::ImportMeta(_)
+        | Expression::NewTarget(_)
+        | Expression::NewExpression(_)
+        | Expression::UpdateExpression(_)
+        | Expression::PrivateInExpression(_) => true,
+        Expression::UnaryExpression(u) => u.operator != UnaryOperator::Void,
+        Expression::BinaryExpression(_) => true,
+        Expression::LogicalExpression(l) => match l.operator {
+            LogicalOperator::Or | LogicalOperator::Coalesce => is_defined(&l.right),
+            LogicalOperator::And => is_defined(&l.left) && is_defined(&l.right),
+        },
+        Expression::ConditionalExpression(c) => {
+            is_defined(&c.consequent) && is_defined(&c.alternate)
+        }
+        Expression::SequenceExpression(s) => s.expressions.last().is_some_and(is_defined),
+        Expression::AssignmentExpression(a) => match a.operator {
+            AssignmentOperator::LogicalAnd => false,
+            _ => is_defined(&a.right),
+        },
+        Expression::TSAsExpression(e) => is_defined(&e.expression),
+        Expression::TSSatisfiesExpression(e) => is_defined(&e.expression),
+        Expression::TSTypeAssertion(e) => is_defined(&e.expression),
+        Expression::TSNonNullExpression(e) => is_defined(&e.expression),
+        Expression::TSInstantiationExpression(e) => is_defined(&e.expression),
+        _ => false,
+    }
+}
+
+/// The entries of an object literal whose spread dissolves: static keys but `__proto__`, and
+/// values that never evaluate to `undefined`. `None` keeps the generic spread.
+pub fn inline_entries<'x, 'a>(
+    arg: &'x Expression<'a>,
+) -> Option<std::vec::Vec<(&'a str, &'x Expression<'a>)>> {
+    let Expression::ObjectExpression(object) = arg.without_parentheses() else { return None };
+    object
+        .properties
+        .iter()
+        .map(|property| {
+            let (key, value) = static_property(property)?;
+            (key != "__proto__" && is_defined(value)).then_some((key, value))
+        })
+        .collect()
+}
+
 /// `style={{…}}` with only literal values, as `a:b;c:d`.
 pub fn static_style(e: &Expression<'_>, analysis: &Analysis<'_>) -> Option<String> {
     let Expression::ObjectExpression(object) = e.without_parentheses() else { return None };

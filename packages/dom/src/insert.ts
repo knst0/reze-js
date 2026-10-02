@@ -162,9 +162,17 @@ function normalizeItem(slots: Slot[], item: unknown, current: Current, unwrap?: 
 }
 
 function appendNodes(parent: Node, nodes: readonly Node[], marker: Node | null): void {
-  for (let i = 0; i < nodes.length; i++) {
-    parent.insertBefore(nodes[i]!, marker);
+  if (nodes.length < 2) {
+    for (let i = 0; i < nodes.length; i++) {
+      parent.insertBefore(nodes[i]!, marker);
+    }
+    return;
   }
+  const fragment = document.createDocumentFragment();
+  for (let i = 0; i < nodes.length; i++) {
+    fragment.appendChild(nodes[i]!);
+  }
+  parent.insertBefore(fragment, marker);
 }
 
 /**

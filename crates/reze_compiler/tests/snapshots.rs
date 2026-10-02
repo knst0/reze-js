@@ -55,6 +55,19 @@ const CASES: &[(&str, &str)] = &[
     ("native_spread", "const a = <div {...attrs} class=\"x\" ref={el}>{kids()}</div>;"),
     ("spread_children", "const a = <div {...attrs()} />;\nconst b = <p {...rest}><b /></p>;"),
     (
+        "static_spread",
+        "const a = <Card a={1} {...{ b: 2 }} c=\"x\" />;\nconst b = <div {...{ id: \"a\" }} class=\"x\" />;",
+    ),
+    ("spread_shadowed", "const a = <Card {...{ a: 1 }} a={value} />;"),
+    (
+        "props_calls",
+        "import { $props } from \"reze-js\";\nconst m = $props.merge({ a: 1 }, { b: 2 });\nconst r = $props.merge(a, b);\nconst [x, rest] = $props.splitByGroups(props, [\"x\"]);\nconst o = $props.omit(props, \"x\");",
+    ),
+    (
+        "props_split",
+        "import { $props } from \"reze-js\";\nconst [a, rest] = $props.splitByGroups({ x: 1, y: 2 }, [\"x\"]);\nconst r = $props.omit({ x: 1, y: 2 }, \"x\");",
+    ),
+    (
         "children_attribute",
         "const a = <div children={kids()} />;\nconst b = <div children={x()}><b /></div>;",
     ),

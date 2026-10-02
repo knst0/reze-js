@@ -37,6 +37,13 @@ test("routesDts registers leaf params and data from the route files", () => {
   expect(out).toContain('"/docs/*path": { params: { readonly "path": string }; data: DataOf<import("./routes/docs/[...path]")> };');
 });
 
+test("routesDts keeps the file extension for non-script routes", () => {
+  const routes = scanRoutes(["index.mdx", "guide.md"], { extensions: ["mdx", ".md"] });
+  const out = routesDts(routes, "", dtsFile, routesDir);
+  expect(out).toContain('"/guide": { params: {}; data: DataOf<import("./routes/guide.md")> };');
+  expect(out).toContain('"/": { params: {}; data: DataOf<import("./routes/index.mdx")> };');
+});
+
 test("routesDts registers the paths builders with precise href returns", () => {
   const out = dts(["index.tsx", "blog.tsx", "blog/[id].tsx", "blog/index.tsx", "archive/[[page]].tsx", "docs/[...path].tsx"]);
   expect(out).toContain('readonly "index": { (search?: SearchInit, hash?: string): HrefFor<"/app/"> }');

@@ -1,11 +1,16 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-28T13:58:03.833Z",
+  "recordedAt": "2026-10-02T01:14:49.374Z",
   "results": {
     "@rezejs/example-counter js": {
-      "raw": 9410,
-      "gzip": 3560,
-      "brotli": 3259
+      "raw": 9611,
+      "gzip": 3593,
+      "brotli": 3285
+    },
+    "@rezejs/example-router js": {
+      "raw": 26374,
+      "gzip": 10348,
+      "brotli": 9306
     }
   }
 }

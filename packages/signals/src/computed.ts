@@ -6,16 +6,22 @@ import { checkDirty, disposeAllDepsInReverse, disposeChildren, type Link, type R
 import { differs } from "./signal";
 
 class ComputedNode<T = unknown> implements ReactiveNode {
-  value: T | undefined = undefined;
-  subs: Link | undefined = undefined;
-  subsTail: Link | undefined = undefined;
-  deps: Link | undefined = undefined;
-  depsTail: Link | undefined = undefined;
-  flags: number = FlagNone;
-  getter: (previousValue?: T) => T;
-  parent: ReactiveNode | undefined;
+  declare value: T | undefined;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare deps: Link | undefined;
+  declare depsTail: Link | undefined;
+  declare flags: number;
+  declare getter: (previousValue?: T) => T;
+  declare parent: ReactiveNode | undefined;
 
   constructor(getter: (previousValue?: T) => T, parent: ReactiveNode | undefined) {
+    this.value = undefined;
+    this.subs = undefined;
+    this.subsTail = undefined;
+    this.deps = undefined;
+    this.depsTail = undefined;
+    this.flags = FlagNone;
     this.getter = getter;
     this.parent = parent;
   }
@@ -45,7 +51,7 @@ class ComputedNode<T = unknown> implements ReactiveNode {
 
   read(): T {
     const flags = this.flags;
-    if (process.env.NODE_ENV !== "production" && flags & FlagRecursedCheck) {
+    if (flags & FlagRecursedCheck && process.env.NODE_ENV !== "production") {
       console.warn(
         "[rezejs] Cycle detected: a computed was read while it is being evaluated, so it depends " +
           "on itself and returns a stale value. Computed graphs must be acyclic.",
@@ -93,5 +99,5 @@ export function computed<T>(getter: (previousValue?: T) => T, options?: Computed
       debugHook.created(node, "computed", options?.name, () => node.value);
     }
   }
-  return node.read.bind(node);
+  return (): T => node.read();
 }

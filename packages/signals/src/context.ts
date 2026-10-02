@@ -129,7 +129,7 @@ export function trackPendingRead(): void {
 
 /** Starts a tracked re-run of `sub`; pair with `endTracking` in a `finally`. */
 export function startTracking(sub: ReactiveNode, flags: number): ReactiveNode | undefined {
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
     debugHook.rerunning(sub);
   }
   ++version;

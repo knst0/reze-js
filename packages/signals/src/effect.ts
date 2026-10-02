@@ -7,15 +7,21 @@ import { checkDirty, disposeChildren, disposeNode, type Link, type ReactiveNode 
 type EffectCleanup = (() => void) | void;
 
 class EffectNode implements ReactiveNode {
-  deps: Link | undefined = undefined;
-  depsTail: Link | undefined = undefined;
-  subs: Link | undefined = undefined;
-  subsTail: Link | undefined = undefined;
-  flags: number = FlagWatching | FlagRecursedCheck;
-  cleanup: EffectCleanup = undefined;
-  fn: () => EffectCleanup;
+  declare deps: Link | undefined;
+  declare depsTail: Link | undefined;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare flags: number;
+  declare cleanup: EffectCleanup;
+  declare fn: () => EffectCleanup;
 
   constructor(fn: () => EffectCleanup) {
+    this.deps = undefined;
+    this.depsTail = undefined;
+    this.subs = undefined;
+    this.subsTail = undefined;
+    this.flags = FlagWatching | FlagRecursedCheck;
+    this.cleanup = undefined;
     this.fn = fn;
   }
 
@@ -71,7 +77,7 @@ class EffectNode implements ReactiveNode {
  */
 export function effect(fn: () => EffectCleanup): () => void {
   const node = new EffectNode(fn);
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
     debugHook.created(node, "effect", undefined, () => undefined);
   }
   const prevSub = enterOwner(node);
@@ -83,11 +89,9 @@ export function effect(fn: () => EffectCleanup): () => void {
     setActiveSub(prevSub);
     node.flags &= ~FlagRecursedCheck;
   }
-  return disposeEffect.bind(node);
-}
-
-function disposeEffect(this: EffectNode): void {
-  this.dispose();
+  return (): void => {
+    node.dispose();
+  };
 }
 
 function runCleanup(node: EffectNode): void {

@@ -18,14 +18,17 @@ export interface SignalOptions<T> {
 }
 
 export class SignalNode<T = unknown> implements ReactiveNode {
-  subs: Link | undefined = undefined;
-  subsTail: Link | undefined = undefined;
-  flags: number = FlagMutable;
-  currentValue: T;
-  pendingValue: T;
-  equals: Equals<T>;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare flags: number;
+  declare currentValue: T;
+  declare pendingValue: T;
+  declare equals: Equals<T>;
 
   constructor(value: T, equals: Equals<T>) {
+    this.subs = undefined;
+    this.subsTail = undefined;
+    this.flags = FlagMutable;
     this.currentValue = value;
     this.pendingValue = value;
     this.equals = equals;
@@ -51,16 +54,19 @@ export class SignalNode<T = unknown> implements ReactiveNode {
   /** Stores `next` and notifies subscribers unless `equals` reports it equal to the latest write. */
   write(next: T): void {
     if (differs(this.equals, this.pendingValue, next)) {
+      const subs = this.subs;
       this.pendingValue = next;
-      this.flags = FlagMutable | FlagDirty;
-      if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+      if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
         debugHook.written(this);
       }
-      const subs = this.subs;
-      if (subs !== undefined) {
-        propagate(subs, effectDepth !== 0);
-        scheduleFlush();
+      if (subs === undefined) {
+        this.currentValue = next;
+        this.flags = FlagMutable;
+        return;
       }
+      this.flags = FlagMutable | FlagDirty;
+      propagate(subs, effectDepth !== 0);
+      scheduleFlush();
     }
   }
 }
@@ -73,16 +79,17 @@ export function signal<T>(): [Getter<T | undefined>, Setter<T | undefined>];
 export function signal<T>(initialValue: T, options?: SignalOptions<T>): [Getter<T>, Setter<T>];
 export function signal<T>(initialValue?: T, options?: SignalOptions<T | undefined>): [Getter<T | undefined>, Setter<T | undefined>] {
   const node = new SignalNode(initialValue, options?.equals ?? Object.is);
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
     debugHook.created(node, "signal", options?.name, () => node.pendingValue);
   }
-  return [node.read.bind(node), (signalSet<T | undefined>).bind(node)];
-}
-
-function signalSet<T>(this: SignalNode<T>, next: T | ((prev: T) => T)): T {
-  const value = typeof next === "function" ? (next as (prev: T) => T)(this.pendingValue) : next;
-  this.write(value);
-  return value;
+  return [
+    (): T | undefined => node.read(),
+    (next: (T | undefined) | ((prev: T | undefined) => T | undefined)): T | undefined => {
+      const value = typeof next === "function" ? (next as (prev: T | undefined) => T | undefined)(node.pendingValue) : next;
+      node.write(value);
+      return value;
+    },
+  ];
 }
 
 /** `!equals(prev, next)` with the default `Object.is` intrinsic inlined. */

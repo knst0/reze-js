@@ -7,23 +7,29 @@ import { disposeNode, type Link, type ReactiveNode } from "./graph";
 export type Owner = ReactiveNode;
 
 class RootNode implements ReactiveNode {
-  deps: Link | undefined = undefined;
-  depsTail: Link | undefined = undefined;
-  flags: number = FlagNone;
-  parent: ReactiveNode | undefined;
+  declare deps: Link | undefined;
+  declare depsTail: Link | undefined;
+  declare flags: number;
+  declare parent: ReactiveNode | undefined;
 
   constructor(parent: ReactiveNode | undefined) {
+    this.deps = undefined;
+    this.depsTail = undefined;
+    this.flags = FlagNone;
     this.parent = parent;
   }
 }
 
 class CleanupNode implements ReactiveNode {
-  subs: Link | undefined = undefined;
-  subsTail: Link | undefined = undefined;
-  flags: number = FlagNone;
-  fn: () => void;
+  declare subs: Link | undefined;
+  declare subsTail: Link | undefined;
+  declare flags: number;
+  declare fn: () => void;
 
   constructor(fn: () => void) {
+    this.subs = undefined;
+    this.subsTail = undefined;
+    this.flags = FlagNone;
     this.fn = fn;
   }
 
@@ -45,21 +51,19 @@ class CleanupNode implements ReactiveNode {
  */
 export function root<T>(fn: (dispose: () => void) => T): T {
   const node = new RootNode(getOwner());
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
     debugHook.created(node, "root", undefined, () => undefined);
   }
   const prevSub = setActiveSub(undefined);
   const prevOwner = setActiveOwner(node);
   try {
-    return fn(disposeRoot.bind(node));
+    return fn((): void => {
+      disposeNode(node);
+    });
   } finally {
     setActiveSub(prevSub);
     setActiveOwner(prevOwner);
   }
-}
-
-function disposeRoot(this: RootNode): void {
-  disposeNode(this);
 }
 
 /**

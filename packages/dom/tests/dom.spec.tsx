@@ -1,4 +1,4 @@
-import { effect, mergeProps, signal, type ClassValue, type JSX } from "reze-js";
+import { effect, mergeProps, omitProps, signal, type ClassValue, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 import { cleanup, fire, mount, tick } from "../../../testing/dom";
@@ -397,6 +397,23 @@ test("mergeProps reads the last defined source, keeping getters reactive", () =>
   setLabel(undefined);
   tick();
   expect(el.innerHTML).toBe('<button class="ghost">Save</button>');
+});
+
+test("omitProps drops listed keys and stays reactive", () => {
+  const [label, setLabel] = signal("Save");
+  let seen: Record<string, unknown> = {};
+  function Button(props: { label: string; kind: string }) {
+    const rest = omitProps(props, "kind") as { label: string };
+    seen = rest;
+    return <button>{rest.label}</button>;
+  }
+  const { el } = mount(() => <Button label={label()} kind="ghost" />);
+  expect(el.innerHTML).toBe("<button>Save</button>");
+  expect("kind" in seen).toBe(false);
+  expect("label" in seen).toBe(true);
+  setLabel("Send");
+  tick();
+  expect(el.innerHTML).toBe("<button>Send</button>");
 });
 
 test("component children are passed lazily and stay reactive", () => {

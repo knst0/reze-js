@@ -27,8 +27,20 @@ export function nodeKey(segment: string): string {
   return segment;
 }
 
-const RouteExtension = /\.[jt]sx?$/;
+export interface ScanOptions {
+  /** Route file extensions, with or without a leading dot. Default `DEFAULT_ROUTE_EXTENSIONS`. */
+  extensions?: readonly string[];
+}
+
+/** Route file extensions `scanRoutes` accepts by default. */
+export const DEFAULT_ROUTE_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".jsx"];
+
 const Ignored = /\.d\.ts$|\.(?:test|spec)\.[^/]*$|(?:^|\/)[._]/;
+
+function extensionPattern(extensions: readonly string[]): RegExp {
+  const list = extensions.map((e) => (e.startsWith(".") ? e : `.${e}`).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`(?:${list.join("|")})$`);
+}
 
 function mapSegment(segment: string, isLast: boolean): string {
   if (isLast && segment === "index") return "";
@@ -99,11 +111,12 @@ function checkConflicts(routes: readonly FileRoute[], leaves: Map<string, FileRo
  * Files with an underscore-prefixed segment (`_utils.ts`, `_components/`) are private and skipped.
  * Children are sorted by `id`. Throws on duplicate, conflicting or invalid routes.
  */
-export function scanRoutes(files: readonly string[]): FileRoute[] {
+export function scanRoutes(files: readonly string[], options?: ScanOptions): FileRoute[] {
+  const extension = extensionPattern(options?.extensions ?? DEFAULT_ROUTE_EXTENSIONS);
   const byId = new Map<string, FileRoute>();
   for (const file of files) {
-    if (!RouteExtension.test(file) || Ignored.test(file)) continue;
-    const id = file.replace(RouteExtension, "");
+    if (!extension.test(file) || Ignored.test(file)) continue;
+    const id = file.replace(extension, "");
     const existing = byId.get(id);
     if (existing !== undefined) {
       const [a, b] = [existing.file, file].sort();

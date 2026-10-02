@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Plugin, ResolvedConfig } from "vite";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import reze, { type FileRoutesOptions, type Options } from "../src";
+import reze, { DEFAULT_ROUTE_EXTENSIONS, type FileRoutesOptions, type Options } from "../src";
 
 const compile = vi.hoisted(() => vi.fn());
 vi.mock("@rezejs/compiler", () => ({ compile }));
@@ -120,14 +120,48 @@ test("serves the scanned routes as a virtual module and writes the declaration f
 test("a custom dir without declarations serves routes only", async () => {
   const dir = join(root, "pages");
   writeRoutes(dir);
-  const { routes } = await start({ fileRoutes: { dir: "pages", dts: false } });
+  const { routes } = await start({ fileRoutes: { dir: "pages", types: false } });
   routes.buildStart();
   const id = routes.resolveId("virtual:reze-routes")!;
   expect(routes.load(id)).toContain('path: "/blog/:id"');
   expect(existsSync(join(root, "src", "routes.gen.d.ts"))).toBe(false);
 });
 
-test("a missing routes directory throws", async () => {
-  const { routes } = await start({ fileRoutes: true });
-  expect(() => routes.buildStart()).toThrow(`[reze-router] routes directory not found: ${join(root, "src", "routes")}`);
+test("top-level extensions replace the route scan", async () => {
+  const dir = join(root, "src", "routes");
+  writeRoutes(dir);
+  writeFileSync(join(dir, "guide.mdx"), "");
+  const { routes } = await start({ extensions: [".mdx"], fileRoutes: true });
+  routes.buildStart();
+  const id = routes.resolveId("virtual:reze-routes")!;
+  const module = routes.load(id) as string;
+  expect(module).toContain('path: "/guide"');
+  expect(module).not.toContain('path: "/"');
+});
+
+test("spreading the defaults extends the route scan with types", async () => {
+  const dir = join(root, "src", "routes");
+  writeRoutes(dir);
+  writeFileSync(join(dir, "guide.mdx"), "");
+  const { routes } = await start({ extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"], fileRoutes: true });
+  routes.buildStart();
+  const id = routes.resolveId("virtual:reze-routes")!;
+  const module = routes.load(id) as string;
+  expect(module).toContain('path: "/guide"');
+  expect(module).toContain('path: "/"');
+  expect(readFileSync(join(root, "src", "routes.gen.d.ts"), "utf8")).toContain(
+    '"/guide": { params: {}; data: DataOf<import("./routes/guide.mdx")> };',
+  );
+});
+
+test("an explicit extensions list replaces the defaults", async () => {
+  const dir = join(root, "src", "routes");
+  writeRoutes(dir);
+  writeFileSync(join(dir, "guide.mdx"), "");
+  const { routes } = await start({ fileRoutes: { extensions: [".mdx"] } });
+  routes.buildStart();
+  const id = routes.resolveId("virtual:reze-routes")!;
+  const module = routes.load(id) as string;
+  expect(module).toContain('path: "/guide"');
+  expect(module).not.toContain('path: "/"');
 });

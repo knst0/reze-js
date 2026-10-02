@@ -38,7 +38,13 @@ export function delegateEvents(names: readonly string[], doc: Document = documen
 function dispatchDelegated(event: Event): void {
   const key = "$$" + event.type;
   const dataKey = key + "Data";
-  let node = (event.composedPath()[0] ?? event.target) as DelegateTarget | null | undefined;
+  const target = event.target as DelegateTarget | null;
+  let node: DelegateTarget | null | undefined;
+  if (target !== null && target.getRootNode() === event.currentTarget) {
+    node = target;
+  } else {
+    node = (event.composedPath()[0] ?? event.target) as DelegateTarget | null | undefined;
+  }
   Object.defineProperty(event, "currentTarget", { configurable: true, get: () => node ?? document });
   while (node) {
     const handler = node[key] as Handler | undefined;

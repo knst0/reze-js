@@ -45,8 +45,6 @@ helpers! {
     TemplateSvg => "templateSVG",
     TemplateMathMl => "templateMathML",
     Insert => "insert",
-    Child => "child",
-    Next => "next",
     Append => "append",
     RenderEffect => "renderEffect",
     CreateComponent => "createComponent",

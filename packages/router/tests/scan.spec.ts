@@ -64,8 +64,23 @@ describe("scanRoutes", () => {
       "_utils.ts",
       "_components/a.tsx",
       "blog/_draft.tsx",
+      "c.mdx",
     ]);
     expect(routes.map((route) => route.file)).toEqual(["a.tsx"]);
+  });
+
+  test("custom extensions scan as routes with the extension stripped", () => {
+    const routes = scanRoutes(["index.mdx", "guide.md", "blog/[id].mdx", "notes.txt"], { extensions: ["mdx", ".md"] });
+    expect(shape(routes)).toEqual([
+      {
+        id: "blog/[id]",
+        path: "/blog/:id",
+        fullPath: "/blog/:id",
+      },
+      { id: "guide", path: "/guide", fullPath: "/guide" },
+      { id: "index", path: "/", fullPath: "/" },
+    ]);
+    expect(routes.map((route) => route.file)).toEqual(["blog/[id].mdx", "guide.md", "index.mdx"]);
   });
 
   test.each([

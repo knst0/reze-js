@@ -36,7 +36,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@rezejs/signals": "workspace:^"
+    "@rezejs/signals": "workspace:^",
+    "csstype": "^3.2.3"
   },
   "devDependencies": {
     "@codspeed/tinybench-plugin": "^5.7.1",

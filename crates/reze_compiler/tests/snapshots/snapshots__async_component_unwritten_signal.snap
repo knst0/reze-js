@@ -3,7 +3,7 @@ source: crates/reze_compiler/tests/snapshots.rs
 expression: "import { signal } from \"reze-js\";\nexport async function Card(props) {\n  const [n] = signal(1);\n  const [m] = signal(2);\n  const user = await fetchUser(props.id);\n  return <p title={n()}>{user.name}{m()}{props.id}</p>;\n}\nconst [top] = signal(3);\nexport async function Other() {\n  const user = await fetchUser(top());\n  return <p>{user.name}{top()}</p>;\n}"
 ---
 import { signal } from "reze-js";
-import { asyncComponent as _$asyncComponent, template as _$template, append as _$append, renderEffect as _$renderEffect, setAttribute as _$setAttribute, child as _$child, insert as _$insert } from "reze-js";
+import { asyncComponent as _$asyncComponent, template as _$template, append as _$append, renderEffect as _$renderEffect, setAttribute as _$setAttribute, insert as _$insert } from "reze-js";
 export function Card(props) {
   return _$asyncComponent(async () => {const [n] = signal(1);
   const [m] = signal(2);
@@ -26,7 +26,7 @@ return [user];
 }, (_v$2) => {
   {
   var _el$2 = _$template("<p>3"),
-    _el$3 = _$child(_el$2);
+    _el$3 = _el$2.firstChild;
   _$insert(_el$2, () => _v$2()[0].name, _el$3);
   return _el$2;
 }
