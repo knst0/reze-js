@@ -10,7 +10,7 @@ export { effect } from "./effect";
 export { effectScope } from "./effectScope";
 export { catchError } from "./error";
 export { onCleanup, root, untrack, type Owner } from "./owner";
-export { provideContext, useContext, type ContextKey } from "./provide";
+export { ContextNotFoundError, createContext, provideContext, useContext, type Context, type ContextKey } from "./provide";
 export { flush } from "./scheduler";
 export { selector } from "./selector";
 export { signal, type Equals, type Getter, type Setter, type SignalOptions } from "./signal";
