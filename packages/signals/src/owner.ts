@@ -51,21 +51,19 @@ class CleanupNode implements ReactiveNode {
  */
 export function root<T>(fn: (dispose: () => void) => T): T {
   const node = new RootNode(getOwner());
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
     debugHook.created(node, "root", undefined, () => undefined);
   }
   const prevSub = setActiveSub(undefined);
   const prevOwner = setActiveOwner(node);
   try {
-    return fn(disposeRoot.bind(node));
+    return fn((): void => {
+      disposeNode(node);
+    });
   } finally {
     setActiveSub(prevSub);
     setActiveOwner(prevOwner);
   }
-}
-
-function disposeRoot(this: RootNode): void {
-  disposeNode(this);
 }
 
 /**

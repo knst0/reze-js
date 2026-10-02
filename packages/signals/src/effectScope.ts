@@ -36,9 +36,7 @@ export function effectScope(fn: () => void): () => void {
   } finally {
     setActiveSub(prevSub);
   }
-  return disposeScope.bind(node);
-}
-
-function disposeScope(this: EffectScopeNode): void {
-  this.dispose();
+  return (): void => {
+    node.dispose();
+  };
 }

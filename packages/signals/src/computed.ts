@@ -99,5 +99,5 @@ export function computed<T>(getter: (previousValue?: T) => T, options?: Computed
       debugHook.created(node, "computed", options?.name, () => node.value);
     }
   }
-  return node.read.bind(node);
+  return (): T => node.read();
 }

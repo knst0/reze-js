@@ -76,16 +76,17 @@ export function signal<T>(): [Getter<T | undefined>, Setter<T | undefined>];
 export function signal<T>(initialValue: T, options?: SignalOptions<T>): [Getter<T>, Setter<T>];
 export function signal<T>(initialValue?: T, options?: SignalOptions<T | undefined>): [Getter<T | undefined>, Setter<T | undefined>] {
   const node = new SignalNode(initialValue, options?.equals ?? Object.is);
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
     debugHook.created(node, "signal", options?.name, () => node.pendingValue);
   }
-  return [node.read.bind(node), (signalSet<T | undefined>).bind(node)];
-}
-
-function signalSet<T>(this: SignalNode<T>, next: T | ((prev: T) => T)): T {
-  const value = typeof next === "function" ? (next as (prev: T) => T)(this.pendingValue) : next;
-  this.write(value);
-  return value;
+  return [
+    (): T | undefined => node.read(),
+    (next: (T | undefined) | ((prev: T | undefined) => T | undefined)): T | undefined => {
+      const value = typeof next === "function" ? (next as (prev: T | undefined) => T | undefined)(node.pendingValue) : next;
+      node.write(value);
+      return value;
+    },
+  ];
 }
 
 /** `!equals(prev, next)` with the default `Object.is` intrinsic inlined. */

@@ -77,7 +77,7 @@ class EffectNode implements ReactiveNode {
  */
 export function effect(fn: () => EffectCleanup): () => void {
   const node = new EffectNode(fn);
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
     debugHook.created(node, "effect", undefined, () => undefined);
   }
   const prevSub = enterOwner(node);
@@ -89,11 +89,9 @@ export function effect(fn: () => EffectCleanup): () => void {
     setActiveSub(prevSub);
     node.flags &= ~FlagRecursedCheck;
   }
-  return disposeEffect.bind(node);
-}
-
-function disposeEffect(this: EffectNode): void {
-  this.dispose();
+  return (): void => {
+    node.dispose();
+  };
 }
 
 function runCleanup(node: EffectNode): void {
