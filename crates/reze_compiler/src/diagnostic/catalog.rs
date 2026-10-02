@@ -319,6 +319,58 @@ catalog! {
             good: "import { $props } from \"reze-js\";\n\nexport const view = $props.omit(props, \"id\");\n",
         },
     }
+    IslandTrigger {
+        name: "ISLAND_TRIGGER",
+        severity: Error,
+        title: "`island` with an unknown trigger",
+        message: "`{value}` is not an island trigger: `island` takes `eager`, `idle`, `visible`, `media` or `interaction`. Write `island` for the default, which is `eager`, or `island=\"visible\"`.",
+        explanation: "`island` marks a component as an island: it renders its fallback and loads the component when the trigger fires. The trigger is read at compile time, so it must be a bare attribute or a string literal. `data.value` is what was written.",
+        repair: "Write `island` or one of the five triggers as a string literal. A trigger chosen at runtime is not supported.",
+        fix: None,
+        example: Pair {
+            bad: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"sometimes\" />;\n",
+            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"visible\" />;\n",
+        },
+    }
+    IslandMediaMissing {
+        name: "ISLAND_MEDIA_MISSING",
+        severity: Error,
+        title: "`island=\"media\"` without `islandMedia`",
+        message: "`island=\"media\"` loads when a media query matches, so it needs `islandMedia=\"(…)\"` with the query. Add it.",
+        explanation: "A `media` island never observes an element: it loads when the query matches, immediately when it already does. Without the query there is nothing to match.",
+        repair: "Add `islandMedia=\"(max-width: 40rem)\"` next to `island=\"media\"`.",
+        fix: None,
+        example: Pair {
+            bad: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"media\" />;\n",
+            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"media\" islandMedia=\"(max-width: 40rem)\" />;\n",
+        },
+    }
+    IslandOnElement {
+        name: "ISLAND_ON_ELEMENT",
+        severity: Error,
+        title: "`island` on a native element",
+        message: "`island` marks a component, but this is a native element, so there is no component to defer. Move `island` to a component.",
+        explanation: "Only a component tag takes `island` and its companions `islandMedia`, `islandRootMargin` and `islandFallback`. On a native element they would render as useless attributes.",
+        repair: "Move the attributes to the component that should load later.",
+        fix: None,
+        example: Pair {
+            bad: "export const view = <section island=\"visible\" />;\n",
+            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"visible\" />;\n",
+        },
+    }
+    IslandOrphan {
+        name: "ISLAND_ORPHAN",
+        severity: Error,
+        title: "Island companion without `island`",
+        message: "`{attribute}` only means something next to `island`, but this component has none, so it would reach the component as a stray prop. Add `island` or remove it.",
+        explanation: "`islandMedia`, `islandRootMargin` and `islandFallback` are consumed by the compiler and never reach the component. Without `island` there is no island to consume them. `data.attribute` is the name.",
+        repair: "Add `island=\"…\"` to the component, or remove the companion.",
+        fix: None,
+        example: Pair {
+            bad: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter islandMedia=\"(max-width: 40rem)\" />;\n",
+            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"media\" islandMedia=\"(max-width: 40rem)\" />;\n",
+        },
+    }
     ChildrenPropIgnored {
         name: "CHILDREN_PROP_IGNORED",
         severity: Warn,
@@ -460,6 +512,19 @@ catalog! {
         example: Pair {
             bad: "import { $action } from \"reze-js\";\n\nexport const save = $action(async (todo) => {\n  todo.done = true;\n  api.save(todo).then((saved) => {\n    todo.at = saved.at;\n  });\n});\n",
             good: "import { $action } from \"reze-js\";\n\nexport const save = $action(async (todo) => {\n  todo.done = true;\n  const saved = await api.save(todo);\n  todo.at = saved.at;\n});\n",
+        },
+    }
+    IslandNotSplit {
+        name: "ISLAND_NOT_SPLIT",
+        severity: Warn,
+        title: "Island component that stays in the main chunk",
+        message: "`{component}` is an island, but it is also {reason}, so it loads from the main chunk instead of its own. Only its execution waits for the trigger.",
+        explanation: "An island splits into its own chunk when the component is imported and every use of the import is an island: the static import is then replaced by a dynamic one. Otherwise the component stays where it is and the island only defers its execution. `data.component` is the tag and `data.reason` is `used outside islands` or `exported`.",
+        repair: "Move the component to its own module, import it where the island is, and use the import only as an island.",
+        fix: None,
+        example: Pair {
+            bad: "import { Counter } from \"./Counter\";\n\nexport const first = <Counter island=\"visible\" />;\nexport const second = <Counter step={1} />;\n",
+            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"visible\" />;\n",
         },
     }
     SignalFolded {

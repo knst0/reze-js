@@ -1,0 +1,14 @@
+main {
+  max-width: 32rem;
+  margin: 8rem auto;
+  font: 100%/1.5 system-ui;
+}
+
+.counter output {
+  font-size: 3rem;
+}
+
+.buttons {
+  display: flex;
+  gap: 0.5rem;
+}

@@ -8,6 +8,7 @@ mod debug_name;
 mod dynamic;
 mod element;
 mod hot;
+mod island;
 pub mod keyed;
 pub mod props;
 mod selector;
@@ -25,6 +26,7 @@ use crate::analyze::{Analysis, Intrinsic};
 use crate::diagnostic::{Edit, Report};
 use crate::ir::{Embed, Getter, Hole, HoleKind, HotEdit, Jsx, Placement, ScriptEdit, Source};
 use crate::namer::Namer;
+use island::IslandPlan;
 
 pub struct Lowered<'a, 'f> {
     /// The hashbang, directives and leading imports.
@@ -59,6 +61,8 @@ pub struct Lowerer<'a, 'f> {
     for_scopes: std::vec::Vec<selector::ForScope<'a>>,
     /// Values getters of split `async` components, by the start of the component function.
     async_values: HashMap<u32, &'a str>,
+    /// Imported components used only by islands, for chunk splitting.
+    islands: IslandPlan,
     /// Names of the functions initializing a component's `const`, by the start of the function.
     component_inits: HashMap<u32, &'a str>,
     hot: hot::HotPlan<'a>,
@@ -87,6 +91,7 @@ impl<'a, 'f> Lowerer<'a, 'f> {
             component_inits: HashMap::new(),
             for_scopes: std::vec::Vec::new(),
             async_values: HashMap::new(),
+            islands: IslandPlan::default(),
             hot: hot::HotPlan::default(),
         }
     }
@@ -96,11 +101,19 @@ impl<'a, 'f> Lowerer<'a, 'f> {
         if self.settings.hot {
             self.hot = hot::plan(program);
         }
+        self.islands = IslandPlan::scan(program, self.analysis.scoping);
         let end = self.source.len() as u32;
         let head = self.embed(Span::new(0, start), |finder| {
             for statement in &program.body {
                 if statement.span().end <= start {
                     finder.visit_statement(statement);
+                    if let Statement::ImportDeclaration(it) = statement
+                        && let Some(span) = finder.lowerer.islands.prune_span(it.span.start)
+                    {
+                        finder
+                            .holes
+                            .push(Hole { span, kind: HoleKind::Script(ScriptEdit::Insert("")) });
+                    }
                 }
             }
         });

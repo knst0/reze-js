@@ -144,7 +144,7 @@ impl<'a> Emitter<'a, '_> {
         }
     }
 
-    fn render(&mut self, out: &mut Code, render: &Render<'a>) {
+    pub(super) fn render(&mut self, out: &mut Code, render: &Render<'a>) {
         match render {
             Render::Function(embed) => self.embed(out, embed),
             Render::Child(child) => {

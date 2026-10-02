@@ -140,7 +140,10 @@ impl<'a> Lowerer<'a, '_> {
         }
     }
 
-    fn fallback(&mut self, attributes: &[(&'a str, &JSXAttribute<'a>)]) -> Option<Render<'a>> {
+    pub(super) fn fallback(
+        &mut self,
+        attributes: &[(&'a str, &JSXAttribute<'a>)],
+    ) -> Option<Render<'a>> {
         let (_, a) = attributes.iter().rev().find(|(name, _)| *name == "fallback")?;
         Some(match a.value.as_ref()? {
             JSXAttributeValue::ExpressionContainer(c) => self.render(c.expression.as_expression()?),

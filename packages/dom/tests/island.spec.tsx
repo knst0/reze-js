@@ -1,0 +1,261 @@
+import { Errored, Loading, island } from "reze-js";
+import { afterEach, expect, test, vi } from "vitest";
+
+import { cleanup, fire, mount, tick } from "../../../testing/dom";
+
+afterEach(cleanup);
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+function settle(): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, 0);
+  return promise;
+}
+
+function Greeting(props: { name: string }) {
+  return <b>hi {props.name}</b>;
+}
+
+test("an eager island with a local component renders at once, without a fallback flash", () => {
+  let calls = 0;
+  const { el } = mount(() =>
+    island(
+      "eager",
+      () => {
+        calls++;
+        return Greeting;
+      },
+      { name: "ann" },
+      () => <i>wait</i>,
+    ),
+  );
+  expect(el.innerHTML).toBe("<b>hi ann</b>");
+  expect(calls).toBe(1);
+});
+
+test("an eager island with a split chunk shows its fallback until the component arrives", async () => {
+  let resolve!: (component: typeof Greeting) => void;
+  const gate = new Promise<typeof Greeting>((done) => {
+    resolve = done;
+  });
+  const { el } = mount(() =>
+    island(
+      "eager",
+      () => gate,
+      { name: "ann" },
+      () => <i>wait</i>,
+    ),
+  );
+  expect(el.innerHTML).toBe("<i>wait</i>");
+
+  resolve(Greeting);
+  await settle();
+  expect(el.innerHTML).toBe("<b>hi ann</b>");
+});
+
+test("an idle island does not load until the browser is idle", async () => {
+  let idle: () => void = () => {};
+  vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
+    idle = callback;
+    return 0;
+  });
+  let calls = 0;
+  const { el } = mount(() =>
+    island(
+      "idle",
+      () => {
+        calls++;
+        return Greeting;
+      },
+      { name: "ann" },
+      () => <i>wait</i>,
+    ),
+  );
+  await settle();
+  expect(calls).toBe(0);
+  expect(el.innerHTML).toBe("<i>wait</i>");
+
+  idle();
+  await settle();
+  expect(el.innerHTML).toBe("<b>hi ann</b>");
+  expect(calls).toBe(1);
+});
+
+test("a visible island wraps its fallback in a shell and loads when it scrolls into view", async () => {
+  type Callback = (entries: { isIntersecting: boolean }[]) => void;
+  let callback: Callback = () => {};
+  let observed: Element[] = [];
+  let disconnects = 0;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(cb: Callback) {
+        callback = cb;
+      }
+      observe = (target: Element): void => {
+        observed.push(target);
+      };
+      disconnect = (): void => {
+        disconnects++;
+      };
+    },
+  );
+  let calls = 0;
+  const { el } = mount(() =>
+    island(
+      "visible",
+      () => {
+        calls++;
+        return Greeting;
+      },
+      { name: "ann" },
+      () => <i>wait</i>,
+    ),
+  );
+  await settle();
+  expect(calls).toBe(0);
+  const shell = el.querySelector("span[data-island='visible']")!;
+  expect(shell.innerHTML).toBe("<i>wait</i>");
+  expect(observed).toEqual([shell]);
+
+  callback([{ isIntersecting: true }]);
+  await settle();
+  expect(el.innerHTML).toBe("<b>hi ann</b>");
+  expect(calls).toBe(1);
+  expect(disconnects).toBeGreaterThanOrEqual(1);
+});
+
+test("a visible island without a fallback renders a sized shell", () => {
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      observe = (): void => {};
+      disconnect = (): void => {};
+    },
+  );
+  const { el } = mount(() => island("visible", () => Greeting, { name: "ann" }));
+  expect(el.innerHTML).toBe('<span data-island="visible" style="display:block;min-width:1px;min-height:1px"></span>');
+});
+
+test("a media island loads at once when its query already matches", async () => {
+  const listeners = new Set<() => void>();
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener: (_type: string, callback: () => void): void => {
+      listeners.add(callback);
+    },
+    removeEventListener: (_type: string, callback: () => void): void => {
+      listeners.delete(callback);
+    },
+  }));
+  let calls = 0;
+  const { el } = mount(() =>
+    island(
+      "media",
+      () => {
+        calls++;
+        return Greeting;
+      },
+      { name: "ann" },
+      undefined,
+      { media: "(max-width: 40rem)" },
+    ),
+  );
+  await settle();
+  expect(el.innerHTML).toBe("<b>hi ann</b>");
+  expect(calls).toBe(1);
+  expect(listeners.size).toBe(0);
+});
+
+test("a media island waits for its query to match", async () => {
+  const listeners = new Set<() => void>();
+  let matches = false;
+  vi.stubGlobal("matchMedia", (query: string) => {
+    expect(query).toBe("(max-width: 40rem)");
+    return {
+      get matches() {
+        return matches;
+      },
+      addEventListener: (_type: string, callback: () => void): void => {
+        listeners.add(callback);
+      },
+      removeEventListener: (_type: string, callback: () => void): void => {
+        listeners.delete(callback);
+      },
+    };
+  });
+  let calls = 0;
+  const { el } = mount(() =>
+    island(
+      "media",
+      () => {
+        calls++;
+        return Greeting;
+      },
+      { name: "ann" },
+      () => <i>wait</i>,
+      { media: "(max-width: 40rem)" },
+    ),
+  );
+  await settle();
+  expect(calls).toBe(0);
+  expect(el.innerHTML).toBe("<i>wait</i>");
+
+  matches = true;
+  for (const listener of listeners) {
+    listener();
+  }
+  await settle();
+  expect(el.innerHTML).toBe("<b>hi ann</b>");
+  expect(calls).toBe(1);
+  expect(listeners.size).toBe(0);
+});
+
+test("an interaction island loads on the first pointer event inside its shell", async () => {
+  let calls = 0;
+  const { el } = mount(() =>
+    island(
+      "interaction",
+      () => {
+        calls++;
+        return Greeting;
+      },
+      { name: "ann" },
+      () => <i>wait</i>,
+    ),
+  );
+  await settle();
+  expect(calls).toBe(0);
+
+  fire(el.querySelector("span[data-island='interaction']")!, "pointerdown");
+  await settle();
+  expect(el.innerHTML).toBe("<b>hi ann</b>");
+  expect(calls).toBe(1);
+});
+
+test("a failed island load goes to the error boundary", async () => {
+  const { el } = mount(() => (
+    <Errored fallback={(error) => <em>{(error as Error).message}</em>}>
+      <Loading>{island("eager", () => Promise.reject(new Error("offline")), { name: "ann" })}</Loading>
+    </Errored>
+  ));
+  await settle();
+  expect(el.innerHTML).toBe("<em>offline</em>");
+});
+
+test("the island attribute compiles to a deferred island", async () => {
+  let idle: () => void = () => {};
+  vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
+    idle = callback;
+    return 0;
+  });
+  const { el } = mount(() => <Greeting island="idle" name="ann" />);
+  expect(el.innerHTML).toBe("");
+
+  idle();
+  await settle();
+  tick();
+  expect(el.innerHTML).toBe("<b>hi ann</b>");
+});

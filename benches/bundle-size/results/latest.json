@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recordedAt": "2026-10-02T01:14:49.374Z",
+  "recordedAt": "2026-10-02T21:56:12.006Z",
   "results": {
     "@rezejs/example-counter js": {
       "raw": 9611,
@@ -11,6 +11,11 @@
       "raw": 26374,
       "gzip": 10348,
       "brotli": 9306
+    },
+    "@rezejs/example-islands js": {
+      "raw": 14335,
+      "gzip": 5519,
+      "brotli": 4987
     }
   }
 }

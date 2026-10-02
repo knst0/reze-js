@@ -29,6 +29,7 @@ export {
   type RepeatProps,
   type SwitchProps,
 } from "./intrinsics";
+export { island, type IslandOptions, type IslandTrigger } from "./island";
 export type { JSX } from "./jsx";
 export { lazy, type LazyComponent } from "./lazy";
 export { list } from "./list";

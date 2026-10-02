@@ -99,6 +99,14 @@ fn collect_walks(
 
 impl<'a> Lowerer<'a, '_> {
     pub(super) fn template(&mut self, el: &JSXElement<'a>, tag: &'a str) -> Box<'a, Template<'a>> {
+        for item in &el.opening_element.attributes {
+            if let JSXAttributeItem::Attribute(a) = item
+                && let JSXAttributeName::Identifier(id) = &a.name
+                && super::island::is_island_attr(id.name.as_str())
+            {
+                self.report(Report::new(Code::IslandOnElement, a.span));
+            }
+        }
         let namespace = if is_svg_element(tag) {
             Namespace::Svg
         } else if is_mathml_root(tag) {

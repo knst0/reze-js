@@ -5,6 +5,7 @@ use oxc_span::Span;
 
 use super::children::Item;
 use super::constant::{inline_entries, is_defined, is_dynamic};
+use super::island::{defer_props, is_island_attr};
 use super::{Lowerer, attribute_name, is_function};
 use crate::html::decode_entities;
 use crate::ir::{Component, Embed, Flow, Jsx, Prop, PropValue, Props, PropsPart};
@@ -94,7 +95,6 @@ fn children_defined(items: &[Item<'_, '_>]) -> Option<bool> {
         Item::Expr(e) => is_defined(e),
     })
 }
-
 impl<'a> Lowerer<'a, '_> {
     pub(super) fn component(
         &mut self,
@@ -102,6 +102,10 @@ impl<'a> Lowerer<'a, '_> {
         callee: Span,
     ) -> Box<'a, Component<'a>> {
         self.path.push(format!("<{}>", self.text(callee)));
+        let found = self.island_attributes(el);
+        if !found.present {
+            self.island_orphans(&found);
+        }
         let items = self.items(&el.children, false);
         let children = children_defined(&items).map(|defined| vec![("children", defined)]);
         let inline =
@@ -114,6 +118,9 @@ impl<'a> Lowerer<'a, '_> {
                 }
                 JSXAttributeItem::Attribute(a) => {
                     let key = attribute_name(self, a);
+                    if found.present && is_island_attr(key) {
+                        continue;
+                    }
                     if key == "children" && !items.is_empty() {
                         self.children_ignored(a.span);
                         continue;
@@ -127,10 +134,18 @@ impl<'a> Lowerer<'a, '_> {
         if let Some(children) = self.component_children(items) {
             props.push(children);
         }
+        let tag = self.text(callee);
         self.path.pop();
+        let mut finished = props.finish();
+        let island = if found.present {
+            defer_props(&mut finished);
+            self.island(el, &found, callee, tag).map(|island| self.boxed(island))
+        } else {
+            None
+        };
         let callee =
             self.embed(callee, |finder| finder.visit_jsx_element_name(&el.opening_element.name));
-        self.boxed(Component { callee, props: props.finish() })
+        self.boxed(Component { callee, props: finished, island })
     }
 
     /// A spread attribute: entries spliced for a T1 `dissolve` argument, a generic part otherwise.

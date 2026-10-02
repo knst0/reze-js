@@ -371,6 +371,41 @@ pub struct Selector<'a> {
 pub struct Component<'a> {
     pub callee: Embed<'a>,
     pub props: Props<'a>,
+    pub island: Option<Box<'a, Island<'a>>>,
+}
+
+pub struct Island<'a> {
+    pub trigger: IslandTrigger,
+    pub media: Option<&'a str>,
+    pub root_margin: Option<&'a str>,
+    pub loader: IslandLoader<'a>,
+    pub fallback: Option<Render<'a>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IslandTrigger {
+    Eager,
+    Idle,
+    Visible,
+    Media,
+    Interaction,
+}
+
+impl IslandTrigger {
+    pub fn name(self) -> &'static str {
+        match self {
+            IslandTrigger::Eager => "eager",
+            IslandTrigger::Idle => "idle",
+            IslandTrigger::Visible => "visible",
+            IslandTrigger::Media => "media",
+            IslandTrigger::Interaction => "interaction",
+        }
+    }
+}
+
+pub enum IslandLoader<'a> {
+    Direct,
+    Split { source: Span, path: Vec<'a, &'a str> },
 }
 
 pub struct Props<'a> {

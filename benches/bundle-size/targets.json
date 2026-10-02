@@ -4,5 +4,8 @@
   },
   "@rezejs/example-router": {
     "dir": "examples/router"
+  },
+  "@rezejs/example-islands": {
+    "dir": "examples/islands"
   }
 }

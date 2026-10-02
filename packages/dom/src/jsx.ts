@@ -20,6 +20,7 @@
 import * as csstype from "csstype";
 
 import type { ClassValue as RuntimeClassValue } from "./class-name";
+import type { IslandTrigger as RuntimeIslandTrigger } from "./island";
 import type { PropKey, WidenPropValue } from "./jsx-properties";
 
 /**
@@ -226,6 +227,10 @@ export namespace JSX {
 
   export interface IntrinsicAttributes {
     ref?: Ref<unknown>;
+    island?: RuntimeIslandTrigger | true;
+    islandMedia?: string;
+    islandRootMargin?: string;
+    islandFallback?: Element;
   }
   interface CustomAttributes<T> {
     ref?: Ref<T>;

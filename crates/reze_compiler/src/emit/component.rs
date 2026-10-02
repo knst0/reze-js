@@ -3,16 +3,74 @@ use std::fmt::Write;
 use super::{Emitter, Helper};
 use crate::code::Code;
 use crate::html::{push_js_string, push_property_key};
-use crate::ir::{AssignTarget, Component, Prop, PropValue, Props, PropsPart};
+use crate::ir::{AssignTarget, Component, Island, IslandLoader, Prop, PropValue, Props, PropsPart};
 
 impl<'a> Emitter<'a, '_> {
     pub(super) fn component(&mut self, out: &mut Code, component: &Component<'a>) {
+        if let Some(island) = &component.island {
+            self.island(out, component, island);
+            return;
+        }
         let create = self.helper(Helper::CreateComponent);
         out.push(create);
         out.push("(");
         self.embed(out, &component.callee);
         out.push(", ");
         self.props(out, &component.props);
+        out.push(")");
+    }
+
+    fn island(&mut self, out: &mut Code, component: &Component<'a>, island: &Island<'a>) {
+        let helper = self.helper(Helper::Island);
+        out.push(helper);
+        out.push("(\"");
+        out.push(island.trigger.name());
+        out.push("\", () => ");
+        match &island.loader {
+            IslandLoader::Direct => self.embed(out, &component.callee),
+            IslandLoader::Split { source, path } => {
+                out.push("import(");
+                self.src(out, *source);
+                out.push(").then(");
+                let module = self.fresh("_m$");
+                out.push(module);
+                out.push(" => ");
+                out.push(module);
+                for segment in path {
+                    if crate::html::is_identifier_name(segment) {
+                        out.push(".");
+                        out.push(segment);
+                    } else {
+                        out.push("[");
+                        push_js_string(&mut out.text, segment);
+                        out.push("]");
+                    }
+                }
+                out.push(")");
+            }
+        }
+        out.push(", ");
+        self.props(out, &component.props);
+        out.push(", ");
+        match &island.fallback {
+            Some(fallback) => self.render(out, fallback),
+            None => out.push("void 0"),
+        }
+        if island.media.is_some() || island.root_margin.is_some() {
+            out.push(", { ");
+            if let Some(media) = island.media {
+                out.push("media: ");
+                push_js_string(&mut out.text, media);
+                if island.root_margin.is_some() {
+                    out.push(", ");
+                }
+            }
+            if let Some(root_margin) = island.root_margin {
+                out.push("rootMargin: ");
+                push_js_string(&mut out.text, root_margin);
+            }
+            out.push(" }");
+        }
         out.push(")");
     }
 

@@ -597,6 +597,124 @@ import { $props } from "reze-js";
 export const view = $props.omit(props, "id");
 ```
 
+## ISLAND_TRIGGER
+
+**`island` with an unknown trigger** · severity `error`
+
+> `{value}` is not an island trigger: `island` takes `eager`, `idle`, `visible`, `media` or `interaction`. Write `island` for the default, which is `eager`, or `island="visible"`.
+
+`data` keys: `value`
+
+Automatic fix: no
+
+`island` marks a component as an island: it renders its fallback and loads the component when the trigger fires. The trigger is read at compile time, so it must be a bare attribute or a string literal. `data.value` is what was written.
+
+**Repair:** Write `island` or one of the five triggers as a string literal. A trigger chosen at runtime is not supported.
+
+Before:
+
+```tsx
+import { Counter } from "./Counter";
+
+export const view = <Counter island="sometimes" />;
+```
+
+After:
+
+```tsx
+import { Counter } from "./Counter";
+
+export const view = <Counter island="visible" />;
+```
+
+## ISLAND_MEDIA_MISSING
+
+**`island="media"` without `islandMedia`** · severity `error`
+
+> `island="media"` loads when a media query matches, so it needs `islandMedia="(…)"` with the query. Add it.
+
+`data` keys: none
+
+Automatic fix: no
+
+A `media` island never observes an element: it loads when the query matches, immediately when it already does. Without the query there is nothing to match.
+
+**Repair:** Add `islandMedia="(max-width: 40rem)"` next to `island="media"`.
+
+Before:
+
+```tsx
+import { Counter } from "./Counter";
+
+export const view = <Counter island="media" />;
+```
+
+After:
+
+```tsx
+import { Counter } from "./Counter";
+
+export const view = <Counter island="media" islandMedia="(max-width: 40rem)" />;
+```
+
+## ISLAND_ON_ELEMENT
+
+**`island` on a native element** · severity `error`
+
+> `island` marks a component, but this is a native element, so there is no component to defer. Move `island` to a component.
+
+`data` keys: none
+
+Automatic fix: no
+
+Only a component tag takes `island` and its companions `islandMedia`, `islandRootMargin` and `islandFallback`. On a native element they would render as useless attributes.
+
+**Repair:** Move the attributes to the component that should load later.
+
+Before:
+
+```tsx
+export const view = <section island="visible" />;
+```
+
+After:
+
+```tsx
+import { Counter } from "./Counter";
+
+export const view = <Counter island="visible" />;
+```
+
+## ISLAND_ORPHAN
+
+**Island companion without `island`** · severity `error`
+
+> `{attribute}` only means something next to `island`, but this component has none, so it would reach the component as a stray prop. Add `island` or remove it.
+
+`data` keys: `attribute`
+
+Automatic fix: no
+
+`islandMedia`, `islandRootMargin` and `islandFallback` are consumed by the compiler and never reach the component. Without `island` there is no island to consume them. `data.attribute` is the name.
+
+**Repair:** Add `island="…"` to the component, or remove the companion.
+
+Before:
+
+```tsx
+import { Counter } from "./Counter";
+
+export const view = <Counter islandMedia="(max-width: 40rem)" />;
+```
+
+After:
+
+```tsx
+import { Counter } from "./Counter";
+
+export const view = <Counter island="media" islandMedia="(max-width: 40rem)" />;
+```
+
 ## CHILDREN_PROP_IGNORED
 
 **`children` attribute next to nested children** · severity `warn`
@@ -931,6 +1049,37 @@ export const save = $action(async (todo) => {
   const saved = await api.save(todo);
   todo.at = saved.at;
 });
+```
+
+## ISLAND_NOT_SPLIT
+
+**Island component that stays in the main chunk** · severity `warn`
+
+> `{component}` is an island, but it is also {reason}, so it loads from the main chunk instead of its own. Only its execution waits for the trigger.
+
+`data` keys: `component`, `reason`
+
+Automatic fix: no
+
+An island splits into its own chunk when the component is imported and every use of the import is an island: the static import is then replaced by a dynamic one. Otherwise the component stays where it is and the island only defers its execution. `data.component` is the tag and `data.reason` is `used outside islands` or `exported`.
+
+**Repair:** Move the component to its own module, import it where the island is, and use the import only as an island.
+
+Before:
+
+```tsx
+import { Counter } from "./Counter";
+
+export const first = <Counter island="visible" />;
+export const second = <Counter step={1} />;
+```
+
+After:
+
+```tsx
+import { Counter } from "./Counter";
+
+export const view = <Counter island="visible" />;
 ```
 
 ## SIGNAL_FOLDED

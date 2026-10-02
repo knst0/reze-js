@@ -1,0 +1,16 @@
+{
+  "name": "@rezejs/example-islands",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "reze-js": "workspace:*"
+  },
+  "devDependencies": {
+    "@rezejs/vite-plugin": "workspace:*"
+  }
+}

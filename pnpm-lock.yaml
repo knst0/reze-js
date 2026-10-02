@@ -695,6 +695,16 @@ importers:
         specifier: workspace:*
         version: link:../../packages/vite-plugin
 
+  examples/islands:
+    dependencies:
+      reze-js:
+        specifier: workspace:*
+        version: link:../../packages/reze-js
+    devDependencies:
+      '@rezejs/vite-plugin':
+        specifier: workspace:*
+        version: link:../../packages/vite-plugin
+
   examples/router:
     dependencies:
       '@rezejs/router':
