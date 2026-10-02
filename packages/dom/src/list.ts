@@ -10,6 +10,7 @@ interface Rendered {
 class Row<T> {
   declare key: unknown;
   declare index: number;
+  declare item: T | undefined;
   declare dispose: () => void;
   declare value: JSX.Element;
   declare setItem: Setter<T> | undefined;
@@ -19,6 +20,7 @@ class Row<T> {
   constructor(key: unknown, index: number, dispose: () => void) {
     this.key = key;
     this.index = index;
+    this.item = undefined;
     this.dispose = dispose;
     this.value = undefined;
     this.setItem = undefined;
@@ -27,11 +29,14 @@ class Row<T> {
   }
 
   update(item: T, index: number): void {
-    if (this.setItem !== undefined) {
-      if (typeof item === "function") {
-        this.setItem(() => item);
-      } else {
-        this.setItem(item);
+    if (this.item !== item) {
+      this.item = item;
+      if (this.setItem !== undefined) {
+        if (typeof item === "function") {
+          this.setItem(() => item);
+        } else {
+          this.setItem(item);
+        }
       }
     }
     if (this.index !== index) {

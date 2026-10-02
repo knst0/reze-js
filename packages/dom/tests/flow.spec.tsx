@@ -360,6 +360,33 @@ test("random keyed updates keep DOM order and reuse the nodes of surviving rows"
   }
 });
 
+test("For with duplicate keys keeps every row and updates each in place", () => {
+  const [items, setItems] = signal([
+    { id: 1, label: "a" },
+    { id: 1, label: "b" },
+    { id: 2, label: "c" },
+  ]);
+  const { el } = mount(
+    () => (
+      <For each={items()} keyed={(item) => item.id}>
+        {(item) => <li>{item().label}</li>}
+      </For>
+    ),
+    "ul",
+  );
+  expect(texts(el)).toEqual(["a", "b", "c"]);
+  setItems([
+    { id: 2, label: "C" },
+    { id: 1, label: "B" },
+    { id: 1, label: "A" },
+  ]);
+  tick();
+  expect(texts(el)).toEqual(["C", "B", "A"]);
+  setItems([{ id: 1, label: "x" }]);
+  tick();
+  expect(texts(el)).toEqual(["x"]);
+});
+
 test("a selection change re-runs only the two rows whose comparison flips", () => {
   let runs = 0;
   const spy = () => {
