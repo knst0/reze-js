@@ -1,6 +1,6 @@
 ---
 source: crates/reze_compiler/tests/snapshots.rs
-expression: "import { computed, For, Match, Show, signal, Switch } from \"reze-js\";\nconst [open, setOpen] = signal(false);\nsetOpen(true);\nlet [moved] = signal(1);\nmoved = other;\nconst [fixed] = signal(true);\nconst rows = computed(() => []);\nconst a = <For each={rows()}>{(row) => <li>{row().name}</li>}</For>;\nconst b = <Show when={open()}><b /></Show>;\nconst c = <Switch><Match when={open()}><i /></Match><Match when={moved()}><u /></Match></Switch>;\nconst d = <Show when={fixed()}><s /></Show>;\nconst e = <Show when={plain()}><em /></Show>;\nconst f = <p>{open() && <b />}</p>;"
+expression: "import { computed, For, Match, Show, signal, Switch } from \"reze-js\";\nconst [open, setOpen] = signal(false);\nsetOpen(true);\nlet [moved] = signal(1);\nmoved = other;\nconst [fixed] = signal(true);\nconst rows = computed(() => []);\nconst a = <For each={rows()}>{(row) => <li>{row.name}</li>}</For>;\nconst b = <Show when={open()}><b /></Show>;\nconst c = <Switch><Match when={open()}><i /></Match><Match when={moved()}><u /></Match></Switch>;\nconst d = <Show when={fixed()}><s /></Show>;\nconst e = <Show when={plain()}><em /></Show>;\nconst f = <p>{open() && <b />}</p>;"
 ---
 import { computed, For, Match, Show, signal, Switch } from "reze-js";
 import { list as _$list, template as _$template, insert as _$insert, branch as _$branch, choose as _$choose } from "reze-js";
@@ -12,7 +12,7 @@ const fixed = true;
 const rows = computed(() => []);
 const a = _$list(rows, (row) => {
   var _el$ = _$template("<li>");
-  _$insert(_el$, () => row().name);
+  _$insert(_el$, () => row.name);
   return _el$;
 });
 const b = _$branch(open, () => _$template("<b>"));

@@ -68,10 +68,10 @@ async function TodoList() {
       <ul>
         <For each={todos}>
           {(todo) => (
-            <li class={{ done: todo().done }}>
+            <li class={{ done: todo.done }}>
               <label>
-                <input type="checkbox" checked={todo().done} onChange={() => toggle(todo()).catch(ignore)} />
-                {todo().title}
+                <input type="checkbox" checked={todo.done} onChange={() => toggle(todo).catch(ignore)} />
+                {todo.title}
               </label>
             </li>
           )}

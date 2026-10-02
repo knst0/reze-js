@@ -109,9 +109,20 @@ impl<'a> Lowerer<'a, '_> {
         self.is_row_path(e, &scope.params, &mut reads_param) && reads_param
     }
 
-    /// Calls of row parameters, static member reads of them, and literals.
+    /// Calls of row parameters, reads of them, static member reads of them, and literals. Reads
+    /// cover both shapes: the raw value (`row`, `row.id`, `index`) and the accessor (`row()`,
+    /// `row().id`, `index()`).
     fn is_row_path(&self, e: &Expression<'a>, params: &[SymbolId], reads_param: &mut bool) -> bool {
         match e.without_parentheses() {
+            Expression::Identifier(id) => {
+                let is_param = id
+                    .reference_id
+                    .get()
+                    .and_then(|r| self.analysis.scoping.get_reference(r).symbol_id())
+                    .is_some_and(|symbol| params.contains(&symbol));
+                *reads_param |= is_param;
+                is_param
+            }
             Expression::CallExpression(call) => {
                 let Expression::Identifier(id) = &call.callee else { return false };
                 let is_param = id

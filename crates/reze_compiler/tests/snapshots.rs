@@ -149,15 +149,15 @@ const CASES: &[(&str, &str)] = &[
     ),
     (
         "flow_sources",
-        "import { computed, For, Match, Show, signal, Switch } from \"reze-js\";\nconst [open, setOpen] = signal(false);\nsetOpen(true);\nlet [moved] = signal(1);\nmoved = other;\nconst [fixed] = signal(true);\nconst rows = computed(() => []);\nconst a = <For each={rows()}>{(row) => <li>{row().name}</li>}</For>;\nconst b = <Show when={open()}><b /></Show>;\nconst c = <Switch><Match when={open()}><i /></Match><Match when={moved()}><u /></Match></Switch>;\nconst d = <Show when={fixed()}><s /></Show>;\nconst e = <Show when={plain()}><em /></Show>;\nconst f = <p>{open() && <b />}</p>;",
+        "import { computed, For, Match, Show, signal, Switch } from \"reze-js\";\nconst [open, setOpen] = signal(false);\nsetOpen(true);\nlet [moved] = signal(1);\nmoved = other;\nconst [fixed] = signal(true);\nconst rows = computed(() => []);\nconst a = <For each={rows()}>{(row) => <li>{row.name}</li>}</For>;\nconst b = <Show when={open()}><b /></Show>;\nconst c = <Switch><Match when={open()}><i /></Match><Match when={moved()}><u /></Match></Switch>;\nconst d = <Show when={fixed()}><s /></Show>;\nconst e = <Show when={plain()}><em /></Show>;\nconst f = <p>{open() && <b />}</p>;",
     ),
     (
         "for_list",
-        "import { For } from \"reze-js\";\nconst a = <ul><For each={rows()} fallback={<li>none</li>}>{(row, i) => <li>{i()}</li>}</For></ul>;\nconst b = <For each={rows()} key={(row) => row.id}>{(row) => <li>{row().name}</li>}</For>;",
+        "import { For } from \"reze-js\";\nconst a = <ul><For each={rows()} fallback={<li>none</li>}>{(row, i) => <li>{i()}</li>}</For></ul>;\nconst b = <For each={rows()} keyed={(row) => row.id}>{(row) => <li>{row().name}</li>}</For>;\nconst c = <For each={rows()} keyed={false}>{(row, i) => <li>{i}:{row().name}</li>}</For>;",
     ),
     (
         "keyed_rows",
-        "import { For } from \"reze-js\";\nconst a = <For each={rows()} key={(r) => r.id}>{(row, i) => <li class={row().id} title={`#${row().id}`} onClick={() => pick(row().id)}>{row().id}{row().name}{row().id.length}{row()?.id}{cond() ? row().id : 0}</li>}</For>;\nconst b = <For each={rows()} key={(r) => r.id} children={(row) => <li>{row().id}</li>} />;\nconst c = <For each={rows()} key={(r) => r.name}>{(row) => <li>{row().id}</li>}</For>;\nconst d = <For each={rows()}>{(row) => <li>{row().id}</li>}</For>;\nconst e = <For each={rows()} key={(r) => r.id}>{(row) => <li>{(row().id = 5)}{row().id++}{delete row().id}{[row().id] = xs}{row(1).id}</li>}</For>;\nconst f = <For each={rows()} key={(r) => r.id}>{(row) => { row = other; return <li>{row().id}</li>; }}</For>;",
+        "import { For } from \"reze-js\";\nconst a = <For each={rows()} keyed={(r) => r.id}>{(row, i) => <li class={row().id} title={`#${row().id}`} onClick={() => pick(row().id)}>{row().id}{row().name}{row().id.length}{row()?.id}{cond() ? row().id : 0}</li>}</For>;\nconst b = <For each={rows()} keyed={(r) => r.id} children={(row) => <li>{row().id}</li>} />;\nconst c = <For each={rows()} keyed={(r) => r.name}>{(row) => <li>{row().id}</li>}</For>;\nconst d = <For each={rows()}>{(row) => <li>{row.id}</li>}</For>;\nconst e = <For each={rows()} keyed={(r) => r.id}>{(row) => <li>{(row().id = 5)}{row().id++}{delete row().id}{[row().id] = xs}{row(1).id}</li>}</For>;\nconst f = <For each={rows()} keyed={(r) => r.id}>{(row) => { row = other; return <li>{row().id}</li>; }}</For>;",
     ),
     (
         "switch_match",
@@ -189,7 +189,7 @@ const CASES: &[(&str, &str)] = &[
     ),
     (
         "auto_selector",
-        "import { For, computed, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nconst [hovered, setHovered] = signal(0);\nconst active = computed(() => selected() + 1);\nexport const list = (\n  <For each={rows()}>\n    {(row, index) => {\n      const [local, setLocal] = signal(0);\n      return (\n        <tr class={selected() === row().id ? \"danger\" : \"\"} title={row().id !== selected() ? \"a\" : \"b\"} data-hover={hovered() === index()} data-active={active() === row().meta.id} onClick={() => setSelected(selected() === row().id ? 0 : row().id)}>\n          {selected() === row().id && <b>on</b>}\n          <td onInput={() => setLocal(1)} data-local={local() === row().id} data-other={selected() === other()} data-loose={selected() == row().id} />\n        </tr>\n      );\n    }}\n  </For>\n);\nexport const unrelated = <p>{selected() === 1}</p>;\nsetHovered(1);",
+        "import { For, computed, signal } from \"reze-js\";\nconst [selected, setSelected] = signal(0);\nconst [hovered, setHovered] = signal(0);\nconst active = computed(() => selected() + 1);\nexport const list = (\n  <For each={rows()}>\n    {(row, index) => {\n      const [local, setLocal] = signal(0);\n      return (\n        <tr class={selected() === row.id ? \"danger\" : \"\"} title={row.id !== selected() ? \"a\" : \"b\"} data-hover={hovered() === index()} data-active={active() === row.meta.id} onClick={() => setSelected(selected() === row.id ? 0 : row.id)}>\n          {selected() === row.id && <b>on</b>}\n          <td onInput={() => setLocal(1)} data-local={local() === row.id} data-other={selected() === other()} data-loose={selected() == row.id} />\n        </tr>\n      );\n    }}\n  </For>\n);\nexport const unrelated = <p>{selected() === 1}</p>;\nsetHovered(1);",
     ),
     (
         "async_component",

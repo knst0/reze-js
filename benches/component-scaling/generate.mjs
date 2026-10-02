@@ -59,7 +59,7 @@ function signalJsx(flavor) {
         ? `class={["${base}", { ${toggles} }]}`
         : `class={{ ${toggles} }}`;
   const item = (name) => (isReze ? `${name}()` : name);
-  const forKey = isReze ? " key={(row) => row.id}" : "";
+  const forKey = isReze ? " keyed={(row) => row.id}" : "";
 
   return {
     StatCard: (i, w = vocab(i)) => `import { ${computed}, ${signal}, Show } from "${imports}";

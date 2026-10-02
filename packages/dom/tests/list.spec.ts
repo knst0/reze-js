@@ -30,11 +30,11 @@ test("rows create a signal for index() only when map declares it", () => {
     component: (_, run) => run(),
   });
 
-  mount(() => list(items, (item) => document.createTextNode(item())));
+  mount(() => list(items, (item) => document.createTextNode(item)));
   expect(created.filter((kind) => kind === "signal")).toEqual([]);
 
   unmount!();
   created.length = 0;
-  mount(() => list(items, (item, index) => document.createTextNode(item() + index())));
+  mount(() => list(items, (item, index) => document.createTextNode(item + index())));
   expect(created.filter((kind) => kind === "signal")).toHaveLength(3);
 });

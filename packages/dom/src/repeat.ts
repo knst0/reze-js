@@ -19,7 +19,7 @@ export function repeat(count: () => number, map: (index: number) => JSX.Element,
   });
   return list(
     () => indexes(length()),
-    (index) => map(index()),
+    (item) => map(item),
     fallback,
   );
 }

@@ -116,8 +116,8 @@ catalog! {
         severity: Error,
         title: "Attribute a control-flow tag does not accept",
         message: "`<{tag}>` does not accept `{attribute}`, so it would be silently dropped. Remove it.",
-        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
-        repair: "Apply the fix to remove the attribute. To key `<For>` rows by a field, use `key={(item) => item.id}`.",
+        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
+        repair: "Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.",
         fix: Some("remove `{attribute}`"),
         example: Pair {
             bad: "import { Show } from \"reze-js\";\n\nexport const view = <Show when={open()} keyed><p>open</p></Show>;\n",
@@ -147,7 +147,7 @@ catalog! {
         fix: None,
         example: Pair {
             bad: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()}><li>item</li></For></ul>;\n",
-            good: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()}>{(item) => <li>{item()}</li>}</For></ul>;\n",
+            good: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()}>{(item) => <li>{item}</li>}</For></ul>;\n",
         },
     }
     MatchOutsideSwitch {
@@ -337,8 +337,8 @@ catalog! {
         severity: Warn,
         title: "`key` on a native element",
         message: "`key` does nothing on a native element and renders as a useless attribute, since list rows are keyed by `<For>`. Remove it.",
-        explanation: "Reze has no virtual DOM to reconcile by `key`: `<For>` keys its rows by item identity, or by its own `key` function. On a native element `key` is an ordinary attribute.",
-        repair: "Apply the fix to remove the attribute. To key rows, render the list with `<For each={items()} key={(item) => item.id}>`.",
+        explanation: "Reze has no virtual DOM to reconcile by `key`: `<For>` keys its rows by item identity, or by its own `keyed` function. On a native element `key` is an ordinary attribute.",
+        repair: "Apply the fix to remove the attribute. To key rows, render the list with `<For each={items()} keyed={(item) => item.id}>`.",
         fix: Some("remove `key`"),
         example: Pair {
             bad: "export const view = <li key=\"a\">a</li>;\n",
@@ -419,8 +419,8 @@ catalog! {
         repair: "Hoist the array to a module constant, or hold it in a signal or computed.",
         fix: None,
         example: Pair {
-            bad: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={[1, 2, 3]}>{(n) => <li>{n()}</li>}</For></ul>;\n",
-            good: "import { For } from \"reze-js\";\n\nconst numbers = [1, 2, 3];\nexport const view = <ul><For each={numbers}>{(n) => <li>{n()}</li>}</For></ul>;\n",
+            bad: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={[1, 2, 3]}>{(n) => <li>{n}</li>}</For></ul>;\n",
+            good: "import { For } from \"reze-js\";\n\nconst numbers = [1, 2, 3];\nexport const view = <ul><For each={numbers}>{(n) => <li>{n}</li>}</For></ul>;\n",
         },
     }
     AsyncComponentShape {
@@ -500,6 +500,6 @@ catalog! {
         explanation: "A `<For>` row compares a `signal`/`computed` declared outside the row with a key built from the row's parameters. One `selector` per `<For>` replaces the comparison, so a change re-runs only the rows whose result flips. `data.signal` is the getter.",
         repair: "Nothing to repair. Compare inside a nested function, or with something that is not the row's key, and it stays a plain comparison.",
         fix: None,
-        example: Shows("import { For, signal } from \"reze-js\";\n\nconst [selected, setSelected] = signal(0);\nexport const view = (\n  <ul>\n    <For each={rows()}>\n      {(row) => <li class={selected() === row().id ? \"on\" : \"\"} onClick={() => setSelected(row().id)} />}\n    </For>\n  </ul>\n);\n"),
+        example: Shows("import { For, signal } from \"reze-js\";\n\nconst [selected, setSelected] = signal(0);\nexport const view = (\n  <ul>\n    <For each={rows()}>\n      {(row) => <li class={selected() === row.id ? \"on\" : \"\"} onClick={() => setSelected(row.id)} />}\n    </For>\n  </ul>\n);\n"),
     }
 }

@@ -1,6 +1,6 @@
 ---
 source: crates/reze_compiler/tests/snapshots.rs
-expression: "import { For } from \"reze-js\";\nconst a = <For each={rows()} key={(r) => r.id}>{(row, i) => <li class={row().id} title={`#${row().id}`} onClick={() => pick(row().id)}>{row().id}{row().name}{row().id.length}{row()?.id}{cond() ? row().id : 0}</li>}</For>;\nconst b = <For each={rows()} key={(r) => r.id} children={(row) => <li>{row().id}</li>} />;\nconst c = <For each={rows()} key={(r) => r.name}>{(row) => <li>{row().id}</li>}</For>;\nconst d = <For each={rows()}>{(row) => <li>{row().id}</li>}</For>;\nconst e = <For each={rows()} key={(r) => r.id}>{(row) => <li>{(row().id = 5)}{row().id++}{delete row().id}{[row().id] = xs}{row(1).id}</li>}</For>;\nconst f = <For each={rows()} key={(r) => r.id}>{(row) => { row = other; return <li>{row().id}</li>; }}</For>;"
+expression: "import { For } from \"reze-js\";\nconst a = <For each={rows()} keyed={(r) => r.id}>{(row, i) => <li class={row().id} title={`#${row().id}`} onClick={() => pick(row().id)}>{row().id}{row().name}{row().id.length}{row()?.id}{cond() ? row().id : 0}</li>}</For>;\nconst b = <For each={rows()} keyed={(r) => r.id} children={(row) => <li>{row().id}</li>} />;\nconst c = <For each={rows()} keyed={(r) => r.name}>{(row) => <li>{row().id}</li>}</For>;\nconst d = <For each={rows()}>{(row) => <li>{row.id}</li>}</For>;\nconst e = <For each={rows()} keyed={(r) => r.id}>{(row) => <li>{(row().id = 5)}{row().id++}{delete row().id}{[row().id] = xs}{row(1).id}</li>}</For>;\nconst f = <For each={rows()} keyed={(r) => r.id}>{(row) => { row = other; return <li>{row().id}</li>; }}</For>;"
 ---
 import { For } from "reze-js";
 import { list as _$list, template as _$template, className as _$className, setAttribute as _$setAttribute, append as _$append, insert as _$insert, delegateEvents as _$delegateEvents } from "reze-js";
@@ -28,7 +28,7 @@ const c = _$list(() => rows(), (row) => {
 }, undefined, (r) => r.name);
 const d = _$list(() => rows(), (row) => {
   var _el$4 = _$template("<li>");
-  _$insert(_el$4, () => row().id);
+  _$insert(_el$4, () => row.id);
   return _el$4;
 });
 const e = _$list(() => rows(), (row) => {

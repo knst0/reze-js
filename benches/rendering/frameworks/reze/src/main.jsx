@@ -105,7 +105,7 @@ function App() {
       </div>
       <table class="table table-hover table-striped test-data">
         <tbody>
-          <For each={data()} key={(row) => row.id}>
+          <For each={data()} keyed={(row) => row.id}>
             {(row) => (
               <tr class={isSelected(row().id) ? "danger" : ""}>
                 <td class="col-md-1">{row().id}</td>

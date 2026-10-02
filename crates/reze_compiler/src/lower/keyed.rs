@@ -12,7 +12,7 @@ use oxc_syntax::symbol::SymbolId;
 use super::control_flow::is_meaningful;
 use crate::analyze::{Analysis, Intrinsic};
 
-/// The reads `row().prop` in the row function of a `<For key={(p) => p.prop}>`: a keyed row is
+/// The reads `row().prop` in the row function of a `<For keyed={(p) => p.prop}>`: a keyed row is
 /// kept only while its key stays equal, so the read is constant for the row's lifetime.
 #[derive(Default)]
 pub struct KeyedRows {
@@ -72,9 +72,9 @@ impl KeyedCollector<'_, '_, '_> {
     }
 }
 
-/// `key={(p) => p.prop}` with plain `p`: the name of `prop`.
+/// `keyed={(p) => p.prop}` with plain `p`: the name of `prop`.
 fn key_property<'b>(el: &'b JSXElement<'_>) -> Option<&'b str> {
-    let attribute = attribute(el, "key")?;
+    let attribute = attribute(el, "keyed")?;
     let JSXAttributeValue::ExpressionContainer(container) = attribute.value.as_ref()? else {
         return None;
     };

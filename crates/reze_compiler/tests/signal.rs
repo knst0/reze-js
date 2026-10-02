@@ -121,7 +121,7 @@ const SNAPSHOTS: &[(&str, &str)] = &[
     ),
     (
         "show_and_for",
-        "import { $signal, For, Show } from \"reze-js\";\nlet rows = $signal([{ id: 1 }, { id: 2 }]);\nlet selected = $signal(0);\nlet open = $signal(false);\nexport const view = (\n  <ul>\n    <For each={rows}>{(row) => <li class={selected === row().id ? \"on\" : \"\"} onClick={() => selected = row().id} />}</For>\n    <Show when={open} fallback={<i>closed</i>}><p onClick={() => open = false}>open</p></Show>\n    <button onClick={() => { rows = [...rows, { id: rows.length }]; open = !open; }} />\n  </ul>\n);",
+        "import { $signal, For, Show } from \"reze-js\";\nlet rows = $signal([{ id: 1 }, { id: 2 }]);\nlet selected = $signal(0);\nlet open = $signal(false);\nexport const view = (\n  <ul>\n    <For each={rows}>{(row) => <li class={selected === row.id ? \"on\" : \"\"} onClick={() => selected = row.id} />}</For>\n    <Show when={open} fallback={<i>closed</i>}><p onClick={() => open = false}>open</p></Show>\n    <button onClick={() => { rows = [...rows, { id: rows.length }]; open = !open; }} />\n  </ul>\n);",
     ),
     (
         "async_component",
@@ -252,13 +252,13 @@ fn reading_once_is_reported_only_for_top_level_initializers_of_a_component() {
 
 #[test]
 fn diagnostics_of_the_second_pass_point_into_the_original_source() {
-    let source = "import { $signal, For } from \"reze-js\";\n\nlet selected = $signal(0);\nexport const view = (\n  <For each={rows()}>{(row) => <li class={selected === row().id ? \"on\" : \"\"} onClick={() => selected = row().id} />}</For>\n);";
+    let source = "import { $signal, For } from \"reze-js\";\n\nlet selected = $signal(0);\nexport const view = (\n  <For each={rows()}>{(row) => <li class={selected === row.id ? \"on\" : \"\"} onClick={() => selected = row.id} />}</For>\n);";
     let out = compile(source, "test.tsx", &options()).unwrap().unwrap();
     let auto = out.diagnostics.iter().find(|d| d.code == Code::AutoSelector).expect("selector");
     let line = source.lines().nth(auto.start.line as usize - 1).unwrap();
     assert_eq!(
         &line[auto.start.column as usize..],
-        "selected === row().id ? \"on\" : \"\"} onClick={() => selected = row().id} />}</For>"
+        "selected === row.id ? \"on\" : \"\"} onClick={() => selected = row.id} />}</For>"
     );
     assert_eq!(auto.data["signal"], "selected");
 
@@ -356,8 +356,8 @@ const COMPUTED_INVARIANT: &[(&str, &str, &str)] = &[
     ),
     (
         "for_selector_and_show",
-        "import { $computed, $signal, For, Show } from \"reze-js\";\nlet picked = $signal(0);\nconst selected = $computed(picked + 1);\nconst big = $computed(picked > 3);\nexport const view = (\n  <ul>\n    <For each={rows()}>{(row) => <li class={selected === row().id ? \"on\" : \"\"} onClick={() => picked = row().id} />}</For>\n    <Show when={big}><p>big</p></Show>\n  </ul>\n);",
-        "import { computed, signal, For, Show } from \"reze-js\";\nconst [picked, setPicked] = signal(0);\nconst selected = computed(() => picked() + 1);\nconst big = computed(() => picked() > 3);\nexport const view = (\n  <ul>\n    <For each={rows()}>{(row) => <li class={selected() === row().id ? \"on\" : \"\"} onClick={() => setPicked(() => row().id)} />}</For>\n    <Show when={big()}><p>big</p></Show>\n  </ul>\n);",
+        "import { $computed, $signal, For, Show } from \"reze-js\";\nlet picked = $signal(0);\nconst selected = $computed(picked + 1);\nconst big = $computed(picked > 3);\nexport const view = (\n  <ul>\n    <For each={rows()}>{(row) => <li class={selected === row.id ? \"on\" : \"\"} onClick={() => picked = row.id} />}</For>\n    <Show when={big}><p>big</p></Show>\n  </ul>\n);",
+        "import { computed, signal, For, Show } from \"reze-js\";\nconst [picked, setPicked] = signal(0);\nconst selected = computed(() => picked() + 1);\nconst big = computed(() => picked() > 3);\nexport const view = (\n  <ul>\n    <For each={rows()}>{(row) => <li class={selected() === row.id ? \"on\" : \"\"} onClick={() => setPicked(() => row.id)} />}</For>\n    <Show when={big()}><p>big</p></Show>\n  </ul>\n);",
     ),
     (
         "async_component_read_after_await",

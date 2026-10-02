@@ -11,11 +11,25 @@ export interface ShowProps<T> {
 export interface ForProps<T> {
   each: readonly T[] | null | undefined | false;
   fallback?: JSX.Element;
+  keyed?: true;
+  children: (item: T, index: () => number) => JSX.Element;
+}
+
+export interface ForIndexProps<T> {
+  each: readonly T[] | null | undefined | false;
+  fallback?: JSX.Element;
+  keyed: false;
+  children: (item: () => T, index: number) => JSX.Element;
+}
+
+export interface ForKeyedProps<T> {
+  each: readonly T[] | null | undefined | false;
+  fallback?: JSX.Element;
   /**
-   * A row is kept while its key stays equal. With `key={(item) => item.prop}`, the compiler reads `item().prop` in
-   * that row once, when it is created, so a key property must not be changed in place.
+   * Rows follow `keyed(item)` across evaluations; a kept row keeps its nodes and takes the new
+   * item in place, so a key must keep pointing at its own row.
    */
-  key?: (item: T) => unknown;
+  keyed: (item: T) => unknown;
   children: (item: () => T, index: () => number) => JSX.Element;
 }
 
@@ -62,7 +76,10 @@ export function Show<T>(_props: ShowProps<T>): JSX.Element {
   return compiledAway();
 }
 
-export function For<T>(_props: ForProps<T>): JSX.Element {
+export function For<T>(props: ForProps<T>): JSX.Element;
+export function For<T>(props: ForIndexProps<T>): JSX.Element;
+export function For<T>(props: ForKeyedProps<T>): JSX.Element;
+export function For<T>(_props: ForProps<T> | ForIndexProps<T> | ForKeyedProps<T>): JSX.Element {
   return compiledAway();
 }
 

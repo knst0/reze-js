@@ -30,8 +30,8 @@ test("a compiled `$action` shows its store writes before the save settles, rolls
     <ul>
       <For each={todos}>
         {(todo) => (
-          <li class={{ done: todo().done }}>
-            <input type="checkbox" checked={todo().done} onChange={() => toggle(todo()).catch(() => {})} />
+          <li class={{ done: todo.done }}>
+            <input type="checkbox" checked={todo.done} onChange={() => toggle(todo).catch(() => {})} />
           </li>
         )}
       </For>

@@ -219,8 +219,10 @@ impl<'a> Lowerer<'a, '_> {
     fn for_flow(&mut self, el: &JSXElement<'a>) -> Option<Flow<'a>> {
         let intrinsic = Intrinsic::For;
         let attributes =
-            self.flow_attributes(el, intrinsic, &["each", "fallback", "key", "children"]);
-        if let Some((_, a)) = attributes.iter().find(|(name, _)| *name == "each")
+            self.flow_attributes(el, intrinsic, &["each", "fallback", "keyed", "children"]);
+        let keyed = attributes.iter().rev().find(|(name, _)| *name == "keyed").map(|(_, a)| *a);
+        if !keyed.is_some_and(is_indexed)
+            && let Some((_, a)) = attributes.iter().find(|(name, _)| *name == "each")
             && let Some(JSXAttributeValue::ExpressionContainer(c)) = &a.value
             && let Some(Expression::ArrayExpression(array)) =
                 c.expression.as_expression().map(Expression::without_parentheses)
@@ -230,8 +232,8 @@ impl<'a> Lowerer<'a, '_> {
         let each = self.required_source(el, intrinsic, &attributes, "each");
         let map = self.row(el, &attributes);
         let fallback = self.fallback(&attributes);
-        let key = match attributes.iter().rev().find(|(name, _)| *name == "key") {
-            Some((_, a)) => self.attribute_value(a),
+        let key = match keyed {
+            Some(a) => self.attribute_value(a),
             None => None,
         };
         let (map, selectors) = map?;
@@ -398,6 +400,18 @@ pub(super) fn is_meaningful(child: &JSXChild<'_>) -> bool {
         JSXChild::ExpressionContainer(c) => c.expression.as_expression().is_some(),
         _ => true,
     }
+}
+
+/// Whether `a` is `keyed={false}`: rows follow positions, so an inline `each` reuses them.
+fn is_indexed(a: &JSXAttribute<'_>) -> bool {
+    matches!(
+        &a.value,
+        Some(JSXAttributeValue::ExpressionContainer(c))
+            if matches!(
+                c.expression.as_expression().map(Expression::without_parentheses),
+                Some(Expression::BooleanLiteral(literal)) if !literal.value
+            )
+    )
 }
 
 /// Finds what creating JSX runs eagerly: a spread, a `ref`, a namespaced attribute or an event handler expression.

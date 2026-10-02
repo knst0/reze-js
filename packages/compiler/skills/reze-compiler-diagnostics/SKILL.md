@@ -92,9 +92,9 @@ export const view = <Show when={open()}><p>open</p></Show>;
 
 Automatic fix: yes
 
-A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback key>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
+A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
 
-**Repair:** Apply the fix to remove the attribute. To key `<For>` rows by a field, use `key={(item) => item.id}`.
+**Repair:** Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.
 
 Before:
 
@@ -169,7 +169,7 @@ After:
 ```tsx
 import { For } from "reze-js";
 
-export const view = <ul><For each={items()}>{(item) => <li>{item()}</li>}</For></ul>;
+export const view = <ul><For each={items()}>{(item) => <li>{item}</li>}</For></ul>;
 ```
 
 ## MATCH_OUTSIDE_SWITCH
@@ -633,9 +633,9 @@ export const view = <div>{label()}<b /></div>;
 
 Automatic fix: yes
 
-Reze has no virtual DOM to reconcile by `key`: `<For>` keys its rows by item identity, or by its own `key` function. On a native element `key` is an ordinary attribute.
+Reze has no virtual DOM to reconcile by `key`: `<For>` keys its rows by item identity, or by its own `keyed` function. On a native element `key` is an ordinary attribute.
 
-**Repair:** Apply the fix to remove the attribute. To key rows, render the list with `<For each={items()} key={(item) => item.id}>`.
+**Repair:** Apply the fix to remove the attribute. To key rows, render the list with `<For each={items()} keyed={(item) => item.id}>`.
 
 Before:
 
@@ -808,7 +808,7 @@ Before:
 ```tsx
 import { For } from "reze-js";
 
-export const view = <ul><For each={[1, 2, 3]}>{(n) => <li>{n()}</li>}</For></ul>;
+export const view = <ul><For each={[1, 2, 3]}>{(n) => <li>{n}</li>}</For></ul>;
 ```
 
 After:
@@ -817,7 +817,7 @@ After:
 import { For } from "reze-js";
 
 const numbers = [1, 2, 3];
-export const view = <ul><For each={numbers}>{(n) => <li>{n()}</li>}</For></ul>;
+export const view = <ul><For each={numbers}>{(n) => <li>{n}</li>}</For></ul>;
 ```
 
 ## ASYNC_COMPONENT_SHAPE
@@ -1021,7 +1021,7 @@ const [selected, setSelected] = signal(0);
 export const view = (
   <ul>
     <For each={rows()}>
-      {(row) => <li class={selected() === row().id ? "on" : ""} onClick={() => setSelected(row().id)} />}
+      {(row) => <li class={selected() === row.id ? "on" : ""} onClick={() => setSelected(row.id)} />}
     </For>
   </ul>
 );

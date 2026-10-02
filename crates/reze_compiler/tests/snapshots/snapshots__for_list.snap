@@ -1,9 +1,9 @@
 ---
 source: crates/reze_compiler/tests/snapshots.rs
-expression: "import { For } from \"reze-js\";\nconst a = <ul><For each={rows()} fallback={<li>none</li>}>{(row, i) => <li>{i()}</li>}</For></ul>;\nconst b = <For each={rows()} key={(row) => row.id}>{(row) => <li>{row().name}</li>}</For>;"
+expression: "import { For } from \"reze-js\";\nconst a = <ul><For each={rows()} fallback={<li>none</li>}>{(row, i) => <li>{i()}</li>}</For></ul>;\nconst b = <For each={rows()} keyed={(row) => row.id}>{(row) => <li>{row().name}</li>}</For>;\nconst c = <For each={rows()} keyed={false}>{(row, i) => <li>{i}:{row().name}</li>}</For>;"
 ---
 import { For } from "reze-js";
-import { template as _$template, insert as _$insert, list as _$list } from "reze-js";
+import { template as _$template, insert as _$insert, list as _$list, append as _$append } from "reze-js";
 const a = (() => {
   var _el$ = _$template("<ul>");
   _$insert(_el$, _$list(() => rows(), (row, i) => {
@@ -18,3 +18,10 @@ const b = _$list(() => rows(), (row) => {
   _$insert(_el$3, () => row().name);
   return _el$3;
 }, undefined, (row) => row.id);
+const c = _$list(() => rows(), (row, i) => {
+  var _el$4 = _$template("<li>:"),
+    _el$5 = _el$4.firstChild;
+  _$insert(_el$4, i, _el$5);
+  _$append(_el$4, () => row().name);
+  return _el$4;
+}, undefined, false);

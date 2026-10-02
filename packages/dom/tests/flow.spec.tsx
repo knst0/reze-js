@@ -185,7 +185,7 @@ test("a function child of Match receives its when as a tracked getter", () => {
 
 test("For rows follow items by identity: nodes move instead of being rebuilt", () => {
   const [items, setItems] = signal(["a", "b", "c"]);
-  const { el } = mount(() => <For each={items()}>{(item) => <li>{item()}</li>}</For>, "ul");
+  const { el } = mount(() => <For each={items()}>{(item) => <li>{item}</li>}</For>, "ul");
   const [a, b, c] = el.children;
   setItems(["c", "a", "b"]);
   tick();
@@ -193,7 +193,7 @@ test("For rows follow items by identity: nodes move instead of being rebuilt", (
   expect([...el.children]).toEqual([c, a, b]);
 });
 
-test("For with key keeps the row of a changed item and updates item() in place", () => {
+test("For with keyed keeps the row of a changed item and updates item() in place", () => {
   type Row = { id: number; label: string };
   let builds = 0;
   const [items, setItems] = signal<Row[]>([
@@ -202,7 +202,7 @@ test("For with key keeps the row of a changed item and updates item() in place",
   ]);
   const { el } = mount(
     () => (
-      <For each={items()} key={(row) => row.id}>
+      <For each={items()} keyed={(row) => row.id}>
         {(row) => {
           builds++;
           return <li>{row().label}</li>;
@@ -229,7 +229,7 @@ test("For index() tracks the row position", () => {
       <For each={items()}>
         {(item, index) => (
           <li>
-            {index()}:{item()}
+            {index()}:{item}
           </li>
         )}
       </For>
@@ -240,6 +240,41 @@ test("For index() tracks the row position", () => {
   setItems(["c", "a"]);
   tick();
   expect(texts(el)).toEqual(["0:c", "1:a"]);
+});
+
+test("For with keyed={false} keeps rows by position and updates item() in place", () => {
+  let builds = 0;
+  const [items, setItems] = signal(["a", "b", "c"]);
+  const { el } = mount(
+    () => (
+      <For each={items()} keyed={false}>
+        {(item, index) => {
+          builds++;
+          return (
+            <li>
+              {index}:{item()}
+            </li>
+          );
+        }}
+      </For>
+    ),
+    "ul",
+  );
+  const [first, second, third] = el.children;
+  expect(texts(el)).toEqual(["0:a", "1:b", "2:c"]);
+  setItems(["c", "a", "b"]);
+  tick();
+  expect(texts(el)).toEqual(["0:c", "1:a", "2:b"]);
+  expect([...el.children]).toEqual([first, second, third]);
+  expect(builds).toBe(3);
+  setItems(["x"]);
+  tick();
+  expect(texts(el)).toEqual(["0:x"]);
+  expect(builds).toBe(3);
+  setItems(["x", "y"]);
+  tick();
+  expect(texts(el)).toEqual(["0:x", "1:y"]);
+  expect(builds).toBe(4);
 });
 
 test("For disposes removed rows and shows the fallback while the list is empty", () => {
@@ -253,8 +288,8 @@ test("For disposes removed rows and shows the fallback while the list is empty",
     () => (
       <For each={items()} fallback={<Empty />}>
         {(item) => {
-          onCleanup(() => log.push(item()));
-          return <li>{item()}</li>;
+          onCleanup(() => log.push(item));
+          return <li>{item}</li>;
         }}
       </For>
     ),
@@ -278,7 +313,7 @@ test("For disposes removed rows and shows the fallback while the list is empty",
 
 test("For duplicate items map to distinct rows", () => {
   const [items, setItems] = signal(["x", "x", "y"]);
-  const { el } = mount(() => <For each={items()}>{(item) => <li>{item()}</li>}</For>, "ul");
+  const { el } = mount(() => <For each={items()}>{(item) => <li>{item}</li>}</For>, "ul");
   setItems(["y", "x", "x", "x"]);
   tick();
   expect(texts(el)).toEqual(["y", "x", "x", "x"]);
@@ -292,7 +327,7 @@ test("random keyed updates keep DOM order and reuse the nodes of surviving rows"
   const [items, setItems] = signal<{ id: number }[]>([]);
   const { el } = mount(
     () => (
-      <For each={items()} key={(item) => item.id}>
+      <For each={items()} keyed={(item) => item.id}>
         {(item) => <li>{item().id}</li>}
       </For>
     ),
@@ -333,7 +368,7 @@ test("a selection change re-runs only the two rows whose comparison flips", () =
   const [rows, setRows] = signal([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
   const [selected, setSelected] = signal(1);
   const { el } = mount(
-    () => <For each={rows()}>{(row) => <li class={(spy(), selected() === row().id) ? "on" : ""}>{row().id}</li>}</For>,
+    () => <For each={rows()}>{(row) => <li class={(spy(), selected() === row.id) ? "on" : ""}>{row.id}</li>}</For>,
     "ul",
   );
   const on = () => [...el.children].filter((li) => li.className === "on").map((li) => li.textContent);
@@ -362,7 +397,7 @@ test("rows reading a selector render like plain comparisons across selection and
   const [selected, setSelected] = signal(0);
   const { el } = mount(
     () => (
-      <For each={rows()} key={(row) => row.id}>
+      <For each={rows()} keyed={(row) => row.id}>
         {(row) => (
           <li class={selected() === row().id ? "on" : ""} title={row().id !== selected() ? "off" : "on"}>
             {row().id}
