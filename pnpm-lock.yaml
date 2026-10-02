@@ -719,6 +719,9 @@ importers:
       '@rezejs/signals':
         specifier: workspace:^
         version: link:../signals
+      csstype:
+        specifier: ^3.2.3
+        version: 3.2.3
     devDependencies:
       '@codspeed/tinybench-plugin':
         specifier: ^5.7.1
