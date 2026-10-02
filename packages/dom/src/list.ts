@@ -159,6 +159,12 @@ function keyedList<T>(
     for (const end = Math.min(n, rows.length); start < end; start++) {
       const item = items[start]!;
       const row = rows[start]!;
+      if (row.item === item) {
+        row.update(item, start);
+        nextRows.push(row);
+        out.push(row.value);
+        continue;
+      }
       if (row.key !== (key === undefined ? item : key(item))) {
         break;
       }
