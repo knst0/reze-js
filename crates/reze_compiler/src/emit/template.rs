@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Write;
 
 use super::{Emitter, Helper};
@@ -7,6 +8,23 @@ use crate::ir::{
     Anchor, AssignTarget, Bind, BindTarget, Child, Conditional, Embed, ExprChild, From, Handler,
     MemberKey, Op, Placement, RefTarget, Template,
 };
+use oxc_syntax::symbol::SymbolId;
+
+/// Binds sharing a dependency set, in first-seen order: one render effect each.
+fn bind_groups<'a, 'b>(binds: &'b [Bind<'a>]) -> std::vec::Vec<std::vec::Vec<&'b Bind<'a>>> {
+    let mut index: HashMap<&[SymbolId], usize> = HashMap::new();
+    let mut groups: std::vec::Vec<std::vec::Vec<&'b Bind<'a>>> = std::vec::Vec::new();
+    for bind in binds {
+        match index.get(bind.deps.as_slice()) {
+            Some(&at) => groups[at].push(bind),
+            None => {
+                index.insert(bind.deps.as_slice(), groups.len());
+                groups.push(std::vec![bind]);
+            }
+        }
+    }
+    groups
+}
 
 impl<'a> Emitter<'a, '_> {
     pub(super) fn template(&mut self, out: &mut Code, template: &Template<'a>) {
@@ -34,25 +52,53 @@ impl<'a> Emitter<'a, '_> {
                 out.push(".nextSibling");
             }
         }
-        let previous: std::vec::Vec<&'a str> = if template.binds.len() > 1 {
-            template.binds.iter().map(|_| self.fresh("_p$")).collect()
+        let groups = bind_groups(&template.binds);
+        if groups.len() <= 1 {
+            let previous: std::vec::Vec<&'a str> = if template.binds.len() > 1 {
+                template.binds.iter().map(|_| self.fresh("_p$")).collect()
+            } else {
+                std::vec::Vec::new()
+            };
+            for name in &previous {
+                out.push(",\n    ");
+                out.push(name);
+            }
+            out.push(";\n");
+            for op in &template.ops {
+                out.push("  ");
+                self.op(out, op, &names);
+                out.push(";\n");
+            }
+            if !template.binds.is_empty() {
+                out.push("  ");
+                let refs: std::vec::Vec<&Bind> = template.binds.iter().collect();
+                self.binds(out, &refs, &names, &previous);
+                out.push(";\n");
+            }
         } else {
-            std::vec::Vec::new()
-        };
-        for name in &previous {
-            out.push(",\n    ");
-            out.push(name);
-        }
-        out.push(";\n");
-        for op in &template.ops {
-            out.push("  ");
-            self.op(out, op, &names);
+            let mut previous: std::vec::Vec<std::vec::Vec<&'a str>> = std::vec::Vec::new();
+            for group in &groups {
+                previous.push(if group.len() > 1 {
+                    group.iter().map(|_| self.fresh("_p$")).collect()
+                } else {
+                    std::vec::Vec::new()
+                });
+            }
+            for name in previous.iter().flatten() {
+                out.push(",\n    ");
+                out.push(name);
+            }
             out.push(";\n");
-        }
-        if !template.binds.is_empty() {
-            out.push("  ");
-            self.binds(out, &template.binds, &names, &previous);
-            out.push(";\n");
+            for op in &template.ops {
+                out.push("  ");
+                self.op(out, op, &names);
+                out.push(";\n");
+            }
+            for (group, previous) in groups.iter().zip(&previous) {
+                out.push("  ");
+                self.binds(out, group, &names, previous);
+                out.push(";\n");
+            }
         }
         let _ = write!(out, "  return {root};\n}}{}", if is_block { "" } else { ")()" });
     }
@@ -221,11 +267,11 @@ impl<'a> Emitter<'a, '_> {
         MemberAccess { value, target: self.alloc.alloc_str(&target) }
     }
 
-    /// The template's binds as one render effect; several targets compare against `previous`.
+    /// The binds of one dependency group as one render effect; several targets compare against `previous`.
     fn binds(
         &mut self,
         out: &mut Code,
-        binds: &[Bind<'a>],
+        binds: &[&Bind<'a>],
         names: &[&'a str],
         previous: &[&'a str],
     ) {

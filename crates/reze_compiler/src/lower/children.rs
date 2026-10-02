@@ -243,6 +243,13 @@ impl<'a> Lowerer<'a, '_> {
         builder.html.push(' ');
         let mut is_reactive = false;
         let mut lowered = self.vec();
+        let mut exprs = std::vec::Vec::new();
+        for part in &parts {
+            if let Item::Expr(e) = part {
+                exprs.push(*e);
+            }
+        }
+        let deps = self.dep_list(exprs);
         for part in parts {
             match part {
                 Item::Text(text) => lowered.push(TextPart::Static(self.str(&text))),
@@ -257,7 +264,7 @@ impl<'a> Lowerer<'a, '_> {
         let target = BindTarget::Text;
         let value = Value::Text(lowered);
         if is_reactive {
-            builder.binds.push(Bind { node, target, value });
+            builder.binds.push(Bind { node, target, value, deps });
         } else {
             builder.ops.push(Op::Set { node, target, value });
         }

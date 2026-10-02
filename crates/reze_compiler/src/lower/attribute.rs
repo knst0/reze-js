@@ -299,6 +299,10 @@ impl<'a> Lowerer<'a, '_> {
             AttrValue::Expr(e) => is_dynamic(e, false, self.analysis),
             _ => false,
         });
+        let deps = self.dep_list(values.iter().filter_map(|value| match value {
+            AttrValue::Expr(e) => Some(*e),
+            _ => None,
+        }));
         let is_string = matches!(
             values.as_slice(),
             [AttrValue::Expr(only)]
@@ -320,7 +324,7 @@ impl<'a> Lowerer<'a, '_> {
         };
         builder.reference(node);
         if is_reactive {
-            builder.binds.push(Bind { node, target, value });
+            builder.binds.push(Bind { node, target, value, deps });
         } else {
             builder.ops.push(Op::Set { node, target, value });
         }
@@ -339,13 +343,14 @@ impl<'a> Lowerer<'a, '_> {
         builder.reference(node);
         for (token, value) in classes.toggles {
             let target = BindTarget::ClassToggle(token);
+            let deps = self.dep_list([value]);
             let toggle = if is_boolean(value, self.analysis) {
                 Value::Expr(self.expr(value))
             } else {
                 Value::Truthy(self.expr(value))
             };
             if is_dynamic(value, false, self.analysis) {
-                builder.binds.push(Bind { node, target, value: toggle });
+                builder.binds.push(Bind { node, target, value: toggle, deps });
             } else {
                 builder.ops.push(Op::Set { node, target, value: toggle });
             }
@@ -448,8 +453,9 @@ impl<'a> Lowerer<'a, '_> {
         if let AttrValue::Expr(e) = value
             && is_dynamic(e, false, self.analysis)
         {
+            let deps = self.dep_list([e]);
             let value = Value::Expr(self.expr(e));
-            builder.binds.push(Bind { node, target, value });
+            builder.binds.push(Bind { node, target, value, deps });
             return;
         }
         let value = match value {

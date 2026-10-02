@@ -19,6 +19,7 @@ use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
+use oxc_syntax::symbol::SymbolId;
 
 use crate::analyze::{Analysis, Intrinsic};
 use crate::diagnostic::{Edit, Report};
@@ -146,6 +147,22 @@ impl<'a, 'f> Lowerer<'a, 'f> {
 
     fn vec<T>(&self) -> Vec<'a, T> {
         Vec::new_in(&self.alloc)
+    }
+
+    /// Sorted stable-getter symbols read by `exprs`: the dependency set of a bind.
+    fn dep_list<'x>(
+        &self,
+        exprs: impl IntoIterator<Item = &'x Expression<'x>>,
+    ) -> Vec<'a, SymbolId> {
+        let mut deps = std::vec::Vec::new();
+        for e in exprs {
+            deps.extend(self.analysis.stable_getter_deps(e));
+        }
+        deps.sort();
+        deps.dedup();
+        let mut out = self.vec();
+        out.extend(deps);
+        out
     }
 
     fn boxed<T>(&self, value: T) -> Box<'a, T> {

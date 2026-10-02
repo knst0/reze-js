@@ -161,6 +161,38 @@ impl<'s> Analysis<'s> {
         let fold = self.folded_refs.get(&id.reference_id.get()?)?;
         Some((id.span, &self.folds[*fold]))
     }
+
+    /// Symbols of the stable signal/computed getters `e` calls: the dependency set of a bind.
+    /// Over-approximates by including calls inside uninvoked closures, so a group may re-run
+    /// without its output changing, but no subscription is ever missed.
+    pub fn stable_getter_deps(&self, e: &Expression<'_>) -> std::vec::Vec<SymbolId> {
+        let mut refs = StableGetterRefs { analysis: self, symbols: std::vec::Vec::new() };
+        refs.visit_expression(e);
+        refs.symbols.sort();
+        refs.symbols.dedup();
+        refs.symbols
+    }
+}
+
+struct StableGetterRefs<'a, 's> {
+    analysis: &'a Analysis<'s>,
+    symbols: std::vec::Vec<SymbolId>,
+}
+
+impl<'a> Visit<'a> for StableGetterRefs<'_, '_> {
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if let Expression::Identifier(id) = &it.callee
+            && it.arguments.is_empty()
+            && !it.optional
+            && it.type_arguments.is_none()
+            && self.analysis.is_stable_getter(id)
+            && self.analysis.folded_read(it).is_none()
+            && let Some(symbol) = self.analysis.symbol(id)
+        {
+            self.symbols.push(symbol);
+        }
+        walk::walk_call_expression(self, it);
+    }
 }
 
 pub fn analyze<'a, 's>(

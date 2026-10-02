@@ -18,6 +18,36 @@ test("text and attribute bindings update in place", () => {
   expect(p.childNodes[1]).toBe(text);
 });
 
+test("a write re-evaluates only the bindings reading that signal", () => {
+  let aEvals = 0;
+  let bEvals = 0;
+  const bump = (which: "a" | "b"): number => {
+    if (which === "a") {
+      aEvals++;
+    } else {
+      bEvals++;
+    }
+    return 0;
+  };
+  const [a, setA] = signal(1);
+  const [b] = signal(2);
+  const { el } = mount(() => (
+    <p title={a() + bump("a")} data-b={b() + bump("b")}>
+      {a() + bump("a")}:{b() + bump("b")}
+    </p>
+  ));
+  expect(aEvals).toBe(2);
+  expect(bEvals).toBe(2);
+  setA(10);
+  tick();
+  const p = el.firstChild as HTMLElement;
+  expect(p.getAttribute("title")).toBe("10");
+  expect(p.getAttribute("data-b")).toBe("2");
+  expect(p.textContent).toBe("10:2");
+  expect(aEvals).toBe(4);
+  expect(bEvals).toBe(2);
+});
+
 test("null, undefined and false remove the attribute", () => {
   const [v, setV] = signal<string | false | null | undefined>("x");
   const { el } = mount(() => <i data-v={v()} />);

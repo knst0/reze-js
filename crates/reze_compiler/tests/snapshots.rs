@@ -26,6 +26,10 @@ const CASES: &[(&str, &str)] = &[
         "merged_binds",
         "const a = <input value={v()} checked={c()} style={{ color: color() }} class={cls()} />;",
     ),
+    (
+        "shared_source_binds",
+        "import { signal } from \"reze-js\";\nconst [n, setN] = signal(0);\nconst [t, setT] = signal(\"\");\nexport const a = <p title={n()} data-y={n() - 1} onClick={() => { setN(n() + 1); setT(\"x\"); }}>{n() * 2} {t()}</p>;",
+    ),
     ("class_sources", "const a = <i class={[\"a\", \"b\", { on: on() }]} />;"),
     (
         "static_class_and_style",

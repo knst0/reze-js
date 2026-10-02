@@ -1,5 +1,6 @@
 use oxc_allocator::{Box, Vec};
 use oxc_span::Span;
+use oxc_syntax::symbol::SymbolId;
 
 /// A slice of the source with sub-spans replaced by compiled holes.
 pub struct Embed<'a> {
@@ -144,7 +145,7 @@ pub struct Template<'a> {
     pub walks: Vec<'a, Walk>,
     /// Document order, except `<select value>`, which follows the select's inserts.
     pub ops: Vec<'a, Op<'a>>,
-    /// Merged into one render effect.
+    /// Grouped into one render effect per dependency set.
     pub binds: Vec<'a, Bind<'a>>,
     pub placement: Placement,
 }
@@ -212,6 +213,8 @@ pub struct Bind<'a> {
     pub node: NodeId,
     pub target: BindTarget<'a>,
     pub value: Value<'a>,
+    /// Sorted stable signal/computed getters the value reads; binds sharing a set re-run together.
+    pub deps: Vec<'a, SymbolId>,
 }
 
 #[derive(Clone, Copy)]
