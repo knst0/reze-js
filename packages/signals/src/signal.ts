@@ -54,16 +54,19 @@ export class SignalNode<T = unknown> implements ReactiveNode {
   /** Stores `next` and notifies subscribers unless `equals` reports it equal to the latest write. */
   write(next: T): void {
     if (differs(this.equals, this.pendingValue, next)) {
+      const subs = this.subs;
       this.pendingValue = next;
-      this.flags = FlagMutable | FlagDirty;
-      if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
+      if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
         debugHook.written(this);
       }
-      const subs = this.subs;
-      if (subs !== undefined) {
-        propagate(subs, effectDepth !== 0);
-        scheduleFlush();
+      if (subs === undefined) {
+        this.currentValue = next;
+        this.flags = FlagMutable;
+        return;
       }
+      this.flags = FlagMutable | FlagDirty;
+      propagate(subs, effectDepth !== 0);
+      scheduleFlush();
     }
   }
 }

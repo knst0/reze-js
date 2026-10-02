@@ -51,7 +51,7 @@ class ComputedNode<T = unknown> implements ReactiveNode {
 
   read(): T {
     const flags = this.flags;
-    if (process.env.NODE_ENV !== "production" && flags & FlagRecursedCheck) {
+    if (flags & FlagRecursedCheck && process.env.NODE_ENV !== "production") {
       console.warn(
         "[rezejs] Cycle detected: a computed was read while it is being evaluated, so it depends " +
           "on itself and returns a stale value. Computed graphs must be acyclic.",
