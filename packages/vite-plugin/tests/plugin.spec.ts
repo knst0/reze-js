@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ResolvedConfig } from "vite";
 import { afterEach, beforeEach, expect, test, vi, type Mock } from "vitest";
 
-import reze, { type Options } from "../src";
+import reze, { DEFAULT_ROUTE_EXTENSIONS, type Options } from "../src";
 
 const compile = vi.hoisted(() => vi.fn());
 vi.mock("@rezejs/compiler", () => ({ compile }));
@@ -133,6 +133,23 @@ test("the transform filter selects script modules outside node_modules", () => {
   expect(selected("/src/App.tsx?v=1")).toBe(true);
   expect(selected("/src/styles.css")).toBe(false);
   expect(selected("/node_modules/lib/index.js")).toBe(false);
+});
+
+test("extensions replace the transform filter, spreading the defaults extends it", () => {
+  const selectedWith = (extras: string[]) => {
+    const hook = reze({ extensions: extras }).transform as { filter: { id: { include: RegExp; exclude: RegExp } } };
+    const { include, exclude } = hook.filter.id;
+    return (id: string) => include.test(id) && !exclude.test(id);
+  };
+  const replaced = selectedWith(["mdx", ".md"]);
+  expect(replaced("/src/page.mdx")).toBe(true);
+  expect(replaced("/src/guide.md")).toBe(true);
+  expect(replaced("/src/App.tsx")).toBe(false);
+  const extended = selectedWith([...DEFAULT_ROUTE_EXTENSIONS, ".mdx"]);
+  expect(extended("/src/page.mdx")).toBe(true);
+  expect(extended("/src/App.tsx")).toBe(true);
+  expect(extended("/src/util.mjs")).toBe(true);
+  expect(extended("/src/styles.css")).toBe(false);
 });
 
 test("the query and hash are stripped from the filename", () => {

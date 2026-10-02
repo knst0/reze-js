@@ -168,13 +168,14 @@ function collectPaths(routes: readonly FileRoute[], paths: Set<string>): void {
 
 interface Leaf {
   fullPath: string;
+  id: string;
   file: string;
 }
 
 function collectLeaves(routes: readonly FileRoute[], leaves: Leaf[]): void {
   for (const route of routes) {
     if (route.children.length > 0) collectLeaves(route.children, leaves);
-    else leaves.push({ fullPath: route.fullPath, file: route.file });
+    else leaves.push({ fullPath: route.fullPath, id: route.id, file: route.file });
   }
 }
 
@@ -191,12 +192,15 @@ function paramsType(fullPath: string): string {
   return props.length === 0 ? "{}" : `{ ${props.join("; ")} }`;
 }
 
-/** Extensionless specifier of `file` (routes-relative) from the generated `.d.ts`. */
-function specifier(dtsFile: string, routesDir: string, file: string): string {
+const ScriptSpecifier = /\.[jt]sx?$/;
+
+/** Routes-relative specifier for the route: extensionless for script files, the file path otherwise. */
+function specifier(dtsFile: string, routesDir: string, leaf: Leaf): string {
   const from = dirname(dtsFile).replace(/\\/g, "/");
   const to = routesDir.replace(/\\/g, "/");
   const rel = relative(from, to).replace(/\\/g, "/");
-  const path = (rel === "" ? "." : rel) + "/" + file.replace(/\.[jt]sx?$/, "");
+  const name = ScriptSpecifier.test(leaf.file) ? leaf.id : leaf.file;
+  const path = (rel === "" ? "." : rel) + "/" + name;
   return path.startsWith(".") ? path : "./" + path;
 }
 
@@ -270,7 +274,7 @@ export function routesDts(routes: readonly FileRoute[], base: string, dtsFile: s
   const state: EmitState = { search: false, href: false };
   const entries = leaves.map(
     (leaf) =>
-      `        ${JSON.stringify(leaf.fullPath)}: { params: ${paramsType(leaf.fullPath)}; data: DataOf<import(${JSON.stringify(specifier(dtsFile, routesDir, leaf.file))})> };`,
+      `        ${JSON.stringify(leaf.fullPath)}: { params: ${paramsType(leaf.fullPath)}; data: DataOf<import(${JSON.stringify(specifier(dtsFile, routesDir, leaf))})> };`,
   );
   const tree =
     routes.length === 0

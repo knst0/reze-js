@@ -9,11 +9,13 @@ export interface FileRoutesOptions {
   /** Routes directory, relative to Vite `root`. Default `"src/routes"`. */
   dir?: string;
   /** Generated declaration file, relative to Vite `root`; `false` disables it. Default `"src/routes.gen.d.ts"`. */
-  dts?: string | false;
+  types?: string | false;
   /** Claim native `<a href>` elements for the router (`aria-current`, `data-active`, `data-pending`). Default `true`. */
   links?: boolean;
   /** The history the app routes with, which decides the `<a href>` shape the generated types accept: `"/about"` under Vite's `base` for `"browser"`, `"#/about"` for `"hash"`. Default `"browser"`. */
   history?: "browser" | "hash";
+  /** Route file extensions, with or without a leading dot. Default the top-level `extensions`, else script extensions. */
+  extensions?: string[];
 }
 
 export type FileRoutesApi = typeof routerFs;
@@ -28,9 +30,10 @@ function writeIfChanged(file: string, content: string): void {
 }
 
 /** File-system routes from `dir`, served as `virtual:reze-routes` with one lazy chunk per route file. */
-export function createFileRoutesPlugin(fs: FileRoutesApi, options: FileRoutesOptions): Plugin {
+export function createFileRoutesPlugin(fs: FileRoutesApi, options: FileRoutesOptions, extras?: readonly string[]): Plugin {
   let dir = "";
-  let dtsFile: string | undefined;
+  let typesFile: string | undefined;
+  let extensions: readonly string[] = [];
   let hrefBase = "";
   let code: string | undefined;
 
@@ -40,13 +43,13 @@ export function createFileRoutesPlugin(fs: FileRoutesApi, options: FileRoutesOpt
     for (const entry of readdirSync(dir, { recursive: true, encoding: "utf8" })) {
       if (statSync(join(dir, entry)).isFile()) files.push(entry.split(sep).join("/"));
     }
-    return fs.scanRoutes(files);
+    return fs.scanRoutes(files, { extensions });
   }
 
   function generate(): boolean {
     const routes = scan();
     const next = fs.routesModule(routes, dir, hrefBase);
-    if (dtsFile !== undefined) writeIfChanged(dtsFile, fs.routesDts(routes, hrefBase, dtsFile, dir));
+    if (typesFile !== undefined) writeIfChanged(typesFile, fs.routesDts(routes, hrefBase, typesFile, dir));
     const isChanged = next !== code;
     code = next;
     return isChanged;
@@ -56,8 +59,9 @@ export function createFileRoutesPlugin(fs: FileRoutesApi, options: FileRoutesOpt
     name: "reze-router",
     configResolved(config) {
       dir = resolve(config.root, options.dir ?? "src/routes");
-      const dts = options.dts ?? "src/routes.gen.d.ts";
-      dtsFile = dts === false ? undefined : resolve(config.root, dts);
+      const types = options.types ?? "src/routes.gen.d.ts";
+      typesFile = types === false ? undefined : resolve(config.root, types);
+      extensions = options.extensions ?? extras ?? [...fs.DEFAULT_ROUTE_EXTENSIONS];
       hrefBase = options.history === "hash" ? "#" : fs.routerBase(config.base);
     },
     buildStart() {

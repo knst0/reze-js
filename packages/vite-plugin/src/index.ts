@@ -13,6 +13,8 @@ export interface Options {
   };
   /** Module exporting `link`, e.g. `"@rezejs/router"`: native `<a href>` elements are claimed and passed to it. */
   links?: string;
+  /** File extensions the transform compiles, replacing `DEFAULT_ROUTE_EXTENSIONS`. Spread it to extend, e.g. `[...DEFAULT_ROUTE_EXTENSIONS, ".mdx"]` when a preprocessor runs before this plugin. File routes default to this list. */
+  extensions?: string[];
   /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. The result is awaitable in `plugins`. */
   fileRoutes?: boolean | FileRoutesOptions;
 }
@@ -45,6 +47,19 @@ interface Diagnostic {
 
 const SkillGuide = "node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md";
 const QueryOrHash = /[?#].*$/;
+
+/** File extensions the transform compiles by default; spread it to extend the list instead of replacing it. */
+export const DEFAULT_ROUTE_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
+
+function normalizeExtension(e: string): string {
+  return (e.startsWith(".") ? e : `.${e}`).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function transformFilter(extras: readonly string[] | undefined): { id: { include: RegExp; exclude: RegExp } } {
+  const list = extras === undefined || extras.length === 0 ? DEFAULT_ROUTE_EXTENSIONS : extras;
+  const include = new RegExp(`(?:${list.map(normalizeExtension).join("|")})(?:$|\\?)`);
+  return { id: { include, exclude: /\/node_modules\// } };
+}
 
 function rezePlugin(options: Options): Plugin<RezeApi> {
   const jsonl = options.diagnostics?.jsonl;
@@ -93,7 +108,7 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
       hot = isServe && config.server.hmr !== false;
     },
     transform: {
-      filter: { id: { include: /\.[cm]?[jt]sx?(?:$|\?)/, exclude: /\/node_modules\// } },
+      filter: transformFilter(options.extensions),
       handler(code, id) {
         const result = compile(code, id.replace(QueryOrHash, ""), {
           sourceMap: emitsSourceMap(this.environment.config),
@@ -139,7 +154,7 @@ export default function reze(options: Options = {}): Plugin<RezeApi> | Promise<P
   const plugin = rezePlugin(options);
   if (options.fileRoutes === undefined || options.fileRoutes === false) return plugin;
   const routesOptions = options.fileRoutes === true ? {} : options.fileRoutes;
-  return routesPlugins(plugin, routesOptions);
+  return routesPlugins(plugin, routesOptions, options.extensions);
 }
 
 // Optional peer: a static import would make every user install @rezejs/router.
@@ -151,8 +166,8 @@ async function loadRouterFs(): Promise<FileRoutesApi> {
   }
 }
 
-async function routesPlugins(plugin: Plugin<RezeApi>, options: FileRoutesOptions): Promise<Plugin[]> {
+async function routesPlugins(plugin: Plugin<RezeApi>, options: FileRoutesOptions, extras?: readonly string[]): Promise<Plugin[]> {
   const fs = await loadRouterFs();
   if (options.links !== false) plugin.api?.claimLinks("@rezejs/router");
-  return [plugin, createFileRoutesPlugin(fs, options)];
+  return [plugin, createFileRoutesPlugin(fs, options, extras)];
 }
