@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bench:codspeed": "pnpm --workspace-concurrency=1 --filter \"./packages/*\" --if-present bench:codspeed",
+    "bench:codspeed": "pnpm --workspace-concurrency=1 --no-sort --filter \"./packages/*\" --if-present bench:codspeed",
     "bench:rendering": "node benches/rendering/run.mjs",
     "bench:router": "node benches/router/run.mjs",
     "bench:scaling": "node benches/component-scaling/run.mjs",
