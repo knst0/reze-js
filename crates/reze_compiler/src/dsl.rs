@@ -18,7 +18,7 @@ use crate::analyze::{RUNTIME_MODULES, exported_symbols};
 use crate::code::Code;
 use crate::diagnostic::{self, Report};
 use crate::lower::{
-    constant::{inline_entries, static_property},
+    constant::{is_defined, static_property},
     is_component_name,
 };
 use crate::namer::Namer;
@@ -520,19 +520,17 @@ struct PropsCalls<'s> {
 /// Runtime functions `$props` calls compile to, by method index: `merge`, `splitByGroups`, `omit`.
 const PROPS_RUNTIME: [&str; 3] = ["mergeProps", "splitProps", "omitProps"];
 
-fn trim_start(source: &str, mut at: u32) -> u32 {
-    while source.as_bytes().get(at as usize).is_some_and(|b| b.is_ascii_whitespace()) {
-        at += 1;
+fn merge_property_is_static(property: &ObjectPropertyKind<'_>) -> bool {
+    let ObjectPropertyKind::ObjectProperty(property) = property else { return false };
+    if property.kind != PropertyKind::Init || property.method || !is_defined(&property.value) {
+        return false;
     }
-    at
-}
-
-fn trim_end(source: &str, mut at: u32) -> u32 {
-    while at > 0 && source.as_bytes().get(at as usize - 1).is_some_and(|b| b.is_ascii_whitespace())
-    {
-        at -= 1;
+    match &property.key {
+        PropertyKey::StaticIdentifier(key) => !property.computed && key.name != "__proto__",
+        PropertyKey::StringLiteral(key) => key.value != "__proto__",
+        PropertyKey::NumericLiteral(_) => true,
+        _ => false,
     }
-    at
 }
 
 struct PropsScanned {
@@ -602,13 +600,16 @@ impl PropsCalls<'_> {
         let mut objects = Vec::with_capacity(call.arguments.len());
         for arg in &call.arguments {
             let Some(e) = arg.as_expression() else { return false };
-            if inline_entries(e).is_none() {
-                return false;
-            }
             let Expression::ObjectExpression(object) = e.without_parentheses() else {
                 return false;
             };
-            objects.push(object.span);
+            if !object.properties.iter().all(merge_property_is_static) {
+                return false;
+            }
+            if let (Some(first), Some(last)) = (object.properties.first(), object.properties.last())
+            {
+                objects.push((first.span().start, last.span().end));
+            }
         }
         if objects.is_empty() {
             self.patches.push(Patch {
@@ -617,16 +618,7 @@ impl PropsCalls<'_> {
                 text: String::from("{}"),
             });
         } else {
-            let mut inner = Vec::with_capacity(objects.len());
-            for span in objects {
-                let (start, end) =
-                    (trim_start(self.source, span.start + 1), trim_end(self.source, span.end - 1));
-                inner.push(if start <= end {
-                    (start, end)
-                } else {
-                    (span.start + 1, span.end - 1)
-                });
-            }
+            let inner = objects;
             self.patches.push(Patch {
                 start: call.span.start,
                 end: inner[0].0,

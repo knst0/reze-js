@@ -91,7 +91,6 @@ pub fn is_defined(e: &Expression<'_>) -> bool {
         | Expression::JSXFragment(_)
         | Expression::ImportExpression(_)
         | Expression::ImportMeta(_)
-        | Expression::NewTarget(_)
         | Expression::NewExpression(_)
         | Expression::UpdateExpression(_)
         | Expression::PrivateInExpression(_) => true,
