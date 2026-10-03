@@ -271,7 +271,7 @@ test("profile facts for the current source are passed to compile", () => {
     sourceMap: false,
     debugNames: false,
     hot: false,
-    profile: { hash: "825994195cfb21c9", components: profileComponents },
+    profile: { v: 1, file: "/src/App.tsx", hash: "825994195cfb21c9", components: profileComponents },
   });
 });
 

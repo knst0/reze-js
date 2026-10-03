@@ -77,14 +77,11 @@ interface ProfileComponentFacts {
   writes: number;
 }
 
-interface ProfileFacts {
-  hash: string;
-  components: ProfileComponentFacts[];
-}
-
-interface ProfileFile extends ProfileFacts {
+interface ProfileFile {
   v: 1;
   file: string;
+  hash: string;
+  components: ProfileComponentFacts[];
 }
 
 /** FNV-1a64 of `text`, lowercase hex; the compiler checks the same hash before specializing. */
@@ -102,7 +99,7 @@ function profileKey(file: string): string {
   return `${createHash("sha256").update(file).digest("hex").slice(0, 32)}.json`;
 }
 
-function readProfileFacts(dir: string, file: string, source: string): ProfileFacts | undefined {
+function readProfileFacts(dir: string, file: string, source: string): ProfileFile | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(join(dir, profileKey(file)), "utf8"));
@@ -113,7 +110,7 @@ function readProfileFacts(dir: string, file: string, source: string): ProfileFac
   const record = parsed as Partial<ProfileFile>;
   if (record.v !== 1 || record.file !== file || record.hash !== profileHash(source)) return undefined;
   if (!Array.isArray(record.components)) return undefined;
-  return { hash: record.hash, components: record.components };
+  return { v: 1, file, hash: record.hash, components: record.components };
 }
 
 function normalizeCounts(value: unknown): ProfileComponentFacts | undefined {

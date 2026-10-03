@@ -14,6 +14,10 @@ pub struct ProfileComponentFacts {
 
 #[napi(object)]
 pub struct ProfileFacts {
+    /// Session-tree schema version; anything but the compiler's version is ignored.
+    pub v: u32,
+    /// The compiled file, as passed for `filename`.
+    pub file: String,
     /// FNV-1a64 of the compiled source, hex; a mismatch compiles as without facts.
     pub hash: String,
     pub components: Vec<ProfileComponentFacts>,
@@ -152,6 +156,8 @@ pub fn compile(
         opts.links = o.links.or(opts.links);
         opts.prerender = o.prerender.unwrap_or(opts.prerender);
         opts.profile = o.profile.map(|facts| reze_compiler::ProfileFacts {
+            v: facts.v,
+            file: facts.file,
             hash: facts.hash,
             components: facts
                 .components

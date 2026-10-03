@@ -98,6 +98,10 @@ export interface ProfileComponentFacts {
 }
 
 export interface ProfileFacts {
+  /** Session-tree schema version; anything but the compiler's version is ignored. */
+  v: number
+  /** The compiled file, as passed for `filename`. */
+  file: string
   /** FNV-1a64 of the compiled source, hex; a mismatch compiles as without facts. */
   hash: string
   components: Array<ProfileComponentFacts>

@@ -1,4 +1,6 @@
-use reze_compiler::{Options, ProfileComponent, ProfileFacts, compile, profile_hash};
+use reze_compiler::{
+    Options, PROFILE_VERSION, ProfileComponent, ProfileFacts, compile, profile_hash,
+};
 
 fn options() -> Options {
     Options { source_map: false, ..Options::default() }
@@ -21,6 +23,8 @@ const COMPONENT: &str = "export function App() { return <Card title=\"hi\" />; }
 fn facts(source: &str, reruns: u32) -> Options {
     Options {
         profile: Some(ProfileFacts {
+            v: PROFILE_VERSION,
+            file: "test.tsx".into(),
             hash: profile_hash(source),
             components: vec![ProfileComponent {
                 component: "view".into(),
@@ -56,6 +60,20 @@ fn stale_hash_compiles_as_without_facts() {
     let mut stale = facts(SOURCE, 0);
     stale.profile.as_mut().expect("facts").hash = "0000000000000000".into();
     assert_eq!(effects(&compiled(SOURCE, &stale)), 4);
+}
+
+#[test]
+fn foreign_version_compiles_as_without_facts() {
+    let mut foreign = facts(SOURCE, 0);
+    foreign.profile.as_mut().expect("facts").v = PROFILE_VERSION + 1;
+    assert_eq!(effects(&compiled(SOURCE, &foreign)), 4);
+}
+
+#[test]
+fn other_file_compiles_as_without_facts() {
+    let mut other = facts(SOURCE, 0);
+    other.profile.as_mut().expect("facts").file = "other.tsx".into();
+    assert_eq!(effects(&compiled(SOURCE, &other)), 4);
 }
 
 #[test]

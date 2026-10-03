@@ -40,10 +40,14 @@ pub struct Options {
     pub links: Option<String>,
     /// Collect static prerender trees alongside codegen.
     pub prerender: bool,
-    /// Profiling facts for this file, read from the profile store by the host. The file is
-    /// specialized only when `hash` matches `source`; a mismatch compiles as without facts.
+    /// Profiling record for this file, in the session-tree shape the host stores. The file is
+    /// specialized only when the record names this file with a matching schema and source hash;
+    /// anything else compiles as without facts.
     pub profile: Option<ProfileFacts>,
 }
+
+/// Schema version of `ProfileFacts`; records with another version are ignored.
+pub const PROFILE_VERSION: u32 = 1;
 
 /// One dev session's counters for a component, as collected by `startProfileSession`.
 #[derive(Default, serde::Deserialize)]
@@ -56,9 +60,11 @@ pub struct ProfileComponent {
     pub writes: u32,
 }
 
-/// Profiling facts for one file: `hash` is FNV-1a64 of the compiled source, hex.
+/// Profiling record for one file: `hash` is FNV-1a64 of the compiled source, hex.
 #[derive(Default, serde::Deserialize)]
 pub struct ProfileFacts {
+    pub v: u32,
+    pub file: String,
     pub hash: String,
     pub components: Vec<ProfileComponent>,
 }
@@ -73,10 +79,14 @@ pub fn profile_hash(text: &str) -> String {
     format!("{hash:016x}")
 }
 
-/// Whether `profile` describes `source` with at least one mount and zero re-runs anywhere.
-fn is_cold(source: &str, profile: Option<&ProfileFacts>) -> bool {
+/// Whether `profile` describes `filename` and `source` with at least one mount and zero re-runs.
+fn is_cold(source: &str, filename: &str, profile: Option<&ProfileFacts>) -> bool {
     let Some(facts) = profile else { return false };
-    if facts.hash != profile_hash(source) || facts.components.is_empty() {
+    if facts.v != PROFILE_VERSION
+        || facts.file != filename
+        || facts.hash != profile_hash(source)
+        || facts.components.is_empty()
+    {
         return false;
     }
     facts.components.iter().any(|c| c.mounts > 0) && facts.components.iter().all(|c| c.reruns == 0)
@@ -211,7 +221,7 @@ fn compile_module(
         options.links.as_deref(),
         emit::Options {
             debug_names: options.debug_names,
-            cold: is_cold(source, options.profile.as_ref()),
+            cold: is_cold(source, filename, options.profile.as_ref()),
         },
     )
     .module(&lowered.head, &body);
