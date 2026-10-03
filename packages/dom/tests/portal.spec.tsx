@@ -13,6 +13,7 @@ function target(): HTMLElement {
 }
 
 test("Portal keeps its children in the body by default and leaves no trace when disposed", () => {
+  const originalNodes = [...document.body.childNodes];
   const { el, dispose } = mount(() => (
     <p>
       <Portal>
@@ -25,7 +26,7 @@ test("Portal keeps its children in the body by default and leaves no trace when 
 
   dispose();
   expect(document.body.querySelector("b")).toBeNull();
-  expect(document.body.childNodes.length).toBe(1);
+  expect([...document.body.childNodes]).toEqual([...originalNodes, el]);
 });
 
 test("Portal children stay reactive and still see the context of where the Portal is written", () => {
