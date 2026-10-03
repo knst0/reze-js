@@ -64,6 +64,66 @@ pub fn mentions_syntax(source: &str) -> bool {
     Primitive::ALL.into_iter().any(|p| source.contains(p.dollar())) || source.contains("$props")
 }
 
+#[cfg(test)]
+mod t01_mentions_tests {
+    use super::mentions_syntax;
+
+    #[test]
+    fn markers_preserve_substring_and_unicode_detection() {
+        for marker in ["$signal", "$computed", "$action", "$props"] {
+            for source in [
+                marker.to_owned(),
+                format!("Привет 🌍{marker}世界"),
+                format!("// {marker}Suffix"),
+                format!("const text = '{marker}';"),
+                format!("$$invalid${marker}"),
+            ] {
+                assert!(mentions_syntax(&source), "{source:?}");
+            }
+            for end in 0..marker.len() {
+                assert!(!mentions_syntax(&marker[..end]), "{:?}", &marker[..end]);
+            }
+        }
+        for source in ["", "$", "Привет 🌍世界", "$Signal", "$prop", "$$invalid $si $act"]
+        {
+            assert!(!mentions_syntax(source), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn generated_sources_match_original_predicate() {
+        let fragments = [
+            "",
+            "Привет",
+            "🌍",
+            "$",
+            "$$",
+            "$si",
+            "$prop",
+            "$Signal",
+            "$signal",
+            "$computed",
+            "$action",
+            "$props",
+            "$propsExtra",
+            "/*",
+            "'",
+            "世界",
+        ];
+        for left in fragments {
+            for middle in fragments {
+                for right in fragments {
+                    let source = format!("{left}{middle}{right}");
+                    let expected = ["$signal", "$computed", "$action", "$props"]
+                        .into_iter()
+                        .any(|marker| source.contains(marker));
+                    assert_eq!(mentions_syntax(&source), expected, "{source:?}");
+                }
+            }
+        }
+    }
+}
+
 struct Patch {
     start: u32,
     end: u32,
