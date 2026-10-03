@@ -33,8 +33,11 @@ Every change is judged by bundle size, memory, and CPU.
 
 ## Workflow
 
-- Format, lint, and test as one chain before every commit. Never commit on red.
 - Snapshot updates are reviewed by hand, never accepted blindly.
+
+## Changesets
+
+- NEVER create, edit, or delete `.changeset/*.md`; NEVER run `pnpm changeset` (add) or `pnpm changeset version`. Read-only `pnpm changeset status` is allowed. Versioning and release notes are human-owned.
 
 ## Commits
 
