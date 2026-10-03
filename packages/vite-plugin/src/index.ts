@@ -1,5 +1,6 @@
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { createHash } from "node:crypto";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 import { compile } from "@rezejs/compiler";
 import type { Environment, Plugin } from "vite";
@@ -19,6 +20,10 @@ export interface Options {
   fileRoutes?: boolean | FileRoutesOptions;
   /** Inline static shells into built HTML. Build-only; the client renders as usual on boot. `true` prerenders `#app`. */
   prerender?: boolean | PrerenderOptions;
+  profile?: {
+    /** Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. */
+    dir: string;
+  };
 }
 
 export interface RezeApi {
@@ -63,6 +68,123 @@ function transformFilter(extras: readonly string[] | undefined): { id: { include
   return { id: { include, exclude: /\/node_modules\// } };
 }
 
+interface ProfileComponentFacts {
+  component: string;
+  file: string;
+  mounts: number;
+  props: number;
+  reruns: number;
+  writes: number;
+}
+
+interface ProfileFacts {
+  hash: string;
+  components: ProfileComponentFacts[];
+}
+
+interface ProfileFile extends ProfileFacts {
+  v: 1;
+  file: string;
+}
+
+/** FNV-1a64 of `text`, lowercase hex; the compiler checks the same hash before specializing. */
+function profileHash(text: string): string {
+  let hash = 0xcbf29ce484222325n;
+  const bytes = Buffer.from(text, "utf8");
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
+function profileKey(file: string): string {
+  return `${createHash("sha256").update(file).digest("hex").slice(0, 32)}.json`;
+}
+
+function readProfileFacts(dir: string, file: string, source: string): ProfileFacts | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(join(dir, profileKey(file)), "utf8"));
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const record = parsed as Partial<ProfileFile>;
+  if (record.v !== 1 || record.file !== file || record.hash !== profileHash(source)) return undefined;
+  if (!Array.isArray(record.components)) return undefined;
+  return { hash: record.hash, components: record.components };
+}
+
+function normalizeCounts(value: unknown): ProfileComponentFacts | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const row = value as Record<string, unknown>;
+  if (typeof row.component !== "string" || typeof row.file !== "string") return undefined;
+  const counts = [row.mounts, row.props, row.reruns, row.writes];
+  if (!counts.every((count) => typeof count === "number" && Number.isFinite(count))) return undefined;
+  const [mounts, props, reruns, writes] = counts as number[];
+  return {
+    component: row.component,
+    file: row.file,
+    mounts: Math.max(0, Math.floor(mounts!)),
+    props: Math.max(0, Math.floor(props!)),
+    reruns: Math.max(0, Math.floor(reruns!)),
+    writes: Math.max(0, Math.floor(writes!)),
+  };
+}
+
+function mergeProfileComponents(current: ProfileComponentFacts[], incoming: ProfileComponentFacts[]): ProfileComponentFacts[] {
+  const rows = new Map<string, ProfileComponentFacts>();
+  for (const row of current) rows.set(`${row.file}#${row.component}`, { ...row });
+  for (const row of incoming) {
+    const key = `${row.file}#${row.component}`;
+    const kept = rows.get(key);
+    if (kept === undefined) {
+      rows.set(key, { ...row });
+    } else {
+      kept.mounts += row.mounts;
+      kept.props = Math.max(kept.props, row.props);
+      kept.reruns += row.reruns;
+      kept.writes += row.writes;
+    }
+  }
+  return [...rows.values()].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.component < b.component ? -1 : 1));
+}
+
+function fileProfileTree(dir: string, hashes: Map<string, string>, tree: unknown): void {
+  if (typeof tree !== "object" || tree === null) throw new Error("a profile tree is an object");
+  const { components } = tree as { components: unknown };
+  if (!Array.isArray(components)) throw new Error("a profile tree needs components");
+  const byFile = new Map<string, ProfileComponentFacts[]>();
+  for (const value of components) {
+    const row = normalizeCounts(value);
+    if (row === undefined) throw new Error("a profile row needs component, file and counters");
+    const rows = byFile.get(row.file);
+    if (rows === undefined) byFile.set(row.file, [row]);
+    else rows.push(row);
+  }
+  if (byFile.size === 0) return;
+  let madeDir = false;
+  for (const [file, incoming] of byFile) {
+    const hash = hashes.get(file);
+    if (hash === undefined) continue;
+    if (!madeDir) {
+      mkdirSync(dir, { recursive: true });
+      madeDir = true;
+    }
+    const path = join(dir, profileKey(file));
+    let current: ProfileComponentFacts[] = [];
+    try {
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ProfileFile>;
+      if (parsed.v === 1 && parsed.hash === hash && Array.isArray(parsed.components)) current = parsed.components;
+    } catch {
+      current = [];
+    }
+    const record: ProfileFile = { v: 1, file, hash, components: mergeProfileComponents(current, incoming) };
+    writeFileSync(path, `${JSON.stringify(record)}\n`);
+  }
+}
+
 function rezePlugin(options: Options): Plugin<RezeApi> {
   const jsonl = options.diagnostics?.jsonl;
   const seenCodes = new Set<string>();
@@ -72,6 +194,8 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
   let hot = false;
   let links = options.links;
   let root = "";
+  const profileDir = options.profile?.dir;
+  const profileHashes = new Map<string, string>();
   const prerender: PrerenderOptions | undefined = options.prerender === true ? {} : options.prerender || undefined;
   const sidecars = new Map<string, PrerenderModule>();
 
@@ -124,12 +248,16 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
     transform: {
       filter: transformFilter(options.extensions),
       handler(code, id) {
-        const result = compile(code, id.replace(QueryOrHash, ""), {
+        const file = id.replace(QueryOrHash, "");
+        const profile = profileDir === undefined ? undefined : readProfileFacts(resolve(root, profileDir), file, code);
+        if (profileDir !== undefined) profileHashes.set(file, profileHash(code));
+        const result = compile(code, file, {
           sourceMap: emitsSourceMap(this.environment.config),
           debugNames,
           hot,
           links,
           ...(prerender === undefined ? {} : { prerender: true }),
+          ...(profile === undefined ? {} : { profile }),
         });
         if (result === null) return null;
         if (prerender !== undefined && typeof result.prerender === "string" && result.prerender !== "") {
@@ -160,6 +288,29 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
         }
         return { code: result.code!, map: result.map ?? null };
       },
+    },
+    configureServer(server) {
+      if (profileDir === undefined) return;
+      const dir = resolve(root, profileDir);
+      server.middlewares.use("/__reze/profile", (req, res, next) => {
+        if (req.method !== "POST") {
+          next();
+          return;
+        }
+        let body = "";
+        req.on("data", (chunk: unknown) => {
+          body += String(chunk);
+        });
+        req.on("end", () => {
+          try {
+            fileProfileTree(dir, profileHashes, JSON.parse(body));
+            res.statusCode = 200;
+          } catch {
+            res.statusCode = 400;
+          }
+          res.end();
+        });
+      });
     },
   };
 }

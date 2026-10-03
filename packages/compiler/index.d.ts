@@ -18,7 +18,7 @@ export declare function compile(source: string, filename: string, options?: Comp
 export interface CompileOptions {
   /** Default: `true`. */
   sourceMap?: boolean
-  /** Pass `{ name }` to `signal`/`computed`/`action` for devtools. Default: `false`. */
+  /** Pass `{ name }` to `signal`/`computed`/`action` for profiling. Default: `false`. */
   debugNames?: boolean
   /** Register components for hot-swap through `import.meta.hot`. Default: `false`. */
   hot?: boolean
@@ -26,6 +26,8 @@ export interface CompileOptions {
   links?: string
   /** Collect static prerender trees as JSON. Default: `false`. */
   prerender?: boolean
+  /** Profiling facts for this file, from the profile store. Default: none. */
+  profile?: ProfileFacts
 }
 
 export interface CompileResult {
@@ -84,4 +86,19 @@ export interface Position {
   line: number
   /** 0-based, in UTF-16 code units. */
   column: number
+}
+
+export interface ProfileComponentFacts {
+  component: string
+  file: string
+  mounts: number
+  props: number
+  reruns: number
+  writes: number
+}
+
+export interface ProfileFacts {
+  /** FNV-1a64 of the compiled source, hex; a mismatch compiles as without facts. */
+  hash: string
+  components: Array<ProfileComponentFacts>
 }

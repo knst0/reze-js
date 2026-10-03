@@ -31,7 +31,7 @@ pub const RUNTIME_MODULE: &str = "reze-js";
 pub struct Options {
     /// Emit a v3 source map.
     pub source_map: bool,
-    /// Pass `{ name }` to `signal`/`computed`/`action` after the declared variable, for devtools.
+    /// Pass `{ name }` to `signal`/`computed`/`action` after the declared variable, for profiling.
     pub debug_names: bool,
     /// Register components for hot-swap through `import.meta.hot`.
     pub hot: bool,
@@ -40,11 +40,58 @@ pub struct Options {
     pub links: Option<String>,
     /// Collect static prerender trees alongside codegen.
     pub prerender: bool,
+    /// Profiling facts for this file, read from the profile store by the host. The file is
+    /// specialized only when `hash` matches `source`; a mismatch compiles as without facts.
+    pub profile: Option<ProfileFacts>,
+}
+
+/// One dev session's counters for a component, as collected by `startProfileSession`.
+#[derive(Default, serde::Deserialize)]
+pub struct ProfileComponent {
+    pub component: String,
+    pub file: String,
+    pub mounts: u32,
+    pub props: u32,
+    pub reruns: u32,
+    pub writes: u32,
+}
+
+/// Profiling facts for one file: `hash` is FNV-1a64 of the compiled source, hex.
+#[derive(Default, serde::Deserialize)]
+pub struct ProfileFacts {
+    pub hash: String,
+    pub components: Vec<ProfileComponent>,
+}
+
+/// FNV-1a64 of `text`, lowercase hex. The dev server computes the same hash to key the store.
+pub fn profile_hash(text: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in text.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// Whether `profile` describes `source` with at least one mount and zero re-runs anywhere.
+fn is_cold(source: &str, profile: Option<&ProfileFacts>) -> bool {
+    let Some(facts) = profile else { return false };
+    if facts.hash != profile_hash(source) || facts.components.is_empty() {
+        return false;
+    }
+    facts.components.iter().any(|c| c.mounts > 0) && facts.components.iter().all(|c| c.reruns == 0)
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { source_map: true, debug_names: false, hot: false, links: None, prerender: false }
+        Self {
+            source_map: true,
+            debug_names: false,
+            hot: false,
+            links: None,
+            prerender: false,
+            profile: None,
+        }
     }
 }
 
@@ -156,9 +203,18 @@ fn compile_module(
             prerender,
         }));
     };
-    let mut code =
-        emit::Emitter::new(&allocator, text, filename, lowered.namer, options.links.as_deref())
-            .module(&lowered.head, &body);
+    let mut code = emit::Emitter::new(
+        &allocator,
+        text,
+        filename,
+        lowered.namer,
+        options.links.as_deref(),
+        emit::Options {
+            debug_names: options.debug_names,
+            cold: is_cold(source, options.profile.as_ref()),
+        },
+    )
+    .module(&lowered.head, &body);
     if let Some(rewritten) = &rewritten {
         code.remap_marks(|offset| rewritten.start(offset));
     }

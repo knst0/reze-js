@@ -3,10 +3,27 @@ use std::collections::HashMap;
 use napi_derive::napi;
 
 #[napi(object)]
+pub struct ProfileComponentFacts {
+    pub component: String,
+    pub file: String,
+    pub mounts: u32,
+    pub props: u32,
+    pub reruns: u32,
+    pub writes: u32,
+}
+
+#[napi(object)]
+pub struct ProfileFacts {
+    /// FNV-1a64 of the compiled source, hex; a mismatch compiles as without facts.
+    pub hash: String,
+    pub components: Vec<ProfileComponentFacts>,
+}
+
+#[napi(object)]
 pub struct CompileOptions {
     /// Default: `true`.
     pub source_map: Option<bool>,
-    /// Pass `{ name }` to `signal`/`computed`/`action` for devtools. Default: `false`.
+    /// Pass `{ name }` to `signal`/`computed`/`action` for profiling. Default: `false`.
     pub debug_names: Option<bool>,
     /// Register components for hot-swap through `import.meta.hot`. Default: `false`.
     pub hot: Option<bool>,
@@ -14,6 +31,8 @@ pub struct CompileOptions {
     pub links: Option<String>,
     /// Collect static prerender trees as JSON. Default: `false`.
     pub prerender: Option<bool>,
+    /// Profiling facts for this file, from the profile store. Default: none.
+    pub profile: Option<ProfileFacts>,
 }
 
 #[napi(object)]
@@ -132,6 +151,21 @@ pub fn compile(
         opts.hot = o.hot.unwrap_or(opts.hot);
         opts.links = o.links.or(opts.links);
         opts.prerender = o.prerender.unwrap_or(opts.prerender);
+        opts.profile = o.profile.map(|facts| reze_compiler::ProfileFacts {
+            hash: facts.hash,
+            components: facts
+                .components
+                .into_iter()
+                .map(|c| reze_compiler::ProfileComponent {
+                    component: c.component,
+                    file: c.file,
+                    mounts: c.mounts,
+                    props: c.props,
+                    reruns: c.reruns,
+                    writes: c.writes,
+                })
+                .collect(),
+        });
     }
     match reze_compiler::compile(&source, &filename, &opts) {
         Ok(None) => None,

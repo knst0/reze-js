@@ -1,8 +1,8 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
 import { endTracking, enterEffect, enterOwner, exitEffect, reportError, setActiveSub, startTracking } from "./context";
-import { debugHook } from "./devtools";
 import { FlagDirty, FlagOwnsChildren, FlagPending, FlagRecursedCheck, FlagWatching } from "./flags";
 import { checkDirty, disposeChildren, disposeNode, type Link, type ReactiveNode } from "./graph";
+import { profileCreated, profileReran } from "./profile";
 
 type EffectCleanup = (() => void) | void;
 
@@ -45,6 +45,9 @@ class EffectNode implements ReactiveNode {
           return;
         }
       }
+      if (process.env.NODE_ENV !== "production") {
+        profileReran(this);
+      }
       const prevSub = startTracking(this, FlagWatching);
       try {
         enterEffect();
@@ -77,8 +80,8 @@ class EffectNode implements ReactiveNode {
  */
 export function effect(fn: () => EffectCleanup): () => void {
   const node = new EffectNode(fn);
-  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
-    debugHook.created(node, "effect", undefined, () => undefined);
+  if (process.env.NODE_ENV !== "production") {
+    profileCreated(node, "effect", undefined);
   }
   const prevSub = enterOwner(node);
   try {

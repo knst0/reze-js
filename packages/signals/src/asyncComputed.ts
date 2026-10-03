@@ -1,7 +1,7 @@
 import { adopt, enterEffect, exitEffect, getOwner, reportError, setActiveSub, startTracking, trackPendingRead } from "./context";
-import { debugHook } from "./devtools";
 import { FlagDirty, FlagNone, FlagOwnsChildren, FlagPending, FlagRecursedCheck, FlagWatching } from "./flags";
 import { checkDirty, disposeChildren, disposeNode, type Link, purgeDeps, type ReactiveNode } from "./graph";
+import { profileCreated, profileReran } from "./profile";
 import { SignalNode } from "./signal";
 
 /** The tracking context the compiler threads through an async computation. */
@@ -108,6 +108,9 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
       disposeChildren(this);
     }
     const generation = ++this.generation;
+    if (generation > 1 && process.env.NODE_ENV !== "production") {
+      profileReran(this);
+    }
     this.pending.write(true);
     const prevSub = startTracking(this, FlagWatching);
     let result: PromiseLike<T> | T;
@@ -159,8 +162,8 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
  */
 export function asyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> | T): AsyncComputed<T> {
   const node = new AsyncComputedNode(fn);
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
-    debugHook.created(node, "async", undefined, () => node.resolved.pendingValue);
+  if (process.env.NODE_ENV !== "production") {
+    profileCreated(node, "async", undefined);
   }
   const owner = getOwner();
   if (owner !== undefined) {

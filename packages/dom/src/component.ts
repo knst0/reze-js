@@ -1,13 +1,14 @@
 import { root, untrack } from "@rezejs/signals";
-import { debugHook } from "@rezejs/signals/devtools";
+import { profileComponent } from "@rezejs/signals/profile";
 
 import { insert } from "./insert";
 import type { JSX } from "./jsx";
 
 /** Calls `Comp` once, untracked, so its reads never re-run the caller. */
-export function createComponent<P>(Comp: (props: P) => JSX.Element, props: P): JSX.Element {
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
-    return debugHook.component(Comp.name, () => untrack(() => Comp(props)));
+export function createComponent<P>(Comp: (props: P) => JSX.Element, props: P, profile?: string): JSX.Element {
+  if (process.env.NODE_ENV !== "production") {
+    const count = typeof props === "object" && props !== null ? Object.keys(props).length : 0;
+    return profileComponent(Comp.name, profile, count, () => untrack(() => Comp(props)));
   }
   return untrack(Comp, props);
 }

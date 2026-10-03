@@ -1,4 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -242,4 +244,102 @@ test("every diagnostic, info included, is appended to the JSONL sink", () => {
   const lines = readFileSync(jsonl, "utf8").split("\n");
   expect(lines.pop()).toBe("");
   expect(lines.map((line) => JSON.parse(line))).toEqual([warning, info, error]);
+});
+
+const profileComponents = [{ component: "App", file: "/src/App.tsx", mounts: 2, props: 1, reruns: 0, writes: 5 }];
+
+function writeProfileRecord(profileDir: string, file: string, hash: string): void {
+  mkdirSync(profileDir, { recursive: true });
+  const key = createHash("sha256").update(file).digest("hex").slice(0, 32);
+  writeFileSync(join(profileDir, `${key}.json`), JSON.stringify({ v: 1, file, hash, components: profileComponents }));
+}
+
+function profileTransform(config: ResolvedConfig, profileDir: string) {
+  const plugin = reze({ profile: { dir: profileDir } });
+  (plugin.configResolved as (config: ResolvedConfig) => void)(config);
+  const hook = plugin.transform as { handler: (code: string, id: string) => unknown };
+  const context = { environment: { config: clientEnvironment }, warn: vi.fn() };
+  return (code: string, id: string) => hook.handler.call(context, code, id);
+}
+
+test("profile facts for the current source are passed to compile", () => {
+  const profileDir = join(dir, "profiles");
+  writeProfileRecord(profileDir, "/src/App.tsx", "825994195cfb21c9");
+  const transform = profileTransform({ ...buildConfig, root: dir } as ResolvedConfig, profileDir);
+  transform("src", "/src/App.tsx");
+  expect(compile).toHaveBeenCalledWith("src", "/src/App.tsx", {
+    sourceMap: false,
+    debugNames: false,
+    hot: false,
+    profile: { hash: "825994195cfb21c9", components: profileComponents },
+  });
+});
+
+test("stale profile facts are not passed to compile", () => {
+  const profileDir = join(dir, "profiles");
+  writeProfileRecord(profileDir, "/src/App.tsx", "0000000000000000");
+  const transform = profileTransform({ ...buildConfig, root: dir } as ResolvedConfig, profileDir);
+  transform("src", "/src/App.tsx");
+  expect(compile).toHaveBeenCalledWith("src", "/src/App.tsx", {
+    sourceMap: false,
+    debugNames: false,
+    hot: false,
+  });
+});
+
+function profileEndpoint(profileDir: string) {
+  const plugin = reze({ profile: { dir: profileDir } });
+  (plugin.configResolved as (config: ResolvedConfig) => void)({ ...serveConfig, root: dir } as ResolvedConfig);
+  const use = vi.fn();
+  (plugin.configureServer as unknown as (server: { middlewares: { use: Mock } }) => void)({
+    middlewares: { use },
+  });
+  expect(use).toHaveBeenCalledTimes(1);
+  expect(use.mock.calls[0]![0]).toBe("/__reze/profile");
+  const hook = plugin.transform as { handler: (code: string, id: string) => unknown };
+  const context = { environment: { config: clientEnvironment }, warn: vi.fn() };
+  return {
+    transform: (code: string, id: string) => hook.handler.call(context, code, id),
+    post: (body: unknown) => {
+      const handler = use.mock.calls[0]![1] as (req: unknown, res: unknown, next: () => void) => void;
+      const req = Object.assign(new EventEmitter(), { method: "POST" });
+      const res = { statusCode: 0, end: vi.fn() };
+      handler(req, res, vi.fn());
+      req.emit("data", typeof body === "string" ? body : JSON.stringify(body));
+      req.emit("end");
+      return res;
+    },
+  };
+}
+
+test("posted session trees accumulate per-file facts", () => {
+  const profileDir = join(dir, "profiles");
+  const { transform, post } = profileEndpoint(profileDir);
+  transform("src", "/src/App.tsx");
+  const tree = {
+    v: 1,
+    components: [{ component: "App", file: "/src/App.tsx", mounts: 1, props: 2, reruns: 0, writes: 3 }],
+  };
+  expect(post(tree).statusCode).toBe(200);
+  expect(post(tree).statusCode).toBe(200);
+  const names = readdirSync(profileDir);
+  expect(names).toHaveLength(1);
+  expect(JSON.parse(readFileSync(join(profileDir, names[0]!), "utf8"))).toEqual({
+    v: 1,
+    file: "/src/App.tsx",
+    hash: "825994195cfb21c9",
+    components: [{ component: "App", file: "/src/App.tsx", mounts: 2, props: 2, reruns: 0, writes: 6 }],
+  });
+});
+
+test("the profile endpoint ignores unknown files and invalid trees", () => {
+  const profileDir = join(dir, "profiles");
+  const { post } = profileEndpoint(profileDir);
+  const unknown = {
+    v: 1,
+    components: [{ component: "Never", file: "/src/Never.tsx", mounts: 1, props: 0, reruns: 0, writes: 0 }],
+  };
+  expect(post(unknown).statusCode).toBe(200);
+  expect(post("{oops").statusCode).toBe(400);
+  expect(existsSync(profileDir)).toBe(false);
 });

@@ -19,7 +19,7 @@ export const sourceAliases = [
   { find: "@rezejs/dom/jsx-runtime", replacement: join(packages, "dom", "src", "jsx-runtime.ts") },
   { find: "@rezejs/dom", replacement: join(packages, "dom", "src", "index.ts") },
   { find: "@rezejs/signals/render", replacement: join(packages, "signals", "src", "render.ts") },
-  { find: "@rezejs/signals/devtools", replacement: join(packages, "signals", "src", "devtools.ts") },
+  { find: "@rezejs/signals/profile", replacement: join(packages, "signals", "src", "profile.ts") },
   { find: "@rezejs/signals", replacement: join(packages, "signals", "src", "index.ts") },
   { find: "@rezejs/testing-library", replacement: join(packages, "testing-library", "src", "index.ts") },
 ];

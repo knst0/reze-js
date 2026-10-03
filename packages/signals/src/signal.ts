@@ -1,8 +1,8 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
 import { effectDepth, track } from "./context";
-import { debugHook } from "./devtools";
 import { FlagDirty, FlagMutable } from "./flags";
 import { propagate, type Link, type ReactiveNode, shallowPropagate } from "./graph";
+import { profileCreated, profileWrote } from "./profile";
 import { scheduleFlush } from "./scheduler";
 
 export type Getter<T> = () => T;
@@ -13,7 +13,7 @@ export type Equals<T> = false | ((prev: T, next: T) => boolean);
 export interface SignalOptions<T> {
   /** Default `Object.is`. */
   equals?: Equals<T>;
-  /** The name devtools show; ignored in production builds. */
+  /** The name profiling attribution shows; ignored in production builds. */
   name?: string;
 }
 
@@ -56,8 +56,8 @@ export class SignalNode<T = unknown> implements ReactiveNode {
     if (differs(this.equals, this.pendingValue, next)) {
       const subs = this.subs;
       this.pendingValue = next;
-      if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
-        debugHook.written(this);
+      if (process.env.NODE_ENV !== "production") {
+        profileWrote(this);
       }
       if (subs === undefined) {
         this.currentValue = next;
@@ -79,8 +79,8 @@ export function signal<T>(): [Getter<T | undefined>, Setter<T | undefined>];
 export function signal<T>(initialValue: T, options?: SignalOptions<T>): [Getter<T>, Setter<T>];
 export function signal<T>(initialValue?: T, options?: SignalOptions<T | undefined>): [Getter<T | undefined>, Setter<T | undefined>] {
   const node = new SignalNode(initialValue, options?.equals ?? Object.is);
-  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
-    debugHook.created(node, "signal", options?.name, () => node.pendingValue);
+  if (process.env.NODE_ENV !== "production") {
+    profileCreated(node, "signal", options?.name);
   }
   return [
     (): T | undefined => node.read(),

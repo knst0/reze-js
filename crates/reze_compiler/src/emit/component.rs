@@ -17,6 +17,12 @@ impl<'a> Emitter<'a, '_> {
         self.embed(out, &component.callee);
         out.push(", ");
         self.props(out, &component.props);
+        if self.options.debug_names {
+            let tag = &self.source
+                [component.callee.span.start as usize..component.callee.span.end as usize];
+            out.push(", ");
+            push_js_string(&mut out.text, &format!("{}#{tag}", self.filename));
+        }
         out.push(")");
     }
 

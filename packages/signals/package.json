@@ -18,9 +18,9 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./devtools": {
-      "types": "./dist/devtools.d.ts",
-      "import": "./dist/devtools.js"
+    "./profile": {
+      "types": "./dist/profile.d.ts",
+      "import": "./dist/profile.js"
     },
     "./render": {
       "types": "./dist/render.d.ts",

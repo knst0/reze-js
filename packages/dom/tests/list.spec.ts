@@ -1,5 +1,5 @@
 import { signal } from "@rezejs/signals";
-import { setDebugHook, type DebugNodeKind } from "@rezejs/signals/devtools";
+import { setProfileHook, type ProfileNodeKind } from "@rezejs/signals/profile";
 import { afterEach, expect, test } from "vitest";
 
 import { render } from "../src/component";
@@ -10,7 +10,7 @@ let unmount: (() => void) | undefined;
 afterEach(() => {
   unmount?.();
   unmount = undefined;
-  setDebugHook(undefined);
+  setProfileHook(undefined);
 });
 
 function mount(code: () => unknown): HTMLElement {
@@ -21,13 +21,11 @@ function mount(code: () => unknown): HTMLElement {
 
 test("rows create a signal for index() only when map declares it", () => {
   const [items] = signal(["a", "b", "c"]);
-  const created: DebugNodeKind[] = [];
-  setDebugHook({
-    created: (_, kind) => void created.push(kind),
-    rerunning: () => {},
-    disposed: () => {},
-    written: () => {},
-    component: (_, run) => run(),
+  const created: ProfileNodeKind[] = [];
+  setProfileHook({
+    event: ({ type, kind }) => {
+      if (type === "created") created.push(kind);
+    },
   });
 
   mount(() => list(items, (item) => document.createTextNode(item)));

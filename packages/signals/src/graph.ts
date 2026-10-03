@@ -33,8 +33,8 @@
  * function-local arrays allocated on the first fork only.
  */
 
-import { debugHook } from "./devtools";
 import { FlagDirty, FlagMutable, FlagNone, FlagPending, FlagRecursed, FlagRecursedCheck, FlagWatching } from "./flags";
+import { profileDisposed } from "./profile";
 import { scheduleNode } from "./scheduler";
 
 export interface ReactiveNode {
@@ -79,8 +79,8 @@ export function disposeChildren(sub: ReactiveNode): void {
 
 /** Detaches `node` from its deps, newest first, and from its owner. */
 export function disposeNode(node: ReactiveNode): void {
-  if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
-    debugHook.disposed(node);
+  if (process.env.NODE_ENV !== "production") {
+    profileDisposed(node);
   }
   node.flags = FlagNone;
   disposeAllDepsInReverse(node);

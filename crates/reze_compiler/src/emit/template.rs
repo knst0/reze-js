@@ -53,6 +53,11 @@ impl<'a> Emitter<'a, '_> {
             }
         }
         let groups = bind_groups(&template.binds);
+        let groups = if self.options.cold && groups.len() > 1 {
+            vec![groups.into_iter().flatten().collect::<Vec<_>>()]
+        } else {
+            groups
+        };
         if groups.len() <= 1 {
             let previous: std::vec::Vec<&'a str> = if template.binds.len() > 1 {
                 template.binds.iter().map(|_| self.fresh("_p$")).collect()

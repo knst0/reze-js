@@ -1,5 +1,4 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
-import { debugHook } from "./devtools";
 import { FlagOwnsChildren, FlagRecursedCheck } from "./flags";
 import { link, purgeDeps, type ReactiveNode } from "./graph";
 
@@ -129,9 +128,6 @@ export function trackPendingRead(): void {
 
 /** Starts a tracked re-run of `sub`; pair with `endTracking` in a `finally`. */
 export function startTracking(sub: ReactiveNode, flags: number): ReactiveNode | undefined {
-  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
-    debugHook.rerunning(sub);
-  }
   ++version;
   sub.depsTail = undefined;
   sub.flags = flags | FlagRecursedCheck;

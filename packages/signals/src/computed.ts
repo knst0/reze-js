@@ -1,8 +1,8 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
 import { endTracking, getOwner, isErrorHandled, markPure, setActiveSub, startTracking, track } from "./context";
-import { debugHook } from "./devtools";
 import { FlagDirty, FlagMutable, FlagNone, FlagOwnsChildren, FlagPending, FlagRecursedCheck } from "./flags";
 import { checkDirty, disposeAllDepsInReverse, disposeChildren, type Link, type ReactiveNode, shallowPropagate } from "./graph";
+import { profileCreated, profileReran } from "./profile";
 import { differs } from "./signal";
 
 class ComputedNode<T = unknown> implements ReactiveNode {
@@ -27,6 +27,9 @@ class ComputedNode<T = unknown> implements ReactiveNode {
   }
 
   update(): boolean {
+    if (process.env.NODE_ENV !== "production") {
+      profileReran(this);
+    }
     if (this.flags & FlagOwnsChildren) {
       disposeChildren(this);
     }
@@ -82,7 +85,7 @@ class ComputedNode<T = unknown> implements ReactiveNode {
 }
 
 export interface ComputedOptions {
-  /** The name devtools show; ignored in production builds. */
+  /** The name profiling attribution shows; ignored in production builds. */
   name?: string;
 }
 
@@ -95,9 +98,7 @@ export function computed<T>(getter: (previousValue?: T) => T, options?: Computed
   const node = new ComputedNode(getter, getOwner());
   if (process.env.NODE_ENV !== "production") {
     markPure(node);
-    if (debugHook !== undefined) {
-      debugHook.created(node, "computed", options?.name, () => node.value);
-    }
+    profileCreated(node, "computed", options?.name);
   }
   return (): T => node.read();
 }

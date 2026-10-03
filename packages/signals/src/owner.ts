@@ -1,7 +1,7 @@
 import { adopt, getOwner, setActiveOwner, setActiveSub } from "./context";
-import { debugHook } from "./devtools";
 import { FlagNone } from "./flags";
 import { disposeNode, type Link, type ReactiveNode } from "./graph";
+import { profileCreated } from "./profile";
 
 /** Opaque handle to a node that owns computations (`root`, `effect`, `computed`, render bindings). */
 export type Owner = ReactiveNode;
@@ -51,8 +51,8 @@ class CleanupNode implements ReactiveNode {
  */
 export function root<T>(fn: (dispose: () => void) => T): T {
   const node = new RootNode(getOwner());
-  if (debugHook !== undefined && process.env.NODE_ENV !== "production") {
-    debugHook.created(node, "root", undefined, () => undefined);
+  if (process.env.NODE_ENV !== "production") {
+    profileCreated(node, "root", undefined);
   }
   const prevSub = setActiveSub(undefined);
   const prevOwner = setActiveOwner(node);

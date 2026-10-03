@@ -78,11 +78,19 @@ helpers! {
     ElementMathMl => "elementMathML",
 }
 
+pub struct Options {
+    /// Pass `"file#Tag"` to `createComponent` for profiling attribution.
+    pub debug_names: bool,
+    /// Merge every template's binds into one render effect: profiled runs never re-ran.
+    pub cold: bool,
+}
+
 pub struct Emitter<'a, 's> {
     alloc: &'a Allocator,
     source: &'a str,
     filename: &'a str,
     namer: Namer<'s>,
+    options: Options,
     /// Where `Helper::Link` is imported from.
     links_module: Option<&'a str>,
     aliases: [Option<&'a str>; HELPER_COUNT],
@@ -97,12 +105,14 @@ impl<'a, 's> Emitter<'a, 's> {
         filename: &'a str,
         namer: Namer<'s>,
         links_module: Option<&str>,
+        options: Options,
     ) -> Self {
         Self {
             alloc,
             source,
             filename,
             namer,
+            options,
             links_module: links_module.map(|module| alloc.alloc_str(module) as &str),
             aliases: [None; HELPER_COUNT],
             helper_order: std::vec::Vec::new(),

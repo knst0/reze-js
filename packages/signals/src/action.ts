@@ -1,5 +1,5 @@
 import { isPureRun } from "./context";
-import { debugHook } from "./devtools";
+import { profileCreated } from "./profile";
 import { SignalNode } from "./signal";
 import { type Key, setWriteHook, writeKey } from "./store";
 
@@ -27,7 +27,7 @@ export interface Action<Args extends unknown[], R> {
 }
 
 export interface ActionOptions {
-  /** The name devtools show for `pending` and `error`; ignored in production builds. */
+  /** The name profiling attribution shows for `pending` and `error`; ignored in production builds. */
   name?: string;
 }
 
@@ -191,8 +191,8 @@ class ActionState<Args extends unknown[], R> {
 
   node<T>(value: T, field: string): SignalNode<T> {
     const node = new SignalNode(value, Object.is);
-    if (process.env.NODE_ENV !== "production" && debugHook !== undefined) {
-      debugHook.created(node, "signal", this.name === undefined ? undefined : `${this.name}.${field}`, () => node.pendingValue);
+    if (process.env.NODE_ENV !== "production") {
+      profileCreated(node, "signal", this.name === undefined ? undefined : `${this.name}.${field}`);
     }
     return node;
   }

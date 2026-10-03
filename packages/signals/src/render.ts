@@ -1,7 +1,7 @@
 import { endTracking, enterEffect, enterOwner, exitEffect, markPure, reportError, setActiveSub, startTracking } from "./context";
-import { debugHook } from "./devtools";
 import { FlagDirty, FlagOwnsChildren, FlagPending, FlagRecursedCheck, FlagWatching } from "./flags";
 import { checkDirty, disposeChildren, disposeNode, type Link, type ReactiveNode } from "./graph";
+import { profileCreated, profileReran } from "./profile";
 
 /**
  * DOM binding: a single-phase effect that threads its previous return value into the next run.
@@ -40,6 +40,9 @@ class RenderNode<T> implements ReactiveNode {
       if (flags & FlagOwnsChildren) {
         disposeChildren(this);
       }
+      if (process.env.NODE_ENV !== "production") {
+        profileReran(this);
+      }
       const prevSub = startTracking(this, FlagWatching);
       try {
         enterEffect();
@@ -71,9 +74,7 @@ export function renderEffect<T>(fn: (prev: T) => T, init?: T): void {
   const node = new RenderNode(fn, init as T);
   if (process.env.NODE_ENV !== "production") {
     markPure(node);
-    if (debugHook !== undefined) {
-      debugHook.created(node, "render", undefined, () => node.value);
-    }
+    profileCreated(node, "render", undefined);
   }
   const prevSub = enterOwner(node);
   try {

@@ -4,7 +4,7 @@ import { rolldown } from "rolldown";
 import { expect, test } from "vitest";
 
 const entry = fileURLToPath(new URL("../src/index.ts", import.meta.url));
-const devtools = fileURLToPath(new URL("../src/devtools.ts", import.meta.url));
+const profile = fileURLToPath(new URL("../src/profile.ts", import.meta.url));
 const nodeKinds = [
   "SignalNode",
   "ComputedNode",
@@ -72,9 +72,11 @@ test("production bundles drop the dev-only write and call checks", async () => {
   expect(await bundle(imports, "production")).not.toMatch(/pureNodes|isPureRun|markPure|render binding/);
 });
 
-test("production bundles drop the devtools hook even when devtools can install it", async () => {
+test("production bundles drop the profile channel even when a session can install it", async () => {
   const imports = "signal, computed, effect, root, asyncComputed";
-  const installable = `export { setDebugHook } from ${JSON.stringify(devtools)};`;
-  expect(await bundle(imports, "development", installable)).toMatch(/debugHook/);
-  expect(await bundle(imports, "production", installable)).not.toMatch(/debugHook\.|rerunning|written/);
+  const installable = `export { setProfileHook } from ${JSON.stringify(profile)};`;
+  expect(await bundle(imports, "development", installable)).toMatch(/profileHook/);
+  expect(await bundle(imports, "production", installable)).not.toMatch(
+    /profileHook\.|profileCreated|profileReran|profileWrote|profileDisposed|profileComponent|startProfileSession|"rerun"/,
+  );
 });
