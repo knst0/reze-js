@@ -3,35 +3,88 @@ use oxc_ast_visit::Visit;
 use oxc_syntax::scope::ScopeFlags;
 
 use crate::analyze::Analysis;
+use crate::kind::Kind;
 
-/// The text a constant renders as: string literals, integers below 1e15, templates without
-/// expressions, `+` chains with a string on one side of each `+`, and reads of folded signals
-/// with such an initializer.
+/// Rendered text of static strings, templates, integers below 1e15 and folded signals.
 pub fn static_text(e: &Expression<'_>, analysis: &Analysis<'_>) -> Option<String> {
     match e.without_parentheses() {
         Expression::NumericLiteral(n) => format_integer(n.value),
-        Expression::BinaryExpression(b) if b.operator == BinaryOperator::Addition => {
-            match (string_value(&b.left), string_value(&b.right)) {
-                (Some(left), Some(right)) => Some(left + &right),
-                (Some(left), None) => Some(left + &static_text(&b.right, analysis)?),
-                (None, Some(right)) => Some(static_text(&b.left, analysis)? + &right),
-                (None, None) => None,
-            }
-        }
+        Expression::UnaryExpression(_) => format_integer(numeric_value(e, analysis)?),
         Expression::CallExpression(call) => analysis.folded_read(call)?.1.text.clone(),
-        inner => string_value(inner),
+        inner => string_value(inner, analysis),
     }
 }
 
 /// A statically known string; numbers are excluded so `1 + 2` never folds to `"12"`.
-fn string_value(e: &Expression<'_>) -> Option<String> {
+fn string_value(e: &Expression<'_>, analysis: &Analysis<'_>) -> Option<String> {
     match e.without_parentheses() {
         Expression::StringLiteral(s) => Some(s.value.to_string()),
-        Expression::TemplateLiteral(t) if t.expressions.is_empty() => {
-            t.quasis.first()?.value.cooked.as_ref().map(|cooked| cooked.to_string())
+        Expression::TemplateLiteral(t) => {
+            let mut text = String::new();
+            for (index, quasi) in t.quasis.iter().enumerate() {
+                text.push_str(quasi.value.cooked.as_ref()?.as_str());
+                if let Some(expression) = t.expressions.get(index) {
+                    text.push_str(&primitive_text(expression, analysis)?);
+                }
+            }
+            Some(text)
         }
         Expression::BinaryExpression(b) if b.operator == BinaryOperator::Addition => {
-            Some(string_value(&b.left)? + &string_value(&b.right)?)
+            match (string_value(&b.left, analysis), string_value(&b.right, analysis)) {
+                (Some(left), Some(right)) => Some(left + &right),
+                (Some(left), None) => Some(left + &primitive_text(&b.right, analysis)?),
+                (None, Some(right)) => Some(primitive_text(&b.left, analysis)? + &right),
+                (None, None) => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn primitive_text(e: &Expression<'_>, analysis: &Analysis<'_>) -> Option<String> {
+    if let Some(number) = numeric_value(e, analysis) {
+        return format_integer(number);
+    }
+    match e.without_parentheses() {
+        Expression::BooleanLiteral(b) => Some(b.value.to_string()),
+        Expression::NullLiteral(_) => Some("null".to_string()),
+        Expression::Identifier(id) if is_global(id, "undefined", analysis) => {
+            Some("undefined".to_string())
+        }
+        _ => static_text(e, analysis),
+    }
+}
+
+fn is_global(id: &IdentifierReference<'_>, name: &str, analysis: &Analysis<'_>) -> bool {
+    id.name == name
+        && id.reference_id.get().is_some_and(|reference| {
+            analysis.scoping.get_reference(reference).symbol_id().is_none()
+        })
+}
+
+fn numeric_value(e: &Expression<'_>, analysis: &Analysis<'_>) -> Option<f64> {
+    match e.without_parentheses() {
+        Expression::NumericLiteral(n) => Some(n.value),
+        Expression::Identifier(id) if is_global(id, "NaN", analysis) => Some(f64::NAN),
+        Expression::Identifier(id) if is_global(id, "Infinity", analysis) => Some(f64::INFINITY),
+        Expression::UnaryExpression(u) => {
+            let value = numeric_value(&u.argument, analysis)?;
+            match u.operator {
+                UnaryOperator::UnaryNegation => Some(-value),
+                UnaryOperator::UnaryPlus => Some(value),
+                _ => None,
+            }
+        }
+        Expression::BinaryExpression(b) => {
+            let left = numeric_value(&b.left, analysis)?;
+            let right = numeric_value(&b.right, analysis)?;
+            match b.operator {
+                BinaryOperator::Addition => Some(left + right),
+                BinaryOperator::Subtraction => Some(left - right),
+                BinaryOperator::Multiplication => Some(left * right),
+                BinaryOperator::Division => Some(left / right),
+                _ => None,
+            }
         }
         _ => None,
     }
@@ -55,18 +108,33 @@ pub fn literal(e: &Expression<'_>, analysis: &Analysis<'_>) -> Option<Literal> {
     match e.without_parentheses() {
         Expression::BooleanLiteral(b) => Some(Literal::Bool(b.value)),
         Expression::NullLiteral(_) => Some(Literal::Nullish),
-        Expression::Identifier(id) if id.name == "undefined" => Some(Literal::Nullish),
+        Expression::Identifier(id) if is_global(id, "undefined", analysis) => {
+            Some(Literal::Nullish)
+        }
         _ => None,
     }
 }
 
 /// Truthiness of a literal; `None` when not statically known.
 pub fn literal_truthy(e: &Expression<'_>, analysis: &Analysis<'_>) -> Option<bool> {
+    if let Some(number) = numeric_value(e, analysis) {
+        return Some(number != 0.0 && !number.is_nan());
+    }
+    if let Expression::CallExpression(call) = e.without_parentheses()
+        && let Some((_, fold)) = analysis.folded_read(call)
+        && fold.kind == Some(Kind::Numeric)
+    {
+        return fold
+            .text
+            .as_ref()?
+            .parse::<f64>()
+            .ok()
+            .map(|number| number != 0.0 && !number.is_nan());
+    }
     match e.without_parentheses() {
         Expression::BooleanLiteral(b) => Some(b.value),
         Expression::NullLiteral(_) => Some(false),
-        Expression::Identifier(id) if id.name == "undefined" => Some(false),
-        Expression::NumericLiteral(n) => Some(n.value != 0.0 && !n.value.is_nan()),
+        Expression::Identifier(id) if is_global(id, "undefined", analysis) => Some(false),
         _ => static_text(e, analysis).map(|text| !text.is_empty()),
     }
 }
