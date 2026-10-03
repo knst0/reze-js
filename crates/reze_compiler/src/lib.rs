@@ -12,7 +12,7 @@ mod lower;
 mod namer;
 
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Program, Statement};
+use oxc_ast::ast::{Declaration, ExportDefaultDeclarationKind, Program, Statement};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType, Span};
@@ -222,6 +222,17 @@ fn compile_module(
         emit::Options {
             debug_names: options.debug_names,
             cold: is_cold(source, filename, options.profile.as_ref()),
+            hoist_templates: !program.body.iter().any(|statement| match statement {
+                Statement::FunctionDeclaration(_) => true,
+                Statement::ExportDeclaration(export) => {
+                    matches!(export.declaration, Declaration::FunctionDeclaration(_))
+                }
+                Statement::ExportDefaultDeclaration(export) => matches!(
+                    export.declaration,
+                    ExportDefaultDeclarationKind::FunctionDeclaration(_)
+                ),
+                _ => false,
+            }),
         },
     )
     .module(&lowered.head, &body);

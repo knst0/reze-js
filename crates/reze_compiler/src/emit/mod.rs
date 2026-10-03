@@ -3,8 +3,10 @@ mod flow;
 mod script;
 mod template;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write;
+use std::hash::{BuildHasher, RandomState};
+use std::ops::Range;
 
 use oxc_allocator::Allocator;
 use oxc_span::Span;
@@ -14,6 +16,24 @@ use crate::code::Code;
 use crate::html::push_js_string;
 use crate::ir::{Child, Embed, ExprChild, Getter, HoleKind, Jsx, Namespace, TextPart, Value};
 use crate::namer::Namer;
+
+fn template_groups<S: BuildHasher>(
+    text: &str,
+    ranges: Vec<Range<usize>>,
+    hasher: S,
+) -> Vec<(&str, Vec<Range<usize>>)> {
+    let mut groups: Vec<(&str, Vec<Range<usize>>)> = Vec::new();
+    let mut indices = HashMap::with_hasher(hasher);
+    for range in ranges {
+        let literal = &text[range.clone()];
+        let index = *indices.entry(literal).or_insert_with(|| {
+            groups.push((literal, Vec::new()));
+            groups.len() - 1
+        });
+        groups[index].1.push(range);
+    }
+    groups
+}
 
 macro_rules! helpers {
     ($($variant:ident => $export:literal),* $(,)?) => {
@@ -83,6 +103,7 @@ pub struct Options {
     pub debug_names: bool,
     /// Merge every template's binds into one render effect: profiled runs never re-ran.
     pub cold: bool,
+    pub hoist_templates: bool,
 }
 
 pub struct Emitter<'a, 's> {
@@ -96,6 +117,7 @@ pub struct Emitter<'a, 's> {
     aliases: [Option<&'a str>; HELPER_COUNT],
     helper_order: std::vec::Vec<Helper>,
     events: BTreeSet<&'a str>,
+    template_literals: Vec<std::ops::Range<usize>>,
 }
 
 impl<'a, 's> Emitter<'a, 's> {
@@ -117,6 +139,7 @@ impl<'a, 's> Emitter<'a, 's> {
             aliases: [None; HELPER_COUNT],
             helper_order: std::vec::Vec::new(),
             events: BTreeSet::new(),
+            template_literals: Vec::new(),
         }
     }
 
@@ -124,8 +147,10 @@ impl<'a, 's> Emitter<'a, 's> {
     pub fn module(mut self, head: &Embed<'a>, body: &Embed<'a>) -> Code {
         let mut code = Code::default();
         self.embed(&mut code, head);
+        self.template_literals.clear();
         let mut compiled = Code::default();
         self.embed(&mut compiled, body);
+        let templates = self.dedup_templates(&mut compiled);
         let delegate = (!self.events.is_empty()).then(|| self.helper(Helper::DelegateEvents));
         let header = self.header();
         if !header.is_empty() {
@@ -137,6 +162,7 @@ impl<'a, 's> Emitter<'a, 's> {
                 code.push(&header);
             }
         }
+        code.push(&templates);
         code.append(compiled);
         if let Some(delegate) = delegate {
             code.push("\n");
@@ -220,12 +246,46 @@ impl<'a, 's> Emitter<'a, 's> {
         });
         out.push(factory);
         out.push("(");
+        let start = out.text.len();
         if namespace == Namespace::Svg {
             push_js_string(&mut out.text, &format!("<svg>{html}"));
         } else {
             push_js_string(&mut out.text, html);
         }
+        self.template_literals.push(start..out.text.len());
         out.push(")");
+    }
+
+    fn dedup_templates(&mut self, out: &mut Code) -> String {
+        if !self.options.hoist_templates {
+            self.template_literals.clear();
+            return String::new();
+        }
+        let groups = template_groups(
+            &out.text,
+            std::mem::take(&mut self.template_literals),
+            RandomState::new(),
+        );
+        let mut declarations = String::new();
+        let mut replacements = Vec::new();
+        for (literal, ranges) in groups {
+            if ranges.len() < 2 {
+                continue;
+            }
+            let alias = self.fresh("_$html");
+            let declaration_len =
+                "\nconst ".len() + alias.len() + " = ".len() + literal.len() + ";".len();
+            if ranges.len() * literal.len() <= declaration_len + ranges.len() * alias.len() {
+                continue;
+            }
+            let _ = write!(declarations, "\nconst {alias} = {literal};");
+            replacements.extend(ranges.into_iter().map(|range| (range, alias)));
+        }
+        replacements.sort_unstable_by_key(|(range, _)| range.start);
+        if !replacements.is_empty() {
+            out.replace_generated(&replacements);
+        }
+        declarations
     }
 
     fn src(&self, out: &mut Code, span: Span) {
@@ -337,5 +397,31 @@ impl<'a, 's> Emitter<'a, 's> {
                 out.push("]");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod t06_collision_tests {
+    use std::hash::{BuildHasherDefault, Hasher};
+
+    #[derive(Default)]
+    struct CollisionHasher;
+
+    impl Hasher for CollisionHasher {
+        fn finish(&self) -> u64 {
+            0
+        }
+
+        fn write(&mut self, _: &[u8]) {}
+    }
+
+    #[test]
+    fn hash_collisions_compare_complete_literals() {
+        let groups = super::template_groups(
+            "\"one\"\"two\"\"one\"",
+            vec![0..5, 5..10, 10..15],
+            BuildHasherDefault::<CollisionHasher>::default(),
+        );
+        assert_eq!(groups, vec![("\"one\"", vec![0..5, 10..15]), ("\"two\"", vec![5..10])]);
     }
 }
