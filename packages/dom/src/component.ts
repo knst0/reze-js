@@ -12,10 +12,11 @@ export function createComponent<P>(Comp: (props: P) => JSX.Element, props: P): J
   return untrack(Comp, props);
 }
 
-/** Mounts `code()` after the existing children of `element`; the returned function disposes it and empties `element`. */
+/** Mounts `code()` into `element`, replacing a prerendered shell or any previous content; the returned function disposes it and empties `element`. */
 export function render(code: () => JSX.Element, element: Element): () => void {
   const dispose = root((dispose) => {
-    insert(element, code(), element.firstChild === null ? undefined : null);
+    element.textContent = "";
+    insert(element, code(), undefined);
     return dispose;
   });
   return () => {

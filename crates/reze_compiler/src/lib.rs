@@ -20,6 +20,7 @@ use oxc_span::{GetSpan, SourceType, Span};
 pub use diagnostic::{
     CATALOG, Code, Diagnostic, Edit, Entry, Example, Fix, Label, Position, Severity, render_skill,
 };
+pub use lower::{ComponentRef, PrerenderComponent, PrerenderHole, PrerenderModule, Tree};
 
 use diagnostic::Report;
 use namer::Namer;
@@ -37,11 +38,13 @@ pub struct Options {
     /// Module exporting `link`: when set, native `<a href>` elements are claimed and passed to
     /// `link(el, href?)`, which keeps their `aria-current`/`data-active`/`data-pending` current.
     pub links: Option<String>,
+    /// Collect static prerender trees alongside codegen.
+    pub prerender: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { source_map: true, debug_names: false, hot: false, links: None }
+        Self { source_map: true, debug_names: false, hot: false, links: None, prerender: false }
     }
 }
 
@@ -51,6 +54,8 @@ pub struct Output {
     pub map: Option<String>,
     /// `warn` and `info` diagnostics.
     pub diagnostics: Vec<Diagnostic>,
+    /// Static prerender trees, when `Options.prerender` is set.
+    pub prerender: Option<PrerenderModule>,
 }
 
 /// Compiles `source`. `Ok(None)` when nothing in the file is rewritten; `Err` holds every
@@ -128,12 +133,27 @@ fn compile_module(
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(diagnostics);
     }
+    let prerender = options
+        .prerender
+        .then(|| {
+            let mut roots = lower::Lowerer::new(
+                &allocator,
+                text,
+                &analysis,
+                lower::Settings { debug_names: false, hot: false, links: options.links.is_some() },
+                Namer::new(&scoping),
+                Vec::new(),
+            );
+            roots.prerender_module(program)
+        })
+        .filter(|module| !module.is_empty());
     let filename = allocator.alloc_str(filename);
     let Some(body) = lowered.body else {
         return Ok(rewritten.map(|rewritten| Output {
             map: options.source_map.then(|| rewritten.code.source_map(filename, source)),
             code: rewritten.code.text,
             diagnostics,
+            prerender,
         }));
     };
     let mut code =
@@ -143,7 +163,7 @@ fn compile_module(
         code.remap_marks(|offset| rewritten.start(offset));
     }
     let map = options.source_map.then(|| code.source_map(filename, source));
-    Ok(Some(Output { code: code.text, map, diagnostics }))
+    Ok(Some(Output { code: code.text, map, diagnostics, prerender }))
 }
 
 /// Runtime imports go after the hashbang, directives and leading imports.

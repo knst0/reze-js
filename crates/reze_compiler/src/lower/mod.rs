@@ -10,6 +10,7 @@ mod element;
 mod hot;
 mod island;
 pub mod keyed;
+mod prerender;
 pub mod props;
 mod selector;
 
@@ -27,6 +28,7 @@ use crate::diagnostic::{Edit, Report};
 use crate::ir::{Embed, Getter, Hole, HoleKind, HotEdit, Jsx, Placement, ScriptEdit, Source};
 use crate::namer::Namer;
 use island::IslandPlan;
+pub use prerender::{ComponentRef, PrerenderComponent, PrerenderHole, PrerenderModule, Tree};
 
 pub struct Lowered<'a, 'f> {
     /// The hashbang, directives and leading imports.
@@ -295,7 +297,7 @@ pub fn is_component_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_ascii_uppercase())
 }
 
-fn is_native_name(name: &str) -> bool {
+pub(super) fn is_native_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_ascii_lowercase()) || name.contains('-')
 }
 

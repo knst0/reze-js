@@ -1,4 +1,4 @@
-import { effect, mergeProps, omitProps, signal, type ClassValue, type JSX } from "reze-js";
+import { effect, mergeProps, omitProps, render, signal, type ClassValue, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 import { cleanup, fire, mount, tick } from "../../../testing/dom";
@@ -630,4 +630,23 @@ test("arrays, fragments and nested getters render in order between static siblin
   setItems(["p", "q"]);
   tick();
   expect(text()).toEqual(["first", "p", "q", "middle", "last"]);
+});
+
+test("render replaces a prerendered shell instead of duplicating it", () => {
+  const el = document.createElement("div");
+  document.body.appendChild(el);
+  el.innerHTML = "<main><h1>Islands</h1><p>loading counter…</p></main>";
+  const dispose = render(
+    () => (
+      <main>
+        <h1>Islands</h1>
+        <p>loading counter…</p>
+      </main>
+    ),
+    el,
+  );
+  expect(el.innerHTML).toBe("<main><h1>Islands</h1><p>loading counter…</p></main>");
+  expect(el.childNodes.length).toBe(1);
+  dispose();
+  expect(el.innerHTML).toBe("");
 });

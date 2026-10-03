@@ -286,7 +286,8 @@ fn output_snapshots() {
 
 #[test]
 fn hot_snapshot() {
-    let options = Options { source_map: false, debug_names: true, hot: true, links: None };
+    let options =
+        Options { source_map: false, debug_names: true, hot: true, links: None, prerender: false };
     insta::assert_snapshot!("hot", render(HOT, &options), HOT);
 }
 

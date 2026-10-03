@@ -24,6 +24,8 @@ export interface CompileOptions {
   hot?: boolean
   /** Module exporting `link`: native `<a href>` elements are claimed and passed to it. Default: none. */
   links?: string
+  /** Collect static prerender trees as JSON. Default: `false`. */
+  prerender?: boolean
 }
 
 export interface CompileResult {
@@ -31,6 +33,8 @@ export interface CompileResult {
   code?: string
   /** Source map v3 JSON. */
   map?: string
+  /** Static prerender trees as JSON, when requested. */
+  prerender?: string
   diagnostics: Array<Diagnostic>
 }
 
