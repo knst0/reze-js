@@ -1719,3 +1719,144 @@ fn runs_later(callee: &Expression<'_>) -> Option<&'static str> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod t02_offset_tests {
+    use super::{Patch, Rewritten, apply, rewrite};
+    use oxc_span::SourceType;
+
+    fn linear(rewritten: &Rewritten, offset: u32, is_end: bool) -> u32 {
+        let mut source_cursor = 0;
+        let mut text_cursor = 0;
+        for span in &rewritten.spans {
+            let passed = if is_end { span.text_end < offset } else { span.text_end <= offset };
+            if passed {
+                source_cursor = span.source_end;
+                text_cursor = span.text_end;
+                continue;
+            }
+            let inside = if is_end { span.text_start < offset } else { span.text_start <= offset };
+            return if inside {
+                if is_end { span.source_end } else { span.source_start }
+            } else {
+                offset - text_cursor + source_cursor
+            };
+        }
+        offset - text_cursor + source_cursor
+    }
+
+    fn check(source: &str, rewritten: &Rewritten) {
+        for offset in 0..=rewritten.code.text.len() as u32 {
+            assert_eq!(rewritten.start(offset), linear(rewritten, offset, false));
+            assert_eq!(rewritten.end(offset), linear(rewritten, offset, true));
+            assert!(rewritten.start(offset) <= source.len() as u32);
+            assert!(rewritten.end(offset) <= source.len() as u32);
+        }
+        let mut source_cursor = 0;
+        let mut text_cursor = 0;
+        for span in &rewritten.spans {
+            assert_eq!(
+                &source[source_cursor as usize..span.source_start as usize],
+                &rewritten.code.text[text_cursor as usize..span.text_start as usize]
+            );
+            for offset in text_cursor + 1..span.text_start {
+                let original = source_cursor + offset - text_cursor;
+                assert_eq!(rewritten.start(offset), original);
+                assert_eq!(rewritten.end(offset), original);
+                assert_eq!(offset, text_cursor + original - source_cursor);
+            }
+            source_cursor = span.source_end;
+            text_cursor = span.text_end;
+        }
+        assert_eq!(&source[source_cursor as usize..], &rewritten.code.text[text_cursor as usize..]);
+        for offset in text_cursor + 1..=rewritten.code.text.len() as u32 {
+            let original = source_cursor + offset - text_cursor;
+            assert_eq!(rewritten.start(offset), original);
+            assert_eq!(rewritten.end(offset), original);
+        }
+    }
+
+    #[test]
+    fn replacement_interiors_and_shared_boundaries_are_directional() {
+        let rewritten = apply(
+            "abcdef",
+            &mut [
+                Patch { start: 0, end: 2, text: "XYZ".into() },
+                Patch { start: 2, end: 4, text: "Q".into() },
+            ],
+        );
+        assert_eq!(rewritten.code.text, "XYZQef");
+        assert_eq!((rewritten.start(0), rewritten.end(0)), (0, 0));
+        assert_eq!((rewritten.start(1), rewritten.end(1)), (0, 2));
+        assert_eq!((rewritten.start(3), rewritten.end(3)), (2, 2));
+        assert_eq!((rewritten.start(4), rewritten.end(4)), (4, 4));
+        assert_eq!((rewritten.start(6), rewritten.end(6)), (6, 6));
+        check("abcdef", &rewritten);
+    }
+
+    #[test]
+    fn collapsed_deletions_keep_start_and_end_boundary_bias() {
+        let rewritten = apply(
+            "abc",
+            &mut [
+                Patch { start: 0, end: 1, text: String::new() },
+                Patch { start: 1, end: 1, text: String::new() },
+                Patch { start: 1, end: 2, text: String::new() },
+            ],
+        );
+        assert_eq!(rewritten.code.text, "c");
+        assert_eq!((rewritten.start(0), rewritten.end(0)), (2, 0));
+        assert_eq!((rewritten.start(1), rewritten.end(1)), (3, 3));
+        check("abc", &rewritten);
+    }
+
+    #[test]
+    fn utf8_empty_inserted_deleted_and_adjacent_patches_match_linear_mapping() {
+        let source = "α🌍世界z";
+        let boundaries: Vec<u32> = source
+            .char_indices()
+            .map(|(i, _)| i as u32)
+            .chain(std::iter::once(source.len() as u32))
+            .collect();
+        for &a in &boundaries {
+            for &b in boundaries.iter().filter(|&&b| b >= a) {
+                for &c in boundaries.iter().filter(|&&c| c >= b) {
+                    for left in ["", "x", "λ🌍"] {
+                        for right in ["", "Q", "世界"] {
+                            let rewritten = apply(
+                                source,
+                                &mut [
+                                    Patch { start: a, end: b, text: left.into() },
+                                    Patch { start: b, end: c, text: right.into() },
+                                    Patch { start: c, end: c, text: String::new() },
+                                ],
+                            );
+                            check(source, &rewritten);
+                        }
+                    }
+                }
+            }
+        }
+        check(source, &apply(source, &mut []));
+    }
+
+    #[test]
+    fn deterministic_adjacent_dsl_fuzz_preserves_copied_intervals() {
+        let mut state = 0x9e37_79b9u32;
+        for case in 0..128 {
+            let mut source = String::from("import { $signal, $computed, $action } from 'reze-js';");
+            for index in 0..8 {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let gap = ["", " ", "\n", "/* 世界🌍 */"][state as usize % 4];
+                source.push_str(&format!("{gap}let s{index}=$signal({});const c{index}=$computed(s{index}+1);$action(()=>{{s{index}++;}});", state % 100));
+            }
+            let result = rewrite(&source, SourceType::mjs());
+            let rewritten = match result {
+                Ok(Some((rewritten, _))) => rewritten,
+                _ => panic!("DSL fixture did not rewrite: {case}"),
+            };
+            assert!(!rewritten.spans.is_empty());
+            check(&source, &rewritten);
+        }
+    }
+}
