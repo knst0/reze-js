@@ -1,7 +1,7 @@
+import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import { Show, signal, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
-import { cleanup, mount, tick } from "../../../testing/dom";
 import {
   createBrowserHistory,
   createHashHistory,
@@ -20,12 +20,6 @@ afterEach(() => {
   cleanup();
   window.history.replaceState(null, "", "/");
 });
-
-function settle(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
-}
 
 const Page = () => <p>page</p>;
 const CatchAll: RouteDefinition[] = [{ path: "/*rest", component: Page }];

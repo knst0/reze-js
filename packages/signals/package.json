@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@codspeed/tinybench-plugin": "^5.7.1",
+    "@rezejs/testing-library": "workspace:*",
     "reactive-framework-test-suite": "0.0.2",
     "rolldown": "^1.2.11",
     "tinybench": "^6.2.0"

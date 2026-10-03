@@ -21,6 +21,7 @@ export const sourceAliases = [
   { find: "@rezejs/signals/render", replacement: join(packages, "signals", "src", "render.ts") },
   { find: "@rezejs/signals/devtools", replacement: join(packages, "signals", "src", "devtools.ts") },
   { find: "@rezejs/signals", replacement: join(packages, "signals", "src", "index.ts") },
+  { find: "@rezejs/testing-library", replacement: join(packages, "testing-library", "src", "index.ts") },
 ];
 
 function isSupportedBrowser(name: string): name is SupportedBrowser {

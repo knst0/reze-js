@@ -1,7 +1,7 @@
+import { cleanup, mount, tick } from "@rezejs/testing-library";
 import { type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
-import { cleanup, mount, tick } from "../../../testing/dom";
 import {
   buildPaths,
   createBrowserHistory,

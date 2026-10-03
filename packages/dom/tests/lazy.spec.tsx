@@ -1,35 +1,11 @@
+import { cleanup, deferred, fire, mount, settle, tick } from "@rezejs/testing-library";
 import { Errored, lazy, Loading } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
-import { cleanup, fire, mount, tick } from "../../../testing/dom";
-
 afterEach(cleanup);
-
-function settle(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
-}
 
 function Greeting(props: { name: string }) {
   return <b>hi {props.name}</b>;
-}
-
-function deferred<M>(): { load: () => Promise<M>; calls: () => number; resolve: (module: M) => void; reject: (error: Error) => void } {
-  let current = Promise.withResolvers<M>();
-  let calls = 0;
-  return {
-    load: () => {
-      calls++;
-      return current.promise;
-    },
-    calls: () => calls,
-    resolve: (module) => current.resolve(module),
-    reject: (error) => {
-      current.reject(error);
-      current = Promise.withResolvers<M>();
-    },
-  };
 }
 
 test("a lazy component shows the Loading fallback until its module arrives, then renders with the props it was given", async () => {

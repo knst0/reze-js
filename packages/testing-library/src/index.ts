@@ -5,6 +5,13 @@ export interface Mounted {
   dispose: () => void;
 }
 
+export interface Deferred<M> {
+  load: () => Promise<M>;
+  calls: () => number;
+  resolve: (module: M) => void;
+  reject: (error: Error) => void;
+}
+
 const live = new Set<() => void>();
 
 /** Renders `code` into a fresh `<tag>` appended to the body; the returned `dispose` is idempotent. */
@@ -30,6 +37,31 @@ export function cleanup(): void {
 }
 
 export const tick: () => void = flush;
+
+/** Yields one macrotask, letting pending promises and async components settle. */
+export function settle(): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, 0);
+  return promise;
+}
+
+/** Controllable promise source for async tests; `reject` resets so `load` can be retried. */
+export function deferred<M>(): Deferred<M> {
+  let current = Promise.withResolvers<M>();
+  let calls = 0;
+  return {
+    load: () => {
+      calls++;
+      return current.promise;
+    },
+    calls: () => calls,
+    resolve: (module) => current.resolve(module),
+    reject: (error) => {
+      current.reject(error);
+      current = Promise.withResolvers<M>();
+    },
+  };
+}
 
 const MouseTypes: Record<string, true> = {
   click: true,

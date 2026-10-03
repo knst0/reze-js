@@ -1,7 +1,7 @@
+import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
 import { catchError, type JSX } from "reze-js";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { cleanup, fire, mount, tick } from "../../../testing/dom";
 import {
   createBrowserHistory,
   createMemoryHistory,
@@ -26,12 +26,6 @@ afterEach(() => {
   sessionStorage.clear();
   window.history.replaceState(null, "", "/");
 });
-
-function settle(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
-}
 
 interface Controls {
   navigate: Navigate;

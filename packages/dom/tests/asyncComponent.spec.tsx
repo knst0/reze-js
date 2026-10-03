@@ -1,15 +1,8 @@
+import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import { asyncComponent, asyncComputed, catchError, effect, flush, Loading, onCleanup, root, Show, signal } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
-import { cleanup, mount, tick } from "../../../testing/dom";
-
 afterEach(cleanup);
-
-function settle(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
-}
 
 function requestsOf(): { requests: Record<number, PromiseWithResolvers<string>>; load: (n: number) => Promise<string> } {
   const requests: Record<number, PromiseWithResolvers<string>> = {};

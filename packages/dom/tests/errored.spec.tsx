@@ -1,15 +1,8 @@
+import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import { catchError, computed, Errored, Loading, onCleanup, signal } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
-import { cleanup, mount, tick } from "../../../testing/dom";
-
 afterEach(cleanup);
-
-function settle(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
-}
 
 const message = (error: unknown): string => (error as Error).message;
 

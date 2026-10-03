@@ -1,7 +1,6 @@
+import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
 import { effect, mergeProps, omitProps, render, signal, type ClassValue, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
-
-import { cleanup, fire, mount, tick } from "../../../testing/dom";
 
 afterEach(cleanup);
 

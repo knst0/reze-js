@@ -42,6 +42,7 @@
   "devDependencies": {
     "@codspeed/tinybench-plugin": "^5.7.1",
     "@rezejs/compiler": "workspace:*",
+    "@rezejs/testing-library": "workspace:*",
     "happy-dom": "^20.0.0",
     "tinybench": "^6.2.0"
   }

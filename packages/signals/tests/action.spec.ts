@@ -1,3 +1,4 @@
+import { settle } from "@rezejs/testing-library";
 import { expect, expectTypeOf, test, vi } from "vitest";
 
 import { $action, action, computed, effect, flush, store, type Action, type Run } from "../src";
@@ -10,12 +11,6 @@ interface Todo {
 
 function gate<T = void>(): PromiseWithResolvers<T> {
   return Promise.withResolvers<T>();
-}
-
-function settle(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
 }
 
 /** What `$action` compiles `async (wait) => { write(); await wait; after(); }` to. */

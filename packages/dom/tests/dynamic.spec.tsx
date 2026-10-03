@@ -1,7 +1,6 @@
+import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
 import { dynamic, dynamicElement, onCleanup, signal } from "reze-js";
 import { afterEach, expect, test } from "vitest";
-
-import { cleanup, fire, mount, tick } from "../../../testing/dom";
 
 afterEach(cleanup);
 

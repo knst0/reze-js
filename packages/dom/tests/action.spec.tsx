@@ -1,15 +1,8 @@
+import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import { $action, For, Show, store } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
-import { cleanup, mount, tick } from "../../../testing/dom";
-
 afterEach(cleanup);
-
-function settle(): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, 0);
-  return promise;
-}
 
 test("a compiled `$action` shows its store writes before the save settles, rolls back a failed one, and keeps parallel toggles apart", async () => {
   const todos = store([

@@ -739,6 +739,9 @@ importers:
       '@rezejs/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@rezejs/testing-library':
+        specifier: workspace:*
+        version: link:../testing-library
       happy-dom:
         specifier: ^20.0.0
         version: 20.14.5
@@ -770,9 +773,9 @@ importers:
       '@rezejs/compiler':
         specifier: workspace:*
         version: link:../compiler
-      happy-dom:
-        specifier: ^20.0.0
-        version: 20.14.5
+      '@rezejs/testing-library':
+        specifier: workspace:*
+        version: link:../testing-library
       reze-js:
         specifier: workspace:*
         version: link:../reze-js
@@ -788,6 +791,9 @@ importers:
       '@codspeed/tinybench-plugin':
         specifier: ^5.7.1
         version: 5.7.1(debug@4.4.3)(tinybench@6.2.0)
+      '@rezejs/testing-library':
+        specifier: workspace:*
+        version: link:../testing-library
       reactive-framework-test-suite:
         specifier: 0.0.2
         version: 0.0.2
@@ -797,6 +803,12 @@ importers:
       tinybench:
         specifier: ^6.2.0
         version: 6.2.0
+
+  packages/testing-library:
+    dependencies:
+      reze-js:
+        specifier: workspace:*
+        version: link:../reze-js
 
   packages/vite-plugin:
     dependencies:

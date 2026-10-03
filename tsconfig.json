@@ -16,7 +16,8 @@
       "@rezejs/router/fs": ["./packages/router/src/fs/index.ts"],
       "@rezejs/signals": ["./packages/signals/src/index.ts"],
       "@rezejs/signals/render": ["./packages/signals/src/render.ts"],
-      "@rezejs/signals/devtools": ["./packages/signals/src/devtools.ts"]
+      "@rezejs/signals/devtools": ["./packages/signals/src/devtools.ts"],
+      "@rezejs/testing-library": ["./packages/testing-library/src/index.ts"]
     },
     "strict": true,
     "forceConsistentCasingInFileNames": true,
