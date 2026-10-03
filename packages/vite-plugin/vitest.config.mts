@@ -7,6 +7,8 @@ export default defineConfig({
     name: "@rezejs/vite-plugin",
     alias: {
       "@rezejs/router/fs": join(import.meta.dirname, "..", "router", "src", "fs", "index.ts"),
+      "@rezejs/signals/profile": join(import.meta.dirname, "..", "signals", "src", "profile.ts"),
+      "@rezejs/signals": join(import.meta.dirname, "..", "signals", "src", "index.ts"),
     },
   },
 });
