@@ -3,6 +3,12 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "!benches/**", "!docs/**", "!examples/**"]
+    },
+    "@rezejs/signals#build": {
+      "dependsOn": []
+    },
+    "@rezejs/dom#build": {
+      "dependsOn": ["@rezejs/signals#build"]
     }
   }
 }
