@@ -54,6 +54,41 @@ impl Code {
         self.text.push_str(&other.text);
     }
 
+    pub fn replace_generated(&mut self, replacements: &[(std::ops::Range<usize>, &str)]) {
+        let mut text = String::with_capacity(self.text.len());
+        let mut position = 0;
+        for (range, replacement) in replacements {
+            assert!(position <= range.start && range.start <= range.end);
+            text.push_str(&self.text[position..range.start]);
+            text.push_str(replacement);
+            position = range.end;
+        }
+        text.push_str(&self.text[position..]);
+        let mut marks = Vec::with_capacity(self.marks.len());
+        let mut index = 0;
+        let mut shift = 0_i64;
+        for &(generated, source) in &self.marks {
+            let offset = generated as usize;
+            while let Some((range, replacement)) = replacements.get(index) {
+                if offset < range.end {
+                    break;
+                }
+                shift += replacement.len() as i64 - range.len() as i64;
+                index += 1;
+            }
+            let offset = replacements.get(index).map_or(offset, |(range, _)| {
+                if range.contains(&offset) { range.start } else { offset }
+            });
+            let generated = (offset as i64 + shift) as u32;
+            if marks.last().is_some_and(|&(at, _)| at == generated) {
+                marks.pop();
+            }
+            marks.push((generated, source));
+        }
+        self.text = text;
+        self.marks = marks;
+    }
+
     /// Moves every source offset through `f`, for text compiled from a rewrite of the source.
     pub fn remap_marks(&mut self, f: impl Fn(u32) -> u32) {
         for (_, source) in &mut self.marks {

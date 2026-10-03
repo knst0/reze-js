@@ -3,7 +3,7 @@ use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::GetSpan;
 
-use super::constant::{is_dynamic, literal_truthy, static_text};
+use super::constant::{Literal, is_dynamic, literal, literal_truthy, static_text};
 use super::element::TemplateBuilder;
 use super::{Lowerer, Tag, attribute_name, has_jsx, is_function};
 use crate::analyze::Intrinsic;
@@ -100,12 +100,16 @@ impl<'a> Lowerer<'a, '_> {
         let inner = e.without_parentheses();
         let (live, dropped) = match inner {
             Expression::BooleanLiteral(_) | Expression::NullLiteral(_) => return Some(None),
-            Expression::Identifier(id) if id.name == "undefined" => return Some(None),
+            Expression::Identifier(_)
+                if matches!(literal(inner, self.analysis), Some(Literal::Nullish)) =>
+            {
+                return Some(None);
+            }
             Expression::LogicalExpression(l) if l.operator == LogicalOperator::And => {
                 if literal_truthy(&l.left, self.analysis)? {
                     (Some(&l.right), l.left.span())
                 } else {
-                    (None, l.right.span())
+                    (Some(&l.left), l.right.span())
                 }
             }
             Expression::ConditionalExpression(c) => {

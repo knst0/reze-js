@@ -27,6 +27,8 @@ interface Tracked {
   kind: ProfileNodeKind;
   name: string | undefined;
   id: number;
+  component: string | undefined;
+  file: string | undefined;
 }
 
 interface Scope {
@@ -46,20 +48,20 @@ function emit(node: ReactiveNode, type: ProfileEventType): void {
   const hook = profileHook;
   const info = tracked?.get(node);
   if (hook === undefined || info === undefined) return;
-  const scope = currentScope();
   hook.event({
     type,
     kind: info.kind,
     name: info.name,
     id: info.id,
-    component: scope?.name,
-    file: scope?.file,
+    component: info.component,
+    file: info.file,
   });
 }
 
 /** Records `node` for later attribution; dev-only, call inside a compile-time dev check. */
 export function profileCreated(node: ReactiveNode, kind: ProfileNodeKind, name: string | undefined): void {
-  (tracked ??= new WeakMap()).set(node, { kind, name, id: nextId++ });
+  const scope = currentScope();
+  (tracked ??= new WeakMap()).set(node, { kind, name, id: nextId++, component: scope?.name, file: scope?.file });
   emit(node, "created");
 }
 
