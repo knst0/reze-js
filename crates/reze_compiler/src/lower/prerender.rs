@@ -7,7 +7,7 @@ use oxc_syntax::symbol::SymbolId;
 use serde::Serialize;
 
 use super::children::Item;
-use super::constant::{Literal, literal, static_text};
+use super::constant::{Literal, literal, literal_truthy, static_text};
 use super::island::{CalleeTarget, IslandPlan, is_island_attr, member_path, root_object};
 use super::{Lowerer, attribute_name, is_component_name, is_native_name};
 use crate::analyze::RUNTIME_MODULES;
@@ -145,7 +145,7 @@ impl<'x, 'a, 'f> Scanner<'x, 'a, 'f> {
         }
     }
 
-    fn classify_attr(&self, a: &JSXAttribute<'a>) -> Attr {
+    fn classify_attr(&self, a: &JSXAttribute<'a>, tag: &str) -> Attr {
         let name = attribute_name(self.lower, a);
         if name == "ref" || name.starts_with("prop:") || name == "children" {
             return Attr::Silent;
@@ -153,16 +153,25 @@ impl<'x, 'a, 'f> Scanner<'x, 'a, 'f> {
         if is_event_attr(name) {
             return Attr::Dynamic;
         }
-        if let Some(key) = name.strip_prefix("bool:") {
-            let truthy = a.value.as_ref().and_then(|value| match value {
-                JSXAttributeValue::ExpressionContainer(c) => {
-                    c.expression.as_expression().and_then(|e| literal(e, self.analysis()))
+        let boolean_name = name.strip_prefix("bool:").or_else(|| {
+            (matches!(&a.value, Some(JSXAttributeValue::ExpressionContainer(_)))
+                && ((name == "checked" && tag == "input")
+                    || (name == "selected" && tag == "option")))
+                .then_some(name)
+        });
+        if let Some(key) = boolean_name {
+            let truthy = match &a.value {
+                None => Some(true),
+                Some(JSXAttributeValue::StringLiteral(s)) => Some(!s.value.is_empty()),
+                Some(JSXAttributeValue::ExpressionContainer(c)) => {
+                    c.expression.as_expression().and_then(|e| literal_truthy(e, self.analysis()))
                 }
                 _ => None,
-            });
+            };
             return match truthy {
-                Some(Literal::Bool(true)) => Attr::Html { name: key.to_string(), value: None },
-                _ => Attr::Dynamic,
+                Some(true) => Attr::Html { name: key.to_string(), value: None },
+                Some(false) => Attr::Silent,
+                None => Attr::Dynamic,
             };
         }
         let (key, value) = match name.strip_prefix("attr:") {
@@ -244,7 +253,7 @@ impl<'x, 'a, 'f> Scanner<'x, 'a, 'f> {
                     }
                 }
                 JSXAttributeItem::Attribute(a) => {
-                    if let Attr::Html { name, value } = self.classify_attr(a) {
+                    if let Attr::Html { name, value } = self.classify_attr(a, tag) {
                         html.push(' ');
                         html.push_str(&name);
                         if let Some(value) = value {

@@ -90,6 +90,106 @@ test("static, namespaced and boolean attributes", () => {
   expect(svg.firstElementChild!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#icon");
 });
 
+test.each([
+  [
+    "negative zero",
+    () => (
+      <div>
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <button bool:disabled={-0} />
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <input type="checkbox" checked={-0} />
+        <select multiple>
+          {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+          <option selected={-0}>value</option>
+        </select>
+        <i data-value={-0}>{-0}</i>
+      </div>
+    ),
+    false,
+    "0",
+  ],
+  [
+    "positive zero",
+    () => (
+      <div>
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <button bool:disabled={+0} />
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <input type="checkbox" checked={+0} />
+        <select multiple>
+          {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+          <option selected={+0}>value</option>
+        </select>
+        <i data-value={+0}>{+0}</i>
+      </div>
+    ),
+    false,
+    "0",
+  ],
+  [
+    "arithmetic zero",
+    () => (
+      <div>
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <button bool:disabled={+(1 - 1)} />
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <input type="checkbox" checked={+(1 - 1)} />
+        <select multiple>
+          {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+          <option selected={+(1 - 1)}>value</option>
+        </select>
+        <i data-value={+(1 - 1)}>{+(1 - 1)}</i>
+      </div>
+    ),
+    false,
+    "0",
+  ],
+  [
+    "nonzero number",
+    () => (
+      <div>
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <button bool:disabled={-1} />
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <input type="checkbox" checked={-1} />
+        <select multiple>
+          {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+          <option selected={-1}>value</option>
+        </select>
+        <i data-value={-1}>{-1}</i>
+      </div>
+    ),
+    true,
+    "-1",
+  ],
+  [
+    "zero string",
+    () => (
+      <div>
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <button bool:disabled={"0"} />
+        {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+        <input type="checkbox" checked={"0"} />
+        <select multiple>
+          {/* @ts-expect-error -- Exercise untyped JavaScript truthiness. */}
+          <option selected={"0"}>value</option>
+        </select>
+        <i data-value={"0"}>{"0"}</i>
+      </div>
+    ),
+    true,
+    "0",
+  ],
+] as const)("constant %s preserves boolean truthiness without changing rendered text", (_name, view, enabled, text) => {
+  const { el } = mount(view);
+  expect(el.querySelector("button")!.disabled).toBe(enabled);
+  expect(el.querySelector("input")!.checked).toBe(enabled);
+  expect(el.querySelector("option")!.selected).toBe(enabled);
+  expect(el.querySelector("i")!.getAttribute("data-value")).toBe(text);
+  expect(el.querySelector("i")!.textContent).toBe(text);
+});
+
 test("value and checked are written as properties and survive user edits", () => {
   const [value, setValue] = signal("a");
   const [checked, setChecked] = signal(true);

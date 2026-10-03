@@ -73,6 +73,24 @@ fn folded_constants_render() {
 }
 
 #[test]
+fn folded_boolean_attributes_preserve_truthiness() {
+    for (expression, enabled) in
+        [("-0", false), ("+0", false), ("+(1 - 1)", false), ("-1", true), ("\"0\"", true)]
+    {
+        let tree = component(
+            &format!(
+                "export function Control() {{ return <div><button bool:disabled={{{expression}}}/><input checked={{{expression}}}/><option selected={{{expression}}}/></div>; }}"
+            ),
+            "Control",
+        );
+        let rendered = html(&tree);
+        for name in ["disabled", "checked", "selected"] {
+            assert_eq!(rendered.contains(name), enabled, "{expression}: {rendered}");
+        }
+    }
+}
+
+#[test]
 fn nested_component_is_a_hole() {
     let tree = component(
         "import { Counter } from \"./Counter\";\n\nexport function Page() {\n  return <main><h1>title</h1><Counter step={1} /></main>;\n}\n",

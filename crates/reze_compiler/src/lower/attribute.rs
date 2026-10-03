@@ -525,6 +525,14 @@ impl<'a> Lowerer<'a, '_> {
         let literal = match value {
             AttrValue::Bare => Literal::Bool(true),
             AttrValue::Str(s) => Literal::Str(s.to_string()),
+            AttrValue::Expr(e)
+                if matches!(kind, Kind::Bool(_) | Kind::InlineProp("checked" | "selected")) =>
+            {
+                match literal_truthy(e, self.analysis) {
+                    Some(truthy) => Literal::Bool(truthy),
+                    None => return false,
+                }
+            }
             AttrValue::Expr(e) => match literal(e, self.analysis) {
                 Some(literal) => literal,
                 None => return false,
