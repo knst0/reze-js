@@ -188,6 +188,7 @@ pub enum Op<'a> {
         props: Props<'a>,
         is_svg: bool,
         has_children: bool,
+        has_getter_context: bool,
     },
     /// A claimed `<a>`: `link(el)`, or `link(el, href)` when the href is reactive.
     Link {

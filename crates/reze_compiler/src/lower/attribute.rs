@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use oxc_ast::ast::*;
+use oxc_ast::{AstKind, ast::*};
+use oxc_ast_visit::Visit;
 use oxc_span::GetSpan;
 
 use super::component::{PropsBuilder, spread_inline};
@@ -17,6 +18,21 @@ use crate::html::{
 };
 use crate::ir::{AssignTarget, Bind, BindTarget, Handler, MemberKey, NodeId, Op, RefTarget, Value};
 use crate::kind::{Kind as ValueKind, is_boolean, static_kind};
+
+#[derive(Default)]
+struct GetterContext {
+    required: bool,
+}
+
+impl<'a> Visit<'a> for GetterContext {
+    fn enter_node(&mut self, kind: AstKind<'a>) {
+        self.required |= match kind {
+            AstKind::ThisExpression(_) | AstKind::Super(_) | AstKind::NewTarget(_) => true,
+            AstKind::IdentifierReference(id) => matches!(id.name.as_str(), "arguments" | "eval"),
+            _ => false,
+        };
+    }
+}
 
 enum ClassPiece<'b, 'a> {
     Static(&'a str),
@@ -656,7 +672,6 @@ impl<'a> Lowerer<'a, '_> {
         })
     }
 
-    /// An element with a spread: every attribute goes through `spread`; children stay compiled.
     pub(super) fn spread(
         &mut self,
         builder: &mut TemplateBuilder<'a>,
@@ -666,8 +681,10 @@ impl<'a> Lowerer<'a, '_> {
         has_children: bool,
     ) {
         let mut props = PropsBuilder::new(self.alloc);
+        let mut getter_context = GetterContext::default();
         let inline = spread_inline(self, attrs, &[]);
         for (attr, &dissolve) in attrs.iter().zip(&inline) {
+            getter_context.visit_jsx_attribute_item(attr);
             match attr {
                 JSXAttributeItem::SpreadAttribute(s) => {
                     self.spread_attr(&mut props, &s.argument, dissolve, false);
@@ -693,6 +710,12 @@ impl<'a> Lowerer<'a, '_> {
             }
         }
         builder.reference(node);
-        builder.ops.push(Op::Spread { node, props: props.finish(), is_svg, has_children });
+        builder.ops.push(Op::Spread {
+            node,
+            props: props.finish(),
+            is_svg,
+            has_children,
+            has_getter_context: getter_context.required,
+        });
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use super::{Emitter, Helper};
@@ -6,7 +6,7 @@ use crate::code::Code;
 use crate::html::{push_js_string, push_member};
 use crate::ir::{
     Anchor, AssignTarget, Bind, BindTarget, Child, Conditional, Embed, ExprChild, From, Handler,
-    MemberKey, Op, Placement, RefTarget, Template,
+    MemberKey, Op, Placement, Prop, Props, PropsPart, RefTarget, Template,
 };
 use oxc_syntax::symbol::SymbolId;
 
@@ -119,7 +119,12 @@ impl<'a> Emitter<'a, '_> {
                 self.event(out, names[node.index()], event, handler)
             }
             Op::Ref { node, target } => self.element_ref(out, names[node.index()], target),
-            Op::Spread { node, props, is_svg, has_children } => {
+            Op::Spread { node, props, is_svg, has_children, has_getter_context } => {
+                if !has_getter_context
+                    && self.closed_spread(out, names[node.index()], props, *is_svg)
+                {
+                    return;
+                }
                 let spread = self.helper(Helper::Spread);
                 let _ = write!(out, "{spread}({}, ", names[node.index()]);
                 self.props(out, props);
@@ -152,6 +157,108 @@ impl<'a> Emitter<'a, '_> {
                 out.push(")");
             }
         }
+    }
+
+    fn closed_spread(
+        &mut self,
+        out: &mut Code,
+        element: &str,
+        props: &Props<'a>,
+        is_svg: bool,
+    ) -> bool {
+        let [PropsPart::Object(entries)] = props.parts.as_slice() else { return false };
+        let mut keys = HashSet::with_capacity(entries.len());
+        let mut bindings = std::vec::Vec::with_capacity(entries.len());
+        for entry in entries {
+            let (key, value, is_getter) = match entry {
+                Prop::Value { key, value } => (*key, value, false),
+                Prop::Getter { key, value } => (*key, value, true),
+                Prop::ForwardRef(_) => return false,
+            };
+            if !keys.insert(key)
+                || key.as_bytes().first().is_some_and(u8::is_ascii_digit)
+                || key.starts_with("on")
+                || matches!(
+                    key,
+                    "children"
+                        | "ref"
+                        | "__proto__"
+                        | "constructor"
+                        | "toString"
+                        | "toLocaleString"
+                        | "valueOf"
+                        | "hasOwnProperty"
+                        | "isPrototypeOf"
+                        | "propertyIsEnumerable"
+                        | "__defineGetter__"
+                        | "__defineSetter__"
+                        | "__lookupGetter__"
+                        | "__lookupSetter__"
+                )
+            {
+                return false;
+            }
+            let target = if key == "style" {
+                BindTarget::Style
+            } else if key == "class" {
+                BindTarget::Class
+            } else if let Some(name) = key.strip_prefix("prop:") {
+                BindTarget::Prop { name }
+            } else if let Some(name) = key.strip_prefix("attr:") {
+                BindTarget::Attr(name)
+            } else if let Some(name) = key.strip_prefix("bool:") {
+                BindTarget::Bool(name)
+            } else if !is_svg
+                && matches!(key, "value" | "checked" | "selected" | "textContent" | "innerHTML")
+            {
+                BindTarget::Prop { name: key }
+            } else {
+                BindTarget::Attr(key)
+            };
+            bindings.push((value, is_getter, target));
+        }
+        if bindings.is_empty() {
+            return false;
+        }
+        let state: std::vec::Vec<_> =
+            bindings.iter().map(|_| (self.fresh("_v$"), self.fresh("_p$"))).collect();
+        out.push("var ");
+        for (i, ((value, is_getter, _), (current, previous))) in
+            bindings.iter().zip(&state).enumerate()
+        {
+            if i > 0 {
+                out.push(", ");
+            }
+            out.push(previous);
+            if !is_getter {
+                let _ = write!(out, ", {current} = ");
+                self.prop_value(out, value);
+            }
+        }
+        let effect = self.helper(Helper::RenderEffect);
+        let _ = write!(out, ";\n  {effect}(() => {{\n");
+        for ((value, is_getter, target), (current, previous)) in bindings.iter().zip(&state) {
+            if *is_getter {
+                let _ = write!(out, "    var {current} = ");
+                self.prop_value(out, value);
+                out.push(";\n");
+            }
+            let _ = write!(out, "    if ({current} !== {previous}) {{\n      ");
+            if matches!(target, BindTarget::Style) {
+                let _ = write!(out, "{previous} = ");
+                self.set_open(out, element, *target);
+                out.push(current);
+                self.set_close(out, *target, Some(previous));
+            } else {
+                self.set_open(out, element, *target);
+                out.push(current);
+                self.set_close(out, *target, None);
+                let _ = write!(out, ";\n      {previous} = {current}");
+            }
+            out.push(";\n    }\n");
+        }
+        out.push("  })");
+        true
     }
 
     /// `var c = computed(() => !!(test));` and the opening of its insert, up to the marker.

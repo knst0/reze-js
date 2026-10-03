@@ -134,7 +134,7 @@ impl<'a> Emitter<'a, '_> {
         out.push(" }");
     }
 
-    fn prop_value(&mut self, out: &mut Code, value: &PropValue<'a>) {
+    pub(super) fn prop_value(&mut self, out: &mut Code, value: &PropValue<'a>) {
         match value {
             PropValue::True => out.push("true"),
             PropValue::Str(s) => push_js_string(&mut out.text, s),

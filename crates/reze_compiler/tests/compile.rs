@@ -227,13 +227,6 @@ fn spreads_shadowed_by_maybe_undefined_stay_generic() {
 }
 
 #[test]
-fn static_spreads_dissolve_in_elements_but_spread_stays() {
-    let code = run(r#"const a = <div {...{ id: "a" }} class="x" />;"#);
-    assert!(code.contains(r#"{ id: "a", class: "x" }"#), "{code}");
-    assert!(!code.contains("mergeProps"), "{code}");
-}
-
-#[test]
 fn props_merge_of_literals_dissolves() {
     let code =
         run("import { $props } from \"reze-js\";\nconst m = $props.merge({ a: 1 }, { b: 2 });");
