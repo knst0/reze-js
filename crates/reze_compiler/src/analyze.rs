@@ -93,9 +93,14 @@ pub struct Analysis<'s> {
     folded_refs: HashMap<ReferenceId, usize>,
     folds: Vec<Fold>,
     folded_bindings: HashSet<u32>,
+    pruned_imports: HashSet<u32>,
 }
 
 impl<'s> Analysis<'s> {
+    pub fn prunes_import(&self, import: &ImportDeclaration<'_>) -> bool {
+        self.pruned_imports.contains(&import.span.start)
+    }
+
     fn symbol(&self, id: &IdentifierReference<'_>) -> Option<SymbolId> {
         self.scoping.get_reference(id.reference_id.get()?).symbol_id()
     }
@@ -212,6 +217,7 @@ pub fn analyze<'a, 's>(
         folded_refs: HashMap::new(),
         folds: Vec::new(),
         folded_bindings: HashSet::new(),
+        pruned_imports: HashSet::new(),
     };
     collect_primitives(program, &mut analysis);
     if analysis.named.is_empty() && analysis.namespaces.is_empty() {
@@ -231,6 +237,7 @@ pub fn analyze<'a, 's>(
         analysis.getter_refs.extend(scoping.get_resolved_reference_ids(getter));
     }
     let exported = exported_symbols(program, scoping);
+    let mut folded_factories = HashSet::new();
     for signal in signals {
         let getter_refs = scoping.get_resolved_reference_ids(signal.getter);
         analysis.getter_refs.extend(getter_refs);
@@ -254,8 +261,36 @@ pub fn analyze<'a, 's>(
             analysis.folded_refs.insert(r, fold);
         }
         analysis.folded_bindings.insert(scoping.symbol_span(signal.getter).start);
+        folded_factories.extend(signal.factory_reference);
         let name = scoping.symbol_name(signal.getter);
         reports.push(Report::new(Code::SignalFolded, signal.span).arg("signal", name));
+    }
+    if scoping
+        .scope_descendants_from_root()
+        .any(|scope| scoping.scope_flags(scope).contains_direct_eval())
+    {
+        return analysis;
+    }
+    for statement in &program.body {
+        let Statement::ImportDeclaration(import) = statement else { continue };
+        if import.import_kind.is_type() || !RUNTIME_MODULES.contains(&import.source.value.as_str())
+        {
+            continue;
+        }
+        let Some(specifiers) = &import.specifiers else { continue };
+        let [ImportDeclarationSpecifier::ImportSpecifier(specifier)] = specifiers.as_slice() else {
+            continue;
+        };
+        let symbol = specifier.local.symbol_id();
+        let references = scoping.get_resolved_reference_ids(symbol);
+        if !specifier.import_kind.is_type()
+            && analysis.named.get(&symbol) == Some(&Primitive::Signal)
+            && !exported.contains(&symbol)
+            && !references.is_empty()
+            && references.iter().all(|r| folded_factories.contains(r))
+        {
+            analysis.pruned_imports.insert(import.span.start);
+        }
     }
     analysis
 }
@@ -375,6 +410,7 @@ pub(crate) fn exported_symbols(program: &Program<'_>, scoping: &Scoping) -> Hash
 
 struct SignalDecl {
     span: Span,
+    factory_reference: Option<ReferenceId>,
     getter: SymbolId,
     setter: Option<SymbolId>,
     is_foldable_shape: bool,
@@ -404,6 +440,10 @@ impl Collector<'_, '_> {
         };
         self.signals.push(SignalDecl {
             span: declarator.span,
+            factory_reference: match call.callee.without_parentheses() {
+                Expression::Identifier(id) => id.reference_id.get(),
+                _ => None,
+            },
             getter,
             setter: binding(1),
             is_foldable_shape: is_foldable_signal_shape(declarator, call),

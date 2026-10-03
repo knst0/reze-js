@@ -382,6 +382,12 @@ impl<'a> HoleFinder<'_, 'a, '_> {
 }
 
 impl<'a> Visit<'a> for HoleFinder<'_, 'a, '_> {
+    fn visit_import_declaration(&mut self, it: &ImportDeclaration<'a>) {
+        if self.lowerer.analysis.prunes_import(it) {
+            self.push_script(it.span, ScriptEdit::Insert(""));
+        }
+    }
+
     fn visit_jsx_element(&mut self, it: &JSXElement<'a>) {
         let jsx = self.lowerer.element(it);
         self.holes.push(Hole { span: it.span, kind: HoleKind::Jsx(jsx) });
