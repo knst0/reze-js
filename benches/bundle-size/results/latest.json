@@ -1,21 +1,21 @@
 {
   "schema": 1,
-  "recordedAt": "2026-10-02T23:11:50.237Z",
+  "recordedAt": "2026-10-04T02:26:48.007Z",
   "results": {
     "@rezejs/example-counter js": {
-      "raw": 9603,
-      "gzip": 3587,
-      "brotli": 3283
+      "raw": 9605,
+      "gzip": 3588,
+      "brotli": 3284
     },
     "@rezejs/example-router js": {
-      "raw": 26366,
-      "gzip": 10340,
-      "brotli": 9302
+      "raw": 26541,
+      "gzip": 10440,
+      "brotli": 9354
     },
     "@rezejs/example-islands js": {
-      "raw": 14327,
-      "gzip": 5521,
-      "brotli": 4986
+      "raw": 14329,
+      "gzip": 5526,
+      "brotli": 4992
     }
   }
 }

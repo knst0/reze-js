@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recordedAt": "2026-09-28T14:19:14.602Z",
+  "recordedAt": "2026-10-04T02:27:36.355Z",
   "versions": {
     "reze": {
       "reze-js": "workspace:*"
@@ -36,9 +36,9 @@
   "summary": {
     "raw": {
       "reze": {
-        "baseline": 6051,
-        "perComponent": 731,
-        "intercept": 11779,
+        "baseline": 6199,
+        "perComponent": 775,
+        "intercept": 12769,
         "perUsage": 39.9
       },
       "solid-1": {
@@ -92,9 +92,9 @@
     },
     "gzip": {
       "reze": {
-        "baseline": 2352,
-        "perComponent": 56,
-        "intercept": 5778,
+        "baseline": 2389,
+        "perComponent": 57,
+        "intercept": 5958,
         "perUsage": 5.5
       },
       "solid-1": {
@@ -148,9 +148,9 @@
     },
     "brotli": {
       "reze": {
-        "baseline": 2171,
-        "perComponent": 40,
-        "intercept": 5383,
+        "baseline": 2209,
+        "perComponent": 41,
+        "intercept": 5543,
         "perUsage": 2.3
       },
       "solid-1": {
@@ -208,72 +208,72 @@
       {
         "components": 0,
         "usages": 1,
-        "raw": 6051,
-        "gzip": 2352,
-        "brotli": 2171
+        "raw": 6199,
+        "gzip": 2389,
+        "brotli": 2209
       },
       {
         "components": 1,
         "usages": 1,
-        "raw": 9482,
-        "gzip": 3629,
-        "brotli": 3322
+        "raw": 9670,
+        "gzip": 3637,
+        "brotli": 3341
       },
       {
         "components": 5,
         "usages": 1,
-        "raw": 15445,
-        "gzip": 5880,
-        "brotli": 5362
+        "raw": 16654,
+        "gzip": 6063,
+        "brotli": 5524
       },
       {
         "components": 10,
         "usages": 1,
-        "raw": 19085,
-        "gzip": 6230,
-        "brotli": 5670
+        "raw": 20513,
+        "gzip": 6419,
+        "brotli": 5841
       },
       {
         "components": 25,
         "usages": 1,
-        "raw": 30036,
-        "gzip": 7171,
-        "brotli": 6399
+        "raw": 32121,
+        "gzip": 7369,
+        "brotli": 6562
       },
       {
         "components": 50,
         "usages": 1,
-        "raw": 48356,
-        "gzip": 8664,
-        "brotli": 7488
+        "raw": 51536,
+        "gzip": 8876,
+        "brotli": 7668
       },
       {
         "components": 100,
         "usages": 1,
-        "raw": 84959,
-        "gzip": 11513,
-        "brotli": 9516
+        "raw": 90329,
+        "gzip": 11760,
+        "brotli": 9699
       },
       {
         "components": 200,
         "usages": 1,
-        "raw": 158024,
-        "gzip": 16945,
-        "brotli": 13411
+        "raw": 167774,
+        "gzip": 17267,
+        "brotli": 13640
       },
       {
         "components": 5,
         "usages": 10,
-        "raw": 17194,
-        "gzip": 6145,
-        "brotli": 5504
+        "raw": 18403,
+        "gzip": 6325,
+        "brotli": 5684
       },
       {
         "components": 5,
         "usages": 50,
-        "raw": 25194,
-        "gzip": 7238,
-        "brotli": 5939
+        "raw": 26403,
+        "gzip": 7423,
+        "brotli": 6114
       }
     ],
     "solid-1": [
