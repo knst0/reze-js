@@ -182,9 +182,6 @@ impl<'a> NativeTarget<'a> for Target<'a> {
     ) -> Vec<Statement<'a>> {
         let ast = Ast::new(ctx.allocator);
         let delegated = !matches!(event.kind, EventKind::Direct);
-        if delegated {
-            ctx.delegate(event.name.as_str());
-        }
         let node = self.bindings.name(event.node);
         let mut args = Vec::with_capacity(6);
         args.push(ast.ident(node));

@@ -1,167 +1,70 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Plugin, ResolvedConfig } from "vite";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { parse, type DefaultTreeAdapterTypes } from "parse5";
+import { afterEach, beforeEach, expect, test } from "vitest";
 
-import reze, { DEFAULT_ROUTE_EXTENSIONS, type FileRoutesOptions, type Options } from "../src";
-
-const compile = vi.hoisted(() => vi.fn());
-vi.mock("@rezejs/compiler", () => ({ compile }));
+import reze, { type FileRoutesOptions } from "../src";
+import { buildSsgFixture, listBuiltFiles } from "./ssg-harness";
 
 let root: string;
 
 beforeEach(() => {
-  compile.mockReset();
-  compile.mockReturnValue({ code: "out", map: undefined, diagnostics: [] });
   root = mkdtempSync(join(tmpdir(), "reze-file-routes-"));
+  mkdirSync(join(root, "src"));
+  symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "dir");
+  writeFileSync(join(root, "index.html"), '<!doctype html><div id="app"></div><script type="module" src="/@reze/ssg-client.js"></script>');
+  writeFileSync(join(root, "src", "app.tsx"), 'export { routes, paths } from "virtual:reze-routes";');
 });
 
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const baseConfig = {
-  command: "build",
-  isProduction: true,
-  server: {},
-};
-
-const clientEnvironment = {
-  consumer: "client",
-  dev: { sourcemap: { js: true } },
-  build: { sourcemap: false },
-};
-
-interface RoutesHooks {
-  configResolved(config: ResolvedConfig): void;
-  buildStart(): void;
-  resolveId(id: string): string | undefined;
-  load(id: string): string | undefined;
-}
-
-async function start(
-  options: Options & { fileRoutes: true | FileRoutesOptions },
-  base = "/",
-): Promise<{ plugins: Plugin[]; routes: RoutesHooks }> {
-  const plugins = await reze(options);
-  const config = { ...baseConfig, root, base, plugins } as unknown as ResolvedConfig;
-  for (const plugin of plugins) {
-    (plugin.configResolved as unknown as ((config: ResolvedConfig) => void) | undefined)?.(config);
+function paragraph(html: string): string {
+  const queue: DefaultTreeAdapterTypes.Node[] = [parse(html)];
+  while (queue.length > 0) {
+    const node = queue.pop()!;
+    if (!("childNodes" in node)) continue;
+    if (node.nodeName === "p") return node.childNodes.map(child => "value" in child ? child.value : "").join("");
+    queue.push(...node.childNodes);
   }
-  const routes = plugins.find((plugin) => plugin.name === "reze-router") as unknown as RoutesHooks;
-  return { plugins, routes };
+  throw new Error("missing rendered paragraph");
 }
 
-function writeRoutes(dir: string): void {
-  mkdirSync(join(dir, "blog"), { recursive: true });
-  writeFileSync(join(dir, "index.tsx"), "");
-  writeFileSync(join(dir, "blog", "[id].tsx"), "");
+interface RouteSelection {
+  name: string;
+  extensions?: string[];
+  fileRoutes: FileRoutesOptions;
+  pages: readonly (readonly [string, string])[];
 }
 
-function transform(plugins: Plugin[], code: string, id: string): unknown {
-  const plugin = plugins.find((item) => item.name === "reze-js")!;
-  const hook = plugin.transform as { handler: (code: string, id: string) => unknown };
-  return hook.handler.call({ environment: { config: clientEnvironment }, warn: vi.fn() }, code, id);
-}
+const selections: RouteSelection[] = [
+  {
+    name: "top-level extensions replace the route scan",
+    extensions: [".jsx"],
+    fileRoutes: { types: false },
+    pages: [["guide/index.html", "guide"]],
+  },
+  {
+    name: "route-specific extensions override the scan in a custom directory",
+    fileRoutes: { dir: "pages", extensions: [".tsx"], types: false },
+    pages: [["index.html", "home"]],
+  },
+];
 
-async function registeredBase(fileRoutes: true | FileRoutesOptions, base: string): Promise<string | undefined> {
-  mkdirSync(join(root, "src", "routes"), { recursive: true });
-  writeFileSync(join(root, "src", "routes", "index.tsx"), "");
-  const { routes } = await start({ fileRoutes }, base);
-  routes.buildStart();
-  return /base: (".*");/.exec(readFileSync(join(root, "src", "routes.gen.d.ts"), "utf8"))?.[1];
-}
-
-test.each([
-  ["/app/", '"/app"'],
-  ["./", '""'],
-])("Vite base %j registers the href base the browser history uses", async (base, registered) => {
-  expect(await registeredBase(true, base)).toBe(registered);
-});
-
-test('history: "hash" registers "#" as the href base whatever Vite\'s base', async () => {
-  expect(await registeredBase({ history: "hash" }, "/app/")).toBe('"#"');
-});
-
-test("claims native anchors for the router", async () => {
-  writeRoutes(join(root, "src", "routes"));
-  const { plugins, routes } = await start({ fileRoutes: true });
-  routes.buildStart();
-  transform(plugins, "src", "/src/App.tsx");
-  expect(compile.mock.calls[0]![2]).toMatchObject({ links: "@rezejs/router" });
-});
-
-test("links: false leaves anchors to the explicit module", async () => {
-  writeRoutes(join(root, "src", "routes"));
-  const { plugins, routes } = await start({ links: "@rezejs/other", fileRoutes: { links: false } });
-  routes.buildStart();
-  transform(plugins, "src", "/src/App.tsx");
-  expect(compile.mock.calls[0]![2]).toMatchObject({ links: "@rezejs/other" });
-});
-
-test("serves the scanned routes as a virtual module and writes the declaration file", async () => {
-  const dir = join(root, "src", "routes");
-  writeRoutes(dir);
-  const { routes } = await start({ fileRoutes: true });
-  routes.buildStart();
-  const id = routes.resolveId("virtual:reze-routes")!;
-  const posixDir = dir.replaceAll("\\", "/");
-  expect(routes.load(id)).toContain(
-    `export const routes = [{ path: "/blog/:id", load: () => import(${JSON.stringify(posixDir + "/blog/[id].tsx")}) }, ` +
-      `{ path: "/", load: () => import(${JSON.stringify(posixDir + "/index.tsx")}) }];`,
-  );
-  expect(routes.load(id)).toContain('export const paths = { "byId": (value, search, hash) => href(`/blog/${enc(value)}`, search, hash)');
-  expect(routes.resolveId("other")).toBeUndefined();
-  expect(readFileSync(join(root, "src", "routes.gen.d.ts"), "utf8")).toContain("// Generated by @rezejs/vite-plugin. Do not edit.");
-});
-
-test("a custom dir without declarations serves routes only", async () => {
-  const dir = join(root, "pages");
-  writeRoutes(dir);
-  const { routes } = await start({ fileRoutes: { dir: "pages", types: false } });
-  routes.buildStart();
-  const id = routes.resolveId("virtual:reze-routes")!;
-  expect(routes.load(id)).toContain('path: "/blog/:id"');
-  expect(existsSync(join(root, "src", "routes.gen.d.ts"))).toBe(false);
-});
-
-test("top-level extensions replace the route scan", async () => {
-  const dir = join(root, "src", "routes");
-  writeRoutes(dir);
-  writeFileSync(join(dir, "guide.mdx"), "");
-  const { routes } = await start({ extensions: [".mdx"], fileRoutes: true });
-  routes.buildStart();
-  const id = routes.resolveId("virtual:reze-routes")!;
-  const module = routes.load(id) as string;
-  expect(module).toContain('path: "/guide"');
-  expect(module).not.toContain('path: "/"');
-});
-
-test("spreading the defaults extends the route scan with types", async () => {
-  const dir = join(root, "src", "routes");
-  writeRoutes(dir);
-  writeFileSync(join(dir, "guide.mdx"), "");
-  const { routes } = await start({ extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"], fileRoutes: true });
-  routes.buildStart();
-  const id = routes.resolveId("virtual:reze-routes")!;
-  const module = routes.load(id) as string;
-  expect(module).toContain('path: "/guide"');
-  expect(module).toContain('path: "/"');
-  expect(readFileSync(join(root, "src", "routes.gen.d.ts"), "utf8")).toContain(
-    '"/guide": { params: {}; data: DataOf<import("./routes/guide.mdx")> };',
-  );
-});
-
-test("an explicit extensions list replaces the defaults", async () => {
-  const dir = join(root, "src", "routes");
-  writeRoutes(dir);
-  writeFileSync(join(dir, "guide.mdx"), "");
-  const { routes } = await start({ fileRoutes: { extensions: [".mdx"] } });
-  routes.buildStart();
-  const id = routes.resolveId("virtual:reze-routes")!;
-  const module = routes.load(id) as string;
-  expect(module).toContain('path: "/guide"');
-  expect(module).not.toContain('path: "/"');
-});
+test.each(selections)("$name", async ({ extensions, fileRoutes, pages }) => {
+  const routes = join(root, fileRoutes.dir ?? "src/routes");
+  mkdirSync(routes, { recursive: true });
+  writeFileSync(join(routes, "index.tsx"), "export default function Home(){return <p>home</p>}");
+  writeFileSync(join(routes, "guide.jsx"), "export default function Guide(){return <p>guide</p>}");
+  const outDir = join(root, "dist");
+  await buildSsgFixture({
+    fixtureDir: root,
+    outDir,
+    plugins: await reze({ extensions, fileRoutes, ssg: { entry: "src/app.tsx" } }),
+  });
+  expect(listBuiltFiles(outDir).filter(file => file.endsWith(".html")).sort()).toEqual(pages.map(([file]) => file).sort());
+  for (const [file, expected] of pages) expect(paragraph(readFileSync(join(outDir, file), "utf8"))).toBe(expected);
+}, 30_000);

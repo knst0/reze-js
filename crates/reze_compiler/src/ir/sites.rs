@@ -1,5 +1,5 @@
+#[derive(Clone, Copy)]
 pub struct SiteId {
-    pub key: String,
     pub ordinal: u32,
 }
 
@@ -27,11 +27,15 @@ impl SiteRegistry {
     pub fn assign(&mut self) -> SiteId {
         let ordinal = self.next;
         self.next += 1;
+        SiteId { ordinal }
+    }
+
+    pub fn key(&self, site: SiteId) -> String {
         let mut key = String::with_capacity(self.prefix.len() + 8);
         key.push_str(&self.prefix);
         key.push('_');
-        push_base36(&mut key, ordinal);
-        SiteId { key, ordinal }
+        push_base36(&mut key, site.ordinal);
+        key
     }
 }
 

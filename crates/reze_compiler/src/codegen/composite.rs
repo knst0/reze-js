@@ -36,7 +36,7 @@ fn component<'a, 'm>(
     component: &'m ComponentView,
 ) -> Expression<'a> {
     let target = ctx.options.target;
-    let props = component_props(ctx, &component.props, target);
+    let props = component_props(ctx, &component.props);
     match &component.island {
         Some(island) => island_call(ctx, view, component, island, props, target),
         None => match target {
@@ -69,7 +69,6 @@ fn component<'a, 'm>(
 fn component_props<'a, 'm>(
     ctx: &mut EmitContext<'a, 'm>,
     segments: &'m [ComponentSegment],
-    target: CompileTarget,
 ) -> Expression<'a> {
     let ast = Ast::new(ctx.allocator);
     match segments {
@@ -77,10 +76,6 @@ fn component_props<'a, 'm>(
         [ComponentSegment::Object(entries)] => object_props(ctx, entries),
         [ComponentSegment::Spread { expr, is_dynamic: false }] => ctx.expr(*expr),
         _ => {
-            let source = match target {
-                CompileTarget::Html => HTML,
-                CompileTarget::Client | CompileTarget::Hydrate => RUNTIME_MODULE,
-            };
             let mut args = Vec::with_capacity(segments.len());
             for segment in segments {
                 match segment {
@@ -94,7 +89,7 @@ fn component_props<'a, 'm>(
                     }
                 }
             }
-            ctx.call(source, "mergeProps", args)
+            ctx.call(RUNTIME_MODULE, "mergeProps", args)
         }
     }
 }
@@ -375,10 +370,10 @@ fn flow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View, flow: &'m FlowVie
                     ctx.call(HTML, "hShow", args)
                 }
                 CompileTarget::Hydrate => {
-                    let mut args = vec![when, child];
-                    args.extend(fallback);
-                    let inner = ctx.call(RUNTIME_MODULE, "branch", args);
-                    prepare(ctx, view, inner)
+                    let site = ctx.site(view);
+                    let mut args = vec![site, when, child];
+                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
+                    ctx.call(HYDRATE, "prepareShow", args)
                 }
             }
         }
@@ -401,10 +396,10 @@ fn flow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View, flow: &'m FlowVie
                     ctx.call(HTML, "hChoose", args)
                 }
                 CompileTarget::Hydrate => {
-                    let mut args = vec![ast.array(whens), ast.array(children)];
-                    args.extend(fallback);
-                    let inner = ctx.call(RUNTIME_MODULE, "choose", args);
-                    prepare(ctx, view, inner)
+                    let site = ctx.site(view);
+                    let mut args = vec![site, ast.array(whens), ast.array(children)];
+                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
+                    ctx.call(HYDRATE, "prepareChoose", args)
                 }
             }
         }
@@ -432,17 +427,11 @@ fn flow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View, flow: &'m FlowVie
                     ctx.call(HTML, "hList", args)
                 }
                 CompileTarget::Hydrate => {
-                    let mut args = vec![each, map];
-                    match fallback {
-                        Some(fallback) => args.push(fallback),
-                        None if key.is_some() => {
-                            args.push(Ast::new(ctx.allocator).undefined());
-                        }
-                        None => {}
-                    }
+                    let site = ctx.site(view);
+                    let mut args = vec![site, each, map];
+                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
                     args.extend(key);
-                    let inner = ctx.call(RUNTIME_MODULE, "list", args);
-                    prepare(ctx, view, inner)
+                    ctx.call(HYDRATE, "prepareList", args)
                 }
             }
         }
@@ -463,10 +452,10 @@ fn flow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View, flow: &'m FlowVie
                     ctx.call(HTML, "hRepeat", args)
                 }
                 CompileTarget::Hydrate => {
-                    let mut args = vec![count, map];
-                    args.extend(fallback);
-                    let inner = ctx.call(RUNTIME_MODULE, "repeat", args);
-                    prepare(ctx, view, inner)
+                    let site = ctx.site(view);
+                    let mut args = vec![site, count, map];
+                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
+                    ctx.call(HYDRATE, "prepareRepeat", args)
                 }
             }
         }
@@ -501,10 +490,10 @@ fn flow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View, flow: &'m FlowVie
                     ctx.call(HTML, "hLoading", args)
                 }
                 CompileTarget::Hydrate => {
-                    let mut args = vec![child];
-                    args.extend(fallback);
-                    let inner = ctx.call(RUNTIME_MODULE, "loading", args);
-                    prepare(ctx, view, inner)
+                    let site = ctx.site(view);
+                    let mut args = vec![site, child];
+                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
+                    ctx.call(HYDRATE, "prepareLoading", args)
                 }
             }
         }
@@ -524,10 +513,10 @@ fn flow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View, flow: &'m FlowVie
                     ctx.call(HTML, "hErrored", args)
                 }
                 CompileTarget::Hydrate => {
-                    let mut args = vec![child];
-                    args.extend(fallback);
-                    let inner = ctx.call(RUNTIME_MODULE, "errored", args);
-                    prepare(ctx, view, inner)
+                    let site = ctx.site(view);
+                    let mut args = vec![site, child];
+                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
+                    ctx.call(HYDRATE, "prepareErrored", args)
                 }
             }
         }
@@ -581,12 +570,6 @@ fn rows<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, times: u32, map: ExprRef) -> Expr
     let count = ast.call(ast.ident(array), [ast.number(f64::from(times))]);
     let keys = ast.call(ast.member(count, ctx.intern("keys")), Vec::new());
     ast.call(ast.member(ast.ident(array), ctx.intern("from")), [keys, ctx.expr(map)])
-}
-
-fn prepare<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View, inner: Expression<'a>) -> Expression<'a> {
-    let ast = Ast::new(ctx.allocator);
-    let site = ctx.site(view);
-    ctx.call(HYDRATE, "prepareFlow", [site, ast.arrow(Vec::new(), inner)])
 }
 
 fn island_call<'a, 'm>(

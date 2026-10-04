@@ -1,4 +1,4 @@
-import type { PreloadArgs, RouteComponent, RouteDefinition, RouteParams } from "./types";
+import type { Awaitable, PageMetadata, PreloadArgs, RouteComponent, RouteDefinition, RouteParams, RouteRedirect, RouteResolvedArgs } from "./types";
 
 /** Preserves the literal route tuple for the router factory; returns the same value. */
 export function defineRoutes<const R extends readonly RouteDefinition[]>(routes: R): R {
@@ -9,7 +9,9 @@ export function defineRoutes<const R extends readonly RouteDefinition[]>(routes:
 export function defineRoute<const S extends string, T>(route: {
   path: S;
   preload?: (args: PreloadArgs<RouteParams<S>>) => T;
-  component?: RouteComponent<RouteParams<S>, T>;
+  meta?: PageMetadata | ((args: RouteResolvedArgs<RouteParams<S>, T>) => Awaitable<PageMetadata>);
+  redirect?: RouteRedirect | ((args: RouteResolvedArgs<RouteParams<S>, T>) => Awaitable<RouteRedirect | undefined>);
+  component?: RouteComponent<RouteParams<S>, Awaited<T>>;
   info?: Readonly<Record<string, unknown>>;
   children?: readonly RouteDefinition[];
 }): RouteDefinition & { path: S } {

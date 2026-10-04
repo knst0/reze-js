@@ -1,6 +1,17 @@
 import { adopt, enterEffect, exitEffect, getOwner, reportError, setActiveSub, startTracking, trackPendingRead } from "./context";
 import { FlagDirty, FlagNone, FlagOwnsChildren, FlagPending, FlagRecursedCheck, FlagWatching } from "./flags";
 import { checkDirty, disposeChildren, disposeNode, type Link, purgeDeps, type ReactiveNode } from "./graph";
+import {
+  beforeResourcePending,
+  beforeResourceSettle,
+  disposeResource,
+  parkSkippedProducer,
+  registerResource,
+  resourceRecordOf,
+  supersedeResource,
+  trackResourceStart,
+} from "./internal/resource";
+import { getScopeObserver } from "./internal/scope";
 import { profileCreated, profileReran } from "./profile";
 import { SignalNode } from "./signal";
 
@@ -111,6 +122,13 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
     if (generation > 1 && process.env.NODE_ENV !== "production") {
       profileReran(this);
     }
+    if (__REZE_HTML__ || __REZE_HYDRATE__) {
+      const record = resourceRecordOf(this);
+      if (record !== undefined) {
+        supersedeResource(record, generation);
+        beforeResourcePending(record);
+      }
+    }
     this.pending.write(true);
     const prevSub = startTracking(this, FlagWatching);
     let result: PromiseLike<T> | T;
@@ -124,25 +142,84 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
       setActiveSub(prevSub);
       this.flags &= ~FlagRecursedCheck;
     }
-    Promise.resolve(result).then(
+    const promise = Promise.resolve(result);
+    if (__REZE_HTML__ || __REZE_HYDRATE__) {
+      const record = resourceRecordOf(this);
+      if (record !== undefined) {
+        trackResourceStart(record, generation, promise);
+      }
+    }
+    promise.then(
       (value) => {
         if (generation === this.generation) {
-          this.hasSettled = true;
-          purgeDeps(this);
-          this.resolved.write(value);
-          this.rejection.write(undefined);
-          this.pending.write(false);
+          if (__REZE_HTML__ || __REZE_HYDRATE__) {
+            const record = resourceRecordOf(this);
+            if (record !== undefined) {
+              if (
+                !beforeResourceSettle(record, generation, {
+                  pending: false,
+                  hasResolved: true,
+                  resolved: value,
+                  hasRejection: false,
+                  rejection: undefined,
+                })
+              ) {
+                return;
+              }
+              if (record.scope !== undefined && !record.scope.disposed) {
+                record.scope.run(() => {
+                  this.commitResolution(value);
+                });
+                return;
+              }
+            }
+          }
+          this.commitResolution(value);
         }
       },
       (error: unknown) => {
         if (generation === this.generation) {
-          this.hasSettled = true;
-          purgeDeps(this);
-          this.rejection.write(error);
-          this.pending.write(false);
+          if (__REZE_HTML__ || __REZE_HYDRATE__) {
+            const record = resourceRecordOf(this);
+            if (record !== undefined) {
+              if (
+                !beforeResourceSettle(record, generation, {
+                  pending: false,
+                  hasResolved: false,
+                  resolved: undefined,
+                  hasRejection: true,
+                  rejection: error,
+                })
+              ) {
+                return;
+              }
+              if (record.scope !== undefined && !record.scope.disposed) {
+                record.scope.run(() => {
+                  this.commitRejection(error);
+                });
+                return;
+              }
+            }
+          }
+          this.commitRejection(error);
         }
       },
     );
+  }
+
+  private commitResolution(value: T): void {
+    this.hasSettled = true;
+    purgeDeps(this);
+    this.resolved.write(value);
+    this.rejection.write(undefined);
+    this.pending.write(false);
+  }
+
+  private commitRejection(error: unknown): void {
+    this.hasSettled = true;
+    purgeDeps(this);
+    this.rejection.write(error);
+    this.pending.write(false);
   }
 
   unwatched(): void {
@@ -150,6 +227,9 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
   }
 
   dispose(): void {
+    if (__REZE_HTML__ || __REZE_HYDRATE__) {
+      disposeResource(this);
+    }
     ++this.generation;
     disposeNode(this);
   }
@@ -166,6 +246,73 @@ export function asyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> | T): A
     profileCreated(node, "async", undefined);
   }
   const owner = getOwner();
+  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    const record = registerResource(
+      node,
+      owner,
+      "public",
+      {
+        writeResolved: (value): void => {
+          node.resolved.write(value as T | undefined);
+        },
+        writeRejection: (value): void => {
+          node.rejection.write(value);
+        },
+        writePending: (value): void => {
+          node.pending.write(value);
+        },
+        purge: (): void => {
+          purgeDeps(node);
+        },
+      },
+    );
+    if (owner !== undefined) {
+      adopt(node, owner);
+    }
+    if (getScopeObserver()?.shouldSkipInitialProducer?.(record) === true) {
+      parkSkippedProducer(record);
+      beforeResourcePending(record);
+      return node;
+    }
+    node.start();
+    return node;
+  }
+  if (owner !== undefined) {
+    adopt(node, owner);
+  }
+  node.start();
+  return node;
+}
+
+export const internalAsyncComputed = __REZE_HTML__ || __REZE_HYDRATE__ ? createInternalAsyncComputed : asyncComputed;
+
+function createInternalAsyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> | T): AsyncComputed<T> {
+  const node = new AsyncComputedNode(fn);
+  if (process.env.NODE_ENV !== "production") {
+    profileCreated(node, "async", undefined);
+  }
+  const owner = getOwner();
+  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    registerResource(
+      node,
+      owner,
+      "internal",
+      {
+        writeResolved: (value): void => {
+          node.resolved.write(value as T | undefined);
+        },
+        writeRejection: (value): void => {
+          node.rejection.write(value);
+        },
+        writePending: (value): void => {
+          node.pending.write(value);
+        },
+        purge: (): void => {
+          purgeDeps(node);
+        },
+      },
+    );
+  }
   if (owner !== undefined) {
     adopt(node, owner);
   }

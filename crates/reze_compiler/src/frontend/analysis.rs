@@ -960,6 +960,7 @@ pub enum RuntimeCallKind {
     AsyncComponent,
     Dynamic,
     DynamicElement,
+    Island,
 }
 
 impl RuntimeCallKind {
@@ -970,6 +971,7 @@ impl RuntimeCallKind {
             "asyncComponent" => Self::AsyncComponent,
             "dynamic" => Self::Dynamic,
             "dynamicElement" => Self::DynamicElement,
+            "island" => Self::Island,
             _ => return None,
         })
     }

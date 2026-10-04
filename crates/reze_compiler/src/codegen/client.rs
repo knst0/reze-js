@@ -8,9 +8,10 @@ use super::EmitContext;
 use crate::RUNTIME_MODULE;
 use crate::ast::Ast;
 use crate::html::is_identifier_name;
+use crate::ir::layout::{needs_text_nodes, path_steps, serialize_client_static, PathStep};
 use crate::ir::view::{
     Anchor, AssignTarget, Attr, AttrTarget, ElementView, EventHandler, EventKind, ExprRef, InsertOp,
-    LateProp, LinkProp, MemberKey, Namespace, RefOp, RefTarget, SpreadSegment,
+    LateProp, LinkProp, MemberKey, Namespace, RefOp, RefTarget, SpreadSegment, StaticNodeKind,
 };
 
 pub struct ClientTarget<'a> {
@@ -136,7 +137,28 @@ pub fn template<'a>(
     element: &ElementView,
 ) -> Expression<'a> {
     let ast = Ast::new(ctx.allocator);
-    let html = crate::ir::layout::serialize_static(&element.statics);
+    let patches = element.statics.nodes.iter().enumerate()
+        .filter(|(_, node)| needs_text_nodes(&element.statics, node))
+        .map(|(index, node)| {
+            let path = ast.array(path_steps(&element.statics, 0, index as u32).iter().map(|step| match step {
+                PathStep::Index(index) => ast.number(f64::from(*index)),
+                PathStep::Content => ast.string("c"),
+            }));
+            let children = ast.array(node.children.iter().map(|&id| {
+                let child = &element.statics.nodes[id as usize];
+                match child.kind {
+                    StaticNodeKind::Text => ast.string(&child.text),
+                    StaticNodeKind::Marker => ast.null(),
+                    StaticNodeKind::Element => unreachable!("normalized raw text contains no elements"),
+                }
+            }));
+            ast.object([ast.prop("path", path), ast.prop("children", children)])
+        }).collect::<Vec<_>>();
+    let html = if patches.is_empty() {
+        crate::ir::layout::serialize_static(&element.statics)
+    } else {
+        serialize_client_static(&element.statics)
+    };
     let (helper, source) = match element.namespace {
         Namespace::Html => ("template", html),
         Namespace::Svg if element.tag == "svg" => ("template", html),
@@ -144,8 +166,22 @@ pub fn template<'a>(
         Namespace::Svg => ("templateSVG", format!("<svg>{html}")),
         Namespace::MathMl => ("templateMathML", html),
     };
-    let source = ast.string(&source);
-    ctx.call(RUNTIME_MODULE, helper, [source])
+    if patches.is_empty() {
+        return ctx.call(RUNTIME_MODULE, helper, [ast.string(&source)]);
+    }
+    let name = ctx.fresh("_textTemplate$");
+    let namespace = match helper {
+        "templateSVG" => "svg",
+        "templateMathML" => "math",
+        _ => "",
+    };
+    let definition = ast.object([
+        ast.prop("source", ast.string(&source)),
+        ast.prop("namespace", ast.string(namespace)),
+        ast.prop("patches", ast.array(patches)),
+    ]);
+    ctx.hoisted.push(ast.declaration(VariableDeclarationKind::Const, name, Some(definition)));
+    ctx.call(RUNTIME_MODULE, "templateWithTextNodes", [ast.ident(name)])
 }
 
 pub fn accessor<'a>(

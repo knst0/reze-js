@@ -1,4 +1,5 @@
-import { root, untrack } from "@rezejs/signals";
+import { untrack } from "@rezejs/signals";
+import { renderRoot } from "@rezejs/signals/internal/scope";
 import { profileComponent } from "@rezejs/signals/profile";
 
 import { insert } from "./insert";
@@ -15,7 +16,7 @@ export function createComponent<P>(Comp: (props: P) => JSX.Element, props: P, pr
 
 /** Replaces all existing content in `element` with `code()`; the returned function disposes it and empties `element`. */
 export function render(code: () => JSX.Element, element: Element): () => void {
-  const dispose = root((dispose) => {
+  const dispose = renderRoot((dispose) => {
     element.textContent = "";
     insert(element, code(), undefined);
     return dispose;

@@ -12,7 +12,13 @@ async function buildProductionBundle(): Promise<void> {
   const build = await rolldown({
     input: sourceEntry,
     platform: "neutral",
-    transform: { define: { "process.env.NODE_ENV": '"production"' } },
+    transform: {
+      define: {
+        "process.env.NODE_ENV": '"production"',
+        __REZE_HTML__: "false",
+        __REZE_HYDRATE__: "false",
+      },
+    },
   });
   await build.write({ file: productionBundle, format: "esm", minify: true });
   await build.close();
@@ -33,6 +39,10 @@ const resolveSignals: Plugin = {
 
 export default defineConfig({
   plugins: [resolveSignals],
+  define: {
+    __REZE_HTML__: "false",
+    __REZE_HYDRATE__: "false",
+  },
   test: {
     name: "@rezejs/signals",
     exclude: [...configDefaults.exclude, nodeSpecs],

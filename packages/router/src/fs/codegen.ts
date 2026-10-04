@@ -122,7 +122,7 @@ export function routesModule(routes: readonly FileRoute[], dir: string, base: st
     list
       .map(
         (route) =>
-          `{ path: ${JSON.stringify(route.path)}, load: () => import(${JSON.stringify(posix.join(root, route.file))})` +
+          `{ id: ${JSON.stringify(route.id)}, path: ${JSON.stringify(route.path)}, load: () => import(${JSON.stringify(posix.join(root, route.file))})` +
           (route.children.length > 0 ? `, children: ${emit(route.children)}` : "") +
           " }",
       )

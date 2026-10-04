@@ -191,7 +191,7 @@ fn compile_module(
     if !module.has_views && !normalized.content_changed && normalized.facts.folded_bindings.is_empty()
         && normalized.facts.dynamic_tags.is_empty()
         && !(options.debug_names && options.target != CompileTarget::Html)
-        && !(options.target != CompileTarget::Client && !normalized.facts.runtime_calls.is_empty())
+        && options.target == CompileTarget::Client
     {
         return Ok(None);
     }

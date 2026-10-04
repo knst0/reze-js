@@ -1,6 +1,7 @@
 // Ported from alien-signals (MIT, Copyright (c) 2024-present Johnson Chu); see graph.ts.
 import { FlagOwnsChildren, FlagRecursedCheck } from "./flags";
 import { link, purgeDeps, type ReactiveNode } from "./graph";
+import { registerNodeScope } from "./internal/scope";
 
 /** The subscriber that reads right now are tracked into. */
 export let activeSub: ReactiveNode | undefined;
@@ -40,19 +41,22 @@ export function isPureRun(): boolean {
   return activeSub !== undefined && pureNodes !== undefined && pureNodes.has(activeSub);
 }
 
-/** Records `node` as owned by `owner`: disposed before the owner re-runs and when it is disposed. */
 export function adopt(node: ReactiveNode, owner: ReactiveNode): void {
   link(node, owner, 0);
   owner.flags |= FlagOwnsChildren;
+  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    registerNodeScope(node, owner);
+  }
 }
 
-/** Makes `sub` active and records it as owned by the current owner. */
 export function enterOwner(sub: ReactiveNode): ReactiveNode | undefined {
   const prevSub = activeSub;
   const owner = prevSub ?? activeOwner;
   activeSub = sub;
   if (owner !== undefined) {
     adopt(sub, owner);
+  } else if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    registerNodeScope(sub, undefined);
   }
   return prevSub;
 }

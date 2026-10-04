@@ -2,10 +2,30 @@ import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
 import { Errored, Loading, island, type JSX } from "reze-js";
 import { afterEach, expect, test, vi } from "vitest";
 
-afterEach(cleanup);
 afterEach(() => {
-  vi.unstubAllGlobals();
+  try {
+    cleanup();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
+
+function mockIdle(): () => void {
+  const pending = new Map<number, () => void>();
+  let nextId = 0;
+  vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
+    const id = ++nextId;
+    pending.set(id, callback);
+    return id;
+  });
+  vi.stubGlobal("cancelIdleCallback", (id: number) => pending.delete(id));
+  return () => {
+    for (const [id, callback] of pending) {
+      pending.delete(id);
+      callback();
+    }
+  };
+}
 
 function Greeting(props: { name: string }) {
   return <b>hi {props.name}</b>;
@@ -49,11 +69,7 @@ test("an eager island with a split chunk shows its fallback until the component 
 });
 
 test("an idle island does not load until the browser is idle", async () => {
-  let idle: () => void = () => {};
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
-    idle = callback;
-    return 0;
-  });
+  const idle = mockIdle();
   let calls = 0;
   const { el } = mount(() =>
     island(
@@ -239,11 +255,7 @@ test("a failed island load goes to the error boundary", async () => {
 });
 
 test("the island attribute compiles to a deferred island", async () => {
-  let idle: () => void = () => {};
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
-    idle = callback;
-    return 0;
-  });
+  const idle = mockIdle();
   const { el } = mount(() => <Greeting island="idle" name="ann" />);
   expect(el.innerHTML).toBe("");
 
@@ -254,11 +266,7 @@ test("the island attribute compiles to a deferred island", async () => {
 });
 
 test("the island attribute forwards children to the loaded component", async () => {
-  let idle: () => void = () => {};
-  vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
-    idle = callback;
-    return 0;
-  });
+  const idle = mockIdle();
   function Panel(props: { title: string; children?: JSX.Element }) {
     return (
       <section>

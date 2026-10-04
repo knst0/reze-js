@@ -34,6 +34,7 @@
  */
 
 import { FlagDirty, FlagMutable, FlagNone, FlagPending, FlagRecursed, FlagRecursedCheck, FlagWatching } from "./flags";
+import { notifyNodeDisposed } from "./internal/scope";
 import { profileDisposed } from "./profile";
 import { scheduleNode } from "./scheduler";
 
@@ -87,6 +88,9 @@ export function disposeNode(node: ReactiveNode): void {
   const sub = node.subs;
   if (sub !== undefined) {
     unlink(sub);
+  }
+  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    notifyNodeDisposed(node);
   }
 }
 

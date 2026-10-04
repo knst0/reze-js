@@ -22,10 +22,12 @@ See [installation](/installation) for the complete project configuration.
 
 | Option | Type | Behavior |
 | --- | --- | --- |
-| `diagnostics.jsonl` | `string` | Append all compiler diagnostics to this file as JSON lines. Parent directories are created when diagnostics are written. |
+| `diagnostics` | `{ jsonl?: string }` | Append all compiler diagnostics to this file as JSON lines. Parent directories are created when diagnostics are written. |
 | `extensions` | `string[]` | Replace the transformed file extensions. Omitted or empty lists use the defaults. |
 | `links` | `string` | Name a module exporting `link` to handle compiled native anchors with `href`. |
 | `fileRoutes` | `boolean` or options object | Enable generated file-system routes. Requires `@rezejs/router`. |
+| `ssg` | options object | Pre-render the application to static HTML with hydration. See [static site generation](#static-site-generation). |
+| `profile` | `{ dir: string }` | Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. |
 
 The exported `DEFAULT_ROUTE_EXTENSIONS` contains `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`. Leading dots are optional in custom extension entries. Files in `node_modules` are excluded from the compiler transform.
 
@@ -58,6 +60,43 @@ Keep the `history` option consistent with the history passed to `createRouter`. 
 
 Each route file gets a lazy chunk. Adding or removing routes during development regenerates the route module and triggers a full reload when its contents change.
 
+## Static site generation
+
+`ssg` replaces client-only output with a two-target production build: the application executes against the HTML runtime to produce each page's HTML, and the browser hydrates that HTML instead of rendering from scratch. Development stays client-rendered: the dev server never executes pages at request time.
+
+```ts
+import reze from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [reze({ fileRoutes: true, ssg: { entry: "src/app.tsx" } })],
+});
+```
+
+The entry is a shared application module with one of two shapes. A router application exports the generated table, and optionally the typed builders and a shell around the matched branch:
+
+```tsx
+export { paths, routes } from "virtual:reze-routes";
+export { Shell as default } from "./Shell";
+```
+
+Without routes, the default export is the whole page and serves exactly `/`; combining that shape with `ssg.paths` is an error. Detecting the shape reads the static export graph without executing the application; ambiguous or missing exports fail the build before any page renders.
+
+| `ssg` option | Default | Contract |
+| --- | --- | --- |
+| `entry` | required | Project-relative application module, as above. |
+| `template` | `"index.html"` | HTML template. It must contain exactly one `<script type="module" src="/@reze/ssg-client.js"></script>`; other scripts and styles are preserved. |
+| `selector` | `"#app"` | Mount selector: `#` plus an ASCII identifier. The mount root must carry that id. |
+| `trailingSlash` | `"always"` | `"always"` or `"never"`. Shapes canonical URLs; the static file layout is identical either way. |
+| `timeoutMs` | `30000` | Per-page deadline: a finite number above zero. Unsettled registered work fails the page instead of emitting a placeholder. |
+| `paths` | `{}` | Dynamic-leaf params: each pattern maps to param records or a one-shot callback returning them. Callbacks run once per production build. |
+
+Static leaves are enumerated automatically; each dynamic leaf pattern needs its normalized key in `paths`. `[]` skips a dynamic leaf explicitly, unknown keys or unmatched URLs fail the build, and an empty page set is an error. `/` is written to `index.html`, `/a/b` to `a/b/index.html`. The input template is not published as a separate client-only shell: without a `/` page, no root `index.html` is emitted.
+
+Pages render sequentially, each in a fresh worker and module graph, so module-level state never leaks between URLs. Redirects become static documents with a canonical link, a meta refresh, and a small redirect reader instead of the hydration bootstrap. Any page failure — uncaught route error, unsupported transfer value, timeout, asset miss, or protocol mismatch — fails the build with its pathname.
+
+Preprocessors and aliases apply to both targets from the same JSX input, so compiler site identities match between the HTML execution and the hydration binding. Static generation requires browser history; hash routing, library mode, `build.watch`, and explicit `--ssr` are rejected.
+
 For route naming, layouts, navigation, and application setup, see [routing](/routing).
 
 ## Preprocessors
@@ -76,7 +115,7 @@ Use this configuration alongside the format's JSX-producing plugin. File-route d
 
 ## Diagnostics and source maps
 
-Compiler errors fail the transform. Warnings appear through Vite. `diagnostics.jsonl` also records informational diagnostics; repeated builds append new entries.
+Compiler errors fail the transform. Warnings appear through Vite. The configured `jsonl` file also records informational diagnostics; repeated builds append new entries.
 
 Source-map generation follows Vite: production uses `build.sourcemap`; development follows `dev.sourcemap`. Debug names are enabled outside production. Compiler HMR support is enabled when serving and `server.hmr` is not `false`.
 
@@ -86,6 +125,21 @@ See [compiler diagnostics](/compiler#diagnostics) for common errors and repairs.
 
 Run `vite build` and deploy the resulting `dist` directory to a static host. `vite preview` is for local inspection of that build.
 
-For browser-history routing, configure the host to serve the application's HTML entry for application URLs that are not static files. Otherwise, opening a nested route directly can return a server 404 even when in-app navigation works. Match Vite's `base` and the browser history base when hosting under a subdirectory.
+Without `ssg`, the build is a client-rendered application: for browser-history routing, configure the host to serve the HTML entry for application URLs that are not static files. Otherwise, opening a nested route directly can return a server 404 even when in-app navigation works.
 
-The Reze plugin applies to client environments. This setup documents a client-rendered application, not a server-rendering or hydration pipeline.
+With `ssg`, every page is its own static file, so serve the files directly with no fallback rewrite: rewriting an unknown path to another page's HTML would hydrate the wrong route. Unmatched URLs genuinely return 404; add a catch-all route when they should render a page instead. Match Vite's `base` and the browser history base when hosting under a subdirectory.
+
+### Packaged consumer smoke
+
+`packages/vite-plugin/scripts/packaged-ssg-smoke.mjs` proves the published packages work outside the workspace. It packs every tarball through the real napi release path (`create-npm-dirs`, `artifacts --output-dir artifacts`, `pre-publish --skip-optional-publish`), installs the tarballs into an empty temporary project with no workspace aliases and no `NAPI_RS_NATIVE_LIBRARY_PATH`, then builds the shared SSG fixtures, serves them as strict static files, and hydrates them in real browsers while checking that hydration adopts the server nodes instead of remounting.
+
+```sh
+pnpm build
+pnpm exec playwright install --with-deps chromium firefox webkit
+node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --vite 8.0.0 --browsers chromium
+REZE_SSG_BROWSERS=chromium,firefox,webkit node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --vite 6.4.0,7.0.0,8.0.0
+```
+
+`--fixtures` selects fixture directories under `packages/vite-plugin/tests/fixtures/ssg` (default: `standalone-counter`, `router-full`, plus `mdx-post` when it exists). `--artifacts-dir packages/compiler` reuses an already staged compiler directory instead of running the napi steps, which is how the release workflow smokes the prepared artifacts before publishing.
+
+The Reze plugin applies to the client and HTML build environments. Development and the default build are client-rendered; `ssg` adds build-time HTML execution with browser hydration.

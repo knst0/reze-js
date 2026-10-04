@@ -84,9 +84,9 @@ declare module "virtual:reze-routes/register" {
 test("routesModule emits nested lazy imports of absolute files", () => {
   const routes = scanRoutes(["blog.tsx", "blog/[id].tsx", "index.tsx"]);
   expect(routesModule(routes, "/abs/src/routes", "")).toContain(
-    'export const routes = [{ path: "/blog", load: () => import("/abs/src/routes/blog.tsx"), children: [' +
-      '{ path: "/:id", load: () => import("/abs/src/routes/blog/[id].tsx") }] }, ' +
-      '{ path: "/", load: () => import("/abs/src/routes/index.tsx") }];',
+    'export const routes = [{ id: "blog", path: "/blog", load: () => import("/abs/src/routes/blog.tsx"), children: [' +
+      '{ id: "blog/[id]", path: "/:id", load: () => import("/abs/src/routes/blog/[id].tsx") }] }, ' +
+      '{ id: "index", path: "/", load: () => import("/abs/src/routes/index.tsx") }];',
   );
 });
 

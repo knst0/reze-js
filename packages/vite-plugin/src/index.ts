@@ -5,7 +5,12 @@ import { dirname, join, resolve } from "node:path";
 import { compile } from "@rezejs/compiler";
 import type { Environment, Plugin } from "vite";
 
+import { canonicalModuleId } from "./module-identity";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
+import { SsgClientId, SsgHtmlAdapterId, SsgRedirectId, SsgViewId } from "./ssg/adapter";
+import { HtmlEnv, createSsgPlugin, createSsgShared, includePredicate, transformHtmlAsset } from "./ssg/ssg";
+import type { SsgShared } from "./ssg/ssg";
+import type { SsgOptions } from "./ssg/options";
 export interface Options {
   diagnostics?: {
     /** File every diagnostic, `info` included, is appended to as one JSON line. */
@@ -17,6 +22,8 @@ export interface Options {
   extensions?: string[];
   /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. The result is awaitable in `plugins`. */
   fileRoutes?: boolean | FileRoutesOptions;
+  /** Static-site generation: two-target production build (HTML execution + hydration). Absent by default. */
+  ssg?: SsgOptions;
   profile?: {
     /** Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. */
     dir: string;
@@ -51,7 +58,7 @@ interface Diagnostic {
 
 const SkillGuide = "node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md";
 const QueryOrHash = /[?#].*$/;
-const RuntimeEntry = /^(?:reze-js|@rezejs\/(?:dom|signals))(?:\/|$)/;
+const RuntimeEntry = /^(?:reze-js|@rezejs\/(?:dom|signals|router))(?:\/|$)/;
 
 /** File extensions the transform compiles by default; spread it to extend the list instead of replacing it. */
 export const DEFAULT_ROUTE_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
@@ -60,10 +67,10 @@ function normalizeExtension(e: string): string {
   return (e.startsWith(".") ? e : `.${e}`).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function transformFilter(extras: readonly string[] | undefined): { id: { include: RegExp; exclude: RegExp } } {
+function transformFilter(extras: readonly string[] | undefined): { include: RegExp; exclude: RegExp } {
   const list = extras === undefined || extras.length === 0 ? DEFAULT_ROUTE_EXTENSIONS : extras;
   const include = new RegExp(`(?:${list.map(normalizeExtension).join("|")})(?:$|\\?)`);
-  return { id: { include, exclude: /\/node_modules\// } };
+  return { include, exclude: /\/node_modules\// };
 }
 
 interface ProfileComponentFacts {
@@ -180,7 +187,7 @@ function fileProfileTree(dir: string, hashes: Map<string, string>, tree: unknown
   }
 }
 
-function rezePlugin(options: Options): Plugin<RezeApi> {
+function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
   const jsonl = options.diagnostics?.jsonl;
   const seenCodes = new Set<string>();
   let jsonlDirReady = false;
@@ -192,6 +199,8 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
   const profileDir = options.profile?.dir;
   const profileHashes = new Map<string, string>();
   const runtimeEntries = new Set<string>();
+  const runtimeDirectories = new Set<string>();
+  const filter = transformFilter(options.extensions);
 
   function formatDiagnostic(d: Diagnostic): string {
     if (seenCodes.has(d.code)) return d.rendered;
@@ -224,59 +233,84 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
         links = module;
       },
     },
-    applyToEnvironment: (environment) => environment.config.consumer === "client",
+    applyToEnvironment: (environment) => environment.name === "client" || environment.name === HtmlEnv,
     configResolved(config) {
       isServe = config.command === "serve";
       debugNames = !config.isProduction;
       hot = isServe && config.server.hmr !== false;
-      root = config.root;
+      root = config.root ?? "";
+      shared.root = root;
+      shared.isServe = isServe;
+      const rawLimit: unknown = config.build.assetsInlineLimit;
+      shared.limit = rawLimit === false ? -1 : (typeof rawLimit === "number" ? rawLimit : 4096);
+      const assetsInclude: unknown = "assetsInclude" in config ? config.assetsInclude : undefined;
+      shared.include = includePredicate(assetsInclude);
     },
     async resolveId(id, importer, options) {
       if (!RuntimeEntry.test(id)) return;
       const resolved = await this.resolve(id, importer, { ...options, skipSelf: true });
-      if (resolved) runtimeEntries.add(resolved.id.replace(QueryOrHash, ""));
+      if (resolved) {
+        const file = resolved.id.replace(QueryOrHash, "");
+        runtimeEntries.add(file);
+        const dist = file.lastIndexOf("/dist/");
+        if (dist !== -1) runtimeDirectories.add(file.slice(0, dist + 6));
+      }
       return resolved;
     },
-    transform: {
-      filter: transformFilter(options.extensions),
-      handler(code, id) {
-        const file = id.replace(QueryOrHash, "");
-        if (runtimeEntries.has(file)) return;
-        const profile = profileDir === undefined ? undefined : readProfileFacts(resolve(root, profileDir), file, code);
-        if (profileDir !== undefined) profileHashes.set(file, profileHash(code));
-        const result = compile(code, file, {
-          sourceMap: emitsSourceMap(this.environment.config),
-          debugNames,
-          hot,
-          links,
-          ...(profile === undefined ? {} : { profile }),
-        });
-        if (result === null) return null;
-        const diagnostics: Diagnostic[] = result.diagnostics;
-        record(diagnostics);
-        const errors: Diagnostic[] = [];
-        for (const d of diagnostics) {
-          if (d.severity === "error") errors.push(d);
-          else if (d.severity === "warn") {
-            this.warn({
-              message: formatDiagnostic(d),
-              id,
-              loc: { file: d.file, line: d.start.line, column: d.start.column },
-            });
-          }
-        }
-        if (errors.length > 0) {
-          const first = errors[0]!;
-          throw Object.assign(new Error(errors.map(formatDiagnostic).join("\n\n")), {
+    transform(code, id) {
+      if (id !== SsgViewId && (!filter.include.test(id) || filter.exclude.test(id))) return null;
+      const file = id.replace(QueryOrHash, "");
+      if (runtimeEntries.has(file) || id === SsgClientId || id === SsgHtmlAdapterId || id === SsgRedirectId) return;
+      if (id.startsWith("\0vite/") || id.startsWith("\0rolldown/")) return;
+      for (const directory of runtimeDirectories) if (file.startsWith(directory)) return;
+      const profile = profileDir === undefined ? undefined : readProfileFacts(resolve(root, profileDir), file, code);
+      if (profileDir !== undefined) profileHashes.set(file, profileHash(code));
+      const envName = this.environment.name;
+      const ssgTarget = shared.enabled && shared.root !== ""
+        ? (envName === HtmlEnv ? "html" : (shared.isServe ? undefined : "hydrate"))
+        : undefined;
+      const moduleId = ssgTarget === undefined ? undefined : canonicalModuleId(id, shared.root);
+      if (moduleId !== undefined) {
+        shared.registry.register(moduleId, code);
+        if (ssgTarget === "hydrate") shared.moduleFiles.set(moduleId, id);
+      }
+      const result = compile(code, file, {
+        sourceMap: emitsSourceMap(this.environment.config),
+        debugNames,
+        hot,
+        links,
+        ...(profile === undefined ? {} : { profile }),
+        ...(ssgTarget === undefined ? {} : { target: ssgTarget, moduleId }),
+      });
+      if (result === null) return null;
+      const diagnostics: Diagnostic[] = result.diagnostics;
+      record(diagnostics);
+      const errors: Diagnostic[] = [];
+      for (const d of diagnostics) {
+        if (d.severity === "error") errors.push(d);
+        else if (d.severity === "warn") {
+          this.warn({
+            message: formatDiagnostic(d),
             id,
-            loc: { file: first.file, line: first.start.line, column: first.start.column },
-            frame: first.rendered,
-            plugin: "reze-js",
-            diagnostics: errors,
+            loc: { file: d.file, line: d.start.line, column: d.start.column },
           });
         }
-        return { code: result.code!, map: result.map ?? null };
-      },
+      }
+      if (errors.length > 0) {
+        const first = errors[0]!;
+        throw Object.assign(new Error(errors.map(formatDiagnostic).join("\n\n")), {
+          id,
+          loc: { file: first.file, line: first.start.line, column: first.start.column },
+          frame: first.rendered,
+          plugin: "reze-js",
+          diagnostics: errors,
+        });
+      }
+      let outCode = result.code!;
+      if (ssgTarget === "html") {
+        outCode = transformHtmlAsset(outCode, file, shared.root, shared.include, shared.limit) ?? outCode;
+      }
+      return { code: outCode, map: result.map ?? null };
     },
     configureServer(server) {
       if (profileDir === undefined) return;
@@ -305,14 +339,23 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
 }
 
 export type { FileRoutesOptions } from "./routes";
+export type { SsgOptions, StaticParams, StaticPathsValue } from "./ssg/options";
 
-export default function reze(options?: Options & { fileRoutes?: false | undefined }): Plugin<RezeApi>;
+export default function reze(options?: Options & { fileRoutes?: false | undefined; ssg?: undefined }): Plugin<RezeApi>;
+export default function reze(options: Options & { ssg: SsgOptions; fileRoutes?: false | undefined }): Plugin[];
 export default function reze(options: Options & { fileRoutes: true | FileRoutesOptions }): Promise<Plugin[]>;
-export default function reze(options: Options = {}): Plugin<RezeApi> | Promise<Plugin[]> {
-  const plugin = rezePlugin(options);
-  if (options.fileRoutes === undefined || options.fileRoutes === false) return plugin;
+export default function reze(options: Options & { ssg: SsgOptions; fileRoutes: true | FileRoutesOptions }): Promise<Plugin[]>;
+export default function reze(options: Options = {}): Plugin<RezeApi> | Plugin[] | Promise<Plugin[]> {
+  const shared = createSsgShared();
+  const plugin = rezePlugin(options, shared);
+  const ssg = options.ssg === undefined
+    ? []
+    : createSsgPlugin(options.ssg, shared, options.fileRoutes === true ? {} : options.fileRoutes);
+  if (options.fileRoutes === undefined || options.fileRoutes === false) {
+    return options.ssg === undefined ? plugin : [plugin, ...ssg];
+  }
   const routesOptions = options.fileRoutes === true ? {} : options.fileRoutes;
-  return routesPlugins(plugin, routesOptions, options.extensions);
+  return routesPlugins(plugin, routesOptions, options.extensions).then((plugins) => [...ssg, ...plugins]);
 }
 
 // Optional peer: a static import would make every user install @rezejs/router.

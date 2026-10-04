@@ -29,6 +29,14 @@
     "./internal/reactivity": {
       "types": "./dist/internal/reactivity.d.ts",
       "import": "./dist/internal/reactivity.js"
+    },
+    "./internal/html": {
+      "types": "./dist/internal/html.d.ts",
+      "import": "./dist/internal/html.js"
+    },
+    "./internal/hydrate": {
+      "types": "./dist/internal/hydrate.d.ts",
+      "import": "./dist/internal/hydrate.js"
     }
   },
   "publishConfig": {

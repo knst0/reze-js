@@ -1,0 +1,1046 @@
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import type { Browser, Page } from "playwright";
+import type { Plugin } from "vite";
+import mdx from "@mdx-js/rollup";
+import remarkFrontmatter from "remark-frontmatter";
+import remarkMdxFrontmatter from "remark-mdx-frontmatter";
+import { parse, serialize } from "parse5";
+import type { DefaultTreeAdapterTypes } from "parse5";
+
+import reze, { DEFAULT_ROUTE_EXTENSIONS } from "../src/index";
+import { buildGreeting } from "./fixtures/ssg/standalone-basics/src/data";
+import {
+  buildSsgFixture,
+  expectBuildFails,
+  fetchHtml,
+  launchEngine,
+  listBuiltFiles,
+  manifestClosure,
+  openPage,
+  payloadScript,
+  readBuiltFile,
+  readManifest,
+  resolveBrowsers,
+  serveDist,
+  waitFor,
+} from "./ssg-harness";
+import type { SsgBrowserName, StaticOrigin, ViteManifest } from "./ssg-harness";
+
+const FIXTURES = join(import.meta.dirname, "fixtures", "ssg");
+const ROUTER_PATHS = {
+  "/blog/:id": [{ id: "a" }, { id: "b" }],
+  "/opt/:id?": [{}, { id: "x" }],
+  "/files/*rest": [{ rest: ["a", "b"] }],
+  "/ghost/:id": [],
+} as const;
+
+function fixture(name: string): string {
+  return join(FIXTURES, name);
+}
+
+function attr(node: DefaultTreeAdapterTypes.Element | undefined, name: string): string | undefined {
+  return node?.attrs.find(attribute => attribute.name === name)?.value;
+}
+
+function elements(source: string | DefaultTreeAdapterTypes.Node, tag: string, attributes: Record<string, string> = {}): DefaultTreeAdapterTypes.Element[] {
+  const matches: DefaultTreeAdapterTypes.Element[] = [];
+  const expected = Object.entries(attributes);
+  const visit = (node: DefaultTreeAdapterTypes.Node): void => {
+    if ("tagName" in node && node.tagName === tag && expected.every(([name, value]) => attr(node, name) === value)) matches.push(node);
+    if ("childNodes" in node) for (const child of node.childNodes) visit(child);
+  };
+  visit(typeof source === "string" ? parse(source) : source);
+  return matches;
+}
+
+function text(node: DefaultTreeAdapterTypes.Node | undefined): string {
+  if (node === undefined) throw new Error("Expected a rendered element");
+  if ("value" in node) return node.value;
+  if (node.nodeName === "script" || node.nodeName === "style") return "";
+  return "childNodes" in node ? node.childNodes.map(text).join("") : "";
+}
+
+function titleOf(html: string): string {
+  return text(elements(html, "title")[0]);
+}
+
+function metaOf(html: string, name: string): string | undefined {
+  return attr(elements(html, "meta", { name })[0], "content");
+}
+
+function canonicalOf(html: string): string | undefined {
+  return attr(elements(html, "link", { rel: "canonical" })[0], "href");
+}
+
+function modulePreloads(html: string): string[] {
+  return elements(html, "link", { rel: "modulepreload" }).map(node => attr(node, "href")!);
+}
+
+function bodyText(html: string): string {
+  return text(elements(html, "body")[0]);
+}
+
+function imgSrc(html: string, id?: string): string {
+  return attr(elements(html, "img", id === undefined ? {} : { id })[0], "src") ?? "";
+}
+
+function stylesheetHrefs(html: string): string[] {
+  return elements(html, "link", { rel: "stylesheet" }).map(node => attr(node, "href")!);
+}
+
+function closureSources(manifest: ViteManifest, roots: readonly string[]): string[] {
+  const byFile = new Map(Object.values(manifest).map((chunk) => [chunk.file, chunk]));
+  return [...manifestClosure(manifest, roots)].map((file) => byFile.get(file)?.src ?? file);
+}
+
+async function clickUntil(page: Page, selector: string, predicate: string, tries = 60): Promise<void> {
+  for (let attempt = 0; attempt < tries; attempt++) {
+    await page.click(selector);
+    if (await page.evaluate(predicate)) return;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`[reze-test] ${selector} never produced the committed state`);
+}
+
+async function captureRootBeforeHydration(page: Page): Promise<void> {
+  await page.waitForFunction(`document.readyState !== "loading"`);
+  await page.evaluate(`(() => {
+    const root = document.getElementById("app");
+    const nodes = [root];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    window.__rootSnapshot = { root, nodes, html: root.innerHTML };
+  })()`);
+}
+
+async function expectRootUnchanged(page: Page): Promise<void> {
+  expect(await page.evaluate(`(() => {
+    const before = window.__rootSnapshot;
+    return {
+      sameRoot: before.root === document.getElementById("app"),
+      sameHtml: before.html === before.root.innerHTML,
+      sameNodes: before.nodes.every(node => node.isConnected),
+    };
+  })()`)).toEqual({ sameRoot: true, sameHtml: true, sameNodes: true });
+}
+
+const ENGINES = resolveBrowsers();
+const OUT = mkdtempSync(join(tmpdir(), "reze-ssg-"));
+const dist = (name: string): string => join(OUT, name);
+const origins: StaticOrigin[] = [];
+const browsers = new Map<SsgBrowserName, Browser>();
+const pages: Record<string, string> = {};
+
+async function serve(distDir: string): Promise<string> {
+  const origin = await serveDist(distDir);
+  origins.push(origin);
+  return origin.origin;
+}
+
+beforeAll(async () => {
+  pages.basics = await serve(
+    (
+      await buildSsgFixture({
+        fixtureDir: fixture("standalone-basics"),
+        outDir: dist("basics"),
+        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+      })
+    ).distDir,
+  );
+  pages.basicsCsr = await serve(
+    (
+      await buildSsgFixture({
+        fixtureDir: fixture("standalone-basics"),
+        outDir: dist("basics-csr"),
+        htmlInput: "csr.html",
+        plugins: reze(),
+      })
+    ).distDir,
+  );
+  pages.forms = await serve(
+    (
+      await buildSsgFixture({
+        fixtureDir: fixture("hydration-forms"),
+        outDir: dist("forms"),
+        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+      })
+    ).distDir,
+  );
+  pages.reactive = await serve(
+    (
+      await buildSsgFixture({
+        fixtureDir: fixture("reactive-order"),
+        outDir: dist("reactive"),
+        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+      })
+    ).distDir,
+  );
+  pages.flows = await serve(
+    (
+      await buildSsgFixture({
+        fixtureDir: fixture("flow-keys"),
+        outDir: dist("flows"),
+        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+      })
+    ).distDir,
+  );
+  pages.namespaces = await serve(
+    (
+      await buildSsgFixture({
+        fixtureDir: fixture("namespaces"),
+        outDir: dist("namespaces"),
+        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+      })
+    ).distDir,
+  );
+  pages.portals = await serve(
+    (
+      await buildSsgFixture({
+        fixtureDir: fixture("portals-islands"),
+        outDir: dist("portals"),
+        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+      })
+    ).distDir,
+  );
+  const routerPlugins = reze({
+    ssg: { entry: "src/app.tsx", paths: ROUTER_PATHS },
+  });
+  pages.router = await serve(
+    (await buildSsgFixture({ fixtureDir: fixture("router-full"), outDir: dist("router"), plugins: routerPlugins })).distDir,
+  );
+  pages.routerNever = (
+    await buildSsgFixture({
+      fixtureDir: fixture("router-full"),
+      outDir: dist("router-never"),
+      plugins: reze({ ssg: { entry: "src/app.tsx", paths: ROUTER_PATHS, trailingSlash: "never" } }),
+    })
+  ).distDir;
+  pages.tinyDocs = (
+    await buildSsgFixture({
+      fixtureDir: fixture("base-tiny"),
+      outDir: dist("tiny-docs"),
+      base: "/docs/",
+      plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+    })
+  ).distDir;
+  pages.tinyRelative = (
+    await buildSsgFixture({
+      fixtureDir: fixture("base-tiny"),
+      outDir: dist("tiny-relative"),
+      base: "./",
+      plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+    })
+  ).distDir;
+  pages.tinyRelativeNever = (
+    await buildSsgFixture({
+      fixtureDir: fixture("base-tiny"),
+      outDir: dist("tiny-relative-never"),
+      base: "./",
+      plugins: reze({ ssg: { entry: "src/app.tsx", trailingSlash: "never" } }),
+    })
+  ).distDir;
+  pages.tinyExternal = (
+    await buildSsgFixture({
+      fixtureDir: fixture("base-tiny"),
+      outDir: dist("tiny-external"),
+      base: "https://cdn.example.test/assets/",
+      plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+    })
+  ).distDir;
+  const mdxPlugin: Plugin = {
+    ...mdx({ jsx: true, jsxImportSource: "reze-js", providerImportSource: "/src/mdx", remarkPlugins: [remarkFrontmatter, remarkMdxFrontmatter] }),
+    enforce: "pre",
+  };
+  pages.mdx = await serve(
+    (
+      await buildSsgFixture({
+        fixtureDir: fixture("mdx-post"),
+        outDir: dist("mdx"),
+        plugins: [mdxPlugin, ...(await reze({ fileRoutes: true, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"], ssg: { entry: "src/app.tsx" } }))],
+      })
+    ).distDir,
+  );
+  for (const engine of ENGINES) browsers.set(engine, await launchEngine(engine));
+}, 600_000);
+
+afterAll(async () => {
+  for (const origin of origins) await origin.close();
+  for (const browser of browsers.values()) await browser.close();
+  rmSync(OUT, { recursive: true, force: true });
+});
+
+describe("preboot html, metadata, assets and lazy execution", () => {
+  test("a standalone page carries settled signals, effects, async data and assets without js", async () => {
+    const { status, html } = await fetchHtml(pages.basics, "/");
+    expect(status).toBe(200);
+    const clean = bodyText(html);
+    expect(clean).toContain("basics");
+    expect(clean).toContain("3:6:v3");
+    expect(clean).toContain("settled quote");
+    expect(clean).toContain("late arrived");
+    expect(clean).not.toContain("loading quote…");
+    expect(clean).not.toContain("loading late…");
+    expect(titleOf(html)).toBe("Basics");
+    expect(metaOf(html, "description")).toBe("Standalone basics fixture");
+    expect(canonicalOf(html)).toBe("https://example.test/");
+    for (const href of stylesheetHrefs(html)) {
+      expect((await fetch(`${pages.basics}${href}`)).status).toBe(200);
+    }
+    const logo = await fetch(new URL(imgSrc(html, "logo"), pages.basics));
+    expect(logo.status).toBe(200);
+    expect(logo.headers.get("content-type")).toContain("image/svg+xml");
+    expect(html).toContain('data-reze-state="app"');
+  });
+
+  test("router pages render layouts, settled preloads and merged head without js", async () => {
+    const home = await fetchHtml(pages.router, "/");
+    expect(home.status).toBe(200);
+    expect(home.html).toContain("home-data");
+    expect(titleOf(home.html)).toBe("Home");
+    expect(metaOf(home.html, "description")).toBe("home page");
+    const about = await fetchHtml(pages.router, "/about/");
+    expect(about.status).toBe(200);
+    expect(titleOf(about.html)).toBe("About");
+    expect(canonicalOf(about.html)).toBe("https://example.test/about");
+    expect(metaOf(about.html, "description")).toBe("Site template");
+    expect(canonicalOf(home.html)).toBeUndefined();
+    const post = await fetchHtml(pages.router, "/blog/a/");
+    expect(post.status).toBe(200);
+    expect(post.html).toContain("Post a");
+    expect(titleOf(post.html)).toBe("Post a");
+    const deep = await fetchHtml(pages.router, "/blog/a");
+    expect(deep.status).toBe(200);
+    const intro = await fetchHtml(pages.router, "/docs/intro/");
+    expect(intro.html).toContain("docs");
+    expect(intro.html).toContain("intro");
+  });
+
+  test("enumeration covers dynamics and skips layouts and empty path lists", async () => {
+    expect((await fetchHtml(pages.router, "/opt/")).html).toContain("none");
+    expect((await fetchHtml(pages.router, "/opt/x/")).html).toContain(">x<");
+    expect((await fetchHtml(pages.router, "/files/a/b/")).html).toContain("a");
+    expect((await fetchHtml(pages.router, "/docs/")).status).toBe(404);
+    expect((await fetchHtml(pages.router, "/ghost/a/")).status).toBe(404);
+    expect((await fetchHtml(pages.router, "/nope/")).status).toBe(404);
+  });
+
+  test("an unvisited lazy route ships no content, preload or initializer to other pages", async () => {
+    const { html } = await fetchHtml(pages.router, "/");
+    const manifest = readManifest(dist("router"));
+    const lazyChunk = Object.values(manifest).find((chunk) => chunk.src?.includes("LazyPage"));
+    expect(lazyChunk?.file).not.toBeUndefined();
+    expect(html).not.toContain(lazyChunk!.file);
+    expect(html).not.toContain("lazy loaded");
+    expect(modulePreloads(html).some((href) => href.includes(lazyChunk!.file))).toBe(false);
+    const ghostChunk = Object.values(manifest).find((chunk) => chunk.src?.includes("GhostPage"));
+    expect(html).not.toContain("ghost");
+    expect(ghostChunk === undefined || !modulePreloads(html).some((href) => ghostChunk.file !== undefined && href.includes(ghostChunk.file))).toBe(true);
+    const lazy = await fetchHtml(pages.router, "/lazy/");
+    expect(lazy.html).toContain("lazy loaded");
+    expect(lazy.html).not.toContain("lazy-info-canary");
+  });
+
+  test("route info stays code-owned and never enters the payload", async () => {
+    const { html } = await fetchHtml(pages.router, "/blog/a/");
+    expect(JSON.stringify(payloadScript(html, "app"))).not.toContain("blog-info-canary");
+  });
+
+  test("worker isolation keeps module state per page", async () => {
+    expect(text(elements((await fetchHtml(pages.router, "/one/")).html, "p", { id: "hits" })[0])).toBe("1");
+    expect(text(elements((await fetchHtml(pages.router, "/two/")).html, "p", { id: "hits" })[0])).toBe("1");
+  });
+
+  test("effect-derived state settles before serialization", async () => {
+    const clean = bodyText((await fetchHtml(pages.router, "/effect/")).html);
+    expect(clean).toContain("4:14");
+    expect(clean).toContain("2/7");
+  });
+
+  test("await aliases keep identity with one mutation per execution", async () => {
+    expect(bodyText((await fetchHtml(pages.router, "/alias/")).html)).toContain("same:m,n");
+  });
+
+  test("missing data and undefined data stay distinct", async () => {
+    expect((await fetchHtml(pages.router, "/nodata/")).html).toContain("no data");
+    expect((await fetchHtml(pages.router, "/undefdata/")).html).toContain("undef");
+  });
+});
+
+describe("element identity, dirty forms and focus", () => {
+  test.each(ENGINES)("hydration keeps nodes, user edits, focus and handlers on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const { page, errors, close } = await openPage(browser, `${pages.forms}/`);
+    try {
+      await page.evaluate(`(() => {
+        const name = document.querySelector("#name");
+        name.value = "user-typed";
+        name.dispatchEvent(new Event("input", { bubbles: true }));
+        document.querySelector("#radio-b").checked = true;
+        document.querySelector("#city").value = "b";
+        document.querySelector("#city").dispatchEvent(new Event("change", { bubbles: true }));
+        document.querySelector("#agree").checked = true;
+        const bio = document.querySelector("#bio");
+        bio.focus();
+        bio.setSelectionRange(2, 5);
+        document.querySelector("#more").open = true;
+        window.__els = { name, radioB: document.querySelector("#radio-b"), text: document.querySelector("h1").firstChild };
+      })()`);
+      await waitFor(page, `(() => { document.querySelector("#probe").click(); return window.__probed === true; })()`);
+      expect(errors).toEqual([]);
+      const state = await page.evaluate(`(() => ({
+        name: document.querySelector("#name").value,
+        radioB: document.querySelector("#radio-b").checked,
+        radioC: document.querySelector("#radio-c").checked,
+        city: document.querySelector("#city").value,
+        agree: document.querySelector("#agree").checked,
+        active: document.activeElement.id,
+        start: document.querySelector("#bio").selectionStart,
+        end: document.querySelector("#bio").selectionEnd,
+        details: document.querySelector("#more").open,
+        sameName: window.__els.name === document.querySelector("#name"),
+        sameRadio: window.__els.radioB === document.querySelector("#radio-b"),
+        sameText: window.__els.text === document.querySelector("h1").firstChild,
+        refSame: window.__refNode === document.querySelector("#refcheck"),
+      }))()`);
+      expect(state).toEqual({
+        name: "user-typed",
+        radioB: true,
+        radioC: false,
+        city: "b",
+        agree: true,
+        active: "bio",
+        start: 2,
+        end: 5,
+        details: true,
+        sameName: true,
+        sameRadio: true,
+        sameText: true,
+        refSame: true,
+      });
+      await page.click("#count");
+      await page.click("#count");
+      expect(await page.textContent("#count")).toBe("2");
+      await page.click("#confirm");
+      await waitFor(page, `document.querySelector("#name").value === "confirmed-name"`);
+      expect(await page.textContent("#name-out")).toBe("confirmed-name");
+    } finally {
+      await close();
+    }
+  }, 60_000);
+});
+
+describe("interactions, await ordering and resources", () => {
+  test("HTML preserves settled await ordering and nonreactive reads", async () => {
+    const { html } = await fetchHtml(pages.reactive, "/");
+    const clean = bodyText(html);
+    expect(clean).toContain("2:7:4:8");
+    expect(clean).toContain("B,A");
+    expect(clean).toContain("same");
+    expect(text(elements(html, "span", { id: "second" })[0])).toBe("x");
+    expect(clean).toContain("slow settled");
+    expect(["branch", "getter", "class", "catch"].map(name =>
+      text(elements(html, "p", { id: `module-${name}` })[0]))).toEqual(["seed", "seed", "seed", "outer:seed"]);
+  });
+
+  test.each(ENGINES)("sibling and nested awaits replay in recorded order on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const { page, errors, requests, close } = await openPage(browser, `${pages.reactive}/`, { beforeHydration: captureRootBeforeHydration });
+    try {
+      await waitFor(page, `document.querySelector("#nested-value[data-hydrated]") !== null`);
+      expect(await page.textContent("#order")).toBe("B,A");
+      expect(await page.textContent("#first")).toBe("same");
+      expect(await page.textContent("#second")).toBe("x");
+      expect(await page.textContent("#nested-value")).toBe("5");
+      expect(await page.textContent("#nested-rejection")).toBe("nested rejection:finally");
+      expect(await page.textContent("#nested-sync-result")).toBe("1:sync:finally:microtask");
+      expect(requests.filter(url => new URL(url).pathname === "/round-probe.json")).toEqual([]);
+      await page.click("#nested-run");
+      await waitFor(page, `document.querySelector("#nested-value").textContent === "12"`);
+      expect(requests.filter(url => new URL(url).searchParams.has("nested"))
+        .map(url => new URL(url).searchParams.get("nested"))).toEqual(["9", "3", "12"]);
+      const syncRequest = page.waitForRequest("**/round-probe.json?nested=sync");
+      await page.click("#nested-sync");
+      await syncRequest;
+      await waitFor(page, `document.querySelector("#nested-sync-result").textContent === "2:sync:finally:microtask"`);
+      expect(await page.evaluate(`window.__rootSnapshot.nodes.every(node => node.isConnected)`)).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  test.each(ENGINES)("opaque module resources revalidate only after commit on %s", async (engine) => {
+    const { page, errors, close } = await openPage(browsers.get(engine)!, `${pages.reactive}/`);
+    try {
+      await waitFor(page, `document.querySelector("#module-catch").textContent === "outer:live"`);
+      expect(await page.locator("#module-branch, #module-getter, #module-class, #module-catch").allTextContents())
+        .toEqual(["live", "live", "live", "outer:live"]);
+      expect((await page.textContent("#module-runs"))!.split(",").sort())
+        .toEqual(["branch:live", "catch:live", "class:live", "getter:live"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  test.each(ENGINES)("a live root keeps updating while another hydrates on %s", async (engine) => {
+    const context = await browsers.get(engine)!.newContext();
+    const page = await context.newPage();
+    const errors: unknown[] = [];
+    page.on("pageerror", error => errors.push(error));
+    const ready = Promise.withResolvers<void>();
+    await page.route("**/module-ready.json", async route => {
+      await ready.promise;
+      await route.continue();
+    });
+    try {
+      await page.goto(`${pages.reactive}/`, { waitUntil: "commit" });
+      await waitFor(page, `document.querySelector("#live-count") !== null`);
+      const first = await page.textContent("#live-count");
+      expect(first).toMatch(/^\d+$/);
+      await waitFor(page, `Number(document.querySelector("#live-count").textContent) > ${Number(first)}`);
+      expect(await page.getAttribute("#nested-value", "data-hydrated")).toBeNull();
+      ready.resolve();
+      await waitFor(page, `document.querySelector("#nested-value[data-hydrated]") !== null`);
+      expect(errors).toEqual([]);
+    } finally {
+      ready.resolve();
+      await context.close();
+    }
+  }, 60_000);
+
+  test.each(ENGINES)("steps and resource resets run the ordinary contracts on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const { page, errors, requests, close } = await openPage(browser, `${pages.reactive}/`);
+    try {
+      await waitFor(page, `document.querySelector("#flaky[data-hydrated]") !== null`);
+      expect(requests.filter(url => new URL(url).pathname === "/round-probe.json")).toEqual([]);
+      await page.click("#step");
+      await waitFor(page, `document.querySelector("#counts").textContent === "3:8:6:9"`);
+      await page.click("#break");
+      await waitFor(page, `document.querySelector("#flaky-error") !== null`);
+      expect(await page.textContent("#flaky-error")).toBe("flaky failed");
+      expect(requests.filter(url => new URL(url).pathname === "/round-probe.json")
+        .map(url => new URL(url).searchParams.get("round"))).toEqual(["1"]);
+      await page.click("#break");
+      await page.click("#retry");
+      await waitFor(page, `document.querySelector("#flaky") !== null`);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  test.each(ENGINES)("router counters step and effects re-derive on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const counter = await openPage(browser, `${pages.router}/counter/`);
+    try {
+      await waitFor(counter.page, `document.querySelector("#counter-out") !== null`);
+      await counter.page.click("#counter-inc");
+      await waitFor(counter.page, `document.querySelector("#counter-out").textContent === "3:6"`);
+      expect(counter.errors).toEqual([]);
+    } finally {
+      await counter.close();
+    }
+    const effect = await openPage(browser, `${pages.router}/effect/`);
+    try {
+      await effect.page.click("#effect-inc");
+      await waitFor(effect.page, `document.querySelector("#effect-derived").textContent === "6:16"`);
+      expect(await effect.page.textContent("#effect-log")).toBe("3/8");
+      expect(effect.errors).toEqual([]);
+    } finally {
+      await effect.close();
+    }
+  }, 90_000);
+});
+
+describe("keyed flow lifetime", () => {
+  test.each(ENGINES)("rows keep identity across reorder, removal and addition on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const { page, errors, close } = await openPage(browser, `${pages.flows}/`);
+    try {
+      await waitFor(page, `document.querySelector("#deferred") !== null`);
+      await page.evaluate(`(() => {
+        window.__rowA = document.querySelector("#row-a");
+        window.__rowB = document.querySelector("#row-b");
+        document.querySelector("#row-b").value = "beta-user";
+      })()`);
+      await page.click("#reorder");
+      await waitFor(page, `document.querySelectorAll("#rows li")[0].dataset.row === "b"`);
+      const kept = await page.evaluate(`(() => ({
+        a: window.__rowA === document.querySelector("#row-a"),
+        b: window.__rowB === document.querySelector("#row-b"),
+        value: document.querySelector("#row-b").value,
+      }))()`);
+      expect(kept).toEqual({ a: true, b: true, value: "beta-user" });
+      await page.click("#drop-b");
+      await waitFor(page, `document.querySelector("#removed").textContent === "b"`);
+      expect(await page.evaluate(`document.querySelectorAll("#rows li").length`)).toBe(1);
+      await page.click("#add-c");
+      await waitFor(page, `document.querySelector("#row-c") !== null`);
+      const added = await page.evaluate(`(() => ({
+        a: window.__rowA === document.querySelector("#row-a"),
+        rows: [...document.querySelectorAll("#rows li")].map((li) => li.dataset.row).join(","),
+      }))()`);
+      expect(added).toEqual({ a: true, rows: "a,c" });
+      await page.click("#toggle-show");
+      await waitFor(page, `document.querySelector("#show-fallback") !== null`);
+      await page.click("#toggle-show");
+      await waitFor(page, `document.querySelector("#show-body") !== null`);
+      await page.click("#mode-two-btn");
+      await waitFor(page, `document.querySelector("#mode-two") !== null`);
+      await page.click("#fail-btn");
+      await waitFor(page, `document.querySelector("#flow-error") !== null`);
+      await page.click("#fail-btn");
+      await page.click("#flow-reset");
+      await waitFor(page, `document.querySelector("#fallible") !== null`);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 90_000);
+});
+
+describe("parser namespaces, raw text and opaque subtrees", () => {
+  test("the built corpus carries parser-normalized topology", async () => {
+    const { html } = await fetchHtml(pages.namespaces, "/");
+    expect(elements(html, "tbody")).toHaveLength(1);
+    expect(elements(html, "option").filter(node => attr(node, "selected") !== undefined).map(node => attr(node, "value"))).toEqual(["b"]);
+    expect(text(elements(html, "textarea", { id: "notes" })[0])).toBe("first");
+    expect(elements(html, "svg")[0]?.namespaceURI).toBe("http://www.w3.org/2000/svg");
+    expect(elements(html, "foreignObject")[0]?.namespaceURI).toBe("http://www.w3.org/2000/svg");
+    expect(elements(html, "math")[0]?.namespaceURI).toBe("http://www.w3.org/1998/Math/MathML");
+    expect(text(elements(html, "b")[0])).toBe("trusted");
+    expect(text(elements(html, "p", { id: "empty-dynamic" })[0])).toBe("");
+  });
+
+  test.each(ENGINES)("namespaces, selection and opaque replacement behave on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const { page, errors, close } = await openPage(browser, `${pages.namespaces}/`);
+    try {
+      await waitFor(page, `document.querySelector("#formula") !== null`);
+      const ns = await page.evaluate(`(() => ({
+        svg: document.querySelector("#art").namespaceURI,
+        circle: document.querySelector("#art circle").namespaceURI,
+        math: document.querySelector("#formula").namespaceURI,
+        option: document.querySelector("#picker").value,
+      }))()`);
+      expect(ns).toEqual({
+        svg: "http://www.w3.org/2000/svg",
+        circle: "http://www.w3.org/2000/svg",
+        math: "http://www.w3.org/1998/Math/MathML",
+        option: "b",
+      });
+      await page.selectOption("#picker", "a");
+      await waitFor(page, `document.querySelector("#city-out").textContent === "a"`);
+      await page.click("#raw");
+      await waitFor(page, `document.querySelector("#opaque").innerHTML === "<i>swapped</i>"`);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  test("unrepresentable nesting fails the build with a site", async () => {
+    await expectBuildFails(reze({ ssg: { entry: "src/app.tsx" } }), fixture("foster-bad"), dist("foster-bad"), /table|foster|parent|serial/i);
+  });
+});
+
+describe("portals, islands and trigger cancellation", () => {
+  test("the build adopts eager bodies and keeps deferred ones inert", async () => {
+    const { html } = await fetchHtml(pages.portals, "/");
+    expect(html).toContain("modal body");
+    expect(html).toContain("custom placed");
+    expect(html).toContain("eager body");
+    expect(html).toContain("clock waiting");
+    expect(html).toContain("counter waiting");
+    expect(html).toContain("cancel waiting");
+    expect(html).not.toContain("data-ticked");
+    expect(html).not.toContain("never body");
+  });
+
+  test.each(ENGINES)("portals move and islands boot without remounting the page on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const { page, errors, close } = await openPage(browser, `${pages.portals}/`, {
+      async beforeHydration(page) {
+        await page.waitForSelector("main");
+        await page.evaluate(`(() => {
+          window.__ssgNodes = [];
+          const roots = [document.querySelector("main"), document.querySelector("#modal"),
+            ...Array.from(document.querySelectorAll("template[data-reze-portal]"), template => template.content)];
+          for (const root of roots) {
+            if (root.nodeType === 1) window.__ssgNodes.push(root);
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+            let node;
+            while (node = walker.nextNode()) window.__ssgNodes.push(node);
+          }
+        })()`);
+      },
+    });
+    try {
+      await waitFor(page, `document.querySelector("#slot").contains(document.querySelector("#custom")) === true`);
+      expect(await page.evaluate(`window.__ssgNodes.every(node => node.isConnected)`)).toBe(true);
+      await page.evaluate(`window.__main = document.querySelector("#app").firstChild`);
+      await page.click("#clock-fallback");
+      await waitFor(page, `document.querySelector("#clock") !== null`);
+      expect(await page.evaluate(`document.querySelector("#clock").getAttribute("data-ticked")`)).toBe("yes");
+      await page.click("#counter-fallback");
+      await waitFor(page, `document.querySelector("#counter-out") !== null`);
+      await page.click("#counter-plus");
+      await waitFor(page, `document.querySelector("#counter-out").textContent === "2"`);
+      await page.click("#cancel");
+      await waitFor(page, `document.querySelector("#cancel-fallback") === null`);
+      expect(await page.evaluate(`document.body.textContent.includes("never body")`)).toBe(false);
+      expect(await page.evaluate(`window.__main === document.querySelector("#app").firstChild`)).toBe(true);
+      await page.click("#release");
+      await waitFor(page, `document.querySelector("#custom")?.parentNode === document.body`);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 90_000);
+});
+
+describe("routing, enumeration, base and redirects", () => {
+  test("redirects, chains, imperative navigation and externals build static documents", async () => {
+    for (const path of ["/old/", "/chain/", "/cond/", "/admin/", "/redirect-only/"]) {
+      const { status, html } = await fetchHtml(pages.router, path);
+      expect(status).toBe(200);
+      expect(html).not.toContain("@reze/ssg-client");
+      expect(html).not.toContain("data-reze-state");
+      expect(canonicalOf(html)).toBe(path === "/chain/" ? "/old/" : "/about/");
+      const script = elements(html, "script", { "data-reze-redirect": "app" })[0]!;
+      const payload = JSON.parse((script.childNodes[0] as DefaultTreeAdapterTypes.TextNode).value);
+      expect(payload.to).toBe(canonicalOf(html));
+    }
+    const external = await fetchHtml(pages.router, "/external/");
+    expect(external.html).toContain("https://example.test/out");
+    expect(external.html).not.toContain("@reze/ssg-client");
+  });
+
+  test("trailing slash selects generated urls while the file layout stays put", async () => {
+    const always = await fetchHtml(pages.router, "/old/");
+    const neverFiles = listBuiltFiles(dist("router-never"));
+    expect(neverFiles).toContain("old/index.html");
+    expect(neverFiles).toContain("about/index.html");
+    expect(readBuiltFile(dist("router-never"), "old/index.html")).toContain('"/about"');
+    expect(always.html).toContain('"/about/"');
+  });
+
+  test("enumeration, base and asset failures are build errors", async () => {
+    await expectBuildFails(reze({ ssg: { entry: "src/app.tsx" } }), fixture("redirect-loop"), dist("neg-loop"), /loop|redirect|cycle/i);
+    await expectBuildFails(reze({ ssg: { entry: "src/app.tsx" } }), fixture("redirect-missing"), dist("neg-missing"), /nowhere|redirect|target/i);
+    await expectBuildFails(
+      reze({ ssg: { entry: "src/app.tsx", paths: { "/x/:id": [{ id: "a" }] } } }),
+      fixture("paths-duplicate"),
+      dist("neg-dup"),
+      /duplicate|collide/i,
+    );
+    await expectBuildFails(
+      reze({ ssg: { entry: "src/app.tsx", paths: { "/blog/:id": [{ id: "../evil" }] } } }),
+      fixture("paths-unsafe"),
+      dist("neg-unsafe"),
+      /traverse|\.\.|unsafe|slash/i,
+    );
+  });
+
+  test.each([
+    ["tinyDocs", "/docs/"],
+    ["tinyExternal", "https://cdn.example.test/assets/"],
+  ])("absolute asset URLs resolve to emitted files for %s", (name, base) => {
+    const directory = pages[name]!;
+    const html = readBuiltFile(directory, "a/b/index.html");
+    const scripts = elements(html, "script", { type: "module" }).map(node => attr(node, "src")!);
+    const styles = stylesheetHrefs(html);
+    expect(scripts).toHaveLength(1);
+    expect(styles).toHaveLength(1);
+    const files = new Set(listBuiltFiles(directory));
+    for (const url of [...scripts, ...styles, ...modulePreloads(html)]) {
+      expect(url.startsWith(base)).toBe(true);
+      expect(files.has(url.slice(base.length))).toBe(true);
+    }
+  });
+
+  test.each(ENGINES)("relative bases load nested assets and preserve route-local navigation on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    for (const [directory, pathname, prefix] of [
+      [pages.tinyRelative!, "/a/b/", ""],
+      [pages.tinyRelativeNever!, "/a/b", ""],
+      [OUT, "/a/b/", "/tiny-relative"],
+      [OUT, "/a/b", "/tiny-relative-never"],
+    ] as const) {
+      const origin = await serve(directory);
+      const { page, errors, close } = await openPage(browser, `${origin}${prefix}${pathname}`);
+      try {
+        await waitFor(page, `document.querySelector("#tiny-path[data-hydrated]") !== null`);
+        expect(await page.textContent("#tiny-path")).toBe(pathname);
+        expect(await page.evaluate(`getComputedStyle(document.querySelector("main")).color`)).toBe("rgb(51, 51, 51)");
+        await page.evaluate(`globalThis.__tinyRoot = document.getElementById("app")`);
+        await page.click("#tiny-go-home");
+        await waitFor(page, `document.querySelector("#tiny-home") !== null`);
+        expect(await page.textContent("#tiny-path")).toBe("/");
+        expect(new URL(page.url()).pathname).toBe(`${prefix}/`);
+        expect(await page.evaluate(`globalThis.__tinyRoot === document.getElementById("app")`)).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 90_000);
+
+  test("mdx routes carry frontmatter metadata and imported images", async () => {
+    const { status, html } = await fetchHtml(pages.mdx, "/docs/guide/");
+    expect(status).toBe(200);
+    expect(titleOf(html)).toBe("Guide");
+    expect(metaOf(html, "description")).toBe("mdx guide");
+    expect(html).toContain("Guide");
+    const img = await fetch(new URL(imgSrc(html), `${pages.mdx}/docs/guide/`));
+    expect(img.status).toBe(200);
+    expect(img.headers.get("content-type")).toContain("image/svg+xml");
+  });
+
+  test.each(ENGINES)("navigation, hover warming, stale suppression and lazy load on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const initial = await openPage(browser, `${pages.router}/blog/a/`);
+    try {
+      await waitFor(initial.page, `document.querySelector("#post[data-hydrated]") !== null`);
+      expect(initial.requests.filter(url => new URL(url).pathname === "/preload-probe.json")).toEqual([]);
+      expect(initial.errors).toEqual([]);
+    } finally {
+      await initial.close();
+    }
+    const home = await openPage(browser, `${pages.router}/`);
+    try {
+      await clickUntil(home.page, "#home-inc", `document.querySelector("#home-inc").textContent === "1"`);
+      expect(await home.page.evaluate(`document.title`)).toBe("Home");
+      await home.page.hover("#to-blog-a");
+      await expect.poll(() => home.requests.filter(url => new URL(url).pathname === "/preload-probe.json")
+        .map(url => new URL(url).searchParams.get("intent"))).toEqual(["preload"]);
+      expect(await home.page.evaluate(`document.querySelector("#path").textContent`)).toBe("/");
+      expect(await home.page.evaluate(`document.title`)).toBe("Home");
+      await home.page.click("#to-blog-a");
+      await waitFor(home.page, `document.querySelector("#post-title") !== null`);
+      expect(await home.page.textContent("#post-title")).toBe("Post a");
+      expect(home.requests.filter(url => new URL(url).pathname === "/preload-probe.json")
+        .map(url => new URL(url).searchParams.get("intent"))).toEqual(["preload", "navigate"]);
+      expect(home.errors).toEqual([]);
+    } finally {
+      await home.close();
+    }
+    const nav = await openPage(browser, `${pages.router}/`);
+    try {
+      await waitFor(nav.page, `document.querySelector("#to-about") !== null`);
+      await nav.page.click("#to-blog-a");
+      await nav.page.click("#to-about");
+      await waitFor(nav.page, `document.querySelector("#about-title") !== null`);
+      expect(await nav.page.evaluate(`document.title`)).toBe("About");
+      expect(metaOf(await nav.page.content(), "description")).toBe("Site template");
+      expect(nav.errors).toEqual([]);
+    } finally {
+      await nav.close();
+    }
+    const lazy = await openPage(browser, `${pages.router}/`);
+    try {
+      await waitFor(lazy.page, `document.querySelector("#to-lazy") !== null`);
+      const manifest = readManifest(dist("router"));
+      const lazyFile = Object.values(manifest).find((chunk) => chunk.src?.includes("LazyPage"))!.file;
+      expect(lazy.requests.some((url) => url.endsWith(lazyFile))).toBe(false);
+      await lazy.page.click("#to-lazy");
+      await waitFor(lazy.page, `document.querySelector("#lazy-title") !== null`);
+      expect(lazy.requests.some((url) => url.endsWith(lazyFile))).toBe(true);
+      expect(lazy.errors).toEqual([]);
+    } finally {
+      await lazy.close();
+    }
+  }, 120_000);
+
+  test.each(ENGINES)("redirect chains and imperative navigation land on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    for (const path of ["/chain/", "/admin/"]) {
+      const visit = await openPage(browser, `${pages.router}${path}`);
+      try {
+        await waitFor(visit.page, `document.querySelector("#about-title") !== null`);
+        expect(visit.errors).toEqual([]);
+      } finally {
+        await visit.close();
+      }
+    }
+  }, 60_000);
+});
+
+describe("codec safety and unsupported slots", () => {
+  test("the payload round-trips every tagged value", async () => {
+    const { html } = await fetchHtml(pages.router, "/codec/");
+    for (const name of ["undef", "null", "bool", "finite", "negzero", "nan", "inf", "bigint", "date", "array", "record", "error", "alias", "cycle", "proto"]) {
+      expect(text(elements(html, "p", { id: `codec-${name}` })[0])).toBe("ok");
+    }
+  });
+
+  test("payload scripts never execute embedded markup", async () => {
+    const { html } = await fetchHtml(pages.router, "/codec/");
+    const payload = payloadScript(html, "app");
+    expect(payload).not.toContain("</script>");
+    expect(JSON.stringify(JSON.parse(payload))).toContain("</script><script>globalThis.__payloadExecuted=true</script>");
+    expect(text(elements(html, "p", { id: "codec-markup" })[0])).toBe("</script><script>globalThis.__payloadExecuted=true</script><!--\u2028\u2029");
+  });
+
+  test("unserializable slots fail with the object path", async () => {
+    await expectBuildFails(reze({ ssg: { entry: "src/app.tsx" } }), fixture("codec-unsupported"), dist("neg-codec"), /bad|object path|transfer|serial/i);
+  });
+
+  test.each(ENGINES)("hydrated codec values keep their semantics on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const { page, errors, close } = await openPage(browser, `${pages.router}/codec/`);
+    try {
+      await waitFor(page, `document.querySelector("#codec[data-hydrated]") !== null`);
+      for (const name of ["undef", "null", "bool", "finite", "negzero", "nan", "inf", "bigint", "date", "array", "record", "error", "alias", "cycle", "proto"]) {
+        expect(await page.textContent(`#codec-${name}`)).toBe("ok");
+      }
+      expect(await page.evaluate(`globalThis.__payloadExecuted`)).toBeUndefined();
+      expect(await page.textContent("#codec-markup")).toBe("</script><script>globalThis.__payloadExecuted=true</script><!--\u2028\u2029");
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+});
+
+describe("worker isolation, cleanup and timeouts", () => {
+  test("a hung page fails with its url while other builds stay usable", async () => {
+    await expectBuildFails(
+      reze({ ssg: { entry: "src/app.tsx", timeoutMs: 500 } }),
+      fixture("timeout-hang"),
+      dist("neg-timeout"),
+      /slow|timeout|deadline/i,
+    );
+    const { status, html } = await fetchHtml(pages.basics, "/");
+    expect(status).toBe(200);
+    expect(html).toContain("basics");
+  });
+});
+
+describe("corrupt builds fail before framework mutation", () => {
+  test.each(ENGINES)("incompatible payloads preserve nodes and leave listeners detached on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    for (const kind of ["version", "pathname"] as const) {
+      const name = `corrupt-${kind}-${engine}`;
+      const mutated = join(OUT, name);
+      const relative = kind === "pathname";
+      cpSync(dist(relative ? "tiny-relative" : "basics"), mutated, { recursive: true });
+      const file = join(mutated, relative ? "a/b/index.html" : "index.html");
+      const html = readFileSync(file, "utf8");
+      const original = payloadScript(html, "app");
+      const payload = JSON.parse(original);
+      payload[kind] = relative ? "/other/" : 2;
+      writeFileSync(file, html.replace(original, JSON.stringify(payload).replace(/</g, "\\u003c")));
+      const origin = await serve(relative ? OUT : mutated);
+      const { page, errors, close } = await openPage(browser, relative ? `${origin}/${name}/a/b/` : `${origin}/`, {
+        beforeHydration: captureRootBeforeHydration,
+      });
+      try {
+        await expect.poll(() => errors.map(error => error instanceof Error ? error.name : typeof error)).toEqual(["HydrationError"]);
+        await expectRootUnchanged(page);
+        if (!relative) {
+          await page.click("#inc");
+          await page.evaluate(`new Promise(resolve => requestAnimationFrame(resolve))`);
+          await expectRootUnchanged(page);
+        }
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
+  test.each(ENGINES)("scalar drift patches the same text node on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const mutated = join(OUT, `corrupt-scalar-${engine}`);
+    cpSync(dist("basics"), mutated, { recursive: true });
+    const file = join(mutated, "index.html");
+    const html = readFileSync(file, "utf8");
+    writeFileSync(file, html.replace(">basics<", ">basicX<"));
+    const origin = await serve(mutated);
+    const { page, errors, close } = await openPage(browser, `${origin}/`, {
+      async beforeHydration(page) {
+        await page.waitForSelector("h1");
+        await page.evaluate(`window.__headingText = document.querySelector("h1").firstChild`);
+      },
+    });
+    try {
+      await waitFor(page, `document.querySelector("h1").textContent === "basics"`);
+      expect(await page.evaluate(`document.querySelector("h1").firstChild === window.__headingText`)).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  test.each(ENGINES)("structural loss errors without remounting a fresh tree on %s", async (engine) => {
+    const browser = browsers.get(engine)!;
+    const mutated = join(OUT, `corrupt-layout-${engine}`);
+    cpSync(dist("basics"), mutated, { recursive: true });
+    const file = join(mutated, "index.html");
+    const html = readFileSync(file, "utf8");
+    const document = parse(html);
+    const logo = elements(document, "img", { id: "logo" })[0]!;
+    const siblings = logo.parentNode!.childNodes;
+    siblings.splice(siblings.indexOf(logo), 1);
+    writeFileSync(file, serialize(document));
+    const origin = await serve(mutated);
+    const { page, errors, close } = await openPage(browser, `${origin}/`, {
+      beforeHydration: captureRootBeforeHydration,
+    });
+    try {
+      await expect.poll(() => errors.map(error => error instanceof Error ? error.name : typeof error)).toEqual(["HydrationError"]);
+      await expectRootUnchanged(page);
+      await page.click("#inc");
+      await page.evaluate(`new Promise(resolve => requestAnimationFrame(resolve))`);
+      await expectRootUnchanged(page);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+});
+
+describe("router-free and csr graph separation", () => {
+  test("standalone bundles carry no router closure", () => {
+    const manifest = readManifest(dist("basics"));
+    const entry = manifest["index.html"];
+    expect(entry?.file).not.toBeUndefined();
+    const sources = closureSources(manifest, [entry!.file]);
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.join("\n")).not.toMatch(/router/i);
+  });
+
+  test("ordinary csr output carries no hydration machinery or payload", async () => {
+    const manifest = readManifest(dist("basics-csr"));
+    const files = listBuiltFiles(dist("basics-csr"));
+    expect(files.some((file) => file.endsWith(".html"))).toBe(true);
+    const entry = Object.values(manifest).find((chunk) => chunk.isEntry === true);
+    expect(entry?.file).not.toBeUndefined();
+    const sources = closureSources(manifest, [entry!.file]);
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.join("\n")).not.toMatch(/internal\/html|internal\/hydrate|hydration/i);
+    const { html } = await fetchHtml(pages.basicsCsr, "/");
+    expect(html).not.toContain("data-reze-state");
+  });
+
+  test("bundle sizes stay observable and bounded", () => {
+    let js = 0;
+    for (const file of listBuiltFiles(dist("basics"))) {
+      if (file.endsWith(".js")) js += readBuiltFile(dist("basics"), file).length;
+    }
+    const html = readBuiltFile(dist("basics"), "index.html");
+    expect(js).toBeGreaterThan(0);
+    expect(js).toBeLessThan(2_000_000);
+    expect(html.length).toBeGreaterThan(0);
+    expect(payloadScript(html, "app").length).toBeGreaterThan(0);
+  });
+
+  test("dom-free data modules execute without document or window", () => {
+    expect(typeof document).toBe("undefined");
+    expect(buildGreeting("basics")).toBe("hi basics");
+  });
+});

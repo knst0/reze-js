@@ -44,7 +44,7 @@ export function spread(node: Element, props: Props = {}, isSVG?: boolean, hasChi
   });
 }
 
-function assignProp(node: Element, name: string, value: unknown, prev: unknown, isSVG: boolean | undefined): unknown {
+export function assignProp(node: Element, name: string, value: unknown, prev: unknown, isSVG: boolean | undefined): unknown {
   if (name === "style") {
     return style(node as HTMLElement, value as Parameters<typeof style>[1], prev);
   }

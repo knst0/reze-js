@@ -28,10 +28,17 @@
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",
-    "@rezejs/compiler": "workspace:^"
+    "@rezejs/compiler": "workspace:^",
+    "parse5": "^7.3.0"
   },
   "devDependencies": {
+    "@mdx-js/rollup": "^3.1.1",
     "@rezejs/router": "workspace:*",
+    "@rezejs/signals": "workspace:*",
+    "playwright": "1.63.0",
+    "remark-frontmatter": "^5.0.0",
+    "remark-mdx-frontmatter": "^6.0.0",
+    "reze-js": "workspace:*",
     "vite": "^8.3.0"
   },
   "peerDependencies": {

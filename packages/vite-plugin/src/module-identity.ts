@@ -61,6 +61,8 @@ export function compilerInputHash(canonicalId: string, input: string): string {
 export interface ModuleRegistry {
   /** Rejects differing inputs for one module ID and digest collisions across module IDs. */
   register(canonicalId: string, input: string): string;
+  /** Every registered canonical ID in registration order. */
+  ids(): readonly string[];
 }
 
 export function createModuleRegistry(): ModuleRegistry {
@@ -83,6 +85,9 @@ export function createModuleRegistry(): ModuleRegistry {
       owners.set(hash, canonicalId);
       inputs.set(canonicalId, { input, hash });
       return hash;
+    },
+    ids() {
+      return [...inputs.keys()];
     },
   };
 }

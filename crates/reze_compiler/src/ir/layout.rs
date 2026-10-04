@@ -92,12 +92,28 @@ pub fn logical_path(tree: &StaticTree, node: u32) -> String {
 
 pub(crate) fn serialize_static(tree: &StaticTree) -> String {
     let mut html = String::new();
-    push_static(&mut html, tree, 0, false, false);
+    push_static(&mut html, tree, 0, false, false, false);
     trim_trailing_end_tags(&mut html);
     html
 }
 
-fn push_static(out: &mut String, tree: &StaticTree, id: u32, rawtext: bool, rcdata: bool) {
+pub(crate) fn needs_text_nodes(tree: &StaticTree, node: &StaticNode) -> bool {
+    (is_rawtext_element(node) || is_rcdata_element(node))
+        && (node.children.len() > 1 || node.children.iter().any(|&id| {
+            let child = &tree.nodes[id as usize];
+            child.kind == StaticNodeKind::Marker
+                || (child.kind == StaticNodeKind::Text && child.text.is_empty())
+        }))
+}
+
+pub(crate) fn serialize_client_static(tree: &StaticTree) -> String {
+    let mut html = String::new();
+    push_static(&mut html, tree, 0, false, false, true);
+    trim_trailing_end_tags(&mut html);
+    html
+}
+
+fn push_static(out: &mut String, tree: &StaticTree, id: u32, rawtext: bool, rcdata: bool, text_nodes: bool) {
     let node = &tree.nodes[id as usize];
     match node.kind {
         StaticNodeKind::Element => {
@@ -114,7 +130,8 @@ fn push_static(out: &mut String, tree: &StaticTree, id: u32, rawtext: bool, rcda
             if node.ns != ViewNs::Html || !is_void(&node.tag) {
                 let child_rawtext = is_rawtext_element(node);
                 let child_rcdata = is_rcdata_element(node);
-                if node.ns == ViewNs::Html
+                let reconstruct = text_nodes && needs_text_nodes(tree, node);
+                if !reconstruct && node.ns == ViewNs::Html
                     && LF_STRIP_TAGS.contains(&node.tag.as_str())
                     && node.children.iter()
                         .map(|&child| &tree.nodes[child as usize])
@@ -123,8 +140,10 @@ fn push_static(out: &mut String, tree: &StaticTree, id: u32, rawtext: bool, rcda
                 {
                     out.push('\n');
                 }
-                for &child in &node.children {
-                    push_static(out, tree, child, child_rawtext, child_rcdata);
+                if !reconstruct {
+                    for &child in &node.children {
+                        push_static(out, tree, child, child_rawtext, child_rcdata, text_nodes);
+                    }
                 }
                 out.push_str("</");
                 out.push_str(&node.tag);
@@ -712,6 +731,39 @@ impl Matcher<'_, '_> {
     }
 
     fn match_kids(&mut self, parsed: &Parsed, s_parent: u32, s_ids: &[u32], p_ids: &[usize]) {
+        let parent = &self.tree.nodes[s_parent as usize];
+        if is_rawtext_element(parent) || is_rcdata_element(parent) {
+            let mut text = String::new();
+            for &id in s_ids {
+                let node = &self.tree.nodes[id as usize];
+                match node.kind {
+                    StaticNodeKind::Text => text.push_str(&node.text),
+                    StaticNodeKind::Marker => {}
+                    StaticNodeKind::Element => {
+                        self.fail(
+                            "parses an element inside raw text as text".to_string(),
+                            "render scalar text in raw-text and RCDATA elements".to_string(),
+                        );
+                        return;
+                    }
+                }
+            }
+            let matches = match p_ids {
+                [] => text.is_empty(),
+                [id] => match &parsed.nodes[*id].kind {
+                    PKind::Text(parsed_text) => parsed_text_equal(&text, parsed_text, parent),
+                    _ => false,
+                },
+                _ => false,
+            };
+            if !matches {
+                self.fail(
+                    "changes the raw-text content".to_string(),
+                    "keep raw text the parser preserves without closing its element".to_string(),
+                );
+            }
+            return;
+        }
         let mut si = 0;
         let mut pi = 0;
         while si < s_ids.len() && pi < p_ids.len() && !self.failed {

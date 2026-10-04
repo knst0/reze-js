@@ -6,6 +6,7 @@ mod composite;
 mod html;
 mod hydrate;
 mod native;
+mod module_scope;
 mod optimize;
 
 use std::cell::RefCell;
@@ -68,13 +69,31 @@ impl<'a, 'm> EmitContext<'a, 'm> {
 
     pub fn emit(mut self, program: &mut Program<'a>, hot_plan: Option<&hot::HotPlan>) -> bool {
         Replace { ctx: &mut self }.visit_program(program);
+        if self.options.target != CompileTarget::Client {
+            module_scope::apply(&mut self, program);
+            let ast = Ast::new(self.allocator);
+            let module = ast.string(self.ir.module_id.as_deref().expect("managed target has canonical module identity"));
+            let source = if self.options.target == CompileTarget::Html {
+                "reze-js/internal/html"
+            } else {
+                "reze-js/internal/hydrate"
+            };
+            let mark = self.call(source, "markModule", [module]);
+            self.hoisted.push(ast.stmt(mark));
+            self.changed = true;
+        }
         program.body.retain(|statement| !matches!(statement,
             Statement::ImportDeclaration(import) if self.ir.islands.prunes_import(import) || self.facts.prunes_import(import)
         ));
         if !self.delegated.is_empty() {
             let ast = Ast::new(self.allocator);
             let events = ast.array(self.delegated.iter().map(|event| ast.string(event)));
-            let call = self.call(RUNTIME_MODULE, "delegateEvents", [events]);
+            let call = if self.options.target == CompileTarget::Hydrate {
+                let module = ast.string(self.ir.module_id.as_deref().expect("managed target has canonical module identity"));
+                self.call("reze-js/internal/hydrate", "stageDelegation", [module, events])
+            } else {
+                self.call(RUNTIME_MODULE, "delegateEvents", [events])
+            };
             program.body.push(ast.stmt(call));
         }
         if let Some(plan) = hot_plan {
@@ -218,14 +237,12 @@ impl<'a, 'm> EmitContext<'a, 'm> {
                     ]), []);
                 }
                 let site = self.range_site(branch.origin, "branch");
-                let mut args = vec![ast.arrow([], test), ast.arrow([], consequent)];
+                let mut args = vec![site, ast.arrow([], test), ast.arrow([], consequent)];
                 args.extend(alternate.map(|value| ast.arrow([], value)));
                 if self.options.target == CompileTarget::Html {
-                    args.insert(0, site);
                     self.call("reze-js/internal/html", "hShow", args)
                 } else {
-                    let inner = self.call(RUNTIME_MODULE, "branch", args);
-                    self.call("reze-js/internal/hydrate", "prepareFlow", [site, ast.arrow([], inner)])
+                    self.call("reze-js/internal/hydrate", "prepareShow", args)
                 }
             }
         }
@@ -286,7 +303,7 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         let name = self.fresh("_site$");
         let (line, column) = self.positions[&origin.start];
         let mut fields = vec![
-            ast.prop("key", ast.string(&site.key)),
+            ast.prop("key", ast.string(&self.ir.sites.as_ref().expect("managed target has source sites").key(*site))),
             ast.prop("module", ast.string(self.ir.module_id.as_deref().expect("managed target has canonical module identity"))),
             ast.prop("ordinal", ast.number(f64::from(site.ordinal))),
             ast.prop("line", ast.number(f64::from(line))),
@@ -427,6 +444,11 @@ impl<'a> VisitMut<'a> for Replace<'_, 'a, '_> {
     }
 
     fn visit_call_expression(&mut self, call: &mut CallExpression<'a>) {
+        if self.ctx.facts.primitive(self.ctx.scoping, &call.callee)
+            == Some(crate::frontend::analysis::Primitive::Action)
+        {
+            continuation::prepare_action(self.ctx, call);
+        }
         if let Some(kind) = self.ctx.facts.runtime_calls.get(&call.node_id.get()).copied() {
             calls::rewrite(self.ctx, call, kind);
         }

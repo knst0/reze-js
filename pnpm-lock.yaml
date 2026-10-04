@@ -888,13 +888,31 @@ importers:
       '@rezejs/compiler':
         specifier: workspace:^
         version: link:../compiler
-      reze-js:
-        specifier: '*'
-        version: 0.0.0
+      parse5:
+        specifier: ^7.3.0
+        version: 7.3.0
     devDependencies:
+      '@mdx-js/rollup':
+        specifier: ^3.1.1
+        version: 3.1.1(rollup@4.63.5)
       '@rezejs/router':
         specifier: workspace:*
         version: link:../router
+      '@rezejs/signals':
+        specifier: workspace:*
+        version: link:../signals
+      playwright:
+        specifier: 1.63.0
+        version: 1.63.0
+      remark-frontmatter:
+        specifier: ^5.0.0
+        version: 5.0.0
+      remark-mdx-frontmatter:
+        specifier: ^6.0.0
+        version: 6.0.0
+      reze-js:
+        specifier: workspace:*
+        version: link:../reze-js
       vite:
         specifier: ^8.3.0
         version: 8.3.1(@types/node@26.6.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)
@@ -4805,9 +4823,6 @@ packages:
 
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
-
-  reze-js@0.0.0:
-    resolution: {integrity: sha512-NJrPQfx5B8eHMbe58lyUXXsUmOq6ujYEL01arzZEbSPMFQ3ZuRMZgJ33jf0wgYxcBziQA2S8z6nSZ860SV4VHg==}
 
   rolldown-plugin-dts@0.28.6:
     resolution: {integrity: sha512-qKrFtBfRfR2hP233m7Ic9zf3wv6MSYdZghWKMdEO6dRYZGlNfINJAa1P5ZVvyHh3mrcd7IJQvIY8L9vnm+v5rQ==}
@@ -9093,8 +9108,6 @@ snapshots:
       unified: 11.0.5
 
   resolve-pkg-maps@1.0.0: {}
-
-  reze-js@0.0.0: {}
 
   rolldown-plugin-dts@0.28.6(@volar/typescript@2.4.28(typescript@7.0.2))(rolldown@1.2.11)(typescript@7.0.2):
     dependencies:

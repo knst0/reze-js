@@ -203,6 +203,43 @@ the continuation suspends or exits. This does not propagate ownership through
 ordinary async functions or timers: capture an owner and use `runWithOwner`
 there, within the owner's lifetime.
 
+SSG hydration replays the synchronous part of compiled async setup and resumes
+each initial `await` from its recorded value. It does not call the awaited
+data-producing expression again. Read reactive inputs before that expression
+so hydration can subscribe without repeating the request:
+
+```tsx
+async function UserCard(props: { id: string }) {
+  const id = props.id;
+  const user = await fetch(`/api/users/${id}`).then(response => response.json());
+  return <p>{user.name}</p>;
+}
+```
+
+After activation, changing `props.id` runs the real producer again. Reactive
+reads hidden inside the skipped awaited expression, such as
+`await loadUser(props.id)` or a signal read inside `loadUser()`, do not restore
+dependencies during initial hydration. Move those input reads into synchronous
+setup. Public `asyncComputed` has a different contract: its recorded state is
+replayed first, then its producer revalidates after activation to recover its
+dependencies. Initial route preloads are not repeated.
+
+Module-level resources use the same seeded-then-revalidate contract, including
+resources created through factories, getters, and class static initialization.
+Top-level `await` still executes its native Promise in each module graph;
+hydration coordinates its continuation with recorded resource handoffs rather
+than serializing module namespaces or skipping module imports.
+
+A client-only `render` creates an independent live execution scope, even when
+called while another root is preparing hydration. Its updates are not staged
+with that root. It retains the calling owner's context; its disposer releases
+the rendered tree and its execution scope.
+
+Managed `$action` awaits also preserve nested suspension order during hydration.
+Rejected promises restore their recorded error before `catch` and `finally`.
+If evaluating an awaited operand threw synchronously on the server, replay throws
+at that same point without calling the producer or adding a promise suspension.
+
 Components and `computed` getters are owners too: anything an effect or
 computed creates is disposed before its next run and when it is disposed, and
 a computed that loses its last subscriber drops its dependencies.

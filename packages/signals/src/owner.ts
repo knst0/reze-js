@@ -1,6 +1,7 @@
 import { adopt, getOwner, setActiveOwner, setActiveSub } from "./context";
 import { FlagNone } from "./flags";
 import { disposeNode, type Link, type ReactiveNode } from "./graph";
+import { notifyNodeDisposed, registerNodeScope, type ExecutionScope } from "./internal/scope";
 import { profileCreated } from "./profile";
 
 /** Opaque handle to a node that owns computations (`root`, `effect`, `computed`, render bindings). */
@@ -41,6 +42,7 @@ class CleanupNode implements ReactiveNode {
       this.fn();
     } finally {
       setActiveSub(prevSub);
+      if (__REZE_HTML__ || __REZE_HYDRATE__) notifyNodeDisposed(this);
     }
   }
 }
@@ -54,12 +56,27 @@ export function root<T>(fn: (dispose: () => void) => T): T {
   if (process.env.NODE_ENV !== "production") {
     profileCreated(node, "root", undefined);
   }
+  let scope: ExecutionScope | undefined;
+  let scopeDispose: (() => void) | undefined;
+  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    scope = registerNodeScope(node, node.parent);
+    if (scope !== undefined) {
+      scopeDispose = (): void => {
+        disposeNode(node);
+      };
+      scope.addDisposable(scopeDispose);
+    }
+  }
   const prevSub = setActiveSub(undefined);
   const prevOwner = setActiveOwner(node);
+  const dispose = (): void => {
+    if (scope !== undefined && scopeDispose !== undefined) {
+      scope.removeDisposable(scopeDispose);
+    }
+    disposeNode(node);
+  };
   try {
-    return fn((): void => {
-      disposeNode(node);
-    });
+    return fn(dispose);
   } finally {
     setActiveSub(prevSub);
     setActiveOwner(prevOwner);

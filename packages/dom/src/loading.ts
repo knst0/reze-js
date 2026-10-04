@@ -1,5 +1,4 @@
 import {
-  asyncComputed,
   type AsyncContext,
   type Boundary,
   boundary,
@@ -11,6 +10,7 @@ import {
   signal,
   untrack,
 } from "@rezejs/signals";
+import { internalAsyncComputed } from "@rezejs/signals/internal/resource";
 import { renderEffect } from "@rezejs/signals/render";
 
 import { setSwap, swapNow } from "./flow";
@@ -119,7 +119,7 @@ export function asyncComponent<V extends unknown[], R>(
   load: (c: AsyncContext) => PromiseLike<V>,
   body: (values: () => V) => R,
 ): () => R | undefined {
-  const step = asyncComputed(load);
+  const step = internalAsyncComputed(load);
   const values = (): V => step.value()!;
   const isLoaded = computed(() => step.value() !== undefined);
   const view = computed(() => (isLoaded() ? untrack(body, values) : undefined));

@@ -4,7 +4,8 @@ import { renderEffect } from "@rezejs/signals/render";
 
 import { useRouter } from "./hooks";
 import { pathKey } from "./match";
-import { pathnameOf, resolveHref, RouterContext, type LinkSelectors, type RouterState } from "./navigation";
+import { pathnameOf, resolveHrefSafe, RouterContext, type LinkSelectors, type RouterState } from "./navigation";
+import { linkTarget } from "./target";
 import type { Href } from "./types";
 
 const Current = 1;
@@ -44,7 +45,7 @@ function isPrefixAt(state: RouterState, links: LinkSelectors, depth: number): (k
 function linkKey(state: RouterState, href: string | null | undefined): string | undefined {
   if (!href || href[0] === "?" || (href[0] === "#" && href[1] !== "/")) return undefined;
   if (href[0] !== "/" && !Scheme.test(href)) state.location();
-  const path = resolveHref(state, href);
+  const path = resolveHrefSafe(state, href);
   return path === undefined ? undefined : pathKey(pathnameOf(path));
 }
 
@@ -62,25 +63,44 @@ function linkFlags(state: RouterState, key: string | undefined): number {
   return links.isPending(key) ? flags | Pending : flags;
 }
 
+function writeFlag(el: Element, name: "aria-current" | "data-active" | "data-pending", value: string | null): void {
+  const adapter = linkTarget();
+  if (adapter !== undefined) adapter.setAttribute(el, name, value);
+  else setAttribute(el, name, value);
+}
+
 function applyFlags(el: Element, flags: number, previous: number): number {
   const changed = flags ^ previous;
-  if (changed & Current) setAttribute(el, "aria-current", flags & Current ? "page" : null);
-  if (changed & Active) setAttribute(el, "data-active", flags & Active ? "" : null);
-  if (changed & Pending) setAttribute(el, "data-pending", flags & Pending ? "" : null);
+  if (changed & Current) writeFlag(el, "aria-current", flags & Current ? "page" : null);
+  if (changed & Active) writeFlag(el, "data-active", flags & Active ? "" : null);
+  if (changed & Pending) writeFlag(el, "data-pending", flags & Pending ? "" : null);
   return flags;
+}
+
+function writeHref(el: Element, value: string): void {
+  const adapter = linkTarget();
+  if (adapter !== undefined) adapter.setAttribute(el, "href", value);
+  else setAttribute(el, "href", value);
+}
+
+function staticHref(el: Element): string | null {
+  const adapter = linkTarget();
+  return adapter !== undefined ? adapter.getAttribute(el, "href") : el.getAttribute("href");
 }
 
 /** Compiler target for claimed `<a>`: binds `href` when given and keeps `aria-current`/`data-active`/`data-pending` current. */
 export function link(el: Element, href?: () => string): void {
-  const value = href === undefined ? undefined : computed(href);
-  if (value !== undefined) renderEffect(() => setAttribute(el, "href", value()));
   const state = useContext(RouterContext);
+  const value = href === undefined ? undefined : computed(href);
+  if (value !== undefined) renderEffect(() => writeHref(el, value()));
   if (state === undefined) return;
-  const staticHref = value === undefined ? el.getAttribute("href") : undefined;
-  renderEffect(
-    (previous: number) => applyFlags(el, linkFlags(state, linkKey(state, value === undefined ? staticHref : value())), previous),
-    0,
-  );
+  const plain = value === undefined ? staticHref(el) : undefined;
+  renderEffect((previous: number) => {
+    const flags = linkFlags(state, linkKey(state, value === undefined ? plain : value()));
+    if (state.commitHost !== undefined) applyFlags(el, flags, flags ^ (Current | Active | Pending));
+    else if (flags !== previous) applyFlags(el, flags, previous);
+    return flags;
+  }, 0);
 }
 
 /** The state `<a href>` gets as attributes, for links the compiler cannot claim (spread props, library components). */

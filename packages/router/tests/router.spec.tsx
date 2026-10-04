@@ -13,6 +13,7 @@ import {
   type BeforeLeaveEvent,
   type HistoryEntry,
   type Navigate,
+  type Params,
   type RouteDefinition,
   type RouterHistory,
   type RouteModule,
@@ -525,4 +526,183 @@ test.each(["/admin", "/"])("a redirect from a route component renders its target
   await settle();
   expect(history.get().path).toBe("/about");
   expect(el.textContent).toBe("about");
+});
+
+test("an async preload settles before commit and the component receives data, not a promise", async () => {
+  const gate = Promise.withResolvers<string>();
+  const seen: unknown[] = [];
+  const Comp = (props: RouteProps<Params, string>) => {
+    seen.push(props.data);
+    return <i>{props.data}</i>;
+  };
+  const { el, navigate, isRouting } = setup([
+    { path: "/", component: Home },
+    { path: "/p", preload: () => gate.promise, component: Comp },
+  ]);
+  navigate("/p");
+  await settle();
+  expect(el.textContent).toBe("home");
+  expect(isRouting()).toBe(true);
+  gate.resolve("ready");
+  await settle();
+  expect(el.textContent).toBe("ready");
+  expect(seen).toEqual(["ready"]);
+});
+
+test("a custom thenable preload is awaited, not delivered as data", async () => {
+  const thenable = { then: (resolve: (value: string) => void) => resolve("thenable") };
+  const { el, navigate } = setup([
+    { path: "/", component: Home },
+    { path: "/p", preload: () => thenable, component: (props: RouteProps<Params, string>) => <i>{props.data}</i> },
+  ]);
+  navigate("/p");
+  await settle();
+  expect(el.textContent).toBe("thenable");
+});
+
+test("a navigation superseded while awaiting preload never commits", async () => {
+  const gate = Promise.withResolvers<string>();
+  const { el, navigate } = setup([
+    { path: "/", component: Home },
+    { path: "/slow", preload: () => gate.promise, component: () => <p>slow</p> },
+    { path: "/about", component: About },
+  ]);
+  navigate("/slow");
+  navigate("/about");
+  tick();
+  expect(el.textContent).toBe("about");
+  gate.resolve("slow");
+  await settle();
+  expect(el.textContent).toBe("about");
+});
+
+test("a literal redirect short-circuits its preload and replaces", () => {
+  const preload = vi.fn(() => "data");
+  const { el, history, navigate } = setup([
+    { path: "/", component: Home },
+    { path: "/old", redirect: { to: "/about" }, preload, component: () => <p>old</p> },
+    { path: "/about", component: About },
+  ]);
+  navigate("/old");
+  tick();
+  expect(preload).not.toHaveBeenCalled();
+  expect(history.get().path).toBe("/about");
+  expect(el.textContent).toBe("about");
+});
+
+test("a redirect-only route renders its target without a component", () => {
+  const { el, navigate } = setup([
+    { path: "/", component: Home },
+    { path: "/old", redirect: { to: "/about" } },
+    { path: "/about", component: About },
+  ]);
+  navigate("/old");
+  tick();
+  expect(el.textContent).toBe("about");
+});
+
+test("a redirect callback runs after its preload settles and receives the data", async () => {
+  const seen: unknown[] = [];
+  const gate = Promise.withResolvers<string>();
+  const { el, navigate } = setup([
+    { path: "/", component: Home },
+    {
+      path: "/gated",
+      preload: () => gate.promise,
+      redirect: (args) => {
+        seen.push(args.data);
+        return args.data === "go" ? { to: "/about" } : undefined;
+      },
+      component: () => <p>gated</p>,
+    },
+    { path: "/about", component: About },
+  ]);
+  navigate("/gated");
+  await settle();
+  expect(el.textContent).toBe("home");
+  gate.resolve("go");
+  await settle();
+  expect(seen).toEqual(["go"]);
+  expect(el.textContent).toBe("about");
+});
+
+test("hover warming runs preloads but ignores their navigation and never applies metadata", async () => {
+  let navigateRef!: Navigate;
+  const Probe = () => {
+    navigateRef = useNavigate();
+    return null;
+  };
+  const preload = vi.fn(() => {
+    navigateRef("/target");
+    return "warmed";
+  });
+  document.title = "Template";
+  const { el, history } = setup(
+    [
+      { path: "/", component: Home },
+      {
+        path: "/target",
+        preload,
+        meta: { title: "Target" },
+        component: (props: RouteProps<Params, string>) => <i>{props.data}</i>,
+      },
+    ],
+    "/",
+    (children) => (
+      <>
+        <Probe />
+        {children}
+        <a href="/target">t</a>
+      </>
+    ),
+    { links: true },
+  );
+  const anchor = el.querySelector("a")!;
+  const home = el.querySelector("p")!;
+  fire(anchor, "focusin");
+  await settle();
+  expect(preload).toHaveBeenCalledWith(expect.objectContaining({ intent: "preload" }));
+  expect(history.get().path).toBe("/");
+  expect(el.querySelector("p")).toBe(home);
+  expect(home.textContent).toBe("home");
+  expect(document.title).toBe("Template");
+  document.title = "";
+});
+
+test("page metadata merges root-to-leaf and restores the template baseline when leaving", () => {
+  document.title = "Template";
+  const Layout = (props: RouteProps) => <section>{props.children}</section>;
+  const { el, navigate } = setup([
+    {
+      path: "/",
+      component: Home,
+      meta: { title: "Home", description: "home desc", canonical: "https://site.example/" },
+    },
+    {
+      path: "/about",
+      component: About,
+      meta: { title: "About" },
+    },
+    {
+      path: "/nested",
+      component: Layout,
+      meta: { description: "layout desc" },
+      children: [{ path: "/leaf", component: About, meta: { title: "Leaf" } }],
+    },
+  ]);
+  tick();
+  expect(document.title).toBe("Home");
+  expect(document.querySelector('meta[name="description"]')?.getAttribute("content")).toBe("home desc");
+  expect(document.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe("https://site.example/");
+  navigate("/nested/leaf");
+  tick();
+  expect(document.title).toBe("Leaf");
+  expect(document.querySelector('meta[name="description"]')?.getAttribute("content")).toBe("layout desc");
+  expect(document.querySelector('link[rel="canonical"]')).toBeNull();
+  navigate("/about");
+  tick();
+  expect(document.title).toBe("About");
+  expect(document.querySelector('meta[name="description"]')).toBeNull();
+  expect(el.textContent).toContain("about");
+  document.title = "";
 });

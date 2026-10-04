@@ -1,4 +1,4 @@
-import { loadBranch, matchPathname, navigate, parseLocation, pathnameOf, resolveHref, type RouterState } from "./navigation";
+import { isThenable, loadBranch, matchPathname, navigate, parseLocation, pathnameOf, resolveHref, type RouterState } from "./navigation";
 
 const SvgNamespace = "http://www.w3.org/2000/svg";
 const HoverDelayMs = 20;
@@ -20,9 +20,11 @@ function anchorPath(state: RouterState, anchor: Element): string | undefined {
   return resolveHref(state, href);
 }
 
-function ignoreRejection(): void {}
-
-/** Loads `path`'s route modules and runs their `preload` with intent `"preload"`; `false` when a module failed to load. */
+/**
+ * Loads `path`'s route modules and runs their `preload` with intent `"preload"`; `false` when a module failed to load.
+ * Only preloads run: `meta`/`redirect` callbacks never execute, rejections are swallowed, and a navigation a preload
+ * triggers is ignored while warming holds.
+ */
 async function preloadPath(state: RouterState, path: string): Promise<boolean> {
   const location = parseLocation({ path, state: undefined, index: 0 });
   const match = matchPathname(state, location.pathname);
@@ -31,14 +33,19 @@ async function preloadPath(state: RouterState, path: string): Promise<boolean> {
   for (const route of match.branch.routes) {
     if (!route.isLoaded) return false;
   }
-  for (const route of match.branch.routes) {
-    if (route.preload === undefined) continue;
-    try {
-      const data = route.preload({ params: match.params, location, intent: "preload" });
-      if (data instanceof Promise) data.catch(ignoreRejection);
-    } catch {
-      continue;
+  state.warming++;
+  try {
+    for (const route of match.branch.routes) {
+      if (route.preload === undefined) continue;
+      try {
+        const data = route.preload({ params: match.params, location, intent: "preload" });
+        if (isThenable(data)) await data.then(undefined, () => {});
+      } catch {
+        continue;
+      }
     }
+  } finally {
+    state.warming--;
   }
   return true;
 }

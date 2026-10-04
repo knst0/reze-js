@@ -21,7 +21,7 @@ pub(crate) fn allows(source: &str, imported: &str) -> bool {
             matches!(source, "reze-js" | "@rezejs/dom")
         }
         "asyncComputed" | "createUniqueId" => matches!(source, "reze-js" | "@rezejs/signals"),
-        "asyncComponent" | "dynamic" | "dynamicElement" | "Show" | "For" | "Repeat" | "Switch" | "Match"
+        "asyncComponent" | "dynamic" | "dynamicElement" | "island" | "Show" | "For" | "Repeat" | "Switch" | "Match"
         | "Loading" | "Errored" | "Portal" => matches!(source, "reze-js" | "@rezejs/dom"),
         _ => false,
     }

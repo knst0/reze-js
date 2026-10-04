@@ -23,22 +23,21 @@ import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [reze({ fileRoutes: true })],
+  plugins: [reze({ fileRoutes: true, ssg: { entry: "src/app.tsx" } })],
 });
 ```
 
-`src/main.tsx`:
+`src/app.tsx`:
 
 ```tsx
-import { createBrowserHistory, createRouter } from "@rezejs/router";
-import { render } from "reze-js";
-import { paths, routes } from "virtual:reze-routes";
+export { paths, routes } from "virtual:reze-routes";
+export { Shell as default } from "./Shell";
+```
 
-import { Shell } from "./Shell";
+The shared entry selects router mode through the `routes` export; the default export is the shell around the matched branch. Development renders it client-side, while `vite build` pre-renders every page and hydrates in the browser. The HTML template loads the generated bootstrap instead of the entry directly:
 
-const Router = createRouter({ routes, paths, history: createBrowserHistory(import.meta.env.BASE_URL) });
-
-render(() => <Router root={Shell} />, document.getElementById("app")!);
+```html
+<script type="module" src="/@reze/ssg-client.js"></script>
 ```
 
 `src/Shell.tsx`:
@@ -176,6 +175,24 @@ export default function PostPage(props: RoutePropsFor<"/blog/:id">) {
 
 `preload` runs with intent `"preload"` when a link to the route is hovered, focused, or touched, and again with `"navigate"` when the route is entered, so cache the fetch when it should not repeat. Its return value becomes the component's `props.data`. A hash-only change keeps the current data without re-running `preload`.
 
+## Metadata and redirects
+
+`route.meta` sets the page head from the settled preload data: a literal object or a callback returning one. Entries merge root-to-leaf with the last defined field winning; fields missing from the new branch fall back to the template baseline instead of lingering from the previous page. Static builds write the merged head into each page's HTML, and client navigation applies the same fields to the document. Markdown pages derive `meta` from their frontmatter title and description.
+
+```tsx
+export const route = {
+  meta: ({ data }) => ({ title: data.title }),
+} satisfies RouteConfigFor<"/blog/:id", Post>;
+```
+
+`route.redirect` leaves the page before it renders. A literal object short-circuits the navigation before `preload` runs; a callback receives the settled data and runs after it. A module with only a redirect and no component renders nothing:
+
+```tsx
+export const route = { redirect: { to: "/installation", replace: true } };
+```
+
+Static builds resolve redirect chains at build time and fail on loops or missing targets.
+
 ## Navigation
 
 Plain anchors navigate when they point at a known same-origin route:
@@ -270,16 +287,24 @@ Claimed anchors expose their state as attributes: `aria-current="page"` on the e
 
 ## Deployment
 
-Browser history serves real paths, so the host must rewrite unknown paths to the app entry. Pass the served base explicitly so links and history agree. `src/main.tsx`:
+With static generation, every page is its own HTML file: serve the output directory directly with no fallback rewrite, since rewriting an unknown path to another page's HTML would hydrate the wrong route. Unmatched URLs return the host 404 unless a catch-all route renders them. Match Vite's `base` with the served path so links and history agree; static generation requires browser history and rejects hash routing.
 
-```tsx
-import { createBrowserHistory, createRouter } from "@rezejs/router";
-import { paths, routes } from "virtual:reze-routes";
+For relocatable output, set Vite's `base` to `"./"` or `""`. Static generation
+rebases bootstrap, stylesheet and preload URLs for each page, including both
+trailing-slash modes. Hydration derives the router's deployment prefix from the
+validated bootstrap URL and still rejects a payload for another page.
+`navigate("/about")` stays inside that prefix. Native anchor URLs keep browser
+semantics: `href="/"` points to the origin root, not the router root; use
+base-aware hrefs when linking into a mounted application. An absolute CDN
+asset base does not become a router path prefix.
 
-const Router = createRouter({ routes, paths, history: createBrowserHistory(import.meta.env.BASE_URL) });
-```
+The HTML template is parsed as HTML rather than replaced with regular
+expressions. Nested mount content, unquoted attributes, comments and inert
+templates do not change which live root or bootstrap is selected. Route head
+metadata is applied as text and attributes, preserving decoded template
+defaults.
 
-Hosts without rewrites use hash history instead, with the plugin typing `#/path` hrefs. `vite.config.ts`:
+Without static generation, the build is a client-rendered application instead: the host must rewrite unknown paths to the HTML entry, or the router never loads for a deep link. Hosts without rewrites use hash history, with the plugin typing `#/path` hrefs. `vite.config.ts`:
 
 ```tsx
 import reze from "@rezejs/vite-plugin";
@@ -289,8 +314,6 @@ export default defineConfig({
   plugins: [reze({ fileRoutes: { history: "hash" } })],
 });
 ```
-
-`src/main.tsx`:
 
 ```tsx
 import { createHashHistory, createRouter } from "@rezejs/router";

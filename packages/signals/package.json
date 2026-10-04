@@ -15,20 +15,76 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "reze-html": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/html/index.js"
+      },
+      "reze-hydrate": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/hydrate/index.js"
+      },
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./profile": {
+      "reze-html": {
+        "types": "./dist/profile.d.ts",
+        "import": "./dist/html/profile.js"
+      },
+      "reze-hydrate": {
+        "types": "./dist/profile.d.ts",
+        "import": "./dist/hydrate/profile.js"
+      },
       "types": "./dist/profile.d.ts",
       "import": "./dist/profile.js"
     },
     "./render": {
+      "reze-html": {
+        "types": "./dist/render.d.ts",
+        "import": "./dist/html/render.js"
+      },
+      "reze-hydrate": {
+        "types": "./dist/render.d.ts",
+        "import": "./dist/hydrate/render.js"
+      },
       "types": "./dist/render.d.ts",
       "import": "./dist/render.js"
     },
     "./internal/continuation": {
+      "reze-html": {
+        "types": "./dist/internal/continuation.d.ts",
+        "import": "./dist/html/internal/continuation.js"
+      },
+      "reze-hydrate": {
+        "types": "./dist/internal/continuation.d.ts",
+        "import": "./dist/hydrate/internal/continuation.js"
+      },
       "types": "./dist/internal/continuation.d.ts",
       "import": "./dist/internal/continuation.js"
+    },
+    "./internal/scope": {
+      "reze-html": {
+        "types": "./dist/internal/scope.d.ts",
+        "import": "./dist/html/internal/scope.js"
+      },
+      "reze-hydrate": {
+        "types": "./dist/internal/scope.d.ts",
+        "import": "./dist/hydrate/internal/scope.js"
+      },
+      "types": "./dist/internal/scope.d.ts",
+      "import": "./dist/internal/scope.js"
+    },
+    "./internal/resource": {
+      "reze-html": {
+        "types": "./dist/internal/resource.d.ts",
+        "import": "./dist/html/internal/resource.js"
+      },
+      "reze-hydrate": {
+        "types": "./dist/internal/resource.d.ts",
+        "import": "./dist/hydrate/internal/resource.js"
+      },
+      "types": "./dist/internal/resource.d.ts",
+      "import": "./dist/internal/resource.js"
     }
   },
   "publishConfig": {

@@ -56,7 +56,7 @@ pub fn build_module_ir<'x>(
         module_id: module_id.map(str::to_string),
         links,
         islands,
-        pending: pre.assigned,
+        source_sites: pre.assigned,
         views: Vec::new(),
         by_span: HashMap::new(),
         reports: Vec::new(),
@@ -64,8 +64,8 @@ pub fn build_module_ir<'x>(
         has_views: false,
     };
     builder.visit_program(program);
-    let Builder { views, by_span, module_id, islands, pending, reports, has_views, .. } = builder;
-    ModuleIr { views, by_span, module_id, islands, sites: pre.sites, callback_sites: pending, reports, has_views }
+    let Builder { views, by_span, module_id, islands, source_sites, reports, has_views, .. } = builder;
+    ModuleIr { views, by_span, module_id, islands, sites: pre.sites, callback_sites: source_sites, reports, has_views }
 
 }
 
@@ -76,7 +76,7 @@ struct Builder<'x> {
     module_id: Option<String>,
     links: bool,
     islands: IslandPlan,
-    pending: HashMap<(u32, u32), SiteId>,
+    source_sites: HashMap<(u32, u32), SiteId>,
     views: Vec<View>,
     by_span: HashMap<(u32, u32), ViewId>,
     reports: Vec<Report>,
@@ -95,7 +95,7 @@ impl Builder<'_> {
 
     fn push_view(&mut self, kind: ViewKind, origin: Span) -> ViewId {
         let id = ViewId(self.views.len() as u32);
-        let site = self.pending.remove(&(origin.start, origin.end));
+        let site = self.source_sites.get(&(origin.start, origin.end)).copied();
         self.by_span.insert((origin.start, origin.end), id);
         self.views.push(View { kind, site, origin });
         self.has_views = true;

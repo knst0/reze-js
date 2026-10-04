@@ -33,14 +33,16 @@ pub fn rewrite<'a>(ctx: &mut EmitContext<'a, '_>, call: &mut CallExpression<'a>,
             next.push(Argument::from(receiver));
             ctx.helper("reze-js/internal/reactivity", "withResourceSite")
         }
-        RuntimeCallKind::AsyncComponent | RuntimeCallKind::Dynamic | RuntimeCallKind::DynamicElement => {
+        RuntimeCallKind::AsyncComponent | RuntimeCallKind::Dynamic | RuntimeCallKind::DynamicElement | RuntimeCallKind::Island => {
             let (source, export) = match (ctx.options.target, kind) {
                 (CompileTarget::Html, RuntimeCallKind::AsyncComponent) => ("reze-js/internal/html", "hAsyncComponent"),
                 (CompileTarget::Html, RuntimeCallKind::Dynamic) => ("reze-js/internal/html", "hDynamic"),
                 (CompileTarget::Html, RuntimeCallKind::DynamicElement) => ("reze-js/internal/html", "hDynamicElement"),
+                (CompileTarget::Html, RuntimeCallKind::Island) => ("reze-js/internal/html", "hIsland"),
                 (CompileTarget::Hydrate, RuntimeCallKind::AsyncComponent) => ("reze-js/internal/hydrate", "prepareAsyncComponent"),
                 (CompileTarget::Hydrate, RuntimeCallKind::Dynamic) => ("reze-js/internal/hydrate", "prepareDynamic"),
                 (CompileTarget::Hydrate, RuntimeCallKind::DynamicElement) => ("reze-js/internal/hydrate", "prepareDynamicElement"),
+                (CompileTarget::Hydrate, RuntimeCallKind::Island) => ("reze-js/internal/hydrate", "prepareIsland"),
                 _ => unreachable!("managed call has a non-client target"),
             };
             ctx.helper(source, export)

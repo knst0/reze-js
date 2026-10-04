@@ -2,7 +2,7 @@ import { renderEffect } from "@rezejs/signals/render";
 
 import { reconcileArrays } from "./reconcile";
 
-type Current = Node | Node[] | string | undefined | (() => Current);
+export type InsertionState = Node | Node[] | string | undefined | (() => InsertionState);
 type Slot = Node | (() => unknown);
 
 /**
@@ -11,9 +11,9 @@ type Slot = Node | (() => unknown);
  * `null` appends at the end.
  */
 export function insert(parent: Node, value: unknown, marker?: Node | null): void {
-  const initial: Current = marker === undefined ? undefined : [];
+  const initial: InsertionState = marker === undefined ? undefined : [];
   if (typeof value === "function") {
-    renderEffect<Current>((current) => insertExpression(parent, (value as () => unknown)(), current, marker), initial);
+    renderEffect<InsertionState>((current) => insertExpression(parent, (value as () => unknown)(), current, marker), initial);
   } else {
     insertExpression(parent, value, initial, marker);
   }
@@ -24,7 +24,7 @@ export function append(parent: Node, value: unknown): void {
   insert(parent, value, null);
 }
 
-function insertExpression(parent: Node, value: unknown, current: Current, marker: Node | null | undefined, unwrap?: boolean): Current {
+export function insertExpression(parent: Node, value: unknown, current: InsertionState, marker: Node | null | undefined, unwrap?: boolean): InsertionState {
   while (typeof current === "function") {
     current = current();
   }
@@ -117,7 +117,7 @@ function insertExpression(parent: Node, value: unknown, current: Current, marker
  * Flattens `array` into `slots`, reusing the text node `current` holds at the same position. Functions are resolved
  * with `unwrap`, otherwise kept as slots; returns whether one was kept, so the caller must bind and unwrap.
  */
-function normalizeArray(slots: Slot[], array: readonly unknown[], current: Current, unwrap?: boolean): boolean {
+function normalizeArray(slots: Slot[], array: readonly unknown[], current: InsertionState, unwrap?: boolean): boolean {
   let hasFunction = false;
   for (let i = 0; i < array.length; i++) {
     if (normalizeItem(slots, array[i], current, unwrap)) {
@@ -127,7 +127,7 @@ function normalizeArray(slots: Slot[], array: readonly unknown[], current: Curre
   return hasFunction;
 }
 
-function normalizeItem(slots: Slot[], item: unknown, current: Current, unwrap?: boolean): boolean {
+function normalizeItem(slots: Slot[], item: unknown, current: InsertionState, unwrap?: boolean): boolean {
   if (typeof item === "function") {
     if (!unwrap) {
       slots.push(item as () => unknown);
@@ -179,7 +179,7 @@ function appendNodes(parent: Node, nodes: readonly Node[], marker: Node | null):
  * Removes what `current` holds and leaves `replacement`, or an empty text node keeping the position, in its place.
  * Without a marker everything in `parent` is cleared.
  */
-function cleanChildren(parent: Node, current: Current, marker: Node | null | undefined, replacement?: Node): Current {
+function cleanChildren(parent: Node, current: InsertionState, marker: Node | null | undefined, replacement?: Node): InsertionState {
   if (marker === undefined) {
     parent.textContent = "";
     return "";

@@ -19,14 +19,3 @@ fn nonclient_targets_require_identity_even_without_transformable_source() {
     }
 }
 
-#[test]
-fn modules_without_transformations_remain_unchanged_for_each_target() {
-    for target in [CompileTarget::Client, CompileTarget::Hydrate, CompileTarget::Html] {
-        let options = Options {
-            target,
-            module_id: Some("src/constant.ts".into()),
-            ..Options::default()
-        };
-        assert!(compile("export const value = 1;", "constant.ts", &options).unwrap().is_none());
-    }
-}

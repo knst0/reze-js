@@ -1,8 +1,37 @@
 import { defineConfig } from "tsdown";
 
-export default defineConfig({
-  entry: ["src/index.ts", "src/profile.ts", "src/render.ts", "src/internal/continuation.ts"],
-  platform: "neutral",
-  unbundle: true,
-  dts: { tsconfig: "./tsconfig.build.json" },
-});
+const entry = [
+  "src/index.ts",
+  "src/profile.ts",
+  "src/render.ts",
+  "src/internal/continuation.ts",
+  "src/internal/scope.ts",
+  "src/internal/resource.ts",
+];
+
+export default defineConfig([
+  {
+    entry,
+    platform: "neutral",
+    unbundle: true,
+    outDir: "dist",
+    dts: { tsconfig: "./tsconfig.build.json" },
+    define: { __REZE_HTML__: "false", __REZE_HYDRATE__: "false" },
+  },
+  {
+    entry,
+    platform: "neutral",
+    unbundle: true,
+    outDir: "dist/html",
+    dts: false,
+    define: { __REZE_HTML__: "true", __REZE_HYDRATE__: "false" },
+  },
+  {
+    entry,
+    platform: "neutral",
+    unbundle: true,
+    outDir: "dist/hydrate",
+    dts: false,
+    define: { __REZE_HTML__: "false", __REZE_HYDRATE__: "true" },
+  },
+]);

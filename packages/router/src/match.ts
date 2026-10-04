@@ -1,4 +1,4 @@
-import type { Params, RouteComponent, RouteDefinition, PreloadArgs } from "./types";
+import type { Awaitable, PageMetadata, Params, RouteComponent, RouteDefinition, PreloadArgs, RouteRedirect, RouteResolvedArgs } from "./types";
 
 const Static = 0;
 const Param = 1;
@@ -13,10 +13,14 @@ interface Segment {
 
 export interface CompiledRoute {
   readonly def: RouteDefinition;
+  /** Stable identity: `def.id` when the table sets it (file routes), else the structural index chain (`"2"`, `"2/0"`). */
+  readonly id: string;
   /** The joined pattern from the root (`/blog/:id`); `Router.match` reports one per level. */
   readonly pattern: string;
   component: RouteComponent<any, any> | undefined;
   preload: ((args: PreloadArgs<any>) => unknown) | undefined;
+  meta: (PageMetadata | ((args: RouteResolvedArgs<any, any>) => Awaitable<PageMetadata>)) | undefined;
+  redirect: (RouteRedirect | ((args: RouteResolvedArgs<any, any>) => Awaitable<RouteRedirect | undefined>)) | undefined;
   info: Readonly<Record<string, unknown>> | undefined;
   loading: Promise<void> | undefined;
   loadError: unknown;
@@ -81,8 +85,14 @@ function requiredLength(segments: readonly Segment[]): number {
   return length;
 }
 
-function joinPaths(parent: string, child: string): string {
+/** Joins a parent pattern with a child path; shared by the matcher and SSG descriptors so patterns agree. */
+export function joinRoutePaths(parent: string, child: string): string {
   return parent.replace(/\/+$/, "") + "/" + child.replace(/^\/+/, "");
+}
+
+/** Stable identity of one table entry: `def.id` when the table sets it, else the structural index chain. Shared by the matcher and SSG descriptors. */
+export function routeEntryId(def: RouteDefinition, index: number, parentId: string): string {
+  return def.id ?? (parentId === "" ? `${index}` : `${parentId}/${index}`);
 }
 
 /** Rank of `segments[i]`, higher first: static, then param, then the path's end, then splat. */
@@ -101,12 +111,15 @@ function compareBranches(a: Branch, b: Branch): number {
   return 0;
 }
 
-function compileRoute(def: RouteDefinition, pattern: string): CompiledRoute {
+function compileRoute(def: RouteDefinition, pattern: string, id: string): CompiledRoute {
   return {
     def,
+    id,
     pattern,
     component: def.component,
     preload: def.preload,
+    meta: def.meta,
+    redirect: def.redirect,
     info: def.info,
     loading: undefined,
     loadError: undefined,
@@ -117,13 +130,15 @@ function compileRoute(def: RouteDefinition, pattern: string): CompiledRoute {
 /** Flattens `defs` into leaf branches, best match first: segment by segment, static beats param beats splat; ties keep definition order. Throws on an invalid path. */
 export function compileRoutes(defs: readonly RouteDefinition[]): Branch[] {
   const branches: Branch[] = [];
-  const walk = (list: readonly RouteDefinition[], parentPath: string, parents: readonly CompiledRoute[]): void => {
-    for (const def of list) {
-      const fullPath = joinPaths(parentPath, def.path);
-      const routes = [...parents, compileRoute(def, fullPath)];
+  const walk = (list: readonly RouteDefinition[], parentPath: string, parents: readonly CompiledRoute[], parentId: string): void => {
+    for (let index = 0; index < list.length; index++) {
+      const def = list[index]!;
+      const fullPath = joinRoutePaths(parentPath, def.path);
+      const id = routeEntryId(def, index, parentId);
+      const routes = [...parents, compileRoute(def, fullPath, id)];
       const segments = compileSegments(fullPath);
       if (def.children !== undefined && def.children.length > 0) {
-        walk(def.children, fullPath, routes);
+        walk(def.children, fullPath, routes, id);
         continue;
       }
       for (let length = requiredLength(segments); length <= segments.length; length++) {
@@ -134,7 +149,7 @@ export function compileRoutes(defs: readonly RouteDefinition[]): Branch[] {
       }
     }
   };
-  walk(defs, "", []);
+  walk(defs, "", [], "");
   return branches.sort(compareBranches);
 }
 

@@ -2,9 +2,9 @@
 import { endTracking, getOwner, isErrorHandled, markPure, setActiveSub, startTracking, track } from "./context";
 import { FlagDirty, FlagMutable, FlagNone, FlagOwnsChildren, FlagPending, FlagRecursedCheck } from "./flags";
 import { checkDirty, disposeAllDepsInReverse, disposeChildren, type Link, type ReactiveNode, shallowPropagate } from "./graph";
+import { currentModuleId, enterScopeContext, getActiveScope, registerNodeScope, restoreScopeContext, scopeOfNode, type ScopeContext } from "./internal/scope";
 import { profileCreated, profileReran } from "./profile";
 import { differs } from "./signal";
-
 class ComputedNode<T = unknown> implements ReactiveNode {
   declare value: T | undefined;
   declare subs: Link | undefined;
@@ -34,6 +34,13 @@ class ComputedNode<T = unknown> implements ReactiveNode {
       disposeChildren(this);
     }
     const prevSub = startTracking(this, FlagMutable);
+    let prevScope: ScopeContext | undefined = undefined;
+    if (__REZE_HTML__ || __REZE_HYDRATE__) {
+      const construction = scopeOfNode(this);
+      if (construction !== undefined && construction !== getActiveScope()) {
+        prevScope = enterScopeContext(construction, currentModuleId());
+      }
+    }
     try {
       const prev = this.value;
       return differs<T | undefined>(Object.is, prev, (this.value = this.getter(prev)));
@@ -41,6 +48,9 @@ class ComputedNode<T = unknown> implements ReactiveNode {
       if (!isErrorHandled(this, error)) throw error;
       return false;
     } finally {
+      if (prevScope !== undefined) {
+        restoreScopeContext(prevScope);
+      }
       endTracking(this, prevSub);
     }
   }
@@ -70,11 +80,21 @@ class ComputedNode<T = unknown> implements ReactiveNode {
     } else if (!flags) {
       this.flags = FlagMutable | FlagRecursedCheck;
       const prevSub = setActiveSub(this);
+      let prevScope: ScopeContext | undefined = undefined;
+      if (__REZE_HTML__ || __REZE_HYDRATE__) {
+        const construction = scopeOfNode(this);
+        if (construction !== undefined && construction !== getActiveScope()) {
+          prevScope = enterScopeContext(construction, currentModuleId());
+        }
+      }
       try {
         this.value = this.getter();
       } catch (error) {
         if (!isErrorHandled(this, error)) throw error;
       } finally {
+        if (prevScope !== undefined) {
+          restoreScopeContext(prevScope);
+        }
         setActiveSub(prevSub);
         this.flags &= ~FlagRecursedCheck;
       }
@@ -95,7 +115,11 @@ export interface ComputedOptions {
  * it and disposed before each recomputation.
  */
 export function computed<T>(getter: (previousValue?: T) => T, options?: ComputedOptions): () => T {
-  const node = new ComputedNode(getter, getOwner());
+  const owner = getOwner();
+  const node = new ComputedNode(getter, owner);
+  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    registerNodeScope(node, owner);
+  }
   if (process.env.NODE_ENV !== "production") {
     markPure(node);
     profileCreated(node, "computed", options?.name);

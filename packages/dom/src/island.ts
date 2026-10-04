@@ -39,27 +39,7 @@ export function island<P>(
   options?: IslandOptions,
 ): JSX.Element {
   const [started, start] = signal(trigger === "eager");
-  if (trigger === "idle") {
-    if (typeof requestIdleCallback === "function") {
-      requestIdleCallback(() => start(true), { timeout: IdleTimeoutMs });
-    } else {
-      setTimeout(() => start(true), IdleFallbackMs);
-    }
-  } else if (trigger === "media") {
-    const query = matchMedia(options?.media ?? "");
-    if (query.matches) {
-      start(true);
-    } else {
-      const changed = (): void => {
-        if (query.matches) {
-          start(true);
-          query.removeEventListener("change", changed);
-        }
-      };
-      query.addEventListener("change", changed);
-      onCleanup(() => query.removeEventListener("change", changed));
-    }
-  }
+  if (trigger === "idle" || trigger === "media") armIsland(trigger, start, options);
   let view: (() => JSX.Element | undefined) | undefined;
   let direct: Component<P> | undefined;
   let shell: Node | undefined;
@@ -75,34 +55,7 @@ export function island<P>(
       } else {
         host.setAttribute("style", "display:block;min-width:1px;min-height:1px");
       }
-      if (trigger === "visible") {
-        const observer = new IntersectionObserver(
-          (entries) => {
-            if (entries.some((entry) => entry.isIntersecting)) {
-              observer.disconnect();
-              start(true);
-            }
-          },
-          { rootMargin: options?.rootMargin ?? VisibleRootMargin },
-        );
-        observer.observe(host);
-        onCleanup(() => observer.disconnect());
-      } else {
-        const fired = (): void => {
-          start(true);
-          for (const name of InteractionEvents) {
-            host.removeEventListener(name, fired, true);
-          }
-        };
-        for (const name of InteractionEvents) {
-          host.addEventListener(name, fired, true);
-        }
-        onCleanup(() => {
-          for (const name of InteractionEvents) {
-            host.removeEventListener(name, fired, true);
-          }
-        });
-      }
+      armIsland(trigger, start, options, host);
       shell = host;
     }
     return shell;
@@ -137,4 +90,51 @@ export function island<P>(
     }
     return createComponent(direct as Component<P>, props);
   };
+}
+
+export function armIsland(trigger: IslandTrigger, start: (value: boolean) => unknown, options?: IslandOptions, host?: Element): void {
+  if (trigger === "idle") {
+    if (typeof requestIdleCallback === "function") {
+      const handle = requestIdleCallback(() => start(true), { timeout: IdleTimeoutMs });
+      onCleanup(() => cancelIdleCallback(handle));
+    } else {
+      const handle = setTimeout(() => start(true), IdleFallbackMs);
+      onCleanup(() => clearTimeout(handle));
+    }
+  } else if (trigger === "media") {
+    const query = matchMedia(options?.media ?? "");
+    if (query.matches) {
+      start(true);
+    } else {
+      const changed = (): void => {
+        if (query.matches) {
+          start(true);
+          query.removeEventListener("change", changed);
+        }
+      };
+      query.addEventListener("change", changed);
+      onCleanup(() => query.removeEventListener("change", changed));
+    }
+  } else if (trigger === "visible" && host !== undefined) {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries.some(entry => entry.isIntersecting)) {
+          observer.disconnect();
+          start(true);
+        }
+      },
+      { rootMargin: options?.rootMargin ?? VisibleRootMargin },
+    );
+    observer.observe(host);
+    onCleanup(() => observer.disconnect());
+  } else if (trigger === "interaction" && host !== undefined) {
+    const fired = (): void => {
+      start(true);
+      for (const name of InteractionEvents) host.removeEventListener(name, fired, true);
+    };
+    for (const name of InteractionEvents) host.addEventListener(name, fired, true);
+    onCleanup(() => {
+      for (const name of InteractionEvents) host.removeEventListener(name, fired, true);
+    });
+  }
 }

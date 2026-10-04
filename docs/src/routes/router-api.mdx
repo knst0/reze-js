@@ -59,7 +59,7 @@ const table = defineRoutes([
 const Router = createRouter({ routes: table, paths: buildPaths(table) });
 ```
 
-`defineRoutes` preserves the literal tuple for the factory; `defineRoute` types `preload` and `component` params from the path string. `RouteDefinition` fields: `path` (`:param`, `:optional?`, `*splat`), optional `name` node key in `paths`, `component`, `preload`, `info`, lazy `load`, and `children`. A layout with children renders them as `props.children`; a component-less entry renders its child directly. `buildPaths(table, base)` builds the `paths` builders for hand-written tables; every emitted href carries `base`.
+`defineRoutes` preserves the literal tuple for the factory; `defineRoute` types `preload` and `component` params from the path string. `RouteDefinition` fields: `path` (`:param`, `:optional?`, `*splat`), optional `name` node key in `paths`, `component`, `preload`, `meta`, `redirect`, `info`, lazy `load`, and `children`. A layout with children renders them as `props.children`; a component-less entry renders its child directly, and a redirect-only entry carries no component. `buildPaths(table, base)` builds the `paths` builders for hand-written tables; every emitted href carries `base`.
 
 ## Hooks
 

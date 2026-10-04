@@ -22,6 +22,8 @@ export const sourceAliases = [
   { find: "@rezejs/signals/render", replacement: join(packages, "signals", "src", "render.ts") },
   { find: "@rezejs/signals/profile", replacement: join(packages, "signals", "src", "profile.ts") },
   { find: "@rezejs/signals/internal/continuation", replacement: join(packages, "signals", "src", "internal", "continuation.ts") },
+  { find: "@rezejs/signals/internal/scope", replacement: join(packages, "signals", "src", "internal", "scope.ts") },
+  { find: "@rezejs/signals/internal/resource", replacement: join(packages, "signals", "src", "internal", "resource.ts") },
   { find: "@rezejs/signals", replacement: join(packages, "signals", "src", "index.ts") },
   { find: "@rezejs/testing-library", replacement: join(packages, "testing-library", "src", "index.ts") },
 ];
@@ -58,6 +60,7 @@ export const nodeSpecs = "tests/**/*.node.spec.ts";
 export function domProject(name: string, plugins: PluginOption[]) {
   return defineConfig({
     plugins,
+    define: { __REZE_HTML__: "false", __REZE_HYDRATE__: "false" },
     test: {
       name,
       exclude: [...configDefaults.exclude, nodeSpecs],

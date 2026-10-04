@@ -9,6 +9,7 @@ export { errored } from "./errored";
 export { addEventListener, delegateEvents } from "./events";
 export { branch, choose } from "./flow";
 export { hotComponent } from "./hot";
+export { hydrate } from "./hydrate";
 export { append, insert } from "./insert";
 export {
   Errored,
@@ -42,5 +43,6 @@ export { use } from "./ref";
 export { spread } from "./spread";
 export { style } from "./style";
 export { template, templateMathML, templateSVG } from "./template";
+export { templateWithTextNodes, type TextNodeTemplate } from "./template-text-nodes";
 export { toggleClass } from "./toggle-class";
 export { child, next } from "./walk";

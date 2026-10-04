@@ -1,10 +1,11 @@
 import { createComponent, type JSX } from "@rezejs/dom";
-import { computed, getOwner, onCleanup, provideContext, signal, untrack } from "@rezejs/signals";
+import { computed, getOwner, onCleanup, provideContext, untrack } from "@rezejs/signals";
 
 import { createBrowserHistory, type HistoryEntry, type RouterHistory } from "./history";
 import { installLinks } from "./links";
 import { compileRoutes, matchBranches } from "./match";
 import {
+  initRouterState,
   isLeavePrevented,
   loadPositions,
   onPop,
@@ -12,10 +13,9 @@ import {
   persistPositions,
   RouterContext,
   start,
-  type ActiveMatch,
   type RouterState,
 } from "./navigation";
-import type { OutputMatch, PathsTree, RouteDefinition } from "./types";
+import type { OutputMatch, PageMetadata, PathsTree, RouteDefinition } from "./types";
 
 export interface RouterConfig {
   routes: readonly RouteDefinition[];
@@ -27,6 +27,11 @@ export interface RouterConfig {
   links?: boolean;
   /** Default `true`: load and preload a link's route on hover, focus or touch. Needs `links`. */
   preload?: boolean;
+  /**
+   * Template head metadata the merged page metadata restores absent fields to. The hydration boot passes the payload
+   * `headDefaults`; without it the router captures the live document on first apply.
+   */
+  headDefaults?: PageMetadata;
 }
 
 export interface RouterInstance {
@@ -37,10 +42,6 @@ export interface RouterInstance {
   readonly paths: PathsTree | undefined;
   readonly routes: readonly RouteDefinition[];
 }
-
-function ignoreRetry(): void {}
-
-const NoMatches: readonly ActiveMatch[] = [];
 
 function renderLevel(state: RouterState, depth: number): JSX.Element {
   const match = state.matches()[depth]!;
@@ -76,6 +77,33 @@ function outlet(state: RouterState, depth: number): () => JSX.Element {
   });
   return computed(() => (key() === undefined ? undefined : untrack(() => renderLevel(state, depth))));
 }
+/**
+ * Binds an already-settled SSG state to the router outlet without starting a navigation, installing listeners, or
+ * touching history. Preparation owns matching, data and redirect capture; mount the result inside the page scope.
+ */
+export function createSettledRouter(state: RouterState): (props: { root?: (props: { children: JSX.Element }) => JSX.Element }) => JSX.Element {
+  return function SettledRouter(props: { root?: (props: { children: JSX.Element }) => JSX.Element }): JSX.Element {
+    const root = props.root;
+    return provideContext(RouterContext, state, () => {
+      state.owner = getOwner();
+      const host = state.commitHost;
+      if (host !== undefined) {
+        onCleanup(() => { state.generation++; });
+        host.deferCommit(() => {
+          if (state.history.scroll) loadPositions(state);
+          installRouterListeners(state, true, true, state.history.scroll);
+        });
+      }
+      if (root === undefined) return outlet(state, 0);
+      let children: JSX.Element;
+      return createComponent(root, {
+        get children() {
+          return (children ??= outlet(state, 0));
+        },
+      });
+    });
+  };
+}
 
 /** Compiles `routes` once and returns the router component; mount it with an optional `root` shell. */
 export function createRouter(config: RouterConfig & { paths: PathsTree }): RouterInstance & { readonly paths: PathsTree };
@@ -94,63 +122,19 @@ export function createRouter(config: RouterConfig): RouterInstance {
   };
 
   function Router(props: { root?: (props: { children: JSX.Element }) => JSX.Element }): JSX.Element {
-    const [location, setLocation] = signal(parseLocation(history.get()));
-    const [matches, setMatches] = signal(NoMatches);
-    const [isRouting, setIsRouting] = signal(true);
-    const [pendingKey, setPendingKey] = signal<string | undefined>(undefined);
-    const state: RouterState = {
+    const state = initRouterState({
       history,
       branches,
-      owner: undefined,
-      entry: undefined,
-      target: undefined,
-      targetLocation: undefined,
-      location,
-      setLocation,
-      matches,
-      setMatches,
-      isRouting,
-      setIsRouting,
-      pendingKey,
-      setPendingKey,
-      links: undefined,
-      renderDepth: 0,
-      matchedPathname: undefined,
-      lastMatch: undefined,
-      generation: 0,
-      leaveListeners: new Set(),
-      onUnload: (event) => {
-        if (!isLeavePrevented(state, null, {}, ignoreRetry)) return;
-        event.preventDefault();
-        event.returnValue = true;
-      },
-      ignorePop: false,
-      skipNextGuard: false,
-      positions: undefined,
-    };
+      env: "browser",
+      headBaseline: config.headDefaults,
+    });
     const root = props.root;
     return provideContext(RouterContext, state, () => {
       state.owner = getOwner();
-      const isScrollManaged = history.scroll;
+      const isScrollManaged = state.env === "browser" && history.scroll;
       if (isScrollManaged) loadPositions(state);
       start(state, history.get(), "initial", "initial");
-      const unlisten = history.listen((entry) => onPop(state, entry));
-      const scrollRestoration = isScrollManaged ? window.history.scrollRestoration : undefined;
-      const onPageHide = (): void => persistPositions(state);
-      if (scrollRestoration !== undefined) {
-        window.history.scrollRestoration = "manual";
-        addEventListener("pagehide", onPageHide);
-      }
-      const uninstallLinks = isLinking ? installLinks(state, isPreloading) : undefined;
-      onCleanup(() => {
-        state.generation++;
-        unlisten();
-        uninstallLinks?.();
-        removeEventListener("beforeunload", state.onUnload);
-        if (scrollRestoration === undefined) return;
-        removeEventListener("pagehide", onPageHide);
-        window.history.scrollRestoration = scrollRestoration;
-      });
+      installRouterListeners(state, isLinking, isPreloading, isScrollManaged);
       if (root === undefined) return outlet(state, 0);
       let children: JSX.Element;
       return createComponent(root, {
@@ -162,4 +146,23 @@ export function createRouter(config: RouterConfig): RouterInstance {
   }
 
   return Object.assign(Router, { match, paths: config.paths, routes: config.routes });
+}
+
+function installRouterListeners(state: RouterState, isLinking: boolean, isPreloading: boolean, isScrollManaged: boolean): void {
+  const unlisten = state.history.listen(entry => onPop(state, entry));
+  const scrollRestoration = isScrollManaged && typeof window !== "undefined" ? window.history.scrollRestoration : undefined;
+  const onPageHide = (): void => persistPositions(state);
+  if (scrollRestoration !== undefined) {
+    window.history.scrollRestoration = "manual";
+    addEventListener("pagehide", onPageHide);
+  }
+  if (isLinking) onCleanup(installLinks(state, isPreloading));
+  onCleanup(() => {
+    state.generation++;
+    unlisten();
+    removeEventListener("beforeunload", state.onUnload);
+    if (scrollRestoration === undefined) return;
+    removeEventListener("pagehide", onPageHide);
+    window.history.scrollRestoration = scrollRestoration;
+  });
 }
