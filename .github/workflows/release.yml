@@ -191,7 +191,18 @@ jobs:
         working-directory: packages/compiler
         run: |
           ./node_modules/.bin/napi artifacts --output-dir artifacts
-          ./node_modules/.bin/napi pre-publish --skip-optional-publish
+          ./node_modules/.bin/napi pre-publish --skip-optional-publish --no-gh-release
+      - name: Install smoke browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Packaged SSG smoke on release artifacts
+        if: needs.plan.outputs.compiler == 'true'
+        run: node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --artifacts-dir packages/compiler --vite 8.0.0 --browsers chromium
+      - name: Build unchanged compiler for package verification
+        if: needs.plan.outputs.compiler != 'true'
+        run: pnpm --filter @rezejs/compiler build
+      - name: Packaged SSG smoke for runtime-only releases
+        if: needs.plan.outputs.compiler != 'true'
+        run: node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --vite 8.0.0 --browsers chromium
       - name: Publish native packages
         if: needs.plan.outputs.compiler == 'true'
         run: pnpm publish -r --filter "./packages/compiler/npm/*" --access public --provenance --no-git-checks

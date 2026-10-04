@@ -5,15 +5,20 @@ export function defineRoutes<const R extends readonly RouteDefinition[]>(routes:
   return routes;
 }
 
-/** Returns the supplied route while typing its preload and component params from its path. */
-export function defineRoute<const S extends string, T>(route: {
+type RouteInput<S extends string, T> = Omit<RouteDefinition, "path" | "preload" | "meta" | "redirect" | "component"> & {
   path: S;
   preload?: (args: PreloadArgs<RouteParams<S>>) => T;
   meta?: PageMetadata | ((args: RouteResolvedArgs<RouteParams<S>, T>) => Awaitable<PageMetadata>);
   redirect?: RouteRedirect | ((args: RouteResolvedArgs<RouteParams<S>, T>) => Awaitable<RouteRedirect | undefined>);
   component?: RouteComponent<RouteParams<S>, Awaited<T>>;
-  info?: Readonly<Record<string, unknown>>;
-  children?: readonly RouteDefinition[];
-}): RouteDefinition & { path: S } {
+};
+
+type PreloadedRoute<S extends string, T> = RouteInput<S, T> & {
+  preload: (args: PreloadArgs<RouteParams<S>>) => T;
+};
+
+export function defineRoute<const S extends string, T>(route: PreloadedRoute<S, T>): PreloadedRoute<S, T>;
+export function defineRoute<const S extends string, T = unknown>(route: RouteInput<S, T>): RouteInput<S, T>;
+export function defineRoute(route: RouteDefinition): RouteDefinition {
   return route;
 }

@@ -92,8 +92,26 @@ export function buildClientRegistry(outputs: readonly BundleOutput[], root: stri
       return [...canonical];
     },
     entryChunk(bootstrapId: string): BundleChunk {
-      const entry = chunks.find((chunk) => chunk.facadeModuleId === bootstrapId)
-        ?? chunks.find((chunk) => chunk.isEntry && chunk.facadeModuleId !== null);
+      let entry: BundleChunk | undefined;
+      for (const candidate of chunks) {
+        if (!candidate.isEntry) continue;
+        const queue = [candidate];
+        const seen = new Set<string>();
+        while (queue.length > 0) {
+          const chunk = queue.pop()!;
+          if (seen.has(chunk.fileName)) continue;
+          seen.add(chunk.fileName);
+          if (chunk.facadeModuleId === bootstrapId || chunk.moduleIds.includes(bootstrapId)) {
+            if (entry !== undefined) throw new Error("[reze] client bootstrap belongs to multiple entry chunks");
+            entry = candidate;
+            break;
+          }
+          for (const file of chunk.imports) {
+            const dependency = chunkByFile.get(file);
+            if (dependency !== undefined) queue.push(dependency);
+          }
+        }
+      }
       if (entry === undefined) throw new Error("[reze] client build produced no entry chunk for the SSG bootstrap");
       return entry;
     },

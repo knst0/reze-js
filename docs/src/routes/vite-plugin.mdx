@@ -131,7 +131,7 @@ With `ssg`, every page is its own static file, so serve the files directly with 
 
 ### Packaged consumer smoke
 
-`packages/vite-plugin/scripts/packaged-ssg-smoke.mjs` proves the published packages work outside the workspace. It packs every tarball through the real napi release path (`create-npm-dirs`, `artifacts --output-dir artifacts`, `pre-publish --skip-optional-publish`), installs the tarballs into an empty temporary project with no workspace aliases and no `NAPI_RS_NATIVE_LIBRARY_PATH`, then builds the shared SSG fixtures, serves them as strict static files, and hydrates them in real browsers while checking that hydration adopts the server nodes instead of remounting.
+`packages/vite-plugin/scripts/packaged-ssg-smoke.mjs` checks real tarballs outside the workspace. Local runs stage the host's native target through `napi create-npm-dirs`, `artifacts`, and `pre-publish --skip-optional-publish --no-gh-release`; `pnpm pack` resolves workspace dependencies for the JavaScript packages. The script installs into an empty temporary project with no workspace aliases or `NAPI_RS_NATIVE_LIBRARY_PATH`, checks exported types with external TypeScript, and builds and hydrates the fixtures through the selected Vite versions. Browser checks cover preboot content, retained nodes, dirty input preservation, and working interactions.
 
 ```sh
 pnpm build
@@ -140,6 +140,6 @@ node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --vite 8.0.0 --browsers
 REZE_SSG_BROWSERS=chromium,firefox,webkit node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --vite 6.4.0,7.0.0,8.0.0
 ```
 
-`--fixtures` selects fixture directories under `packages/vite-plugin/tests/fixtures/ssg` (default: `standalone-counter`, `router-full`, plus `mdx-post` when it exists). `--artifacts-dir packages/compiler` reuses an already staged compiler directory instead of running the napi steps, which is how the release workflow smokes the prepared artifacts before publishing.
+`--fixtures` selects `standalone-basics`, `router-full`, and `mdx-post`; all three run by default. `--artifacts-dir packages/compiler` consumes an already staged compiler directory, including its platform packages, instead of rebuilding host staging. The release workflow uses this mode before publishing. Every supplied platform package is packed; only the host-compatible native binding is installed and executed. `--keep` retains the printed temporary directory for inspection.
 
 The Reze plugin applies to the client and HTML build environments. Development and the default build are client-rendered; `ssg` adds build-time HTML execution with browser hydration.

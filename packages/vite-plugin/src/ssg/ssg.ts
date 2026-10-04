@@ -139,7 +139,19 @@ export function createSsgPlugin(input: SsgOptions, shared: SsgShared, fileRoutes
       }
       htmlEnv.consumer = "server";
       config.environments = { ...environments, [HtmlEnv]: htmlEnv };
-      config.builder = { ...config.builder, sharedConfigBuild: true, sharedPlugins: true };
+      config.builder = {
+        ...config.builder,
+        sharedConfigBuild: true,
+        sharedPlugins: true,
+        async buildApp(builder) {
+          await builder.build(builder.environments[HtmlEnv]!);
+          await builder.build(builder.environments.client!);
+          if (options === undefined || mode === undefined || state.outputs.length === 0 || state.htmlChunks.length === 0 || state.templateHtml === "") {
+            throw new Error("[reze] SSG build did not produce both the executable HTML graph and client template");
+          }
+          await runSsgBuild({ root, base, outDir, publicDir, options, mode, captured: state, moduleFiles: shared.moduleFiles, modules: shared.registry.ids() });
+        },
+      };
     },
     configEnvironment(name, envConfig) {
       const resolve = envConfig.resolve ?? {};
@@ -193,14 +205,6 @@ export function createSsgPlugin(input: SsgOptions, shared: SsgShared, fileRoutes
       if (mode.kind === "standalone" && Object.keys(options.paths).length > 0) {
         throw new Error("[reze] ssg.paths needs a router app; a standalone entry renders only /");
       }
-    },
-    async buildApp(builder) {
-      await builder.build(builder.environments[HtmlEnv]!);
-      await builder.build(builder.environments.client!);
-      if (options === undefined || mode === undefined || state.outputs.length === 0 || state.htmlChunks.length === 0 || state.templateHtml === "") {
-        throw new Error("[reze] SSG build did not produce both the executable HTML graph and client template");
-      }
-      await runSsgBuild({ root, base, outDir, publicDir, options, mode, captured: state, moduleFiles: shared.moduleFiles, modules: shared.registry.ids() });
     },
     buildStart() {
       if (this.environment.name === "client" && !isServe) {
