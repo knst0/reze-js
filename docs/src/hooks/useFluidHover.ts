@@ -106,7 +106,7 @@ export function useFluidHover() {
   };
 
   const detach = () => {
-    hide();
+    if (container === undefined) return;
     observer?.disconnect();
     container?.removeEventListener("pointerenter", onPointerEnter);
     container?.removeEventListener("pointermove", onPointerMove);

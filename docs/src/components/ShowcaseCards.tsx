@@ -84,7 +84,7 @@ function Todos() {
   const context = useContext(ShowcaseContext);
   const todos = store(initialTodoData);
   let failed = $signal<Todo | undefined>(undefined);
-  const toggle = $action(async (todo: { done: boolean }) => {
+  const toggle = $action(async (todo: Todo) => {
     failed = undefined;
     todo.done = !todo.done;
     await sleep(700);

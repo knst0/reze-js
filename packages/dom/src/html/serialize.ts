@@ -195,22 +195,7 @@ function normalizeList(children: HtmlNode[], kind: ContainerKind): EmitChild[] {
   for (const child of children) {
     if (child.kind === "range") {
       const normalized = normalizedRange(child, kind);
-      if (kind === "table" || kind === "section") {
-        flushRun();
-        out.push(normalized);
-        continue;
-      }
-      const live = normalized.children.filter(
-        (kid) => kid.kind !== "marker" && !(kid.kind === "text" && (kid.data === "" || /^[\t\n\f\r ]+$/.test(kid.data))),
-      );
-      if (live.length > 0) {
-        flushRun();
-        throw new HtmlRecordError(
-          `Cannot serialize a non-empty range directly inside <${kind}>; the parser would relocate its content`,
-          "restructure the markup so it parses as written",
-          child.meta.site,
-        );
-      }
+      flushRun();
       out.push(normalized);
       continue;
     }

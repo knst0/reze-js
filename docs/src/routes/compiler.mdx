@@ -111,7 +111,7 @@ The [interface guide](/building-interfaces) explains conditional rendering, list
 
 ## Transformation scope
 
-By default, the Vite plugin processes `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`, excluding files in `node_modules`. The plugin applies to Vite client environments.
+By default, the Vite plugin processes `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`, excluding files in `node_modules`. It compiles the client environment and, when SSG is enabled, the build-time HTML environment.
 
 Preprocessors must emit JSX before Reze runs. Extend the default extensions when adding another source format:
 

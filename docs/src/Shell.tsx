@@ -1,4 +1,4 @@
-import { useLocation } from "@rezejs/router";
+import { useLinkState, type Href } from "@rezejs/router";
 import { $signal, type JSX } from "reze-js";
 import { paths } from "virtual:reze-routes";
 
@@ -82,9 +82,9 @@ function NavGroup(props: { children: JSX.Element }) {
 }
 
 function NavLink(props: { href: JSX.IntrinsicElements["a"]["href"]; children: JSX.Element }) {
-  const location = useLocation();
+  const state = useLinkState(() => props.href as Href);
   return (
-    <a href={props.href} aria-current={location().pathname === props.href ? "page" : undefined}>
+    <a href={props.href} aria-current={state.current() ? "page" : undefined}>
       {props.children}
     </a>
   );

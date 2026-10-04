@@ -1,5 +1,13 @@
 import { $signal } from "reze-js";
 
+function Cells(props: { value: string }) {
+  return <><td>a1</td><td>{props.value}</td></>;
+}
+
+function Options() {
+  return <><option value="a">a</option><option value="b">b</option></>;
+}
+
 export default function App() {
   let city = $signal("b");
   let note = $signal("first");
@@ -9,13 +17,11 @@ export default function App() {
       <h1>namespaces</h1>
       <table id="grid">
         <tr>
-          <td>a1</td>
-          <td>a2</td>
+          <Cells value={note} />
         </tr>
       </table>
       <select id="picker" value={city} onChange={(event) => (city = (event.target as HTMLSelectElement).value)}>
-        <option value="a">a</option>
-        <option value="b">b</option>
+        <Options />
       </select>
       <p id="city-out">{city}</p>
       <textarea id="notes" value={note} onInput={(event) => (note = (event.target as HTMLTextAreaElement).value)} />

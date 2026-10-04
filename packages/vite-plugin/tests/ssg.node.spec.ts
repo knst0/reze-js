@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { Browser, Page } from "playwright";
-import type { Plugin } from "vite";
+import { createServer, type Plugin } from "vite";
 import mdx from "@mdx-js/rollup";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkMdxFrontmatter from "remark-mdx-frontmatter";
@@ -608,6 +608,7 @@ describe("parser namespaces, raw text and opaque subtrees", () => {
   test("the built corpus carries parser-normalized topology", async () => {
     const { html } = await fetchHtml(pages.namespaces, "/");
     expect(elements(html, "tbody")).toHaveLength(1);
+    expect(elements(html, "td").map(node => text(node))).toEqual(["a1", "first"]);
     expect(elements(html, "option").filter(node => attr(node, "selected") !== undefined).map(node => attr(node, "value"))).toEqual(["b"]);
     expect(text(elements(html, "textarea", { id: "notes" })[0])).toBe("first");
     expect(elements(html, "svg")[0]?.namespaceURI).toBe("http://www.w3.org/2000/svg");
@@ -619,7 +620,7 @@ describe("parser namespaces, raw text and opaque subtrees", () => {
 
   test.each(ENGINES)("namespaces, selection and opaque replacement behave on %s", async (engine) => {
     const browser = browsers.get(engine)!;
-    const { page, errors, close } = await openPage(browser, `${pages.namespaces}/`);
+    const { page, errors, close } = await openPage(browser, `${pages.namespaces}/`, { beforeHydration: captureRootBeforeHydration });
     try {
       await waitFor(page, `document.querySelector("#formula") !== null`);
       const ns = await page.evaluate(`(() => ({
@@ -636,6 +637,9 @@ describe("parser namespaces, raw text and opaque subtrees", () => {
       });
       await page.selectOption("#picker", "a");
       await waitFor(page, `document.querySelector("#city-out").textContent === "a"`);
+      await page.fill("#notes", "second");
+      await waitFor(page, `document.querySelector("#grid td:last-child").textContent === "second"`);
+      expect(await page.evaluate(`window.__rootSnapshot.nodes.every(node => node.isConnected)`)).toBe(true);
       await page.click("#raw");
       await waitFor(page, `document.querySelector("#opaque").innerHTML === "<i>swapped</i>"`);
       expect(errors).toEqual([]);
@@ -1043,4 +1047,38 @@ describe("router-free and csr graph separation", () => {
     expect(typeof document).toBe("undefined");
     expect(buildGreeting("basics")).toBe("hi basics");
   });
+});
+
+describe("development remains client-rendered", () => {
+  test.each(ENGINES)("generated standalone and router entries execute in the browser on %s", async engine => {
+    for (const [name, pathname, button, output, expected] of [
+      ["standalone-basics", "/", "#inc", "#settled", "4:8:v4"],
+      ["router-full", "/counter/", "#counter-inc", "#counter-out", "3:6"],
+    ] as const) {
+      const server = await createServer({
+        configFile: false,
+        root: fixture(name),
+        cacheDir: join(OUT, `dev-${name}-${engine}`),
+        plugins: [reze({ ssg: { entry: "src/app.tsx" } })],
+        server: { host: "127.0.0.1", port: 0 },
+        logLevel: "silent",
+      });
+      try {
+        await server.listen();
+        const url = new URL(pathname, server.resolvedUrls!.local[0]).href;
+        const html = await (await fetch(url)).text();
+        expect(text(elements(html, "div", { id: "app" })[0])).toBe("");
+        const visit = await openPage(browsers.get(engine)!, url);
+        try {
+          await visit.page.click(button);
+          await waitFor(visit.page, `document.querySelector(${JSON.stringify(output)}).textContent === ${JSON.stringify(expected)}`);
+          expect(visit.errors).toEqual([]);
+        } finally {
+          await visit.close();
+        }
+      } finally {
+        await server.close();
+      }
+    }
+  }, 90_000);
 });

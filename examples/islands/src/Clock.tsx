@@ -1,7 +1,8 @@
-import { $signal } from "reze-js";
+import { $signal, onCleanup } from "reze-js";
 
 export function Clock() {
   let now = $signal(new Date());
-  setInterval(() => (now = new Date()), 1000);
+  const timer = setInterval(() => (now = new Date()), 1000);
+  onCleanup(() => clearInterval(timer));
   return <p class="clock">{now.toLocaleTimeString()}</p>;
 }

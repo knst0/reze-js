@@ -129,6 +129,7 @@ export default function llms(): Plugin {
       });
     },
     async generateBundle() {
+      if (this.environment?.name !== "client") return;
       for (const [fileName, source] of await artifacts(directory, base)) {
         this.emitFile({ type: "asset", fileName, source });
       }

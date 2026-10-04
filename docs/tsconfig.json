@@ -3,6 +3,7 @@
   "compilerOptions": {
     "jsx": "preserve",
     "jsxImportSource": "reze-js",
+    "paths": {},
     "types": ["vite/client"]
   },
   "include": ["src", "vite.config.mts"],

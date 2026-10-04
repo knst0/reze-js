@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import remarkMdxFrontmatter from "remark-mdx-frontmatter";
 import { defineConfig } from "vite";
 
+import frontmatterRoute from "./plugins/frontmatter-route";
 import llms from "./plugins/llms";
 import rehypeSugarHigh from "./plugins/rehype-sugar-high";
 
@@ -17,12 +18,12 @@ export default defineConfig({
         jsx: true,
         jsxImportSource: "reze-js",
         providerImportSource: "/src/mdx",
-        remarkPlugins: [remarkFrontmatter, remarkMdxFrontmatter, remarkGfm],
+        remarkPlugins: [remarkFrontmatter, remarkMdxFrontmatter, frontmatterRoute, remarkGfm],
         rehypePlugins: [rehypeSlug, rehypeSugarHigh],
       }),
       enforce: "pre",
     },
-    reze({ fileRoutes: true, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"] }),
+    reze({ fileRoutes: true, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"], ssg: { entry: "src/app.tsx" } }),
     tailwindcss(),
     llms(),
   ],

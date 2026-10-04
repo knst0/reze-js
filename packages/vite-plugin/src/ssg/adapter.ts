@@ -8,26 +8,23 @@ export const SsgRedirectId = "\0reze:ssg-redirect.js";
 export function viewSource(mode: AppMode, entrySpecifier: string): string {
   const entry = JSON.stringify(entrySpecifier);
   if (mode.kind === "standalone") {
-    return `import type { JSX } from "reze-js";
-import App from ${entry};
-export function SsgView(): JSX.Element {
+    return `import App from ${entry};
+export function SsgView() {
   return <App />;
 }
 `;
   }
   const shellImport = mode.hasShell ? `import Shell from ${entry};\n` : "";
   const shellExport = mode.hasShell
-    ? `export function SsgShell(props: { children: JSX.Element }): JSX.Element {
+    ? `export function SsgShell(props) {
   return <Shell>{props.children}</Shell>;
 }
 `
     : "";
-  return `import type { JSX } from "reze-js";
-import { createBrowserHistory, createRouter } from "@rezejs/router";
+  return `import { createBrowserHistory, createRouter } from "@rezejs/router";
 import { routes } from ${entry};
 export { routes };
-${shellImport}type PreparedRouter = (props: { root?: (props: { children: JSX.Element }) => JSX.Element }) => JSX.Element;
-${shellExport}export function SsgView(props: { router?: PreparedRouter } = {}): JSX.Element {
+${shellImport}${shellExport}export function SsgView(props = {}) {
   const Router = props.router ?? createRouter({ routes, history: createBrowserHistory(import.meta.env.BASE_URL) });
   return ${mode.hasShell ? "<Router root={SsgShell} />" : "<Router />"};
 }
