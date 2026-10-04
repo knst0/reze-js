@@ -32,7 +32,8 @@ const LOADING: &str = r##"import { Loading } from "reze-js";
 const a = <Loading fallback={<i>wait</i>}><User id={id()} /></Loading>;
 const b = <div><Loading><p>x</p>{y()}</Loading></div>;"##;
 
-const REPEAT: &str = r##"import { Repeat, signal } from "reze-js";
+const REPEAT: &str = r##"import { Repeat } from "reze-js";
+import { signal } from "@rezejs/signals";
 const [size] = signal(4);
 const [page, setPage] = signal(1);
 setPage(2);
@@ -51,7 +52,8 @@ const ASYNC_COMPONENT_STEPS: &str = r##"export const Card = async ({ id }: { id:
   return <Panel title={name}>{user.role}{posts.length}</Panel>;
 };"##;
 
-const COUNTER_MANUAL: &str = r##"import { computed, Show, signal } from "reze-js";
+const COUNTER_MANUAL: &str = r##"import { Show } from "reze-js";
+import { computed, signal } from "@rezejs/signals";
 export function Counter(props) {
   const [count, setCount] = signal(0);
   const doubled = computed(() => count() * 2);
@@ -67,7 +69,8 @@ export function Counter(props) {
   );
 }"##;
 
-const COUNTER_DSL: &str = r##"import { $signal, computed, Show } from "reze-js";
+const COUNTER_DSL: &str = r##"import { $signal, Show } from "reze-js";
+import { computed } from "@rezejs/signals";
 export function Counter(props) {
   let count = $signal(0);
   const doubled = computed(() => count * 2);

@@ -1,5 +1,6 @@
 import { cleanup, mount, tick } from "@rezejs/testing-library";
-import { onCleanup, Repeat, signal } from "reze-js";
+import { onCleanup, Repeat } from "reze-js";
+import { signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -92,4 +93,17 @@ test("Repeat rows that take a ref keep working with a constant count", () => {
   const { el } = mount(() => <Repeat count={2}>{() => <i ref={(node: Element) => refs.push(node)} />}</Repeat>);
   expect(el.innerHTML).toBe("<i></i><i></i>");
   expect(refs).toEqual([...el.children]);
+});
+
+test("Repeat calls row callbacks eagerly once per row", () => {
+  const calls: string[] = [];
+  const handler = (): (() => void) => {
+    calls.push("tap");
+    return () => {};
+  };
+  const { el } = mount(() => <Repeat count={2}>{() => <b onClick={handler()}>x</b>}</Repeat>);
+  expect(el.innerHTML).toBe("<b>x</b><b>x</b>");
+  expect(calls).toEqual(["tap", "tap"]);
+  tick();
+  expect(calls).toEqual(["tap", "tap"]);
 });

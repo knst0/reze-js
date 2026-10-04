@@ -52,6 +52,32 @@ After:
 export const view = <div />;
 ```
 
+## PARSER_RELOCATION
+
+**Markup the HTML parser moves or rewrites** · severity `error`
+
+> The browser parses this markup differently ({detail}), so the template would not match the rendered DOM. {hint}.
+
+`data` keys: `detail`, `hint`
+
+Automatic fix: no
+
+Templates pass through the HTML parser before bindings run. Table rows and columns may acquire implied containers; stray table text is foster-parented out; raw text ends at its matching end tag; foreign elements retain their parser-selected namespace. `data.detail` identifies the mismatch and `data.hint` describes a representable structure.
+
+**Repair:** {hint}.
+
+Before:
+
+```tsx
+export const view = <table>oops<tr><td>cell</td></tr></table>;
+```
+
+After:
+
+```tsx
+export const view = <table><tbody><tr><td>cell</td></tr></tbody></table>;
+```
+
 ## CONTROL_FLOW_AS_VALUE
 
 **Control-flow tag used as a value** · severity `error`
@@ -882,7 +908,7 @@ A `signal` or `computed` getter is an attribute, property or style value without
 Before:
 
 ```tsx
-import { signal } from "reze-js";
+import { signal } from "@rezejs/signals";
 
 const [count, setCount] = signal(0);
 export const view = <input value={count} onInput={() => setCount(1)} />;
@@ -891,7 +917,7 @@ export const view = <input value={count} onInput={() => setCount(1)} />;
 After:
 
 ```tsx
-import { signal } from "reze-js";
+import { signal } from "@rezejs/signals";
 
 const [count, setCount] = signal(0);
 export const view = <input value={count()} onInput={() => setCount(1)} />;
@@ -907,7 +933,7 @@ export const view = <input value={count()} onInput={() => setCount(1)} />;
 
 Automatic fix: no
 
-Destructured props are rewritten into lazy reads of one props object, unless the pattern uses a computed key (`computed-key`), a default that cannot run once at the start (`default`), a default on a nested pattern (`nested-default`), a nested rest (`nested-rest`), an array pattern (`array-pattern`), a name that is assigned (`written`), `arguments` (`arguments`), a generator (`generator`), or more than one parameter (`params`). `data.component` is the component and `data.reason` the rule.
+Destructured props are rewritten into lazy reads of one props object, unless the pattern uses a computed key (`computed-key`), a default that cannot run once at the start (`default`), a default on a nested pattern (`nested-default`), a nested rest (`nested-rest`), an array pattern (`array-pattern`), a name that is assigned (`written`), `arguments` (`arguments`), a generator (`generator`), more than one parameter (`params`), or a type-position read of a non-identifier key (`type`), which no qualified type name can spell. `data.component` is the component and `data.reason` the rule.
 
 **Repair:** Take `props` as the one parameter and read `props.name` where the value is used. Use `splitProps` to forward a subset.
 
@@ -1119,7 +1145,7 @@ The signal's setter is unused, its getter is only called, and neither is exporte
 Example:
 
 ```tsx
-import { signal } from "reze-js";
+import { signal } from "@rezejs/signals";
 
 const [title] = signal("Reze");
 export const view = <h1>{title()}</h1>;
@@ -1184,7 +1210,8 @@ A `<For>` row compares a `signal`/`computed` declared outside the row with a key
 Example:
 
 ```tsx
-import { For, signal } from "reze-js";
+import { For } from "reze-js";
+import { signal } from "@rezejs/signals";
 
 const [selected, setSelected] = signal(0);
 export const view = (

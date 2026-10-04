@@ -27,6 +27,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/hashes": "^1.8.0",
     "@rezejs/compiler": "workspace:^"
   },
   "devDependencies": {

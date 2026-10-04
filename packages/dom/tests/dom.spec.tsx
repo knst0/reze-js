@@ -1,5 +1,6 @@
 import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
-import { effect, mergeProps, omitProps, render, signal, type ClassValue, type JSX } from "reze-js";
+import { $props, effect, mergeProps, omitProps, render, type ClassValue, type JSX } from "reze-js";
+import { signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -750,4 +751,237 @@ test("render replaces existing content instead of adopting or duplicating it", (
   expect(el.firstChild).not.toBe(previous);
   dispose();
   expect(el.innerHTML).toBe("");
+});
+
+test("$props.merge of literals passes the last defined value", () => {
+  function View() {
+    const merged = $props.merge({ 1: 2, ["label"]: "first" }, { ["label"]: "last", [2]: 3 }) as {
+      1: number;
+      2: number;
+      label: string;
+    };
+    return <p>{merged[1]}:{merged.label}:{merged[2]}</p>;
+  }
+  const { el } = mount(() => <View />);
+  expect(el.textContent).toBe("2:last:3");
+});
+
+test("$props.merge evaluates literal sources in order", () => {
+  const calls: string[] = [];
+  const first = (name: string, value: number): number => {
+    calls.push(name);
+    return value;
+  };
+  function View() {
+    const merged = $props.merge({ a: first("first", 1) }, {}, { a: first("second", 2), 3: first("third", 3) }) as {
+      3: number;
+      a: number;
+    };
+    return <p>{merged.a}:{merged[3]}</p>;
+  }
+  const { el } = mount(() => <View />);
+  expect(calls).toEqual(["first", "second", "third"]);
+  expect(el.innerHTML).toBe("<p>2:3</p>");
+});
+
+test("$props.merge keeps later getters live", () => {
+  const [v, setV] = signal(1);
+  function View() {
+    const merged = $props.merge({ a: 0 }, { get a() { return v(); } }) as { a: number };
+    return <p>{merged.a}</p>;
+  }
+  const { el } = mount(() => <View />);
+  expect(el.innerHTML).toBe("<p>1</p>");
+  setV(2);
+  tick();
+  expect(el.innerHTML).toBe("<p>2</p>");
+});
+
+test("$props.splitByGroups and $props.omit divide literal props", () => {
+  function View() {
+    const [picked, rest] = $props.splitByGroups({ x: 1, y: 2 }, ["x"]);
+    const kept = $props.omit({ x: 1, y: 2 }, "x");
+    return <p>{picked.x}:{rest.y}:{kept.y}</p>;
+  }
+  const { el } = mount(() => <View />);
+  expect(el.textContent).toBe("1:2:2");
+});
+
+test("destructured defaults stay lazy and see earlier props", () => {
+  let calls = 0;
+  const fallback = (): string => {
+    calls++;
+    return "home";
+  };
+  function Link({ href, label = fallback }: { href: string; label?: string | (() => string) }) {
+    return <a href={href}>{label}</a>;
+  }
+  function Card({ user: { name } }: { user: { name: string } }) {
+    return <b>{name}</b>;
+  }
+  const [href, setHref] = signal("/a");
+  const [user, setUser] = signal({ name: "ann" });
+  const { el } = mount(() => (
+    <>
+      <Link href={href()} />
+      <Card user={user()} />
+    </>
+  ));
+  expect(el.innerHTML).toBe('<a href="/a">home</a><b>ann</b>');
+  expect(calls).toBe(1);
+  setHref("/b");
+  setUser({ name: "bob" });
+  tick();
+  expect(el.innerHTML).toBe('<a href="/b">home</a><b>bob</b>');
+  const provided = mount(() => <Link href="/c" label="here" />);
+  expect(provided.el.innerHTML).toBe('<a href="/c">here</a>');
+  expect(calls).toBe(1);
+});
+
+test("nested children win over the children attribute", () => {
+  const [kids, setKids] = signal("attr");
+  const fromAttr = mount(() => <div children={kids()} />);
+  expect((fromAttr.el.firstChild as HTMLElement).innerHTML).toBe("attr");
+  const nested = mount(() => <div children={kids()}>nested</div>);
+  expect((nested.el.firstChild as HTMLElement).innerHTML).toBe("nested");
+  setKids("changed");
+  tick();
+  expect((fromAttr.el.firstChild as HTMLElement).innerHTML).toBe("changed");
+  expect((nested.el.firstChild as HTMLElement).innerHTML).toBe("nested");
+});
+
+test("a search container keeps its children and the sibling after it", () => {
+  const { el } = mount(() => (
+    <>
+      <search>
+        <label>
+          Find
+          <input type="search" />
+        </label>
+      </search>
+      <p>after</p>
+    </>
+  ));
+  const search = el.querySelector("search")!;
+  expect(search.querySelector("label")!.textContent).toContain("Find");
+  expect(search.querySelector("input")).not.toBeNull();
+  expect(search.nextElementSibling!.textContent).toBe("after");
+});
+
+test("a track element stays void without swallowing its siblings", () => {
+  const { el } = mount(() => (
+    <div>
+      <video>
+        <track kind="captions" />
+      </video>
+      <p>after</p>
+    </div>
+  ));
+  const video = el.querySelector("video")!;
+  expect(video.firstChild!.nodeName).toBe("TRACK");
+  expect(video.querySelector("p")).toBeNull();
+  expect(el.querySelector("div > p")!.textContent).toBe("after");
+});
+
+function freshTarget(key: string): unknown {
+  const merged = $props.merge({ [key]: 7 }, { [key]: new.target }) as Record<string, unknown>;
+  return merged[key];
+}
+
+test("$props.merge preserves new.target across ordinary and constructor calls", () => {
+  expect(freshTarget("label")).toBe(7);
+  const constructed: unknown = Reflect.construct(freshTarget, ["label"]);
+  expect(constructed).toBe(freshTarget);
+});
+
+test("$props.merge keeps method receivers", () => {
+  function View() {
+    const source = {
+      name: "ann",
+      greet(): string {
+        return `hi ${this.name}`;
+      },
+    };
+    const merged = $props.merge({ greet: () => "none" }, source) as { greet: () => string };
+    return <p>{merged.greet()}</p>;
+  }
+  const { el } = mount(() => <View />);
+  expect(el.innerHTML).toBe("<p>hi ann</p>");
+});
+
+test("$props.merge keeps super method homes", () => {
+  const base: { who: string } = { who: "base" };
+  const child: { who: () => string } = {
+    who(): string {
+      return String(super.who);
+    },
+  };
+  Object.setPrototypeOf(child, base);
+  function View() {
+    const merged = $props.merge({ who: "other" }, child) as { who: () => string };
+    return <p>{merged.who()}</p>;
+  }
+  const { el } = mount(() => <View />);
+  expect(el.innerHTML).toBe("<p>base</p>");
+});
+
+test("refused default positions keep working arguments", () => {
+  function Self({ a = arguments[0] }: { a?: unknown }) {
+    return <p>{a === undefined ? "none" : "props"}</p>;
+  }
+  const { el } = mount(() => <Self />);
+  expect(el.innerHTML).toBe("<p>props</p>");
+});
+
+const KEY = "a";
+
+test("refused props shapes still run as ordinary code", () => {
+  let bumps = 0;
+  const bump = (): number => {
+    bumps++;
+    return bumps;
+  };
+  function ByKey({ [KEY]: v }: { a: number }) {
+    return <i>{v}</i>;
+  }
+  function WithCall({ a = bump() }: { a?: number }) {
+    return <i>{a}</i>;
+  }
+  function Deep({ a: { b } = { b: "deep" } }: { a?: { b: string } }) {
+    return <i>{b}</i>;
+  }
+  function RestDeep({ a: { ...kept } }: { a: { x: number } }) {
+    return <i>{kept.x}</i>;
+  }
+  function Grown({ a }: { a: number }) {
+    a = a + 1;
+    return <i>{a}</i>;
+  }
+  function FirstOfPair({ a }: { a: number }, _ref?: unknown) {
+    return <i>{a}</i>;
+  }
+  function Single({ a: [b] }: { a: [number] }) {
+    return <i>{b}</i>;
+  }
+  const { el } = mount(() => (
+    <p>
+      <ByKey a={1} />
+      <WithCall />
+      <Deep />
+      <RestDeep a={{ x: 2 }} />
+      <Grown a={3} />
+      <FirstOfPair a={4} />
+      <Single a={[5]} />
+    </p>
+  ));
+  expect(el.innerHTML).toBe("<p><i>1</i><i>1</i><i>deep</i><i>2</i><i>4</i><i>4</i><i>5</i></p>");
+  expect(bumps).toBe(1);
+});
+
+test("a refused generator shape still yields its view", () => {
+  function* Gen({ a }: { a: number }) {
+    yield <p>{a}</p>;
+  }
+  const { el } = mount(() => Gen({ a: 7 }).next().value!);
+  expect(el.innerHTML).toBe("<p>7</p>");
 });

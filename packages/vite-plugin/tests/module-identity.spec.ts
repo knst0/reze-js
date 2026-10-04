@@ -36,14 +36,14 @@ test("external linked packages use their own package-relative identity", () => {
   })).toThrow("owning package");
 });
 
-test("compiler site preimage matches the cross-language SHA-256 contract", () => {
-  expect(compilerInputHash("src/App.tsx", "export default 1;")).toBe("cff80991a71a915a");
+test("compiler site preimage matches the cross-language BLAKE3 contract", () => {
+  expect(compilerInputHash("src/App.tsx", "export default 1;")).toBe("617ae233d41b19b1");
 });
 
 test("paired target registration permits identical input but rejects differing module source", () => {
   const registry = createModuleRegistry();
-  expect(registry.register("src/App.tsx", "export default 1;")).toBe("cff80991a71a915a");
-  expect(registry.register("src/App.tsx", "export default 1;")).toBe("cff80991a71a915a");
+  expect(registry.register("src/App.tsx", "export default 1;")).toBe("617ae233d41b19b1");
+  expect(registry.register("src/App.tsx", "export default 1;")).toBe("617ae233d41b19b1");
   expect(() => registry.register("src/App.tsx", "export default 2;")).toThrow("different compiler input across targets");
-  expect(createModuleRegistry().register("src/App.tsx", "export default 2;")).not.toBe("cff80991a71a915a");
+  expect(createModuleRegistry().register("src/App.tsx", "export default 2;")).not.toBe("617ae233d41b19b1");
 });

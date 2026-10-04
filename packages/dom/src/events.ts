@@ -10,20 +10,6 @@ interface DelegatingDocument extends Document {
 
 type Handler = (this: Node, ...args: unknown[]) => void;
 
-export const DelegatedEvents: Record<string, true> = {
-  click: true,
-  input: true,
-  change: true,
-  submit: true,
-  keydown: true,
-  keyup: true,
-  pointerdown: true,
-  pointerup: true,
-  pointermove: true,
-  focusin: true,
-  focusout: true,
-};
-
 /** Installs one listener per event type on `doc`, which runs the `$$<type>` handlers from the target up to the root. */
 export function delegateEvents(names: readonly string[], doc: Document = document): void {
   const installed = ((doc as DelegatingDocument).$$events ??= new Set());

@@ -1,17 +1,18 @@
-import { $action, $signal, createContext, For, Show, signal, store, useContext, type Getter, type Setter } from "reze-js";
+import { signal, type Getter, type Setter } from "@rezejs/signals";
+import { $action, $signal, createContext, For, Show, store, useContext } from "reze-js";
 
 const ShowcaseContext = createContext<{ online: Getter<boolean>; setOnline: Setter<boolean> }>();
 
 export function ShowcaseCards() {
   let [online, setOnline] = signal(true);
-  const [canPrev, setCanPrev] = signal(false);
-  const [canNext, setCanNext] = signal(false);
+  let canPrev = $signal(false);
+  let canNext = $signal(false);
   let track: HTMLDivElement | undefined;
 
   const sync = () => {
     if (!track) return;
-    setCanPrev(track.scrollLeft > 0);
-    setCanNext(track.scrollLeft < track.scrollWidth - track.clientWidth - 1);
+    canPrev = track.scrollLeft > 0;
+    canNext = track.scrollLeft < track.scrollWidth - track.clientWidth - 1;
   };
   const attach = (el: HTMLDivElement) => {
     track = el;
@@ -28,10 +29,10 @@ export function ShowcaseCards() {
   return (
     <section class="showcase-bleed">
       <div class="showcase-inset mb-3 flex justify-end gap-2">
-        <button type="button" class="btn px-3" aria-label="Previous card" disabled={!canPrev()} onClick={() => go(-1)}>
+        <button type="button" class="btn px-3" aria-label="Previous card" disabled={!canPrev} onClick={() => go(-1)}>
           ←
         </button>
-        <button type="button" class="btn px-3" aria-label="Next card" disabled={!canNext()} onClick={() => go(1)}>
+        <button type="button" class="btn px-3" aria-label="Next card" disabled={!canNext} onClick={() => go(1)}>
           →
         </button>
       </div>
@@ -140,37 +141,37 @@ function buildRows(startId: number, revision: number): ListRow[] {
 }
 
 function ThousandRows() {
-  const [rows, setRows] = signal<ListRow[]>([]);
-  const [lastMs, setLastMs] = signal<number | undefined>(undefined);
+  let rows = $signal<ListRow[]>([]);
+  let lastMs = $signal<number | undefined>(undefined);
   let nextId = 1;
   let revision = 0;
 
   const measure = (update: () => void) => {
     const start = performance.now();
     update();
-    requestAnimationFrame(() => requestAnimationFrame(() => setLastMs(performance.now() - start)));
+    requestAnimationFrame(() => requestAnimationFrame(() => (lastMs = performance.now() - start)));
   };
   const renderRows = () =>
     measure(() => {
       revision += 1;
       const startId = nextId;
       nextId += ROW_COUNT;
-      setRows(buildRows(startId, revision));
+      rows = buildRows(startId, revision);
     });
   const rerenderRows = () =>
     measure(() => {
       revision += 1;
-      setRows(rows().map((row) => ({ ...row, text: `Row ${row.id} · rev ${revision}` })));
+      rows = rows.map((row) => ({ ...row, text: `Row ${row.id} · rev ${revision}` }));
     });
 
   return (
     <div class="flex h-full w-full flex-col gap-3 p-5">
       <div class="flex items-baseline justify-between gap-2">
         <span class="font-medium">1,000 rows</span>
-        <output class="text-xs tabular-nums opacity-60">{lastMs() === undefined ? "not rendered" : `${lastMs()!.toFixed(1)} ms`}</output>
+        <output class="text-xs tabular-nums opacity-60">{lastMs === undefined ? "not rendered" : `${lastMs!.toFixed(1)} ms`}</output>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-border">
-        <For each={rows()} keyed={(row) => row.id} fallback={<p class="px-3 py-2 text-sm opacity-60">Press render to fill this list.</p>}>
+        <For each={rows} keyed={(row) => row.id} fallback={<p class="px-3 py-2 text-sm opacity-60">Press render to fill this list.</p>}>
           {(row) => (
             <div class="flex gap-2 border-b border-border/60 px-3 py-1 text-xs last:border-b-0">
               <span class="tabular-nums opacity-50">{row().id}</span>
@@ -183,7 +184,7 @@ function ThousandRows() {
         <button type="button" class="btn flex-1" onClick={renderRows}>
           Render
         </button>
-        <button type="button" class="btn flex-1" onClick={rerenderRows} disabled={rows().length === 0}>
+        <button type="button" class="btn flex-1" onClick={rerenderRows} disabled={rows.length === 0}>
           Re-render
         </button>
       </div>

@@ -1,6 +1,0 @@
----
-source: crates/reze_compiler/tests/snapshots.rs
-expression: "const a = <div class=\"box\"><p>hi</p><br /></div>;"
----
-import { template as _$template } from "reze-js";
-const a = _$template("<div class=box><p>hi</p><br>");

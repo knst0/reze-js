@@ -25,6 +25,10 @@
     "./render": {
       "types": "./dist/render.d.ts",
       "import": "./dist/render.js"
+    },
+    "./internal/continuation": {
+      "types": "./dist/internal/continuation.d.ts",
+      "import": "./dist/internal/continuation.js"
     }
   },
   "publishConfig": {

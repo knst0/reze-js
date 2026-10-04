@@ -1,5 +1,7 @@
-import { createHash } from "node:crypto";
+import { blake3 } from "@noble/hashes/blake3";
 import { posix } from "node:path";
+
+const moduleSeparator = new Uint8Array(1);
 
 export interface CanonicalIdOptions {
   packageName?: string;
@@ -52,7 +54,8 @@ export function canonicalModuleId(rawId: string, root: string, options?: Canonic
 
 /** Hashes canonical module ID, NUL, and the exact pre-define compiler input, in UTF-8. */
 export function compilerInputHash(canonicalId: string, input: string): string {
-  return createHash("sha256").update(canonicalId).update("\0").update(input).digest("hex").slice(0, 16);
+  const digest = blake3.create({ dkLen: 8 }).update(canonicalId).update(moduleSeparator).update(input).digest();
+  return Buffer.from(digest.buffer, digest.byteOffset, digest.byteLength).toString("hex");
 }
 
 export interface ModuleRegistry {

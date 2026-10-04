@@ -1,5 +1,6 @@
 import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
-import { dynamic, dynamicElement, onCleanup, signal } from "reze-js";
+import { dynamic, dynamicElement, onCleanup } from "reze-js";
+import { signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -100,4 +101,25 @@ test("dynamic given a tag name at runtime reports that dynamicElement is needed"
   expect(() => mount(() => <Picked />)).toThrow(
     '[reze] dynamic: the tag name "div" is not a string literal its source returns; use dynamicElement for tag names chosen at runtime',
   );
+});
+
+test("nested functions inside a dynamic source are not tag sources", () => {
+  const calls: string[] = [];
+  const Picked = dynamic(() => {
+    const inner = (): string => "span";
+    calls.push(inner());
+    return "section";
+  });
+  const { el } = mount(() => <Picked>hi</Picked>);
+  expect(el.innerHTML).toBe("<section>hi</section>");
+  expect(calls).toEqual(["span"]);
+});
+
+test("a locally defined factory call is left alone", () => {
+  function other(fn: () => string): string {
+    return `made:${fn()}`;
+  }
+  const made = other(() => "div");
+  const { el } = mount(() => <p>{made}</p>);
+  expect(el.innerHTML).toBe("<p>made:div</p>");
 });

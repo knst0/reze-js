@@ -98,6 +98,19 @@ catalog! {
             good: "export const view = <div />;\n",
         },
     }
+    ParserRelocation {
+        name: "PARSER_RELOCATION",
+        severity: Error,
+        title: "Markup the HTML parser moves or rewrites",
+        message: "The browser parses this markup differently ({detail}), so the template would not match the rendered DOM. {hint}.",
+        explanation: "Templates pass through the HTML parser before bindings run. Table rows and columns may acquire implied containers; stray table text is foster-parented out; raw text ends at its matching end tag; foreign elements retain their parser-selected namespace. `data.detail` identifies the mismatch and `data.hint` describes a representable structure.",
+        repair: "{hint}.",
+        fix: None,
+        example: Pair {
+            bad: "export const view = <table>oops<tr><td>cell</td></tr></table>;\n",
+            good: "export const view = <table><tbody><tr><td>cell</td></tr></tbody></table>;\n",
+        },
+    }
     ControlFlowAsValue {
         name: "CONTROL_FLOW_AS_VALUE",
         severity: Error,
@@ -455,8 +468,8 @@ catalog! {
         repair: "Apply the fix to call the getter. The call is tracked, so the attribute follows the signal.",
         fix: Some("call `{signal}()`"),
         example: Pair {
-            bad: "import { signal } from \"reze-js\";\n\nconst [count, setCount] = signal(0);\nexport const view = <input value={count} onInput={() => setCount(1)} />;\n",
-            good: "import { signal } from \"reze-js\";\n\nconst [count, setCount] = signal(0);\nexport const view = <input value={count()} onInput={() => setCount(1)} />;\n",
+            bad: "import { signal } from \"@rezejs/signals\";\n\nconst [count, setCount] = signal(0);\nexport const view = <input value={count} onInput={() => setCount(1)} />;\n",
+            good: "import { signal } from \"@rezejs/signals\";\n\nconst [count, setCount] = signal(0);\nexport const view = <input value={count()} onInput={() => setCount(1)} />;\n",
         },
     }
     PropsDestructured {
@@ -464,7 +477,7 @@ catalog! {
         severity: Warn,
         title: "Props destructured in a form that cannot be rewritten",
         message: "`{component}` destructures its props in a form the compiler cannot rewrite ({reason}), so each value is read once and never updates. Take `props` and read `props.x` where it is used.",
-        explanation: "Destructured props are rewritten into lazy reads of one props object, unless the pattern uses a computed key (`computed-key`), a default that cannot run once at the start (`default`), a default on a nested pattern (`nested-default`), a nested rest (`nested-rest`), an array pattern (`array-pattern`), a name that is assigned (`written`), `arguments` (`arguments`), a generator (`generator`), or more than one parameter (`params`). `data.component` is the component and `data.reason` the rule.",
+        explanation: "Destructured props are rewritten into lazy reads of one props object, unless the pattern uses a computed key (`computed-key`), a default that cannot run once at the start (`default`), a default on a nested pattern (`nested-default`), a nested rest (`nested-rest`), an array pattern (`array-pattern`), a name that is assigned (`written`), `arguments` (`arguments`), a generator (`generator`), more than one parameter (`params`), or a type-position read of a non-identifier key (`type`), which no qualified type name can spell. `data.component` is the component and `data.reason` the rule.",
         repair: "Take `props` as the one parameter and read `props.name` where the value is used. Use `splitProps` to forward a subset.",
         fix: None,
         example: Pair {
@@ -545,7 +558,7 @@ catalog! {
         explanation: "The signal's setter is unused, its getter is only called, and neither is exported, so the signal became a constant: reads cost nothing and literal values render straight into the template. `data.signal` is the getter.",
         repair: "Nothing to repair. Call the setter somewhere and the fold disappears.",
         fix: None,
-        example: Shows("import { signal } from \"reze-js\";\n\nconst [title] = signal(\"Reze\");\nexport const view = <h1>{title()}</h1>;\n"),
+        example: Shows("import { signal } from \"@rezejs/signals\";\n\nconst [title] = signal(\"Reze\");\nexport const view = <h1>{title()}</h1>;\n"),
     }
     DeadBranchRemoved {
         name: "DEAD_BRANCH_REMOVED",
@@ -575,6 +588,6 @@ catalog! {
         explanation: "A `<For>` row compares a `signal`/`computed` declared outside the row with a key built from the row's parameters. One `selector` per `<For>` replaces the comparison, so a change re-runs only the rows whose result flips. `data.signal` is the getter.",
         repair: "Nothing to repair. Compare inside a nested function, or with something that is not the row's key, and it stays a plain comparison.",
         fix: None,
-        example: Shows("import { For, signal } from \"reze-js\";\n\nconst [selected, setSelected] = signal(0);\nexport const view = (\n  <ul>\n    <For each={rows()}>\n      {(row) => <li class={selected() === row.id ? \"on\" : \"\"} onClick={() => setSelected(row.id)} />}\n    </For>\n  </ul>\n);\n"),
+        example: Shows("import { For } from \"reze-js\";\nimport { signal } from \"@rezejs/signals\";\n\nconst [selected, setSelected] = signal(0);\nexport const view = (\n  <ul>\n    <For each={rows()}>\n      {(row) => <li class={selected() === row.id ? \"on\" : \"\"} onClick={() => setSelected(row.id)} />}\n    </For>\n  </ul>\n);\n"),
     }
 }

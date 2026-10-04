@@ -10,6 +10,7 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
     "@rezejs/router": "workspace:*",
+    "@rezejs/signals": "workspace:*",
     "reze-js": "workspace:*"
   },
   "devDependencies": {

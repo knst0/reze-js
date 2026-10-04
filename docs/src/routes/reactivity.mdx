@@ -11,10 +11,11 @@ inside a computation subscribe it, and writes re-run exactly the subscribers
 that read the changed value. Nothing re-renders.
 
 The two ways to spell signals are interchangeable. `$signal`, `$computed`, and
-`$action` are compiler sugar: they read and write like plain variables, and the
-compiler rewrites them into the runtime calls below. The runtime calls —
-`signal`, `computed`, `action` — work without the compiler. The sugar throws
-`requires the reze compiler` if it ever runs uncompiled.
+`$action` are compiler sugar and the default in applications: they read and
+write like plain variables, and the compiler rewrites them into the runtime
+calls below. The runtime calls — `signal`, `computed`, `action` — live in
+`@rezejs/signals` and work without the compiler for hand-written code. The
+sugar throws `requires the reze compiler` if it ever runs uncompiled.
 
 ## Signals
 
@@ -42,7 +43,7 @@ The compiler turns each read into a getter call and each write into a setter
 call, so the code above runs as if it used the `signal` runtime directly:
 
 ```tsx
-import { signal } from "reze-js";
+import { signal } from "@rezejs/signals";
 
 export function Counter() {
   const [count, setCount] = signal(0);
@@ -136,7 +137,8 @@ form). It runs now and re-runs on the next flush when a source read
 synchronously — or through `c.get` after an `await` — changes:
 
 ```tsx
-import { asyncComputed, signal } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { asyncComputed } from "reze-js";
 
 const [userId, setUserId] = signal(1);
 
@@ -283,7 +285,7 @@ Hand-written `action` takes the run explicitly and must `resume` after every
 await — which is exactly what `$action` generates:
 
 ```tsx
-import { action, type Run } from "reze-js";
+import { action, type Run } from "@rezejs/signals";
 
 interface Todo {
   id: number;

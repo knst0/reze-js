@@ -1,5 +1,6 @@
 import { cleanup, mount, tick } from "@rezejs/testing-library";
-import { For, Match, onCleanup, Show, signal, Switch } from "reze-js";
+import { For, Match, onCleanup, Show, Switch } from "reze-js";
+import { signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -421,8 +422,8 @@ test("a selection change re-runs only the two rows whose comparison flips", () =
 test("rows reading a selector render like plain comparisons across selection and row changes", () => {
   const [rows, setRows] = signal([{ id: 1 }, { id: 2 }, { id: 3 }]);
   const [selected, setSelected] = signal(0);
-  const { el } = mount(
-    () => (
+  const { el: container } = mount(() => (
+    <ul>
       <For each={rows()} keyed={(row) => row.id}>
         {(row) => (
           <li class={selected() === row().id ? "on" : ""} title={row().id !== selected() ? "off" : "on"}>
@@ -431,9 +432,9 @@ test("rows reading a selector render like plain comparisons across selection and
           </li>
         )}
       </For>
-    ),
-    "ul",
-  );
+    </ul>
+  ));
+  const el = container.firstElementChild!;
   const row = (id: number, isOn: boolean) =>
     isOn ? `<li class="on" title="on">${id}<b>*</b></li>` : `<li class="" title="off">${id}</li>`;
   expect(el.innerHTML).toBe(row(1, false) + row(2, false) + row(3, false));
@@ -456,4 +457,55 @@ test("rows reading a selector render like plain comparisons across selection and
   setSelected(0);
   tick();
   expect(el.innerHTML).toBe(row(5, false));
+});
+
+test("keyed row writes reexecute on replacement without losing row identity", () => {
+  type Row = { id: number; label: string };
+  const makeRow = (id: number, label: string) => {
+    const writes: number[] = [];
+    const deleted: string[] = [];
+    const target = Object.create({
+      get id(): number { return id; },
+      set id(value: number) { writes.push(value); },
+    }) as Row;
+    target.label = label;
+    const row = new Proxy(target, {
+      deleteProperty(object, key) {
+        deleted.push(String(key));
+        return Reflect.deleteProperty(object, key);
+      },
+    });
+    return { row, writes, deleted };
+  };
+  const one = makeRow(1, "one");
+  const two = makeRow(2, "two");
+  const [rows, setRows] = signal([one.row, two.row]);
+  const { el } = mount(
+    () => (
+      <For each={rows()} keyed={(row) => row.id}>
+        {(row: (...args: number[]) => Row) => (
+          <li data-label={row().label}>
+            {(row().id = 5)}{row().id++}{delete (row() as Partial<Row>).id}{[row().id] = [7]}{row(1).id}
+          </li>
+        )}
+      </For>
+    ),
+    "ul",
+  );
+  const [first, second] = [...el.children];
+  expect(el.innerHTML).toBe('<li data-label="one">5171</li><li data-label="two">5272</li>');
+  expect(one.writes).toEqual([5, 2, 7]);
+  expect(two.writes).toEqual([5, 3, 7]);
+  expect(one.deleted).toEqual(["id"]);
+  expect(two.deleted).toEqual(["id"]);
+  const dos = makeRow(2, "dos");
+  const uno = makeRow(1, "uno");
+  setRows([dos.row, uno.row]);
+  tick();
+  expect([...el.children]).toEqual([second, first]);
+  expect(el.innerHTML).toBe('<li data-label="dos">5272</li><li data-label="uno">5171</li>');
+  expect(dos.writes).toEqual([5, 3, 7]);
+  expect(uno.writes).toEqual([5, 2, 7]);
+  expect(dos.deleted).toEqual(["id"]);
+  expect(uno.deleted).toEqual(["id"]);
 });

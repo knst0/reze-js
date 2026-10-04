@@ -1,5 +1,6 @@
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
-import { asyncComponent, asyncComputed, catchError, effect, flush, Loading, onCleanup, root, Show, signal } from "reze-js";
+import { asyncComponent, asyncComputed, catchError, effect, flush, Loading, onCleanup, root, Show } from "reze-js";
+import { signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -391,4 +392,27 @@ test("Loading keeps the old side when switching back before the new side loads",
   pending.get("b")!.resolve("B");
   await settle();
   expect(el.innerHTML).toBe("<div><b>A</b></div>");
+});
+
+test("an async component assimilates an inline thenable", async () => {
+  async function Card() {
+    const name = await { then: (resolve: (value: string) => void) => resolve("ann") };
+    return <p>{name}</p>;
+  }
+  const { el } = mount(() => <Card />);
+  expect(el.innerHTML).toBe("");
+  await settle();
+  expect(el.innerHTML).toBe("<p>ann</p>");
+});
+
+test("a plain async event handler keeps native await semantics", async () => {
+  function Button() {
+    const [label, setLabel] = signal("wait");
+    return <button onClick={async () => setLabel(await Promise.resolve("ready"))}>{label()}</button>;
+  }
+  const { el } = mount(() => <Button />);
+  el.querySelector("button")!.click();
+  await settle();
+  tick();
+  expect(el.innerHTML).toBe("<button>ready</button>");
 });

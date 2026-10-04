@@ -51,6 +51,7 @@ interface Diagnostic {
 
 const SkillGuide = "node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md";
 const QueryOrHash = /[?#].*$/;
+const RuntimeEntry = /^(?:reze-js|@rezejs\/(?:dom|signals))(?:\/|$)/;
 
 /** File extensions the transform compiles by default; spread it to extend the list instead of replacing it. */
 export const DEFAULT_ROUTE_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
@@ -190,6 +191,7 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
   let root = "";
   const profileDir = options.profile?.dir;
   const profileHashes = new Map<string, string>();
+  const runtimeEntries = new Set<string>();
 
   function formatDiagnostic(d: Diagnostic): string {
     if (seenCodes.has(d.code)) return d.rendered;
@@ -229,10 +231,17 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
       hot = isServe && config.server.hmr !== false;
       root = config.root;
     },
+    async resolveId(id, importer, options) {
+      if (!RuntimeEntry.test(id)) return;
+      const resolved = await this.resolve(id, importer, { ...options, skipSelf: true });
+      if (resolved) runtimeEntries.add(resolved.id.replace(QueryOrHash, ""));
+      return resolved;
+    },
     transform: {
       filter: transformFilter(options.extensions),
       handler(code, id) {
         const file = id.replace(QueryOrHash, "");
+        if (runtimeEntries.has(file)) return;
         const profile = profileDir === undefined ? undefined : readProfileFacts(resolve(root, profileDir), file, code);
         if (profileDir !== undefined) profileHashes.set(file, profileHash(code));
         const result = compile(code, file, {

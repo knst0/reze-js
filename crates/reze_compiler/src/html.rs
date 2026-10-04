@@ -1,25 +1,4 @@
-/// Events delegated to the document; equals `DelegatedEvents` in `@rezejs/dom`.
-pub fn is_delegated_event(name: &str) -> bool {
-    matches!(
-        name,
-        "click"
-            | "input"
-            | "change"
-            | "submit"
-            | "keydown"
-            | "keyup"
-            | "pointerdown"
-            | "pointerup"
-            | "pointermove"
-            | "focusin"
-            | "focusout"
-    )
-}
-
-/// Attributes of HTML elements written as DOM properties.
-pub fn is_property(name: &str) -> bool {
-    matches!(name, "value" | "checked" | "selected" | "textContent" | "innerHTML")
-}
+include!(concat!(env!("OUT_DIR"), "/html-data.rs"));
 
 /// The DOM event of `onFooBar`'s `FooBar`; `spread` in `@rezejs/dom` maps names the same way.
 pub fn event_name(camel: &str) -> String {
@@ -27,121 +6,14 @@ pub fn event_name(camel: &str) -> String {
     if lower == "doubleclick" { String::from("dblclick") } else { lower }
 }
 
-/// Elements without content or closing tag.
-pub fn is_void(tag: &str) -> bool {
-    matches!(
-        tag,
-        "area"
-            | "base"
-            | "br"
-            | "col"
-            | "embed"
-            | "hr"
-            | "img"
-            | "input"
-            | "link"
-            | "meta"
-            | "param"
-            | "search"
-            | "source"
-            | "wbr"
-    )
-}
-
-/// SVG elements that need an `<svg>` wrapper to parse as SVG when they root a template; `SVGElements` of
-/// `dynamicElement` in `@rezejs/dom` holds the same names plus `svg`. Names shared with HTML (`a`, `script`, `style`,
-/// `title`) parse as HTML.
-pub fn is_svg_element(tag: &str) -> bool {
-    matches!(
-        tag,
-        "animate"
-            | "animateMotion"
-            | "animateTransform"
-            | "circle"
-            | "clipPath"
-            | "cursor"
-            | "defs"
-            | "desc"
-            | "discard"
-            | "ellipse"
-            | "feBlend"
-            | "feColorMatrix"
-            | "feComponentTransfer"
-            | "feComposite"
-            | "feConvolveMatrix"
-            | "feDiffuseLighting"
-            | "feDisplacementMap"
-            | "feDistantLight"
-            | "feDropShadow"
-            | "feFlood"
-            | "feFuncA"
-            | "feFuncB"
-            | "feFuncG"
-            | "feFuncR"
-            | "feGaussianBlur"
-            | "feImage"
-            | "feMerge"
-            | "feMergeNode"
-            | "feMorphology"
-            | "feOffset"
-            | "fePointLight"
-            | "feSpecularLighting"
-            | "feSpotLight"
-            | "feTile"
-            | "feTurbulence"
-            | "filter"
-            | "foreignObject"
-            | "g"
-            | "hatch"
-            | "hatchpath"
-            | "image"
-            | "line"
-            | "linearGradient"
-            | "marker"
-            | "mask"
-            | "metadata"
-            | "mpath"
-            | "path"
-            | "pattern"
-            | "polygon"
-            | "polyline"
-            | "radialGradient"
-            | "rect"
-            | "set"
-            | "solidcolor"
-            | "stop"
-            | "switch"
-            | "symbol"
-            | "text"
-            | "textPath"
-            | "tspan"
-            | "use"
-            | "view"
-    )
-}
-
 pub fn is_mathml_root(tag: &str) -> bool {
     tag == "math"
-}
-
-/// Namespace URI of a namespaced attribute prefix.
-pub fn attribute_namespace(prefix: &str) -> Option<&'static str> {
-    match prefix {
-        "xlink" => Some("http://www.w3.org/1999/xlink"),
-        "xml" => Some("http://www.w3.org/XML/1998/namespace"),
-        _ => None,
-    }
 }
 
 fn push_escaped(out: &mut String, s: &str, quote: bool) {
     let mut start = 0;
     for (i, b) in s.bytes().enumerate() {
-        let escaped = match b {
-            b'&' => "&amp;",
-            b'<' if !quote => "&lt;",
-            b'"' if quote => "&quot;",
-            _ => continue,
-        };
+        let Some(escaped) = escape_html_byte(b, quote) else { continue };
         out.push_str(&s[start..i]);
         out.push_str(escaped);
         start = i + 1;
@@ -190,53 +62,10 @@ pub fn trim_trailing_end_tags(html: &mut String) {
     }
 }
 
-/// Appends `s` as a double-quoted JS string literal.
-pub fn push_js_string(out: &mut String, s: &str) {
-    out.reserve(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{2028}' => out.push_str("\\u2028"),
-            '\u{2029}' => out.push_str("\\u2029"),
-            c if (c as u32) < 0x20 => {
-                const HEX: &[u8; 16] = b"0123456789abcdef";
-                out.push_str("\\x");
-                out.push(HEX[c as usize >> 4] as char);
-                out.push(HEX[c as usize & 0xf] as char);
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-}
-
 pub fn is_identifier_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
-}
-
-/// An object literal key: bare when it is an identifier name, quoted otherwise.
-pub fn push_property_key(out: &mut String, name: &str) {
-    if is_identifier_name(name) { out.push_str(name) } else { push_js_string(out, name) }
-}
-
-/// `object.name`, or `object["name"]` when `name` is not an identifier name.
-pub fn push_member(out: &mut String, object: &str, name: &str) {
-    out.push_str(object);
-    if is_identifier_name(name) {
-        out.push('.');
-        out.push_str(name);
-    } else {
-        out.push('[');
-        push_js_string(out, name);
-        out.push(']');
-    }
 }
 
 /// Common HTML/SVG attributes plus the framework's own, for near-miss suggestions.

@@ -17,7 +17,8 @@ and async boundaries.
 something it read changes. It returns a disposer:
 
 ```tsx
-import { effect, signal } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { effect } from "reze-js";
 
 const [count, setCount] = signal(0);
 
@@ -39,7 +40,8 @@ Use `flush()` in tests — or anywhere you need settled state synchronously —
 after writing:
 
 ```tsx
-import { effect, flush, signal } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { effect, flush } from "reze-js";
 
 const [a, setA] = signal(0);
 const seen: number[] = [];
@@ -60,7 +62,8 @@ when it is disposed. Cleanups of nested computations run before the outer
 cleanup, newest first:
 
 ```tsx
-import { effect, flush, signal } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { effect, flush } from "reze-js";
 
 const [a, setA] = signal(0);
 
@@ -90,7 +93,8 @@ For rare cases where code must re-run subscribers without changing a value,
 read and flushes synchronously:
 
 ```tsx
-import { effect, signal, trigger } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { effect, trigger } from "reze-js";
 
 const [a, setA] = signal(0);
 effect(() => console.log(a()));
@@ -132,7 +136,8 @@ creates owned by the current owner — hiding a read from the effect without
 detaching the cleanup:
 
 ```tsx
-import { effect, flush, onCleanup, root, signal, untrack } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { effect, flush, onCleanup, root, untrack } from "reze-js";
 
 const [a, setA] = signal(0);
 const [b, setB] = signal(0);
@@ -163,7 +168,8 @@ logs `"inner cleanup"` because the owner re-ran.
 one and returns its disposer. Reads inside never re-run the scope body itself:
 
 ```tsx
-import { effect, effectScope, signal } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { effect, effectScope } from "reze-js";
 
 const [a, setA] = signal(0);
 
@@ -190,6 +196,12 @@ const dispose = root((dispose) => {
 
 This does not extend the owner's lifetime: resume only while the owner is still
 alive. Work attached after disposal has no live owner to clean it up.
+
+The compiler restores ownership across the `await` boundaries it generates for
+async component setup, including rejected awaits, and releases that owner when
+the continuation suspends or exits. This does not propagate ownership through
+ordinary async functions or timers: capture an owner and use `runWithOwner`
+there, within the owner's lifetime.
 
 Components and `computed` getters are owners too: anything an effect or
 computed creates is disposed before its next run and when it is disposed, and
@@ -238,7 +250,8 @@ error a handler itself throws propagates outward. The owner lives as long as
 the current one:
 
 ```tsx
-import { catchError, computed, signal } from "reze-js";
+import { computed, signal } from "@rezejs/signals";
+import { catchError } from "reze-js";
 
 const [divisor, setDivisor] = signal(1);
 
@@ -262,7 +275,8 @@ lives as long as the current one and counts pending first settlements of
 read. It returns the result and the boundary:
 
 ```tsx
-import { Show, asyncComputed, boundary, signal } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { Show, asyncComputed, boundary } from "reze-js";
 
 const [id, setId] = signal(1);
 

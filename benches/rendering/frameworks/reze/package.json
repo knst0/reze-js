@@ -6,6 +6,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@rezejs/signals": "workspace:*",
     "reze-js": "workspace:*"
   },
   "devDependencies": {

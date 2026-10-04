@@ -1,11 +1,11 @@
 import { useLocation } from "@rezejs/router";
-import { signal, type JSX } from "reze-js";
+import { $signal, type JSX } from "reze-js";
 import { paths } from "virtual:reze-routes";
 
 import { useFluidHover } from "./hooks/useFluidHover";
 
 export function Shell(props: { children: JSX.Element }) {
-  const [menuOpen, setMenuOpen] = signal(false);
+  let menuOpen = $signal(false);
   return (
     <>
       <a
@@ -24,20 +24,20 @@ export function Shell(props: { children: JSX.Element }) {
             <button
               class="docs-menu-toggle"
               type="button"
-              aria-expanded={menuOpen() ? "true" : "false"}
+              aria-expanded={menuOpen ? "true" : "false"}
               aria-controls="docs-navigation"
-              onClick={() => setMenuOpen(!menuOpen())}
+              onClick={() => (menuOpen = !menuOpen)}
             >
-              {menuOpen() ? "Close menu" : "Menu"}
+              {menuOpen ? "Close menu" : "Menu"}
             </button>
           </div>
           <nav
             id="docs-navigation"
             class="docs-navigation"
             aria-label="Documentation"
-            data-open={menuOpen() ? "" : null}
+            data-open={menuOpen ? "" : null}
             onClick={(event) => {
-              if ((event.target as HTMLElement).closest("a")) setMenuOpen(false);
+              if ((event.target as HTMLElement).closest("a")) menuOpen = false;
             }}
           >
             <NavGroup>

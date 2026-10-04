@@ -1,21 +1,15 @@
 import { renderEffect } from "@rezejs/signals/render";
 
+import { DelegatedEvents, Properties } from "../../../crates/reze_compiler/src/html-data.json";
+
 import { setAttribute, setBoolAttribute } from "./attributes";
 import { className, type ClassValue } from "./class-name";
-import { addEventListener, DelegatedEvents, delegateEvents } from "./events";
+import { addEventListener, delegateEvents } from "./events";
 import { insert } from "./insert";
 import { use } from "./ref";
 import { style } from "./style";
 
 type Props = Record<string, unknown>;
-
-const Properties: Record<string, true> = {
-  value: true,
-  checked: true,
-  selected: true,
-  textContent: true,
-  innerHTML: true,
-};
 
 /**
  * Applies `props` to `node` and re-applies them when what they read changes. `props.children` is inserted unless

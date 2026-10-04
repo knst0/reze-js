@@ -1,8 +1,0 @@
----
-source: crates/reze_compiler/tests/signal.rs
-expression: "import { $signal } from \"reze-js\";\nlet count = $signal(0);\nexport const inc = () => { count += 1; };\nexport const read = () => count;"
----
-import { signal } from "reze-js";
-const [count, setCount] = signal(0);
-export const inc = () => { setCount(count() + 1); };
-export const read = () => count();

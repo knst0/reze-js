@@ -1,28 +1,24 @@
-//! JSX → DOM programs for the browser, with diagnostics from one catalog.
+//! JSX and reactive syntax compiled through shared semantic IR into target-specific Oxc AST.
 
-mod analyze;
-mod code;
+mod ast;
+mod codegen;
 mod diagnostic;
-mod dsl;
-mod emit;
+mod frontend;
 mod html;
+mod imports;
 mod ir;
 mod kind;
-mod lower;
-mod namer;
 
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Declaration, ExportDefaultDeclarationKind, Program, Statement};
+use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::Parser;
-use oxc_semantic::SemanticBuilder;
-use oxc_span::{GetSpan, SourceType, Span};
+use oxc_span::{SourceType, Span};
 
 pub use diagnostic::{
     CATALOG, Code, Diagnostic, Edit, Entry, Example, Fix, Label, Position, Severity, render_skill,
 };
 
 use diagnostic::Report;
-use namer::Namer;
 
 /// The module compiled code imports runtime helpers from.
 pub const RUNTIME_MODULE: &str = "reze-js";
@@ -146,30 +142,17 @@ pub fn compile(
         return Err(diagnostic::resolve(reports, source, filename));
     }
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::tsx());
-    let (rewritten, first_pass) = if dsl::mentions_syntax(source) {
-        match dsl::rewrite(source, source_type) {
-            Ok(Some((rewritten, reports))) => (Some(rewritten), reports),
-            Ok(None) => (None, Vec::new()),
-            Err(reports) => return Err(diagnostic::resolve(reports, source, filename)),
-        }
-    } else {
-        (None, Vec::new())
-    };
-    compile_module(source, rewritten, first_pass, filename, source_type, options)
+    compile_module(source, filename, source_type, options)
 }
 
-/// The ordinary pass over `source`, or over the text the first pass rewrote it into.
 fn compile_module(
     source: &str,
-    rewritten: Option<dsl::Rewritten>,
-    first_pass: Vec<Report>,
     filename: &str,
     source_type: SourceType,
     options: &Options,
 ) -> Result<Option<Output>, Vec<Diagnostic>> {
-    let text = rewritten.as_ref().map_or(source, |r| r.code.text.as_str());
     let allocator = Allocator::default();
-    let parsed = Parser::new(&allocator, text, source_type).parse();
+    let parsed = Parser::new(&allocator, source, source_type).parse();
     if !parsed.diagnostics.is_empty() {
         let reports = parsed
             .diagnostics
@@ -182,85 +165,52 @@ fn compile_module(
                 Report::new(Code::ParseError, span).arg("detail", d.message.to_string())
             })
             .collect();
-        return Err(diagnostic::resolve(reports, text, filename));
+        return Err(diagnostic::resolve(reports, source, filename));
     }
 
     let program = allocator.alloc(parsed.program);
-    let (scoping, nodes) = SemanticBuilder::new()
-        .with_build_nodes(true)
-        .build(program)
-        .semantic
-        .into_scoping_and_nodes();
-    let mut reports = Vec::new();
-    let analysis = analyze::analyze(program, &scoping, &nodes, &mut reports);
-    let settings = lower::Settings {
-        debug_names: options.debug_names,
-        hot: options.hot,
-        links: options.links.is_some(),
-    };
-    let lowerer =
-        lower::Lowerer::new(&allocator, text, &analysis, settings, Namer::new(&scoping), reports);
-    let lowered = lowerer.program(program, header_position(program));
-    let mut reports = lowered.reports;
-    if let Some(rewritten) = &rewritten {
-        for report in &mut reports {
-            report.remap(|offset| rewritten.start(offset), |offset| rewritten.end(offset));
+    let hot_plan = codegen::hot::should_apply(options).then(|| codegen::hot::collect(program));
+    let module_id = (options.target != CompileTarget::Client).then_some(options.module_id.as_deref()).flatten();
+    let sites = ir::collect_sites(program, module_id, source);
+    let normalized = frontend::normalize(&allocator, program, source);
+    let mut module = ir::build_module_ir(
+        normalized.program, &normalized.scoping, &normalized.facts,
+        source, module_id, options.links.is_some(), sites,
+    );
+    for view in &mut module.views {
+        if let ir::view::ViewKind::Element(element) = &mut view.kind {
+            ir::layout::normalize(element, view.origin, &mut module.reports);
         }
     }
-    reports.extend(first_pass);
+    let mut reports = normalized.reports;
+    reports.append(&mut module.reports);
     let diagnostics = diagnostic::resolve(reports, source, filename);
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(diagnostics);
     }
-    let filename = allocator.alloc_str(filename);
-    let Some(body) = lowered.body else {
-        return Ok(rewritten.map(|rewritten| Output {
-            map: options.source_map.then(|| rewritten.code.source_map(filename, source)),
-            code: rewritten.code.text,
-            diagnostics,
-        }));
-    };
-    let mut code = emit::Emitter::new(
-        &allocator,
-        text,
-        filename,
-        lowered.namer,
-        options.links.as_deref(),
-        emit::Options {
-            debug_names: options.debug_names,
-            cold: is_cold(source, filename, options.profile.as_ref()),
-            hoist_templates: !program.body.iter().any(|statement| match statement {
-                Statement::FunctionDeclaration(_) => true,
-                Statement::ExportDeclaration(export) => {
-                    matches!(export.declaration, Declaration::FunctionDeclaration(_))
-                }
-                Statement::ExportDefaultDeclaration(export) => matches!(
-                    export.declaration,
-                    ExportDefaultDeclarationKind::FunctionDeclaration(_)
-                ),
-                _ => false,
-            }),
-        },
-    )
-    .module(&lowered.head, &body);
-    if let Some(rewritten) = &rewritten {
-        code.remap_marks(|offset| rewritten.start(offset));
+    if !module.has_views && !normalized.content_changed && normalized.facts.folded_bindings.is_empty()
+        && normalized.facts.dynamic_tags.is_empty()
+        && !(options.debug_names && options.target != CompileTarget::Html)
+        && !(options.target != CompileTarget::Client && !normalized.facts.runtime_calls.is_empty())
+    {
+        return Ok(None);
     }
-    let map = options.source_map.then(|| code.source_map(filename, source));
-    Ok(Some(Output { code: code.text, map, diagnostics }))
-}
-
-/// Runtime imports go after the hashbang, directives and leading imports.
-fn header_position(program: &Program<'_>) -> u32 {
-    let mut at = program.hashbang.as_ref().map_or(0, |hashbang| hashbang.span.end);
-    if let Some(directive) = program.directives.last() {
-        at = directive.span.end;
+    let cold = options.target != CompileTarget::Html
+        && is_cold(source, filename, options.profile.as_ref());
+    let changed = codegen::EmitContext::new(
+        &allocator, options, source, filename, &module, &normalized.facts, &normalized.scoping,
+        normalized.namer, normalized.helpers, cold,
+    ).emit(normalized.program, hot_plan.as_ref());
+    if !changed && !normalized.content_changed {
+        return Ok(None);
     }
-    for statement in &program.body {
-        match statement {
-            Statement::ImportDeclaration(import) => at = import.span.end,
-            _ => break,
-        }
-    }
-    at.max(program.body.first().map_or(at, |s| s.span().start.min(at)))
+    let output = Codegen::new().with_options(CodegenOptions {
+        source_map_path: options.source_map.then(|| filename.into()),
+        ..CodegenOptions::default()
+    }).build(normalized.program);
+    Ok(Some(Output {
+        code: output.code,
+        map: output.map.map(codegen::serialize_source_map),
+        diagnostics,
+    }))
 }

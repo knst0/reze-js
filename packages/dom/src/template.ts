@@ -1,4 +1,4 @@
-const MathMLNamespace = "http://www.w3.org/1998/Math/MathML";
+import { MathMLNamespace } from "../../../crates/reze_compiler/src/html-data.json";
 
 const htmlRoots = new Map<string, Node>();
 const svgRoots = new Map<string, Node>();

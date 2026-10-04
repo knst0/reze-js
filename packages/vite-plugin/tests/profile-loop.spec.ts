@@ -11,7 +11,7 @@ import { afterEach, beforeEach, expect, test, vi, type Mock } from "vitest";
 import reze from "../src";
 
 const source = [
-  'import { signal } from "reze-js";',
+  'import { signal } from "@rezejs/signals";',
   "const [a, setA] = signal(0);",
   "const [b, setB] = signal(0);",
   "export const view = <p title={a()} data-x={b()} onClick={() => { setA(1); setB(2); }}>hi</p>;",

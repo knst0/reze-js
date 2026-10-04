@@ -5,9 +5,11 @@ description: Reference for reactive primitives, stores, ownership, and render bi
 
 # Signals API
 
-Reference for everything `reze-js` re-exports from `@rezejs/signals`, plus the
-render binding primitive. Import from `"reze-js"` unless noted. For concepts
-and worked examples, see [Reactivity](/reactivity) and
+Reference for the reactive primitives, stores, ownership, and render bindings.
+The low-level `signal`, `computed`, and `action` functions live in
+`@rezejs/signals`; applications normally use the `$` compiler syntax instead
+(see [Reactivity](/reactivity)). Import from `"reze-js"` unless noted. For
+concepts and worked examples, see [Reactivity](/reactivity) and
 [Lifecycle](/lifecycle); this page states exact signatures and semantics
 without repeating those guides.
 
@@ -18,7 +20,7 @@ functions.
 ## Signals
 
 ```tsx
-import { signal, type Equals, type Getter, type Setter } from "reze-js";
+import { signal, type Equals, type Getter, type Setter } from "@rezejs/signals";
 
 const [count, setCount] = signal(0);
 const [name, setName] = signal("a", { equals: false });
@@ -57,7 +59,7 @@ let count = $signal(0);
 ## Computed
 
 ```tsx
-import { computed, signal } from "reze-js";
+import { computed, signal } from "@rezejs/signals";
 
 const [count] = signal(2);
 const doubled = computed(() => count() * 2);
@@ -91,7 +93,8 @@ const doubled = $computed(count * 2);
 ## Effects
 
 ```tsx
-import { effect, flush, signal } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { effect, flush } from "reze-js";
 
 const [count, setCount] = signal(0);
 
@@ -120,7 +123,8 @@ stop();
   current owner. Outside a computation it just compares.
 
 ```tsx
-import { effect, selector, signal } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { effect, selector } from "reze-js";
 
 const [id] = signal(1);
 const isSelected = selector(id);
@@ -133,7 +137,8 @@ The effect re-runs only when row 2 flips between selected and unselected.
 ## Ownership
 
 ```tsx
-import { effect, effectScope, getOwner, onCleanup, root, runWithOwner, signal, untrack } from "reze-js";
+import { signal } from "@rezejs/signals";
+import { effect, effectScope, getOwner, onCleanup, root, runWithOwner, untrack } from "reze-js";
 
 const [count] = signal(0);
 

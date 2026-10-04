@@ -60,9 +60,24 @@ function signalJsx(flavor) {
         : `class={{ ${toggles} }}`;
   const item = (name) => (isReze ? `${name}()` : name);
   const forKey = isReze ? " keyed={(row) => row.id}" : "";
+  const statCardHead = isReze
+    ? `import { Show } from "reze-js";\nimport { computed, signal } from "@rezejs/signals";`
+    : `import { ${computed}, ${signal}, Show } from "${imports}";`;
+  const dataTableHead = isReze
+    ? `import { For } from "reze-js";\nimport { computed, signal } from "@rezejs/signals";`
+    : `import { ${computed}, For, ${signal} } from "${imports}";`;
+  const filterFormHead = isReze
+    ? `import { computed, signal } from "@rezejs/signals";`
+    : `import { ${computed}, ${signal} } from "${imports}";`;
+  const barChartHead = isReze
+    ? `import { For, Show } from "reze-js";\nimport { signal } from "@rezejs/signals";`
+    : `import { For, Show, ${signal} } from "${imports}";`;
+  const tabsPanelHead = isReze
+    ? `import { Match, Switch } from "reze-js";\nimport { signal } from "@rezejs/signals";`
+    : `import { Match, ${signal}, Switch } from "${imports}";`;
 
   return {
-    StatCard: (i, w = vocab(i)) => `import { ${computed}, ${signal}, Show } from "${imports}";
+    StatCard: (i, w = vocab(i)) => `${statCardHead}
 
 export function StatCard${i}(props) {
   const [open, setOpen] = ${signal}(false);
@@ -86,7 +101,7 @@ export function StatCard${i}(props) {
   );
 }
 `,
-    DataTable: (i, w = vocab(i)) => `import { ${computed}, For, ${signal} } from "${imports}";
+    DataTable: (i, w = vocab(i)) => `${dataTableHead}
 
 export function DataTable${i}(props) {
   const [desc, setDesc] = ${signal}(false);
@@ -121,7 +136,7 @@ export function DataTable${i}(props) {
   );
 }
 `,
-    FilterForm: (i, w = vocab(i)) => `import { ${computed}, ${signal} } from "${imports}";
+    FilterForm: (i, w = vocab(i)) => `${filterFormHead}
 
 export function FilterForm${i}(props) {
   const [query, setQuery] = ${signal}("");
@@ -145,7 +160,7 @@ ${options(w, "        ")}      </select>
   );
 }
 `,
-    BarChart: (i, w = vocab(i)) => `import { For, Show, ${signal} } from "${imports}";
+    BarChart: (i, w = vocab(i)) => `${barChartHead}
 
 export function BarChart${i}(props) {
   const bars = ${barsExpr("props.seed", i)};
@@ -174,7 +189,7 @@ export function BarChart${i}(props) {
   );
 }
 `,
-    TabsPanel: (i, w = vocab(i)) => `import { Match, ${signal}, Switch } from "${imports}";
+    TabsPanel: (i, w = vocab(i)) => `${tabsPanelHead}
 
 export function TabsPanel${i}(props) {
   const [tab, setTab] = ${signal}("overview");

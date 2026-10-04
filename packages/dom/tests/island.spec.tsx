@@ -1,5 +1,5 @@
 import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
-import { Errored, Loading, island } from "reze-js";
+import { Errored, Loading, island, type JSX } from "reze-js";
 import { afterEach, expect, test, vi } from "vitest";
 
 afterEach(cleanup);
@@ -251,4 +251,31 @@ test("the island attribute compiles to a deferred island", async () => {
   await settle();
   tick();
   expect(el.innerHTML).toBe("<b>hi ann</b>");
+});
+
+test("the island attribute forwards children to the loaded component", async () => {
+  let idle: () => void = () => {};
+  vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
+    idle = callback;
+    return 0;
+  });
+  function Panel(props: { title: string; children?: JSX.Element }) {
+    return (
+      <section>
+        <h1>{props.title}</h1>
+        {props.children}
+      </section>
+    );
+  }
+  const { el } = mount(() => (
+    <Panel island="idle" title="t">
+      body <b>bold</b>
+    </Panel>
+  ));
+  expect(el.innerHTML).toBe("");
+
+  idle();
+  await settle();
+  tick();
+  expect(el.innerHTML).toBe("<section><h1>t</h1>body <b>bold</b></section>");
 });

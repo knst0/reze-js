@@ -1,10 +1,9 @@
+import { MathMLNamespace, SVGNamespace } from "../../../crates/reze_compiler/src/html-data.json";
+
 import { spread } from "./spread";
 
 type Props = Record<string, unknown>;
 type ElementComponent = (props: Props) => Element;
-
-const SVGNamespace = "http://www.w3.org/2000/svg";
-const MathMLNamespace = "http://www.w3.org/1998/Math/MathML";
 
 const htmlComponents = new Map<string, ElementComponent>();
 const svgComponents = new Map<string, ElementComponent>();

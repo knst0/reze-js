@@ -118,18 +118,6 @@ impl Report {
         self.fixes.push(edits);
         self
     }
-
-    /// Moves every position through `start` (span and edit starts) and `end` (span and edit ends).
-    pub fn remap(&mut self, start: impl Fn(u32) -> u32, end: impl Fn(u32) -> u32) {
-        self.span =
-            Span::new(start(self.span.start), end(self.span.end).max(start(self.span.start)));
-        for label in &mut self.labels {
-            (label.start, label.end) = (start(label.start), end(label.end));
-        }
-        for edit in self.fixes.iter_mut().flatten() {
-            (edit.start, edit.end) = (start(edit.start), end(edit.end));
-        }
-    }
 }
 
 pub fn docs_url(code: Code) -> String {
