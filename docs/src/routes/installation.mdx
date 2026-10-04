@@ -1,0 +1,155 @@
+---
+title: Getting started
+description: Install Reze, configure Vite, and build your first reactive component.
+---
+
+# Getting started
+
+Reze is a compiler-driven UI framework with fine-grained reactivity. Write components in JSX, keep state in signals, and let compiled bindings update the DOM when their dependencies change.
+
+This guide creates a browser application with TypeScript and Vite. Use a Node.js version supported by your installed Vite release and pnpm.
+
+## Create the project
+
+```sh
+mkdir my-reze-app
+cd my-reze-app
+pnpm init
+pnpm add reze-js
+pnpm add -D @rezejs/vite-plugin vite typescript
+mkdir src
+```
+
+Set `"type": "module"` in `package.json` and add these scripts:
+
+```json
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit"
+  }
+}
+```
+
+Keep the dependencies created by the installation commands.
+
+## Configure Vite
+
+Create `vite.config.ts`:
+
+```ts
+import reze from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [reze()],
+});
+```
+
+The plugin transforms Reze JSX and compiler syntax such as `$signal`. A TypeScript JSX setting alone does not perform this transformation.
+
+Create `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "reze-js",
+    "strict": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src", "vite.config.ts"]
+}
+```
+
+Use `.tsx` for files containing JSX. `jsx: "preserve"` leaves JSX available for the Reze compiler; `jsxImportSource` selects Reze's JSX types.
+
+## Create the HTML entry
+
+Create `index.html` in the project root:
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Reze app</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+```
+
+## Write your first component
+
+Create `src/Counter.tsx`:
+
+```tsx
+import { $computed, $signal } from "reze-js";
+
+export function Counter(props: { step: number }) {
+  let count = $signal(0);
+  const doubled = $computed(count * 2);
+
+  return (
+    <section>
+      <p>Count: <output>{count}</output></p>
+      <p>Doubled: {doubled}</p>
+      <button onClick={() => (count -= props.step)}>Decrease</button>
+      <button onClick={() => (count = 0)} disabled={count === 0}>
+        Reset
+      </button>
+      <button onClick={() => (count += props.step)}>Increase</button>
+    </section>
+  );
+}
+```
+
+`$signal` declares writable reactive state. `$computed` derives a value from an expression: do not wrap its argument in an arrow function. JSX bindings update when the values they read change.
+
+Create `src/main.tsx`:
+
+```tsx
+import { render } from "reze-js";
+
+import { Counter } from "./Counter";
+
+render(() => <Counter step={1} />, document.getElementById("app")!);
+```
+
+## Run and build
+
+```sh
+pnpm dev
+```
+
+Open the URL printed by Vite. The initial count and doubled value are `0`, and Reset is disabled. Increase changes them to `1` and `2`; Reset returns both to `0`.
+
+```sh
+pnpm check
+pnpm build
+pnpm preview
+```
+
+Type checking and bundling are separate commands. Vite writes the production application to `dist`; preview serves that output locally for inspection, not as a production hosting service.
+
+## Troubleshooting
+
+- **JSX parse error:** check the `.tsx` extension and ensure `reze()` is installed in the Vite plugin list.
+- **Compiler syntax throws at runtime:** the file was not transformed. Check the plugin's file extensions and do not execute `$signal` source directly with Node.js.
+- **Nothing mounts:** ensure the HTML contains `id="app"` and loads `/src/main.tsx`.
+- **Reactive state cannot be exported:** export a getter function or use the ordinary `signal` API across module boundaries.
+
+Next: [reactivity](/reactivity), [components and JSX](/components), and [the compiler](/compiler). For multiple screens, follow [routing](/routing).

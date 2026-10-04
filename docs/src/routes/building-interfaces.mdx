@@ -1,0 +1,311 @@
+---
+title: Building interfaces
+description: Events, control flow, lists, forms, styling, DOM access, and portals.
+---
+
+# Building interfaces
+
+This page answers one question per section: how do events, conditions, lists, styles, forms, element handles, and portals behave in Reze. Each section gives a runnable example, the exact update rule, and the caveat that matters in practice.
+
+Component execution, props, and children are described in [components](/components). Reactive declarations, derived values, and cleanup live in [reactivity](/reactivity) and [lifecycle](/lifecycle).
+
+## Events and user input
+
+Listeners use camel-case names such as `onClick` and `onInput`. A lowercase `onclick` is an HTML attribute, not a listener.
+
+```tsx
+import { $signal } from "reze-js";
+
+export function Stepper(props: { step: number }) {
+  let count = $signal(0);
+  return (
+    <div onClick={() => (count += props.step)}>
+      <button>add {props.step}</button>
+      <output>{count}</output>
+    </div>
+  );
+}
+```
+
+Clicking the button bubbles from the target up to the handler on the `<div>`. Inside a handler, `currentTarget` is the element that declared the handler. `stopPropagation` stops the delegated walk. Writes from handlers batch: setting two signals in one click runs dependent effects once.
+
+Eleven event types delegate through one document listener each: `click`, `input`, `change`, `submit`, `keydown`, `keyup`, `pointerdown`, `pointerup`, `pointermove`, `focusin`, `focusout`. Every other `on` name, including `onDoubleClick` for `dblclick`, attaches a direct listener. Disabled form elements do not run delegated handlers.
+A two-element array passes data without closing over it:
+
+```tsx
+import { $signal } from "reze-js";
+
+export function Choices() {
+  let picked = $signal(0);
+  const pick = (id: number) => (picked = id);
+  return (
+    <p>
+      <button onClick={[pick, 1]}>one</button>
+      <button onClick={[pick, 2]}>two</button>
+      <output>{picked}</output>
+    </p>
+  );
+}
+```
+
+For a delegated event, `[handler, data]` calls `handler(data, event)`. For a direct listener, `[handler, options]` passes `options` to `addEventListener`, so `[save, { once: true }]` runs once. The `on:` prefix always attaches a direct listener: `on:scroll={onScroll}` listens for `scroll`, and `on:custom={[onCustom, { once: true }]}` passes listener options. The same mapping applies inside spreads: a spread `onClick` delegates, a spread `onDoubleClick` listens for `dblclick`.
+
+## Conditional rendering
+
+Write small conditions inline with `? :` or `&&`. The branch rebuilds only when the test truthiness flips; while truthy it keeps its nodes and updates bindings in place.
+
+```tsx
+import { $signal } from "reze-js";
+
+export function Panel() {
+  let open = $signal<string | null>("a");
+  let text = $signal("hello");
+  return (
+    <div>
+      <span>head</span>
+      {open && <p>{text}</p>}
+      <span>tail</span>
+    </div>
+  );
+}
+```
+
+Changing `open` from `"a"` to `"b"` keeps the same `<p>` and rewrites its text when `text` changes. Setting `open` to `null` removes the paragraph; setting it back builds a new one. Changing between two truthy values never rebuilds; falling to a falsy value disposes the branch.
+
+`Show` names the same behavior and exposes the tested value to its function child as a tracked getter:
+
+```tsx
+import { $signal, Show } from "reze-js";
+
+export function User() {
+  let name = $signal<string | undefined>("Ada");
+  return (
+    <Show when={name} fallback={<p>anonymous</p>}>
+      {(value) => <p>hello {value()}</p>}
+    </Show>
+  );
+}
+```
+
+While `name` stays truthy, edits update the greeting in place and `value()` always reads the current name. Element children behave the same way without the getter. When truthiness flips, the old side disposes and the new side builds. Without a `fallback`, a falsy `when` renders nothing.
+
+`Switch` picks the first truthy `Match` and rebuilds only when that choice changes:
+
+```tsx
+import { $signal, Match, Switch } from "reze-js";
+
+export function Status() {
+  let code = $signal(200);
+  return (
+    <Switch fallback={<p>unknown</p>}>
+      <Match when={code === 200}>
+        <p>ok</p>
+      </Match>
+      <Match when={code === 404}>
+        <p>missing</p>
+      </Match>
+    </Switch>
+  );
+}
+```
+
+A function child of `Match` receives its `when` as a tracked getter, mirroring `Show`. `Match` works only as a direct child of `Switch`; a single condition uses `Show`. Disposal follows the same rule as `Show`: the side switched away from is disposed, including the effects and async work it owned, as described in [lifecycle](/lifecycle).
+
+## Lists and identity
+
+`For` renders one row per item. By default, or with `keyed={true}`, rows follow item identity and the child receives the item directly plus an index getter. With a `keyed` function, rows follow that key and the child receives both an item getter and an index getter. With `keyed={false}`, rows follow positions and the child receives an item getter plus a plain numeric index.
+
+```tsx
+import { $signal, For } from "reze-js";
+
+interface Todo {
+  id: number;
+  title: string;
+  done: boolean;
+}
+
+export function Todos() {
+  let todos = $signal<Todo[]>([
+    { id: 1, title: "write", done: false },
+    { id: 2, title: "review", done: false },
+  ]);
+  return (
+    <ul>
+      <For each={todos} fallback={<li>empty</li>} keyed={(todo) => todo.id}>
+        {(todo, index) => (
+          <li class={{ done: todo().done }}>
+            {index()}: {todo().title}
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+}
+```
+
+Each row is its own owner: removing an item disposes exactly that row, and the `fallback` shows in its own owner while the list is empty. In the function-keyed example, `todo()` tracks the row item and `index()` tracks its position. Reordering moves nodes; replacing an item with another object of the same key updates its getter while preserving the row's nodes.
+
+Keep keys stable for the lifetime of a row. Use identity mode for stable objects, function-keyed mode for objects replaced with the same logical identity, and position mode when a row belongs to its array slot. `each` accepts an array, `null`, `undefined`, or `false`; the last three render the fallback.
+
+`Repeat` renders a fixed count of rows indexed by position:
+
+```tsx
+import { $signal, Repeat } from "reze-js";
+
+export function Placeholders() {
+  let count = $signal(2);
+  return (
+    <ul>
+      <Repeat count={count} fallback={<li>none</li>}>
+        {(index) => <li>row {index}</li>}
+      </Repeat>
+    </ul>
+  );
+}
+```
+
+A `count` that is not a positive number renders zero rows; fractions truncate. A smaller count disposes rows from the end, a larger count appends rows, and surviving rows keep their nodes. The child is exactly one `(index) => …` function, and the index is a plain number, not a getter.
+
+## Styling
+
+`class` accepts a string, a toggle object, or an array. `style` accepts a CSS string or an object of kebab-case properties.
+
+```tsx
+import { $signal } from "reze-js";
+
+export function Badge() {
+  let active = $signal(false);
+  let width = $signal(1);
+  return (
+    <p>
+      <b class={["btn", { active: active }]} />
+      <i style={{ display: "block", width: width + "px" }} />
+    </p>
+  );
+}
+```
+
+A string replaces the `class` attribute; `null`, `undefined`, and `false` remove it. An object turns on every space-separated class of each truthy key, so `{ "bg-sky-400 text-white": selected }` toggles two tokens together and keeps a token shared by both sides across the flip. An array merges its items in order with nesting allowed: a later object key overrides an earlier one, and strings and numbers, `0` included, count as keys. Object and array values diff against the tokens the previous write applied, and classes added by other code are left alone.
+
+A style string sets `cssText`. In an object, `null` and `undefined` remove that property; `null` or `undefined` as the whole value removes the `style` attribute. Partly reactive objects work: `width: width + "px"` updates only the width while `display` stays. Only changed properties are written.
+
+Three prefixes select the lower-level write. `bool:hidden={hidden}` toggles the `hidden` attribute. `attr:aria-label={label}` and namespaced names such as `xlink:href` write attributes, with `null`, `undefined`, and `false` removing them. `prop:custom={value}` assigns a JavaScript property instead of an attribute.
+
+## Forms
+
+There is no two-way binding helper. Wire the current value plus the event that reports edits:
+
+```tsx
+import { $signal } from "reze-js";
+
+export function Draft() {
+  let draft = $signal("");
+  let submitted = $signal("");
+  const submit = () => {
+    const title = draft.trim();
+    if (title === "") return;
+    submitted = title;
+    draft = "";
+  };
+  return (
+    <div>
+      <input
+        value={draft}
+        onInput={(e: InputEvent) => (draft = (e.currentTarget as HTMLInputElement).value)}
+        placeholder="Something to do"
+      />
+      <button onClick={submit}>Add</button>
+      <p>submitted: {submitted}</p>
+    </div>
+  );
+}
+```
+
+`value` and `checked` are written as properties, not attributes, so typing does not fight the binding: the property is rewritten when the bound value changes and left alone otherwise. The same applies to `checked` on a checkbox and to `prop:` writes generally. A `<select>` applies its `value` after its options are inserted, so the initial selection matches even on first mount. Pressing Add stores the trimmed draft in `submitted` and clears the field, so the paragraph shows the last submitted value.
+
+The todo-list pattern combines both controls with a store:
+
+```tsx
+import { For, store } from "reze-js";
+
+interface Todo {
+  id: number;
+  title: string;
+  done: boolean;
+}
+
+export function TodoList() {
+  const todos = store<Todo[]>([{ id: 1, title: "write", done: false }]);
+  return (
+    <ul>
+      <For each={todos}>
+        {(todo) => (
+          <li class={{ done: todo.done }}>
+            <label>
+              <input type="checkbox" checked={todo.done} onChange={() => (todo.done = !todo.done)} />
+              {todo.title}
+            </label>
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+}
+```
+
+The checkbox reflects `done` through `checked`, the row reflects it through `class`, and the change handler flips the store item in place. Store reads and updates are described in [reactivity](/reactivity).
+
+## DOM access
+
+`ref` exposes the element. Assign it to a variable, an object member, an array slot, or a callback:
+
+```tsx
+export function Canvas() {
+  let canvas!: HTMLDivElement;
+  const seen: Element[] = [];
+  return (
+    <div ref={canvas}>
+      <b ref={(el: Element) => seen.push(el)} />
+    </div>
+  );
+}
+```
+
+After mounting, `canvas` is the `<div>` and `seen` holds the `<b>`. Ref callbacks run untracked through the `use` helper, so they never subscribe their caller. A component cannot be measured directly; forward the ref it receives to the element inside, as shown in [components](/components). Element handles follow normal ownership: when the branch or row that built the element is disposed, the nodes are removed as described in [lifecycle](/lifecycle).
+
+## Portals
+
+`Portal` keeps its children in a different parent, defaulting to the document body. The children still belong to where the tag is written: reactivity, context, and error handling behave as if the content were inline.
+
+```tsx
+import { $signal, Portal } from "reze-js";
+
+export function Dialog() {
+  let open = $signal(true);
+  let target!: HTMLElement;
+  return (
+    <div>
+      <section ref={target} />
+      {open && (
+        <Portal mount={target}>
+          <b>modal</b>
+        </Portal>
+      )}
+    </div>
+  );
+}
+```
+
+The `<b>` renders inside `target` while the surrounding `<div>` renders in place. A reactive `mount` moves the same nodes when it changes; omitting `mount` or passing `null` selects the body. Children stay reactive after a move, components inside stay alive, and a delegated event inside the portal still reaches its handler. Toggling a portal accumulates nothing in the mount, and disposing its owner removes its nodes. An error thrown while building portal children reaches the `Errored` around the tag.
+
+## Constraints and pitfalls
+
+Control-flow tags accept fixed attributes: `Show` takes `when` and `fallback`, `For` takes `each`, `fallback`, and `keyed`, `Repeat` takes `count` and `fallback`, `Switch` takes `fallback`, `Match` takes `when`, and `Portal` takes `mount`. Anything else on those tags, spreads included, has no meaning and is reported by the compiler.
+
+Do not confuse the three list callback signatures: identity mode passes the item directly, function-keyed mode passes item and index getters, and position mode passes an item getter and numeric index. Conditional branches dispose the old side when switching, so state built inside a branch does not survive the flip.
+
+## Related pages
+
+- [Components](/components) for component execution, props, children, and `dynamic`.
+- [Reactivity](/reactivity) for signals, derived values, stores, and actions.
+- [Lifecycle](/lifecycle) for ownership, effects, and disposal.

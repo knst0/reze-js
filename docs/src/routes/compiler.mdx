@@ -1,0 +1,157 @@
+---
+title: The compiler
+description: Compile-time transformations, reactive bindings, optimization, and diagnostics.
+---
+
+# The compiler
+
+Reze's Vite plugin compiles JSX into DOM creation and reactive bindings. Work that can be determined from source is performed during compilation; the browser executes the resulting JavaScript and the runtime helpers it imports.
+
+This is a compilation requirement, not an optional optimization. Compiler syntax and control-flow tags are not ordinary runtime functions.
+
+## Compiler syntax versus runtime APIs
+
+Compiler syntax lets a reactive value look like a local variable:
+
+```tsx
+import { $computed, $signal } from "reze-js";
+
+export function Counter() {
+  let count = $signal(0);
+  const doubled = $computed(count * 2);
+
+  return (
+    <button onClick={() => (count += 1)}>
+      {count} × 2 = {doubled}
+    </button>
+  );
+}
+```
+
+The compiler rewrites reads and assignments of the declared binding. It also wraps the expression passed to `$computed` in a tracked computation. The equivalent public runtime model uses explicit getters and setters:
+
+```tsx
+import { computed, signal } from "reze-js";
+
+export function Counter() {
+  const [count, setCount] = signal(0);
+  const doubled = computed(() => count() * 2);
+
+  return (
+    <button onClick={() => setCount(count() + 1)}>
+      {count()} × 2 = {doubled()}
+    </button>
+  );
+}
+```
+
+This illustrates the API model, not an exact dump of generated code. The ordinary APIs work without rewriting their calls; JSX still needs compilation.
+
+## Declaration and module boundaries
+
+Declare `$signal` and `$computed` with a single identifier in a `let` or `const` declaration. They cannot be used as arbitrary expressions, destructured declarations, or values passed to another function.
+
+The rewritten binding is local to the file that declares it. Do not export it directly. Export an explicit reading function instead:
+
+```ts
+import { $signal } from "reze-js";
+
+let count = $signal(0);
+
+export const readCount = () => count;
+
+export function increment() {
+  count += 1;
+}
+```
+
+Alternatively, export ordinary `signal` getters and setters. A consumer must call the getter in a tracked computation or JSX binding to observe future changes. Passing `readCount()` to an ordinary function passes the current value, not a live subscription.
+
+Additional restrictions:
+
+- A computed binding is read-only; update its source state instead.
+- `$computed` accepts an expression, not an inline function literal. Use `$computed(calculate())` for a multi-statement calculation.
+- Write signals through direct assignments, not destructuring assignments or `for` loop heads.
+- Increment and decrement statements are supported, but `count++` inside a larger expression is rejected. Use `count += 1` or a block-bodied handler.
+
+See [reactivity](/reactivity) for the state model and async computations.
+
+## JSX intrinsics
+
+Native tags such as `button` describe DOM elements. Their TypeScript attributes are described by Reze's `JSX.IntrinsicElements`. Component functions use their own props types.
+
+Reze also provides compiler-recognized control-flow tags:
+
+```tsx
+import { $signal, Show } from "reze-js";
+
+export function Disclosure() {
+  let open = $signal(false);
+
+  return (
+    <section>
+      <button onClick={() => (open = !open)}>Toggle details</button>
+      <Show when={open} fallback={<p>Details are hidden.</p>}>
+        <p>Details are visible.</p>
+      </Show>
+    </section>
+  );
+}
+```
+
+These tags are compiled into control-flow helpers. Use them as JSX tags: do not call, alias as a runtime component value, or re-export the imported intrinsic. Their accepted attributes are fixed; arbitrary attributes and spreads are errors.
+
+The [interface guide](/building-interfaces) explains conditional rendering, lists, boundaries, and portals.
+
+## Transformation scope
+
+By default, the Vite plugin processes `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`, excluding files in `node_modules`. The plugin applies to Vite client environments.
+
+Preprocessors must emit JSX before Reze runs. Extend the default extensions when adding another source format:
+
+```ts
+import reze, { DEFAULT_ROUTE_EXTENSIONS } from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [
+    reze({ extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"] }),
+  ],
+});
+```
+
+This only enables the extension; an MDX-to-JSX preprocessor must also be configured to run first. A nonempty `extensions` list replaces the defaults rather than adding to them.
+
+## Diagnostics
+
+Diagnostics include a bracketed code, source location, and repair information. Errors stop the transform; warnings are reported through Vite. Fix the cause instead of bypassing the transform.
+
+| Code | Meaning | Correction |
+| --- | --- | --- |
+| `SIGNAL_NOT_DECLARED` | Compiler syntax has no supported local declaration. | Initialize one named variable with `let` or `const`. |
+| `SIGNAL_EXPORTED` | A rewritten reactive binding is exported. | Export a getter or use the ordinary runtime API. |
+| `COMPUTED_FUNCTION` | `$computed` received an inline function. | Pass the expression directly. |
+| `COMPUTED_WRITTEN` | Derived state is being assigned. | Update its source signals. |
+| `CONTROL_FLOW_AS_VALUE` | An intrinsic is used outside a JSX tag. | Render the tag inside an ordinary component. |
+| `CONTROL_FLOW_ATTRIBUTE` | An intrinsic received an unsupported attribute. | Remove it or use the documented attribute. |
+
+To capture all diagnostic severities, including informational diagnostics:
+
+```ts
+import reze from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [reze({ diagnostics: { jsonl: "diagnostics.jsonl" } })],
+});
+```
+
+The file is appended to, not replaced. Entries include the code, severity, message, source locations, enclosing path, labels, fixes, and rendered explanation. The installed compiler includes a repair guide at `node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md`.
+
+## Development and production
+
+The plugin enables debug names outside production and compiler HMR support when serving with Vite HMR enabled. Source maps follow Vite's source-map configuration.
+
+Use a production build when measuring shipped code. Generated output depends on the application and enabled features; architecture alone is not a bundle-size or speed measurement.
+
+Next: [Vite configuration](/vite-plugin), [reactivity](/reactivity), and [installation](/installation).

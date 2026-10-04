@@ -4,6 +4,7 @@ packages:
   - benches/rendering/frameworks/*
   - benches/router
   - benches/router/apps/*
+  - docs
   - examples/*
   - packages/*
   - packages/compiler/npm/*

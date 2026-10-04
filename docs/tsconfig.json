@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "reze-js",
+    "types": ["vite/client"]
+  },
+  "include": ["src", "vite.config.mts"],
+  "exclude": []
+}

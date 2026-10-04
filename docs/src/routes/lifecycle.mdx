@@ -1,0 +1,301 @@
+---
+title: Lifecycle
+description: Effects, ownership, cleanup, context, and error boundaries.
+---
+
+# Lifecycle
+
+Every computation in Reze — `effect`, `computed`, template bindings — records
+which signals and store keys it read, subscribes to them, and re-runs when
+they change. Ownership decides how long each computation lives and what cleans
+it up. This page covers scheduling, cleanup, owners, context, error handling,
+and async boundaries.
+
+## Effects and scheduling
+
+`effect` runs its function immediately, then again on the next flush whenever
+something it read changes. It returns a disposer:
+
+```tsx
+import { effect, signal } from "reze-js";
+
+const [count, setCount] = signal(0);
+
+const dispose = effect(() => {
+  console.log("count is", count());
+});
+
+setCount(1);
+setCount(2);
+dispose();
+```
+
+Writes update values synchronously but notify asynchronously: every write in a
+task coalesces into one run of each subscriber on a microtask. Two writes
+before the flush re-run the effect once, with the latest value. `flush()` runs
+every queued subscriber now, including subscribers queued while it runs; a
+microtask flush left over afterwards finds an empty queue and re-runs nothing.
+Use `flush()` in tests — or anywhere you need settled state synchronously —
+after writing:
+
+```tsx
+import { effect, flush, signal } from "reze-js";
+
+const [a, setA] = signal(0);
+const seen: number[] = [];
+
+effect(() => {
+  seen.push(a());
+});
+
+setA(1);
+setA(2);
+flush();
+```
+
+`seen` is `[0, 2]`: the initial run plus one re-run with the latest value.
+
+The value an effect's function returns runs as cleanup before its next run and
+when it is disposed. Cleanups of nested computations run before the outer
+cleanup, newest first:
+
+```tsx
+import { effect, flush, signal } from "reze-js";
+
+const [a, setA] = signal(0);
+
+effect(() => {
+  const value = a();
+  effect(() => {
+    console.log("inner", value);
+    return () => console.log("inner cleanup");
+  });
+  return () => {
+    console.log("outer cleanup");
+  };
+});
+
+setA(1);
+flush();
+```
+
+The flush logs `"inner cleanup"`, then `"outer cleanup"`, then the new run.
+
+Prefer returning the cleanup from the effect over `onCleanup` when the teardown
+belongs to that single run; `onCleanup` (below) belongs to the owner and also
+fires when an outer owner re-runs.
+
+For rare cases where code must re-run subscribers without changing a value,
+`trigger(fn)` runs `fn`, then notifies the subscribers of every dependency it
+read and flushes synchronously:
+
+```tsx
+import { effect, signal, trigger } from "reze-js";
+
+const [a, setA] = signal(0);
+effect(() => console.log(a()));
+
+trigger(() => {
+  a();
+});
+```
+
+## Ownership and cleanup
+
+`getOwner()` returns the node that owns computations created right now — the
+currently running subscriber, or the owner set by `untrack`, `root`, or
+`runWithOwner`. `root` runs a function untracked under a new owner detached
+from the current one; everything created inside lives until the `dispose` it
+receives is called, while still seeing the current owner's context:
+
+```tsx
+import { effect, onCleanup, root } from "reze-js";
+
+const dispose = root((dispose) => {
+  onCleanup(() => console.log("c1"));
+  effect(() => () => console.log("effect torn down"));
+  onCleanup(() => console.log("c2"));
+  return dispose;
+});
+
+dispose();
+```
+
+This logs `"c2"`, then `"effect torn down"`, then `"c1"` — newest first.
+
+`onCleanup(fn)` registers `fn` to run, untracked, when the current owner
+re-runs or is disposed; cleanups and owned nodes release newest first. With no
+current owner it is a no-op.
+
+`untrack` runs a function without tracking its reads, while keeping what it
+creates owned by the current owner — hiding a read from the effect without
+detaching the cleanup:
+
+```tsx
+import { effect, flush, onCleanup, root, signal, untrack } from "reze-js";
+
+const [a, setA] = signal(0);
+const [b, setB] = signal(0);
+
+root(() => {
+  effect(() => {
+    a();
+    untrack(() => {
+      b();
+      onCleanup(() => console.log("inner cleanup"));
+    });
+  });
+});
+
+setB(1);
+flush();
+setA(1);
+flush();
+```
+
+The first flush logs nothing because the `b` read is untracked; the second
+logs `"inner cleanup"` because the owner re-ran.
+
+`untrack(fn, arg)` calls `fn(arg)`, which avoids allocating the closure
+`untrack(() => fn(arg))` would create.
+
+`effectScope` runs a function in a new owner that lives as long as the current
+one and returns its disposer. Reads inside never re-run the scope body itself:
+
+```tsx
+import { effect, effectScope, signal } from "reze-js";
+
+const [a, setA] = signal(0);
+
+const dispose = effectScope(() => {
+  effect(() => console.log(a()));
+});
+```
+
+`runWithOwner(owner, fn)` runs `fn` untracked under a captured owner, so work
+resumed later — after an `await`, in a timer — attaches to that owner instead
+of leaking:
+
+```tsx
+import { getOwner, onCleanup, root, runWithOwner } from "reze-js";
+
+const dispose = root((dispose) => {
+  const owner = getOwner();
+  queueMicrotask(() => {
+    runWithOwner(owner, () => onCleanup(() => console.log("late")));
+  });
+  return dispose;
+});
+```
+
+This does not extend the owner's lifetime: resume only while the owner is still
+alive. Work attached after disposal has no live owner to clean it up.
+
+Components and `computed` getters are owners too: anything an effect or
+computed creates is disposed before its next run and when it is disposed, and
+a computed that loses its last subscriber drops its dependencies.
+
+## Context
+
+`createContext` makes a key that is also its own provider component.
+`useContext` reads the nearest enclosing provider's value, else the default.
+A context without a default and without a provider throws
+`ContextNotFoundError`:
+
+```tsx
+import { createContext, useContext } from "reze-js";
+
+const Theme = createContext<"light" | "dark">("light");
+
+export function Label() {
+  const theme = useContext(Theme);
+  return <span class={theme}>label</span>;
+}
+
+export function Page() {
+  return (
+    <Theme value="dark">
+      <Label />
+    </Theme>
+  );
+}
+```
+
+The provided `value` is read once, when the provider renders — later writes to
+the expression are not picked up, so pass a signal getter or store for values
+that change. `provideContext(context, value, fn)` is the non-JSX form: it runs
+`fn` untracked under a new owner that provides `value`, living as long as the
+current owner.
+
+## Errors
+
+`catchError(fn, handler)` runs `fn` untracked under an owner that catches
+errors from everything created inside. A synchronous throw from `fn` itself
+calls `handler` and returns `undefined`; a throw from a scheduled effect,
+binding, or computed created inside also goes to `handler` — and a computed
+that throws keeps its previous value. Nested `catchError`s catch first, and an
+error a handler itself throws propagates outward. The owner lives as long as
+the current one:
+
+```tsx
+import { catchError, computed, signal } from "reze-js";
+
+const [divisor, setDivisor] = signal(1);
+
+catchError(
+  () => {
+    const ratio = computed(() => {
+      if (divisor() === 0) throw new RangeError("zero");
+      return 100 / divisor();
+    });
+    queueMicrotask(() => console.log(ratio()));
+  },
+  (error) => console.error("caught", error),
+);
+```
+
+## Async boundaries
+
+`boundary` groups first loads. It runs `fn` untracked under a new owner that
+lives as long as the current one and counts pending first settlements of
+`asyncComputed` read inside it — the nearest enclosing boundary counts each
+read. It returns the result and the boundary:
+
+```tsx
+import { Show, asyncComputed, boundary, signal } from "reze-js";
+
+const [id, setId] = signal(1);
+
+const user = asyncComputed(async (c) => {
+  const current = c.get(id);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  return { name: `user ${current}` };
+});
+
+const [view, load] = boundary(() => <p>{user.value()?.name ?? "…"}</p>);
+
+export function Page() {
+  return (
+    <div>
+      <Show when={load.isPending()} fallback={view}>
+        <p>Loading…</p>
+      </Show>
+      <button onClick={() => setId(id() + 1)}>next</button>
+    </div>
+  );
+}
+```
+
+`isPending()` is tracked: read inside a binding, the binding updates when the
+count changes. A pending read clears when its reader re-runs or is disposed.
+`dispose()` disposes everything created inside the boundary, and
+`isInBoundary()` reports whether the current owner sits inside one.
+
+## Related pages
+
+- [Reactivity](/reactivity) — signals, computed values, stores, and actions.
+- [Signals API](/signals-api) — exact signatures for `effect`, `root`,
+  `untrack`, `onCleanup`, contexts, boundaries, and the rest.
+- [Components](/components) — how component owners map to the UI tree.
+- [Building interfaces](/building-interfaces) — loading and error flows built
+  on boundaries and actions.

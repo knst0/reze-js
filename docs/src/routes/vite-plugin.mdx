@@ -1,0 +1,91 @@
+---
+title: Vite plugin
+description: Configure the Reze compiler, file routes, and diagnostics in Vite.
+---
+
+# Vite plugin
+
+`@rezejs/vite-plugin` integrates the Reze compiler with Vite client builds. Install it as a development dependency alongside Vite; application code imports from `reze-js`.
+
+```ts
+import reze from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [reze()],
+});
+```
+
+See [installation](/installation) for the complete project configuration.
+
+## Options
+
+| Option | Type | Behavior |
+| --- | --- | --- |
+| `diagnostics.jsonl` | `string` | Append all compiler diagnostics to this file as JSON lines. Parent directories are created when diagnostics are written. |
+| `extensions` | `string[]` | Replace the transformed file extensions. Omitted or empty lists use the defaults. |
+| `links` | `string` | Name a module exporting `link` to handle compiled native anchors with `href`. |
+| `fileRoutes` | `boolean` or options object | Enable generated file-system routes. Requires `@rezejs/router`. |
+
+The exported `DEFAULT_ROUTE_EXTENSIONS` contains `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`. Leading dots are optional in custom extension entries. Files in `node_modules` are excluded from the compiler transform.
+
+## File routes
+
+```sh
+pnpm add @rezejs/router
+```
+
+```ts
+import reze from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [reze({ fileRoutes: true })],
+});
+```
+
+With file routes enabled, `reze()` returns an awaitable plugin list accepted by Vite. It serves `virtual:reze-routes`, whose `routes` and `paths` exports are consumed by the application's router setup.
+
+| `fileRoutes` option | Default | Contract |
+| --- | --- | --- |
+| `dir` | `"src/routes"` | Route directory relative to Vite's root; it must exist. |
+| `types` | `"src/routes.gen.d.ts"` | Generated declaration file relative to Vite's root. Set to `false` to disable generation. |
+| `links` | `true` | Claim native anchors for router navigation and active/pending attributes. |
+| `history` | `"browser"` | Generate link types for browser or `"hash"` history. This does not construct the application's history object. |
+| `extensions` | Top-level extensions, otherwise default script extensions | Select files discovered as routes. |
+
+Keep the `history` option consistent with the history passed to `createRouter`. Browser link types account for Vite's `base`; hash link types use the hash prefix. The generated declarations are build output: change route files or configuration rather than editing declarations by hand.
+
+Each route file gets a lazy chunk. Adding or removing routes during development regenerates the route module and triggers a full reload when its contents change.
+
+For route naming, layouts, navigation, and application setup, see [routing](/routing).
+
+## Preprocessors
+
+A preprocessor must produce JSX before Reze transforms the file. Adding an extension does not add its parser or preprocessor.
+
+```ts
+import reze, { DEFAULT_ROUTE_EXTENSIONS } from "@rezejs/vite-plugin";
+
+const plugin = reze({
+  extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"],
+});
+```
+
+Use this configuration alongside the format's JSX-producing plugin. File-route discovery inherits the top-level extensions unless separately configured.
+
+## Diagnostics and source maps
+
+Compiler errors fail the transform. Warnings appear through Vite. `diagnostics.jsonl` also records informational diagnostics; repeated builds append new entries.
+
+Source-map generation follows Vite: production uses `build.sourcemap`; development follows `dev.sourcemap`. Debug names are enabled outside production. Compiler HMR support is enabled when serving and `server.hmr` is not `false`.
+
+See [compiler diagnostics](/compiler#diagnostics) for common errors and repairs.
+
+## Production hosting
+
+Run `vite build` and deploy the resulting `dist` directory to a static host. `vite preview` is for local inspection of that build.
+
+For browser-history routing, configure the host to serve the application's HTML entry for application URLs that are not static files. Otherwise, opening a nested route directly can return a server 404 even when in-app navigation works. Match Vite's `base` and the browser history base when hosting under a subdirectory.
+
+The Reze plugin applies to client environments. This setup documents a client-rendered application, not a server-rendering or hydration pipeline.

@@ -1,0 +1,154 @@
+---
+title: Router API
+description: Router creation, history, navigation hooks, and typed file routes.
+---
+
+# Router API
+
+Reference for `@rezejs/router` and the file-routes side of `@rezejs/vite-plugin`. Behavior, naming rules, and deployment live in [routing](/routing).
+
+## createRouter
+
+```tsx
+import { createBrowserHistory, createRouter } from "@rezejs/router";
+import { paths, routes } from "virtual:reze-routes";
+
+const Router = createRouter({ routes, paths, history: createBrowserHistory(import.meta.env.BASE_URL) });
+```
+
+`createRouter(config)` compiles the table once and returns the router component. Mount it with an optional `root` shell whose `props.children` is the matched branch. `Router.match(url)` matches without rendering and returns root-to-leaf hits (`[]` when nothing matches). `Router.paths` is the configured builders tree, `Router.routes` the configured table.
+
+| Option | Default | Meaning |
+| ------ | ------- | ------- |
+| `routes` | required | `RouteDefinition[]`, or the generated `routes` |
+| `paths` | none | Builders from `virtual:reze-routes`, or `buildPaths(table)` |
+| `history` | `createBrowserHistory()` | Browser, hash, or memory history |
+| `links` | `true` for window histories, `false` for memory | Route same-origin `<a>` clicks document-wide |
+| `preload` | `true` | Load and preload a link's route on hover, focus, or touch; needs `links` |
+
+## Histories
+
+```tsx
+import { createBrowserHistory, createHashHistory, createMemoryHistory } from "@rezejs/router";
+
+const browser = createBrowserHistory(import.meta.env.BASE_URL);
+const hash = createHashHistory();
+const memory = createMemoryHistory("/pinned");
+```
+
+`createBrowserHistory(base)` routes `window.location` paths under `base`; a relative base means the root. `createHashHistory()` keeps the route in `location.hash` (`#/path`) for hosts without rewrites; other hashes stay in-page anchors. `createMemoryHistory(initial)` never touches `window` and leaves document anchors to the browser. Window histories manage scroll and set `scrollRestoration` to manual; memory does not. `history.base` is the prefix route hrefs carry (`""`, the served base, or `"#"`).
+
+## Route tables
+
+```tsx
+import { buildPaths, createRouter, defineRoute, defineRoutes } from "@rezejs/router";
+
+const table = defineRoutes([
+  defineRoute({
+    path: "/blog",
+    children: [
+      defineRoute({
+        path: "/:id",
+        preload: ({ params }) => ({ title: `Post ${params.id}` }),
+        component: (props) => <h1>{props.data.title}</h1>,
+      }),
+    ],
+  }),
+]);
+
+const Router = createRouter({ routes: table, paths: buildPaths(table) });
+```
+
+`defineRoutes` preserves the literal tuple for the factory; `defineRoute` types `preload` and `component` params from the path string. `RouteDefinition` fields: `path` (`:param`, `:optional?`, `*splat`), optional `name` node key in `paths`, `component`, `preload`, `info`, lazy `load`, and `children`. A layout with children renders them as `props.children`; a component-less entry renders its child directly. `buildPaths(table, base)` builds the `paths` builders for hand-written tables; every emitted href carries `base`.
+
+## Hooks
+
+```tsx
+import { useCurrentMatches, useIsRouting, useLocation, useMatch, useNavigate, useParams, useSearchParams } from "@rezejs/router";
+
+export function Meta() {
+  const location = useLocation();
+  const params = useParams();
+  const navigate = useNavigate();
+  const [query, setQuery] = useSearchParams();
+  const match = useMatch(() => "/blog/*");
+  const isRouting = useIsRouting();
+  const matches = useCurrentMatches();
+  return <p>{location().pathname} has {Object.keys(params()).length} params</p>;
+}
+```
+
+Each hook returns a reactive getter, so call the result to read the current value, as in `location()` and `params()`. The snippet names every return for reference. `useLocation()` returns the reactive location: `pathname`, `search`, `hash`, `query` (repeated keys map to every value in order), and history `state`. `useParams()` returns the deepest match's params merged across layouts; `useParams("/blog/:id")` narrows them to a registered pattern. `useNavigate()` returns `navigate(to, options)`: a route path resolved against the current location, a same-origin absolute URL, or a history delta. Options are `{ replace, state, scroll }` with scroll defaulting to true. `useSearchParams()` returns the query and a setter that merges into the pending location, deletes `null`/`undefined` keys, writes one entry per array item, and defaults to `{ scroll: false }`. `useMatch(() => pattern)` matches one pattern against the current pathname; a trailing `/*` makes it a prefix match. `useIsRouting()` is true while chunks load. `useCurrentMatches()` returns `{ path, params, data, info }` per level.
+
+```tsx
+import { useBeforeLeave } from "@rezejs/router";
+
+export function Guarded(props: { needsConfirm: () => boolean }) {
+  let pending: (() => void) | undefined;
+  useBeforeLeave((event) => {
+    if (props.needsConfirm()) {
+      event.preventDefault();
+      pending = () => event.retry();
+    }
+  });
+  return <button onClick={() => pending?.()}>Leave anyway</button>;
+}
+```
+
+`useBeforeLeave(listener)` runs before each navigation away and before unload until the calling owner disposes. `event.to` is the target path, a history delta, or `null` for unload; `preventDefault()` blocks (asks to confirm on unload), `retry(force = true)` re-runs the prevented navigation past the guards.
+
+## Links
+
+```tsx
+import { useLinkState } from "@rezejs/router";
+
+export function Pill(props: { href: "/about" }) {
+  const state = useLinkState(() => props.href);
+  return <a href={props.href} data-active={state.active() ? "" : null}>About</a>;
+}
+```
+
+## File routes plugin
+
+```tsx
+import reze from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [
+    reze({
+      fileRoutes: {
+        dir: "src/routes",
+        types: "src/routes.gen.d.ts",
+        links: true,
+        history: "browser",
+        extensions: ["tsx"],
+      },
+    }),
+  ],
+});
+```
+
+`reze({ fileRoutes: true })` uses `@rezejs/router/fs` defaults; an options object overrides them. `dir` is relative to the Vite root. `types` selects the generated declaration file, `false` disables it. `links` claims native anchors. `history: "hash"` types `#/path` hrefs. `extensions` defaults to the top-level `extensions` or script extensions; listing a non-script extension needs a preprocessor running before this plugin, see preprocessing in [installation](/installation). The plugin serves `virtual:reze-routes` with one lazy chunk per route file and triggers a full reload when the tree changes.
+
+The generated `.d.ts` registers leaf patterns with params and preload data, the `paths` builders, every href shape, and `base`, which drives the typed `Href`, `useParams(from)`, and builder calls. Route files export the component as default and data as `route`:
+
+```tsx
+import type { RouteConfigFor, RoutePropsFor } from "@rezejs/router";
+
+interface Post {
+  title: string;
+}
+
+export const route = {
+  preload: ({ params, location, intent }) => ({ title: `Post ${params.id}` }),
+} satisfies RouteConfigFor<"/blog/:id", Post>;
+
+export default function PostPage(props: RoutePropsFor<"/blog/:id">) {
+  return <h1>{props.data.title}</h1>;
+}
+```
+
+`RouteProps` carries `params`, `location`, `data`, and `children`. `preload` receives `{ params, location, intent }` with intent `"initial" | "navigate" | "preload"`. `DataOf<M>` is the awaited `preload` return; `ParamsFor<P>`, `DataFor<P>`, `RoutePropsFor<P>`, `HrefFor<H>`, `RoutePattern`, and `RoutePath` read the registration, falling back to loose types without the plugin. `matchPath(pattern, pathname)` (returning `{ params, path } | undefined`) backs `useMatch`; `pathKey` normalizes for comparison.
+
+See [routing](/routing) for the guide, [installation](/installation) for setup, and the [compiler](/compiler) for anchor claiming.
