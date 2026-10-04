@@ -23,6 +23,13 @@ pub struct ProfileFacts {
     pub components: Vec<ProfileComponentFacts>,
 }
 
+#[napi(string_enum = "lowercase")]
+pub enum CompileTarget {
+    Client,
+    Hydrate,
+    Html,
+}
+
 #[napi(object)]
 pub struct CompileOptions {
     /// Default: `true`.
@@ -33,8 +40,10 @@ pub struct CompileOptions {
     pub hot: Option<bool>,
     /// Module exporting `link`: native `<a href>` elements are claimed and passed to it. Default: none.
     pub links: Option<String>,
-    /// Collect static prerender trees as JSON. Default: `false`.
-    pub prerender: Option<bool>,
+    /// Which output to produce. Default: `"client"`.
+    pub target: Option<CompileTarget>,
+    /// Stable canonical module id; required (nonempty) for `hydrate` and `html`. Default: none.
+    pub module_id: Option<String>,
     /// Profiling facts for this file, from the profile store. Default: none.
     pub profile: Option<ProfileFacts>,
 }
@@ -99,8 +108,6 @@ pub struct CompileResult {
     pub code: Option<String>,
     /// Source map v3 JSON.
     pub map: Option<String>,
-    /// Static prerender trees as JSON, when requested.
-    pub prerender: Option<String>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -154,7 +161,12 @@ pub fn compile(
         opts.debug_names = o.debug_names.unwrap_or(opts.debug_names);
         opts.hot = o.hot.unwrap_or(opts.hot);
         opts.links = o.links.or(opts.links);
-        opts.prerender = o.prerender.unwrap_or(opts.prerender);
+        opts.target = match o.target {
+            Some(CompileTarget::Hydrate) => reze_compiler::CompileTarget::Hydrate,
+            Some(CompileTarget::Html) => reze_compiler::CompileTarget::Html,
+            Some(CompileTarget::Client) | None => reze_compiler::CompileTarget::Client,
+        };
+        opts.module_id = o.module_id;
         opts.profile = o.profile.map(|facts| reze_compiler::ProfileFacts {
             v: facts.v,
             file: facts.file,
@@ -179,15 +191,11 @@ pub fn compile(
             code: Some(out.code),
             map: out.map,
             diagnostics: out.diagnostics.into_iter().map(diagnostic).collect(),
-            prerender: out
-                .prerender
-                .map(|module| serde_json::to_string(&module).unwrap_or_default()),
         }),
         Err(diagnostics) => Some(CompileResult {
             code: None,
             map: None,
             diagnostics: diagnostics.into_iter().map(diagnostic).collect(),
-            prerender: None,
         }),
     }
 }

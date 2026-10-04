@@ -24,8 +24,10 @@ export interface CompileOptions {
   hot?: boolean
   /** Module exporting `link`: native `<a href>` elements are claimed and passed to it. Default: none. */
   links?: string
-  /** Collect static prerender trees as JSON. Default: `false`. */
-  prerender?: boolean
+  /** Which output to produce. Default: `"client"`. */
+  target?: CompileTarget
+  /** Stable canonical module id; required (nonempty) for `hydrate` and `html`. Default: none. */
+  moduleId?: string
   /** Profiling facts for this file, from the profile store. Default: none. */
   profile?: ProfileFacts
 }
@@ -35,10 +37,10 @@ export interface CompileResult {
   code?: string
   /** Source map v3 JSON. */
   map?: string
-  /** Static prerender trees as JSON, when requested. */
-  prerender?: string
   diagnostics: Array<Diagnostic>
 }
+
+export type CompileTarget = 'client' | 'hydrate' | 'html'
 
 export interface Diagnostic {
   /** Stable code; see `skills/reze-compiler-diagnostics/SKILL.md`. */

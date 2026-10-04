@@ -5,7 +5,6 @@ import { dirname, join, resolve } from "node:path";
 import { compile } from "@rezejs/compiler";
 import type { Environment, Plugin } from "vite";
 
-import { prerenderHtml, type PrerenderModule, type PrerenderOptions } from "./prerender";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
 export interface Options {
   diagnostics?: {
@@ -18,8 +17,6 @@ export interface Options {
   extensions?: string[];
   /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. The result is awaitable in `plugins`. */
   fileRoutes?: boolean | FileRoutesOptions;
-  /** Inline static shells into built HTML. Build-only; the client renders as usual on boot. `true` prerenders `#app`. */
-  prerender?: boolean | PrerenderOptions;
   profile?: {
     /** Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. */
     dir: string;
@@ -193,8 +190,6 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
   let root = "";
   const profileDir = options.profile?.dir;
   const profileHashes = new Map<string, string>();
-  const prerender: PrerenderOptions | undefined = options.prerender === true ? {} : options.prerender || undefined;
-  const sidecars = new Map<string, PrerenderModule>();
 
   function formatDiagnostic(d: Diagnostic): string {
     if (seenCodes.has(d.code)) return d.rendered;
@@ -234,14 +229,6 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
       hot = isServe && config.server.hmr !== false;
       root = config.root;
     },
-    transformIndexHtml: {
-      async handler(html, context) {
-        if (prerender === undefined || isServe) return;
-        return prerenderHtml(html, context.filename, root, sidecars, prerender.selector ?? "#app", {
-          warn: (message) => this.warn(message),
-        });
-      },
-    },
     transform: {
       filter: transformFilter(options.extensions),
       handler(code, id) {
@@ -253,13 +240,9 @@ function rezePlugin(options: Options): Plugin<RezeApi> {
           debugNames,
           hot,
           links,
-          ...(prerender === undefined ? {} : { prerender: true }),
           ...(profile === undefined ? {} : { profile }),
         });
         if (result === null) return null;
-        if (prerender !== undefined && typeof result.prerender === "string" && result.prerender !== "") {
-          sidecars.set(id.replace(QueryOrHash, ""), JSON.parse(result.prerender));
-        }
         const diagnostics: Diagnostic[] = result.diagnostics;
         record(diagnostics);
         const errors: Diagnostic[] = [];

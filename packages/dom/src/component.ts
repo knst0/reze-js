@@ -13,7 +13,7 @@ export function createComponent<P>(Comp: (props: P) => JSX.Element, props: P, pr
   return untrack(Comp, props);
 }
 
-/** Mounts `code()` into `element`, replacing a prerendered shell or any previous content; the returned function disposes it and empties `element`. */
+/** Replaces all existing content in `element` with `code()`; the returned function disposes it and empties `element`. */
 export function render(code: () => JSX.Element, element: Element): () => void {
   const dispose = root((dispose) => {
     element.textContent = "";

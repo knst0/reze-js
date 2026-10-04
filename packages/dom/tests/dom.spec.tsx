@@ -731,10 +731,11 @@ test("arrays, fragments and nested getters render in order between static siblin
   expect(text()).toEqual(["first", "p", "q", "middle", "last"]);
 });
 
-test("render replaces a prerendered shell instead of duplicating it", () => {
+test("render replaces existing content instead of adopting or duplicating it", () => {
   const el = document.createElement("div");
   document.body.appendChild(el);
   el.innerHTML = "<main><h1>Islands</h1><p>loading counter…</p></main>";
+  const previous = el.firstChild;
   const dispose = render(
     () => (
       <main>
@@ -746,6 +747,7 @@ test("render replaces a prerendered shell instead of duplicating it", () => {
   );
   expect(el.innerHTML).toBe("<main><h1>Islands</h1><p>loading counter…</p></main>");
   expect(el.childNodes.length).toBe(1);
+  expect(el.firstChild).not.toBe(previous);
   dispose();
   expect(el.innerHTML).toBe("");
 });

@@ -23,8 +23,8 @@
     }
   },
   "scripts": {
-    "build": "napi build --platform --release --esm --manifest-path ../../crates/reze_compiler_napi/Cargo.toml --output-dir .",
-    "build:debug": "napi build --platform --esm --manifest-path ../../crates/reze_compiler_napi/Cargo.toml --output-dir ."
+    "build": "napi build --platform --release --esm --no-const-enum --manifest-path ../../crates/reze_compiler_napi/Cargo.toml --output-dir .",
+    "build:debug": "napi build --platform --esm --no-const-enum --manifest-path ../../crates/reze_compiler_napi/Cargo.toml --output-dir ."
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.10.5"

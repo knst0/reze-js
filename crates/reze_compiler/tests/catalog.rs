@@ -1,9 +1,29 @@
 use std::path::PathBuf;
 
-use reze_compiler::{CATALOG, Code, Diagnostic, Example, Options, compile, render_skill};
+use reze_compiler::{CATALOG, Code, CompileTarget, Diagnostic, Example, Options, compile, render_skill};
 
 fn diagnostics(source: &str) -> Vec<Diagnostic> {
     match compile(source, "example.tsx", &Options::default()) {
+        Ok(Some(out)) => out.diagnostics,
+        Ok(None) => Vec::new(),
+        Err(errors) => errors,
+    }
+}
+
+/// Options that trigger `code` for its catalog example. Every code is source-gated under the
+/// default options except `MISSING_MODULE_ID`, which is option-gated: its example only reports
+/// with a `hydrate`/`html` target and no `moduleId`.
+fn example_options(code: Code) -> Options {
+    match code {
+        Code::MissingModuleId => {
+            Options { target: CompileTarget::Hydrate, ..Options::default() }
+        }
+        _ => Options::default(),
+    }
+}
+
+fn diagnostics_for(source: &str, options: &Options) -> Vec<Diagnostic> {
+    match compile(source, "example.tsx", options) {
         Ok(Some(out)) => out.diagnostics,
         Ok(None) => Vec::new(),
         Err(errors) => errors,
@@ -48,22 +68,23 @@ fn skill_is_current() {
 #[test]
 fn examples_are_true() {
     for entry in CATALOG {
+        let options = example_options(entry.code);
         match entry.example {
             Example::Pair { bad, good } => {
-                let found = diagnostics(bad);
+                let found = diagnostics_for(bad, &options);
                 let diagnostic = found.iter().find(|d| d.code == entry.code);
                 let diagnostic = diagnostic
                     .unwrap_or_else(|| panic!("{}: bad reports it: {found:?}", entry.name));
                 assert_eq!(diagnostic.severity, entry.severity, "{}", entry.name);
                 assert!(
-                    !has(&diagnostics(good), entry.code),
+                    !has(&diagnostics_for(good, &options), entry.code),
                     "{}: good does not report it",
                     entry.name
                 );
             }
             Example::Shows(module) => {
                 assert!(
-                    has(&diagnostics(module), entry.code),
+                    has(&diagnostics_for(module, &options), entry.code),
                     "{}: the example reports it",
                     entry.name
                 );
@@ -94,7 +115,7 @@ fn fixes_repair() {
 fn messages_have_no_placeholders() {
     for entry in CATALOG {
         let (Example::Pair { bad: module, .. } | Example::Shows(module)) = entry.example;
-        for diagnostic in diagnostics(module) {
+        for diagnostic in diagnostics_for(module, &example_options(entry.code)) {
             for text in std::iter::once(&diagnostic.message)
                 .chain(diagnostic.fixes.iter().map(|fix| &fix.title))
             {

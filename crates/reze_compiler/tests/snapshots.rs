@@ -287,8 +287,8 @@ fn hot_snapshot() {
         debug_names: true,
         hot: true,
         links: None,
-        prerender: false,
         profile: None,
+        ..Options::default()
     };
     insta::assert_snapshot!("hot", render(HOT, &options), HOT);
 }

@@ -50,12 +50,6 @@ pub struct IslandPlan {
     uses: HashMap<SymbolId, u32>,
     pruned: HashMap<u32, Span>,
 }
-pub(super) enum CalleeTarget {
-    Split { request: String, export: String },
-    External { request: String, export: String },
-    Local,
-    Opaque,
-}
 enum Decision<'p> {
     Split(&'p ImportUse),
     Warn(&'static str),
@@ -97,39 +91,6 @@ impl IslandPlan {
             return Decision::Warn("sharing its import with other names");
         }
         Decision::Split(entry)
-    }
-    pub(super) fn callee_target(
-        &self,
-        source: &str,
-        symbol: SymbolId,
-        members: &[&str],
-    ) -> CalleeTarget {
-        let Some(entry) = self.imports.get(&symbol) else { return CalleeTarget::Local };
-        let mut path = std::vec::Vec::new();
-        match &entry.base {
-            ImportBase::Named(name) => path.push(name.clone()),
-            ImportBase::Default => path.push(String::from("default")),
-            ImportBase::Namespace => {}
-        }
-        path.extend(members.iter().map(|member| member.to_string()));
-        if path.len() != 1 {
-            return CalleeTarget::Opaque;
-        }
-        let request = &source[entry.request.start as usize..entry.request.end as usize];
-        let target = CalleeTarget::External {
-            request: request[1..request.len() - 1].to_string(),
-            export: path.pop().expect("one segment"),
-        };
-        if entry.exported {
-            return target;
-        }
-        let uses = self.uses.get(&symbol).copied().unwrap_or(0) as usize;
-        if entry.single && uses == entry.total_refs && uses > 0 {
-            let CalleeTarget::External { request, export } = target else { unreachable!() };
-            CalleeTarget::Split { request, export }
-        } else {
-            target
-        }
     }
 }
 

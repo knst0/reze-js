@@ -22,7 +22,7 @@ export default defineConfig({
       }),
       enforce: "pre",
     },
-    reze({ fileRoutes: true, prerender: true, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"] }),
+    reze({ fileRoutes: true, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"] }),
     tailwindcss(),
     llms(),
   ],

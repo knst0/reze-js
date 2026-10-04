@@ -20,13 +20,20 @@ use oxc_span::{GetSpan, SourceType, Span};
 pub use diagnostic::{
     CATALOG, Code, Diagnostic, Edit, Entry, Example, Fix, Label, Position, Severity, render_skill,
 };
-pub use lower::{ComponentRef, PrerenderComponent, PrerenderHole, PrerenderModule, Tree};
 
 use diagnostic::Report;
 use namer::Namer;
 
 /// The module compiled code imports runtime helpers from.
 pub const RUNTIME_MODULE: &str = "reze-js";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CompileTarget {
+    #[default]
+    Client,
+    Hydrate,
+    Html,
+}
 
 pub struct Options {
     /// Emit a v3 source map.
@@ -38,8 +45,10 @@ pub struct Options {
     /// Module exporting `link`: when set, native `<a href>` elements are claimed and passed to
     /// `link(el, href?)`, which keeps their `aria-current`/`data-active`/`data-pending` current.
     pub links: Option<String>,
-    /// Collect static prerender trees alongside codegen.
-    pub prerender: bool,
+    /// Default: `Client`.
+    pub target: CompileTarget,
+    /// Nonempty canonical identity required by `Hydrate` and `Html`.
+    pub module_id: Option<String>,
     /// Profiling record for this file, in the session-tree shape the host stores. The file is
     /// specialized only when the record names this file with a matching schema and source hash;
     /// anything else compiles as without facts.
@@ -99,7 +108,8 @@ impl Default for Options {
             debug_names: false,
             hot: false,
             links: None,
-            prerender: false,
+            target: CompileTarget::Client,
+            module_id: None,
             profile: None,
         }
     }
@@ -111,18 +121,30 @@ pub struct Output {
     pub map: Option<String>,
     /// `warn` and `info` diagnostics.
     pub diagnostics: Vec<Diagnostic>,
-    /// Static prerender trees, when `Options.prerender` is set.
-    pub prerender: Option<PrerenderModule>,
 }
 
 /// Compiles `source`. `Ok(None)` when nothing in the file is rewritten; `Err` holds every
 /// diagnostic when at least one is an `error`. `filename` picks the dialect (unknown extensions
 /// parse as TSX) and names the source in diagnostics, source maps and hot-swap ids.
+/// `Hydrate` and `Html` require a nonempty `Options.module_id`; missing identity reports
+/// `MISSING_MODULE_ID` before parsing.
 pub fn compile(
     source: &str,
     filename: &str,
     options: &Options,
 ) -> Result<Option<Output>, Vec<Diagnostic>> {
+    if matches!(options.target, CompileTarget::Hydrate | CompileTarget::Html)
+        && options.module_id.as_deref().is_none_or(str::is_empty)
+    {
+        let target = match options.target {
+            CompileTarget::Hydrate => "hydrate",
+            CompileTarget::Html => "html",
+            CompileTarget::Client => "client",
+        };
+        let reports =
+            vec![Report::new(Code::MissingModuleId, Span::empty(0)).arg("target", target)];
+        return Err(diagnostic::resolve(reports, source, filename));
+    }
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::tsx());
     let (rewritten, first_pass) = if dsl::mentions_syntax(source) {
         match dsl::rewrite(source, source_type) {
@@ -190,27 +212,12 @@ fn compile_module(
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(diagnostics);
     }
-    let prerender = options
-        .prerender
-        .then(|| {
-            let mut roots = lower::Lowerer::new(
-                &allocator,
-                text,
-                &analysis,
-                lower::Settings { debug_names: false, hot: false, links: options.links.is_some() },
-                Namer::new(&scoping),
-                Vec::new(),
-            );
-            roots.prerender_module(program)
-        })
-        .filter(|module| !module.is_empty());
     let filename = allocator.alloc_str(filename);
     let Some(body) = lowered.body else {
         return Ok(rewritten.map(|rewritten| Output {
             map: options.source_map.then(|| rewritten.code.source_map(filename, source)),
             code: rewritten.code.text,
             diagnostics,
-            prerender,
         }));
     };
     let mut code = emit::Emitter::new(
@@ -240,7 +247,7 @@ fn compile_module(
         code.remap_marks(|offset| rewritten.start(offset));
     }
     let map = options.source_map.then(|| code.source_map(filename, source));
-    Ok(Some(Output { code: code.text, map, diagnostics, prerender }))
+    Ok(Some(Output { code: code.text, map, diagnostics }))
 }
 
 /// Runtime imports go after the hashbang, directives and leading imports.

@@ -1121,8 +1121,6 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "reze_compiler",
- "serde",
- "serde_json",
 ]
 
 [[package]]

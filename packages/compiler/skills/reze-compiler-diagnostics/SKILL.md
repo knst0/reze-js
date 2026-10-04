@@ -715,6 +715,26 @@ import { Counter } from "./Counter";
 export const view = <Counter island="media" islandMedia="(max-width: 40rem)" />;
 ```
 
+## MISSING_MODULE_ID
+
+**Build target without a module id** · severity `error`
+
+> The `{target}` target keys its output by module, but no `moduleId` was passed, so this file was not compiled. Pass the canonical module id for this file.
+
+`data` keys: `target`
+
+Automatic fix: no
+
+`hydrate` and `html` outputs are keyed by module: compiler sites, hydration ranges and payloads all reference the canonical module id the build driver passes. An absent or empty `moduleId` would make those keys unstable, so compilation stops before parsing. The `client` target needs no `moduleId`. `data.target` is the requested target.
+
+**Repair:** Pass `moduleId` alongside `target`, for example `compile(source, filename, { target: "hydrate", moduleId: "src/view.tsx" })`. The id itself is opaque to the compiler: the build driver owns its canonical form.
+
+Example:
+
+```tsx
+export const view = <div />;
+```
+
 ## CHILDREN_PROP_IGNORED
 
 **`children` attribute next to nested children** · severity `warn`
