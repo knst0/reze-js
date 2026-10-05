@@ -1,7 +1,7 @@
 import { $signal, island, Portal } from "reze-js";
 
-import { Counter } from "./Counter";
 import { ClockBody, EagerBody, NeverBody } from "./bodies";
+import { Counter } from "./Counter";
 
 export default function App() {
   let target = $signal<HTMLElement | null>(null);
@@ -24,18 +24,33 @@ export default function App() {
       <button id="release" type="button" onClick={() => (target = null)}>
         release
       </button>
-      {island("eager", () => EagerBody, {}, () => (
-        <p>eager waiting</p>
-      ))}
-      {island("interaction", () => ClockBody, {}, () => (
-        <p id="clock-fallback">clock waiting</p>
-      ))}
+      {island(
+        "eager",
+        () => EagerBody,
+        {},
+        () => (
+          <p>eager waiting</p>
+        ),
+      )}
+      {island(
+        "interaction",
+        () => ClockBody,
+        {},
+        () => (
+          <p id="clock-fallback">clock waiting</p>
+        ),
+      )}
       <Counter island="interaction" step={2} islandFallback={<p id="counter-fallback">counter waiting</p>} />
       {gone ? null : (
         <>
-          {island("interaction", () => NeverBody, {}, () => (
-            <p id="cancel-fallback">cancel waiting</p>
-          ))}
+          {island(
+            "interaction",
+            () => NeverBody,
+            {},
+            () => (
+              <p id="cancel-fallback">cancel waiting</p>
+            ),
+          )}
         </>
       )}
       <button id="cancel" type="button" onClick={() => (gone = true)}>

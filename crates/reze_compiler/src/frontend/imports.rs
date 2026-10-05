@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use oxc_allocator::{Allocator, Box as ArenaBox, Vec as ArenaVec};
 use oxc_ast::{ast::*, builder::AstBuilder};
 use oxc_span::Span;
-use oxc_syntax::symbol::SymbolId;
 use oxc_str::{Ident, Str};
+use oxc_syntax::symbol::SymbolId;
 
 use super::Namer;
 
@@ -21,8 +21,10 @@ pub(crate) fn allows(source: &str, imported: &str) -> bool {
             matches!(source, "reze-js" | "@rezejs/dom")
         }
         "asyncComputed" | "createUniqueId" => matches!(source, "reze-js" | "@rezejs/signals"),
-        "asyncComponent" | "dynamic" | "dynamicElement" | "island" | "Show" | "For" | "Repeat" | "Switch" | "Match"
-        | "Loading" | "Errored" | "Portal" => matches!(source, "reze-js" | "@rezejs/dom"),
+        "asyncComponent" | "dynamic" | "dynamicElement" | "island" | "Show" | "For" | "Repeat"
+        | "Switch" | "Match" | "Loading" | "Errored" | "Portal" => {
+            matches!(source, "reze-js" | "@rezejs/dom")
+        }
         _ => false,
     }
 }
@@ -90,10 +92,7 @@ pub struct SyntaxImports {
 
 impl SyntaxImports {
     pub fn collect(program: &Program<'_>) -> Self {
-        let mut imports = SyntaxImports {
-            dollar: Vec::new(),
-            namespaces: HashMap::new(),
-        };
+        let mut imports = SyntaxImports { dollar: Vec::new(), namespaces: HashMap::new() };
         for statement in &program.body {
             let Statement::ImportDeclaration(import) = statement else { continue };
             if import.import_kind.is_type() {
@@ -139,7 +138,6 @@ pub(crate) struct ImportResult<'a> {
     pub locals: [Option<&'a str>; 3],
 }
 
-
 pub(crate) fn apply<'a>(
     allocator: &'a Allocator,
     program: &mut Program<'a>,
@@ -173,7 +171,9 @@ pub(crate) fn apply<'a>(
                 (
                     index,
                     import.syntax.runtime().to_string(),
-                    kept_local[index].clone().unwrap_or_else(|| import.syntax.runtime().to_string()),
+                    kept_local[index]
+                        .clone()
+                        .unwrap_or_else(|| import.syntax.runtime().to_string()),
                 ),
             );
         }
@@ -321,11 +321,7 @@ pub(crate) fn apply<'a>(
     ImportResult { changed, targets, locals }
 }
 
-fn set_imported<'a>(
-    allocator: &'a Allocator,
-    named: &mut ImportSpecifier<'a>,
-    runtime: &str,
-) {
+fn set_imported<'a>(allocator: &'a Allocator, named: &mut ImportSpecifier<'a>, runtime: &str) {
     let builder = AstBuilder::new(allocator);
     let text: &'a str = allocator.alloc_str(runtime);
     match &mut named.imported {

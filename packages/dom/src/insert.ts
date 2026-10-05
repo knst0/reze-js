@@ -24,7 +24,13 @@ export function append(parent: Node, value: unknown): void {
   insert(parent, value, null);
 }
 
-export function insertExpression(parent: Node, value: unknown, current: InsertionState, marker: Node | null | undefined, unwrap?: boolean): InsertionState {
+export function insertExpression(
+  parent: Node,
+  value: unknown,
+  current: InsertionState,
+  marker: Node | null | undefined,
+  unwrap?: boolean,
+): InsertionState {
   while (typeof current === "function") {
     current = current();
   }

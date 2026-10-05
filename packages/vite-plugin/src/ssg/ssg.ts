@@ -1,16 +1,28 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { version as viteVersion } from "vite";
 
+import { version as viteVersion } from "vite";
 import type { EnvironmentOptions, Plugin } from "vite";
 
 import { createModuleRegistry } from "../module-identity";
 import type { ModuleRegistry } from "../module-identity";
 import type { FileRoutesOptions } from "../routes";
+import {
+  SsgClientId,
+  SsgClientRequest,
+  SsgHtmlAdapterId,
+  SsgRedirectId,
+  SsgViewId,
+  clientBootSource,
+  devBootSource,
+  htmlAdapterSource,
+  redirectModuleSource,
+  viewSource,
+  workerEntrySource,
+} from "./adapter";
+import { createAssetPlugins } from "./asset-plugin";
 import { buildClientRegistry } from "./assets";
 import type { BundleOutput, ClientAssetInputs, ClientRegistry } from "./assets";
-import { createAssetPlugins } from "./asset-plugin";
-import { SsgClientId, SsgClientRequest, SsgHtmlAdapterId, SsgRedirectId, SsgViewId, clientBootSource, devBootSource, htmlAdapterSource, redirectModuleSource, viewSource, workerEntrySource } from "./adapter";
 import { resolveAppMode } from "./export-graph";
 import type { AppMode } from "./export-graph";
 import { resolvePathsCallbacks, resolveSsgOptions } from "./options";
@@ -144,10 +156,27 @@ export function createSsgPlugin(input: SsgOptions, shared: SsgShared, fileRoutes
         async buildApp(builder) {
           await builder.build(builder.environments[HtmlEnv]!);
           await builder.build(builder.environments.client!);
-          if (options === undefined || mode === undefined || state.outputs.length === 0 || state.htmlChunks.length === 0 || state.templateHtml === "") {
+          if (
+            options === undefined ||
+            mode === undefined ||
+            state.outputs.length === 0 ||
+            state.htmlChunks.length === 0 ||
+            state.templateHtml === ""
+          ) {
             throw new Error("[reze] SSG build did not produce both the executable HTML graph and client template");
           }
-          await runSsgBuild({ root, base, outDir, publicDir, options, mode, captured: state, assets, moduleFiles: shared.moduleFiles, modules: shared.registry.ids() });
+          await runSsgBuild({
+            root,
+            base,
+            outDir,
+            publicDir,
+            options,
+            mode,
+            captured: state,
+            assets,
+            moduleFiles: shared.moduleFiles,
+            modules: shared.registry.ids(),
+          });
         },
       };
     },
@@ -284,9 +313,8 @@ function captureOutput(value: unknown): { output: BundleOutput; templateHtml?: s
   if (typeof value.fileName !== "string") return undefined;
   if (value.type === "chunk") {
     if (!("code" in value) || typeof value.code !== "string") return undefined;
-    const metadata = "viteMetadata" in value && typeof value.viteMetadata === "object" && value.viteMetadata !== null
-      ? value.viteMetadata
-      : undefined;
+    const metadata =
+      "viteMetadata" in value && typeof value.viteMetadata === "object" && value.viteMetadata !== null ? value.viteMetadata : undefined;
     const importedCss = metadata !== undefined && "importedCss" in metadata ? readStringSet(metadata.importedCss) : undefined;
     const importedAssets = metadata !== undefined && "importedAssets" in metadata ? readStringSet(metadata.importedAssets) : undefined;
     return {
@@ -321,7 +349,20 @@ function resolveImport(spec: string, importer: string, root: string): string | u
   if (spec === "virtual:reze-routes") return "virtual:reze-routes";
   if (!spec.startsWith("./") && !spec.startsWith("../") && !spec.startsWith("/")) return undefined;
   const basePath = spec.startsWith("/") ? join(root, spec.slice(1)) : join(importer.slice(0, importer.lastIndexOf("/")), spec);
-  for (const candidate of [basePath, `${basePath}.ts`, `${basePath}.tsx`, `${basePath}.js`, `${basePath}.jsx`, `${basePath}.mts`, `${basePath}.cts`, `${basePath}.mjs`, `${basePath}.cjs`, `${basePath}/index.ts`, `${basePath}/index.tsx`, `${basePath}/index.js`]) {
+  for (const candidate of [
+    basePath,
+    `${basePath}.ts`,
+    `${basePath}.tsx`,
+    `${basePath}.js`,
+    `${basePath}.jsx`,
+    `${basePath}.mts`,
+    `${basePath}.cts`,
+    `${basePath}.mjs`,
+    `${basePath}.cjs`,
+    `${basePath}/index.ts`,
+    `${basePath}/index.tsx`,
+    `${basePath}/index.js`,
+  ]) {
     if (existsSync(candidate)) return candidate.replace(/\\/g, "/");
   }
   return undefined;
@@ -358,12 +399,24 @@ function assertPage(url: string, page: RenderResult): void {
     }
     return;
   }
-  if (page.status !== "render" || typeof page.html !== "string" || typeof page.payload !== "string" || !Array.isArray(page.portals)
-    || !Array.isArray(page.modules) || page.modules.some(module => typeof module !== "string")) {
+  if (
+    page.status !== "render" ||
+    typeof page.html !== "string" ||
+    typeof page.payload !== "string" ||
+    !Array.isArray(page.portals) ||
+    !Array.isArray(page.modules) ||
+    page.modules.some((module) => typeof module !== "string")
+  ) {
     throw new Error(`[reze] SSG render of ${JSON.stringify(url)} returned a malformed page`);
   }
   for (const portal of page.portals) {
-    if (typeof portal !== "object" || portal === null || typeof portal.token !== "string" || typeof portal.html !== "string" || typeof portal.placement !== "string") {
+    if (
+      typeof portal !== "object" ||
+      portal === null ||
+      typeof portal.token !== "string" ||
+      typeof portal.html !== "string" ||
+      typeof portal.placement !== "string"
+    ) {
       throw new Error(`[reze] SSG render of ${JSON.stringify(url)} returned a malformed portal`);
     }
   }
@@ -386,17 +439,22 @@ async function runSsgBuild(input: SsgBuildInput): Promise<void> {
     if (adapterChunk === undefined) throw new Error("[reze] HTML bundle produced no adapter chunk");
     const workerFile = join(tempDir, "reze-ssg-worker.mjs");
     writeFileSync(workerFile, workerEntrySource(`./${adapterChunk}`));
-    const discovery = await runWorker<DiscoverResult>(workerFile, "discover", {
-      paths,
-      base: input.base,
-      assets: pageAssetUrls(registry, input.base, "/"),
-      headDefaults,
-      trailingSlash: options.trailingSlash,
-      rootId: options.rootId,
-      buildId,
-      timeoutMs: options.timeoutMs,
-      modules: input.modules,
-    }, options.timeoutMs);
+    const discovery = await runWorker<DiscoverResult>(
+      workerFile,
+      "discover",
+      {
+        paths,
+        base: input.base,
+        assets: pageAssetUrls(registry, input.base, "/"),
+        headDefaults,
+        trailingSlash: options.trailingSlash,
+        rootId: options.rootId,
+        buildId,
+        timeoutMs: options.timeoutMs,
+        modules: input.modules,
+      },
+      options.timeoutMs,
+    );
     assertDiscovery(discovery);
     if (discovery.mode !== mode.kind) {
       throw new Error(`[reze] SSG entry mode changed between analysis (${mode.kind}) and discovery (${discovery.mode})`);
@@ -405,20 +463,27 @@ async function runSsgBuild(input: SsgBuildInput): Promise<void> {
     const canonical = urls.map((url) => canonicalPageUrl(url, options.trailingSlash));
     const planned = planOutputs(canonical);
     checkPublicCollisions(input.publicDir, [...planned.keys()]);
-    const leafByUrl = new Map(canonical.map((url, index) => [url, discovery.mode === "standalone" ? "root" : discovery.urls[index]!.leafId]));
+    const leafByUrl = new Map(
+      canonical.map((url, index) => [url, discovery.mode === "standalone" ? "root" : discovery.urls[index]!.leafId]),
+    );
     const redirects = new Map<string, string>();
     for (const url of canonical) {
-      const page = await runWorker<RenderResult>(workerFile, "render", {
-        pathname: url,
-        base: input.base,
-        leafId: leafByUrl.get(url),
-        rootId: options.rootId,
-        buildId,
-        timeoutMs: options.timeoutMs,
-        assets: pageAssetUrls(registry, input.base, url),
-        headDefaults,
-        modules: input.modules,
-      }, options.timeoutMs).catch((error: Error) => {
+      const page = await runWorker<RenderResult>(
+        workerFile,
+        "render",
+        {
+          pathname: url,
+          base: input.base,
+          leafId: leafByUrl.get(url),
+          rootId: options.rootId,
+          buildId,
+          timeoutMs: options.timeoutMs,
+          assets: pageAssetUrls(registry, input.base, url),
+          headDefaults,
+          modules: input.modules,
+        },
+        options.timeoutMs,
+      ).catch((error: Error) => {
         throw new Error(`[reze] SSG render of ${JSON.stringify(url)} failed: ${error.message}`);
       });
       assertPage(url, page);
@@ -443,7 +508,14 @@ function pageAssetUrls(registry: ClientRegistry, base: string, url: string): Rec
   return out;
 }
 
-function pageHeadAssets(registry: ClientRegistry, base: string, url: string, modules: readonly string[], moduleFiles: ReadonlyMap<string, string>, bootstrapFile: string): { css: string[]; js: string[] } {
+function pageHeadAssets(
+  registry: ClientRegistry,
+  base: string,
+  url: string,
+  modules: readonly string[],
+  moduleFiles: ReadonlyMap<string, string>,
+  bootstrapFile: string,
+): { css: string[]; js: string[] } {
   const depth = pageDepth(url);
   const seeds = new Set<string>();
   for (const module of modules) {
@@ -453,8 +525,8 @@ function pageHeadAssets(registry: ClientRegistry, base: string, url: string, mod
   }
   const closure = registry.staticClosure([...seeds]);
   return {
-    css: closure.css.map(file => joinBase(base, file, depth)),
-    js: closure.js.filter(file => file !== bootstrapFile).map(file => joinBase(base, file, depth)),
+    css: closure.css.map((file) => joinBase(base, file, depth)),
+    js: closure.js.filter((file) => file !== bootstrapFile).map((file) => joinBase(base, file, depth)),
   };
 }
 
@@ -498,37 +570,42 @@ function writePage(
     }
     const assetOrigin = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(input.base) || input.base.startsWith("//");
     const suffix = new URL(to, "https://reze.invalid/");
-    const destination = target === undefined
-      ? to
-      : joinBase(assetOrigin ? "/" : input.base, target.slice(1), pageDepth(url)) + suffix.search + suffix.hash;
-    writeFileSync(outFile, buildRedirectPage({
-      templateHtml: captured.templateHtml,
-      templateFile: captured.templateFile,
-      base: input.base,
-      pathname: url,
-      baseline: headDefaults,
-      canonical: destination,
-      to: destination,
-      replace: page.replace ?? false,
-      rootId: options.rootId,
-      redirectSrc: joinBase(input.base, captured.redirectFile, pageDepth(url)),
-    }));
+    const destination =
+      target === undefined ? to : joinBase(assetOrigin ? "/" : input.base, target.slice(1), pageDepth(url)) + suffix.search + suffix.hash;
+    writeFileSync(
+      outFile,
+      buildRedirectPage({
+        templateHtml: captured.templateHtml,
+        templateFile: captured.templateFile,
+        base: input.base,
+        pathname: url,
+        baseline: headDefaults,
+        canonical: destination,
+        to: destination,
+        replace: page.replace ?? false,
+        rootId: options.rootId,
+        redirectSrc: joinBase(input.base, captured.redirectFile, pageDepth(url)),
+      }),
+    );
     return;
   }
   const bootstrapFile = registry.entryChunk(SsgClientId).fileName;
-  writeFileSync(outFile, buildPage({
-    templateHtml: captured.templateHtml,
-    templateFile: captured.templateFile,
-    baseline: headDefaults,
-    rootId: options.rootId,
-    base: input.base,
-    pathname: url,
-    metadata: page.metadata ?? {},
-    content: page.html ?? "",
-    payload: page.payload ?? "",
-    portals: page.portals ?? [],
-    assets: pageHeadAssets(registry, input.base, url, page.modules!, input.moduleFiles, bootstrapFile),
-  }));
+  writeFileSync(
+    outFile,
+    buildPage({
+      templateHtml: captured.templateHtml,
+      templateFile: captured.templateFile,
+      baseline: headDefaults,
+      rootId: options.rootId,
+      base: input.base,
+      pathname: url,
+      metadata: page.metadata ?? {},
+      content: page.html ?? "",
+      payload: page.payload ?? "",
+      portals: page.portals ?? [],
+      assets: pageHeadAssets(registry, input.base, url, page.modules!, input.moduleFiles, bootstrapFile),
+    }),
+  );
 }
 
 function redirectPageTarget(to: string, base: string, options: ResolvedSsgOptions): string | undefined {

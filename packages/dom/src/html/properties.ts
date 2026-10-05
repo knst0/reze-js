@@ -1,31 +1,11 @@
 import { Properties } from "../../../../crates/reze_compiler/src/html-data.json";
-
-import {
-  type HtmlElement,
-  HtmlRecordError,
-  type HtmlText,
-  attachChild,
-  clearChildren,
-  createText,
-  formatSite,
-} from "./tree";
+import { type HtmlElement, HtmlRecordError, type HtmlText, attachChild, clearChildren, createText, formatSite } from "./tree";
 
 /** Class input mirroring the DOM `className` helper's accepted values. */
-export type HtmlClassValue =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | Record<string, unknown>
-  | ReadonlyArray<HtmlClassValue>;
+export type HtmlClassValue = string | number | boolean | null | undefined | Record<string, unknown> | ReadonlyArray<HtmlClassValue>;
 
 /** Style input mirroring the DOM `style` helper's accepted values. */
-export type HtmlStyleValue =
-  | string
-  | { readonly [property: string]: string | number | null | undefined }
-  | null
-  | undefined;
+export type HtmlStyleValue = string | { readonly [property: string]: string | number | null | undefined } | null | undefined;
 
 const Whitespace = /\s/;
 const WhitespaceRun = /\s+/;
@@ -41,11 +21,7 @@ function isHtml(el: HtmlElement): boolean {
 
 function checkAttributeName(name: string, site?: unknown): void {
   if (!AttributeNamePattern.test(name)) {
-    throw new HtmlRecordError(
-      `Invalid attribute name "${name}"`,
-      formatSite(site),
-      site,
-    );
+    throw new HtmlRecordError(`Invalid attribute name "${name}"`, formatSite(site), site);
   }
 }
 
@@ -67,20 +43,10 @@ function coerceValueText(value: unknown, name: string, site?: unknown): string {
   if (typeof value === "string") {
     return value;
   }
-  if (
-    typeof value === "number" ||
-    typeof value === "bigint" ||
-    typeof value === "boolean" ||
-    value === null ||
-    value === undefined
-  ) {
+  if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean" || value === null || value === undefined) {
     return String(value);
   }
-  throw new HtmlRecordError(
-    `Cannot render ${typeof value} as property "${name}"; pass a scalar value`,
-    formatSite(site),
-    site,
-  );
+  throw new HtmlRecordError(`Cannot render ${typeof value} as property "${name}"; pass a scalar value`, formatSite(site), site);
 }
 
 /**
@@ -117,13 +83,7 @@ export function removeAttribute(el: HtmlElement, name: string): void {
  * Sets a namespaced attribute; `null`, `undefined` and `false` remove it.
  * `name` stays qualified (`xlink:href`).
  */
-export function setAttributeNS(
-  el: HtmlElement,
-  ns: string,
-  name: string,
-  value: unknown,
-  site?: unknown,
-): void {
+export function setAttributeNS(el: HtmlElement, ns: string, name: string, value: unknown, site?: unknown): void {
   checkAttributeName(name, site);
   if (value === null || value === undefined || value === false) {
     el.attributes.delete(name);
@@ -316,11 +276,7 @@ function classTokenSet(el: HtmlElement): Set<string> {
  */
 export function toggleClass(el: HtmlElement, token: string, isOn: unknown, wasOn?: unknown): boolean {
   if (token === "" || Whitespace.test(token)) {
-    throw new HtmlRecordError(
-      `Invalid class token "${token}"; expected a single non-empty token`,
-      formatSite(el.meta.site),
-      el.meta.site,
-    );
+    throw new HtmlRecordError(`Invalid class token "${token}"; expected a single non-empty token`, formatSite(el.meta.site), el.meta.site);
   }
   const on = !!isOn;
   if (on !== !!wasOn) {
@@ -368,14 +324,8 @@ export function setStyle(el: HtmlElement, value: unknown, prev?: unknown, site?:
     return value;
   }
   const input = value as Record<string, string | number | null | undefined>;
-  const last =
-    typeof prev === "object" && prev !== null
-      ? (prev as Record<string, string | number | null | undefined>)
-      : undefined;
-  const properties =
-    last !== undefined && el.styleState.mode === "map"
-      ? new Map(el.styleState.properties)
-      : new Map<string, string>();
+  const last = typeof prev === "object" && prev !== null ? (prev as Record<string, string | number | null | undefined>) : undefined;
+  const properties = last !== undefined && el.styleState.mode === "map" ? new Map(el.styleState.properties) : new Map<string, string>();
   if (last !== undefined) {
     for (const property in last) {
       if (input[property] === null || input[property] === undefined) {
@@ -412,19 +362,10 @@ function coerceTextData(value: unknown, site?: unknown): string {
   if (typeof value === "string") {
     return value;
   }
-  if (
-    typeof value === "number" ||
-    typeof value === "bigint" ||
-    typeof value === "boolean" ||
-    value === undefined
-  ) {
+  if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean" || value === undefined) {
     return String(value);
   }
-  throw new HtmlRecordError(
-    `Cannot render ${typeof value} as text data; pass a string, number, bigint or boolean`,
-    formatSite(site),
-    site,
-  );
+  throw new HtmlRecordError(`Cannot render ${typeof value} as text data; pass a string, number, bigint or boolean`, formatSite(site), site);
 }
 
 /**
@@ -439,21 +380,10 @@ export function normalizeInsertedText(value: unknown, site?: unknown): string | 
   if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
     return String(value);
   }
-  throw new HtmlRecordError(
-    `Cannot render ${typeof value} as inserted text; pass a string, number or bigint`,
-    formatSite(site),
-    site,
-  );
+  throw new HtmlRecordError(`Cannot render ${typeof value} as inserted text; pass a string, number or bigint`, formatSite(site), site);
 }
 
-function assignSpreadProp(
-  el: HtmlElement,
-  name: string,
-  value: unknown,
-  prev: unknown,
-  isSvg: boolean,
-  site?: unknown,
-): void {
+function assignSpreadProp(el: HtmlElement, name: string, value: unknown, prev: unknown, isSvg: boolean, site?: unknown): void {
   if (name === "style") {
     setStyle(el, value, prev, site);
     return;
@@ -488,13 +418,7 @@ function assignSpreadProp(
  * Does not read `children` or `ref`; their evaluation belongs to insertion and
  * client activation. Each spread binding needs its own removal-tracking map.
  */
-export function applySpread(
-  el: HtmlElement,
-  props: unknown,
-  isSvg = el.ns !== "",
-  site?: unknown,
-  previous?: Map<string, unknown>,
-): void {
+export function applySpread(el: HtmlElement, props: unknown, isSvg = el.ns !== "", site?: unknown, previous?: Map<string, unknown>): void {
   const source = (props ?? {}) as Record<string, unknown>;
   const prev = previous ?? el.spreadPrev;
   const seen = new Set<string>();

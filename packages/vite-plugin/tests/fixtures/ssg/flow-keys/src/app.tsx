@@ -1,5 +1,5 @@
-import { $signal, Errored, For, Loading, Match, onCleanup, Show, Switch } from "reze-js";
 import { signal } from "@rezejs/signals";
+import { $signal, Errored, For, Loading, Match, onCleanup, Show, Switch } from "reze-js";
 
 interface Row {
   id: string;
@@ -22,8 +22,6 @@ function KeyedRow(props: { row: () => Row; index: () => number }) {
   );
 }
 
-
-
 async function Deferred() {
   await Promise.resolve("deferred body");
   return <p id="deferred">deferred settled</p>;
@@ -31,7 +29,7 @@ async function Deferred() {
 
 async function Fallible(props: { fail: boolean }) {
   const fail = props.fail;
-  const text = await Promise.resolve(fail).then(fail => {
+  const text = await Promise.resolve(fail).then((fail) => {
     if (fail) throw new Error("flow failed");
     return "steady";
   });

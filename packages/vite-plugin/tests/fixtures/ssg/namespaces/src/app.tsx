@@ -1,11 +1,21 @@
 import { $signal } from "reze-js";
 
 function Cells(props: { value: string }) {
-  return <><td>a1</td><td>{props.value}</td></>;
+  return (
+    <>
+      <td>a1</td>
+      <td>{props.value}</td>
+    </>
+  );
 }
 
 function Options() {
-  return <><option value="a">a</option><option value="b">b</option></>;
+  return (
+    <>
+      <option value="a">a</option>
+      <option value="b">b</option>
+    </>
+  );
 }
 
 export default function App() {
@@ -36,10 +46,7 @@ export default function App() {
         <mo>+</mo>
         <mn>1</mn>
       </math>
-      <p id="adjacent">
-        one{" "}
-        {note === "" ? null : "two"}
-      </p>
+      <p id="adjacent">one {note === "" ? null : "two"}</p>
       <p id="empty-dynamic">{note === "never" ? "something" : ""}</p>
       <div id="opaque" innerHTML={raw} />
       <button id="raw" type="button" onClick={() => (raw = "<i>swapped</i>")}>

@@ -47,12 +47,12 @@ export interface RouteRedirect {
 }
 
 export interface RouteConfig<D = unknown> {
-   /**
-    * Starts the route's data; the return value is the component's `data`. Runs with intent `"preload"` when a link to the
-    * route is hovered, focused or touched, and again with `"navigate"` when it is entered, so cache fetches that should not repeat.
+  /**
+   * Starts the route's data; the return value is the component's `data`. Runs with intent `"preload"` when a link to the
+   * route is hovered, focused or touched, and again with `"navigate"` when it is entered, so cache fetches that should not repeat.
    * May return a promise-like; navigations await it and deliver the settled value, never the promise.
-    */
-   preload?: (args: PreloadArgs<any>) => D;
+   */
+  preload?: (args: PreloadArgs<any>) => D;
   /**
    * Page metadata, merged root-to-leaf with the last defined field winning. A function receives the route's settled
    * preload data; navigations await it. Hover warming never runs it.
@@ -63,8 +63,8 @@ export interface RouteConfig<D = unknown> {
    * preload data; navigations await it and follow the first defined result root-to-leaf. Hover warming never runs it.
    */
   redirect?: RouteRedirect | ((args: RouteResolvedArgs<any, D>) => Awaitable<RouteRedirect | undefined>);
-   info?: Readonly<Record<string, unknown>>;
- }
+  info?: Readonly<Record<string, unknown>>;
+}
 
 export interface RouteModule {
   default?: RouteComponent<any, any>;

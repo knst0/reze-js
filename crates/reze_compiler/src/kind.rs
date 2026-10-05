@@ -7,4 +7,3 @@ pub enum Kind {
 
 pub(crate) const STRING_METHODS: [&str; 7] =
     ["toString", "toFixed", "join", "toUpperCase", "toLowerCase", "trim", "padStart"];
-

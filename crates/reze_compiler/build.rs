@@ -24,8 +24,12 @@ fn main() {
         writeln!(code, "pub fn {function}(name: &str) -> bool {{ matches!(name, {names}) }}")
             .unwrap();
     }
-    code.push_str("pub fn attribute_namespace(prefix: &str) -> Option<&'static str> { match prefix {\n");
-    for (prefix, namespace) in tables["AttributeNamespaces"].as_object().expect("AttributeNamespaces") {
+    code.push_str(
+        "pub fn attribute_namespace(prefix: &str) -> Option<&'static str> { match prefix {\n",
+    );
+    for (prefix, namespace) in
+        tables["AttributeNamespaces"].as_object().expect("AttributeNamespaces")
+    {
         writeln!(code, "{prefix:?} => Some({:?}),", namespace.as_str().expect("namespace URI"))
             .unwrap();
     }
@@ -33,7 +37,10 @@ fn main() {
     code.push_str("fn escape_html_byte(byte: u8, attribute: bool) -> Option<&'static str> { match (byte, attribute) {\n");
     for (table, attribute) in [("TextEscapes", false), ("AttributeEscapes", true)] {
         for (character, escaped) in tables[table].as_object().expect(table) {
-            assert!(character.len() == 1 && character.is_ascii(), "HTML escape must be one ASCII byte");
+            assert!(
+                character.len() == 1 && character.is_ascii(),
+                "HTML escape must be one ASCII byte"
+            );
             writeln!(
                 code,
                 "({}, {attribute}) => Some({:?}),",

@@ -96,28 +96,31 @@ pub fn normalize<'a>(
         props_plan = props::collect(program, &scoping, &nodes, &mut reports);
         async_plan = async_component::collect(program, &scoping, &nodes, &mut async_reports);
         selector_plan = selector::collect(program, &scoping, &nodes, &pre, &mut reports);
-        if syntax.dollar.is_empty() && syntax.namespaces.is_empty()
-            && props_plan.is_empty() && async_plan.is_empty() && selector_plan.is_empty()
+        if syntax.dollar.is_empty()
+            && syntax.namespaces.is_empty()
+            && props_plan.is_empty()
+            && async_plan.is_empty()
+            && selector_plan.is_empty()
         {
             reports.extend(async_reports);
             dsl::scan(program, &scoping, &pre, source, &mut reports);
             let facts = analysis::collect(program, &scoping, &nodes, &mut reports);
             drop(nodes);
             return FrontendOutput {
-                program, scoping, facts, reports, namer, helpers, content_changed: false,
+                program,
+                scoping,
+                facts,
+                reports,
+                namer,
+                helpers,
+                content_changed: false,
             };
         }
         first_scoping = scoping;
     }
     let outcome = imports::apply(allocator, program, &syntax, &mut namer);
     let mut content_changed = outcome.changed;
-    let props_changed = props::apply(
-        allocator,
-        program,
-        props_plan,
-        &mut namer,
-        &mut helpers,
-    );
+    let props_changed = props::apply(allocator, program, props_plan, &mut namer, &mut helpers);
     content_changed |= props_changed;
     let normalized =
         dsl::normalize_ast(allocator, program, &first_scoping, &syntax, &pre, &outcome, source);
@@ -130,33 +133,14 @@ pub fn normalize<'a>(
         async_plan = async_component::collect(program, &scoping, &nodes, &mut async_reports);
     }
     reports.extend(async_reports);
-    content_changed |= async_component::apply(
-        allocator,
-        program,
-        async_plan,
-        &mut namer,
-        &mut helpers,
-    );
-    content_changed |= selector::apply(
-        allocator,
-        program,
-        selector_plan,
-        &mut namer,
-        &mut helpers,
-        &mut reports,
-    );
+    content_changed |=
+        async_component::apply(allocator, program, async_plan, &mut namer, &mut helpers);
+    content_changed |=
+        selector::apply(allocator, program, selector_plan, &mut namer, &mut helpers, &mut reports);
     content_changed |= helpers.install(allocator, program);
     let second = SemanticBuilder::new().with_build_nodes(true).build(&*program);
     let (scoping, nodes) = second.semantic.into_scoping_and_nodes();
     dsl::scan(program, &scoping, &pre, source, &mut reports);
     let facts = analysis::collect(program, &scoping, &nodes, &mut reports);
-    FrontendOutput {
-        program,
-        scoping,
-        facts,
-        reports,
-        namer,
-        helpers,
-        content_changed,
-    }
+    FrontendOutput { program, scoping, facts, reports, namer, helpers, content_changed }
 }

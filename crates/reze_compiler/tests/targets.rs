@@ -5,7 +5,8 @@ fn nonclient_targets_require_identity_even_without_transformable_source() {
     for (target, name) in [(CompileTarget::Hydrate, "hydrate"), (CompileTarget::Html, "html")] {
         for module_id in [None, Some(String::new())] {
             for source in ["const value = 1;", "const view = <div />;", "const ="] {
-                let options = Options { target, module_id: module_id.clone(), ..Options::default() };
+                let options =
+                    Options { target, module_id: module_id.clone(), ..Options::default() };
                 let errors = compile(source, "test.tsx", &options).err().expect("missing identity");
                 assert_eq!(errors.len(), 1);
                 let error = &errors[0];
@@ -18,4 +19,3 @@ fn nonclient_targets_require_identity_even_without_transformable_source() {
         }
     }
 }
-

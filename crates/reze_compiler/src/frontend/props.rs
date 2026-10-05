@@ -13,12 +13,12 @@ use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 
+use super::Namer;
 use super::imports::{allows, home_of};
 use super::props_shape::{has_unnameable_type_read, is_literal_default, props_plan};
 use super::pure::{
     has_jsx, is_component_name, is_declared_component, merge_property_is_static, static_property,
 };
-use super::Namer;
 use crate::diagnostic::{Code, Report};
 use crate::imports::HelperImports;
 
@@ -52,9 +52,10 @@ struct ComponentPlan {
 impl ComponentPlan {
     fn needs_entry(&self) -> bool {
         self.rest.is_some()
-            || self.defaults.iter().any(|default| {
-                matches!(default.kind, DefaultKind::Hoisted { .. })
-            })
+            || self
+                .defaults
+                .iter()
+                .any(|default| matches!(default.kind, DefaultKind::Hoisted { .. }))
     }
 }
 
@@ -226,10 +227,7 @@ impl Collector<'_, '_, '_> {
                             } else {
                                 DefaultKind::Hoisted { base }
                             };
-                            defaults.push(DefaultEntry {
-                                span: value.span(),
-                                kind,
-                            });
+                            defaults.push(DefaultEntry { span: value.span(), kind });
                             ReadDefault::Index(index)
                         }
                     };
@@ -237,12 +235,7 @@ impl Collector<'_, '_, '_> {
                         let in_value = self.scoping.get_reference(reference).flags().is_value();
                         self.plan.reads.insert(
                             reference,
-                            ReadPlan {
-                                param,
-                                path: binding.path.clone(),
-                                default,
-                                in_value,
-                            },
+                            ReadPlan { param, path: binding.path.clone(), default, in_value },
                         );
                     }
                 }
@@ -282,7 +275,12 @@ impl<'a> Visit<'a> for Collector<'_, '_, '_> {
                         && let Some(body) = &function.body
                         && has_jsx(|check| check.visit_function_body(body)) =>
                 {
-                    self.component(id.name.as_str(), &function.params, Some(body), function.generator);
+                    self.component(
+                        id.name.as_str(),
+                        &function.params,
+                        Some(body),
+                        function.generator,
+                    );
                 }
                 _ => {}
             }
@@ -324,7 +322,11 @@ impl<'a> Visit<'a> for Collector<'_, '_, '_> {
     }
 }
 
-fn method_of(scoping: &Scoping, symbols: &[SymbolId], callee: &Expression<'_>) -> Option<PropsMethod> {
+fn method_of(
+    scoping: &Scoping,
+    symbols: &[SymbolId],
+    callee: &Expression<'_>,
+) -> Option<PropsMethod> {
     let Expression::StaticMemberExpression(member) = callee.without_parentheses() else {
         return None;
     };
@@ -405,15 +407,15 @@ fn omit_shape(call: &CallExpression<'_>) -> Option<Vec<String>> {
     Some(keys)
 }
 
-
 fn lit_shape(value: &Expression<'_>) -> Option<LitShape> {
     match value.without_parentheses() {
         Expression::BooleanLiteral(literal) => Some(LitShape::Bool(literal.value)),
         Expression::NullLiteral(_) => Some(LitShape::Null),
         Expression::NumericLiteral(literal) => Some(LitShape::Num(literal.value)),
-        Expression::BigIntLiteral(literal) => {
-            Some(LitShape::BigInt { digits: literal.value.as_str().to_string(), base: literal.base })
-        }
+        Expression::BigIntLiteral(literal) => Some(LitShape::BigInt {
+            digits: literal.value.as_str().to_string(),
+            base: literal.base,
+        }),
         Expression::StringLiteral(literal) => {
             Some(LitShape::Text(literal.value.as_str().to_string()))
         }
@@ -442,7 +444,10 @@ fn lit_shape(value: &Expression<'_>) -> Option<LitShape> {
             if binary.operator != BinaryOperator::Addition {
                 return None;
             }
-            Some(LitShape::Add(Box::new(lit_shape(&binary.left)?), Box::new(lit_shape(&binary.right)?)))
+            Some(LitShape::Add(
+                Box::new(lit_shape(&binary.left)?),
+                Box::new(lit_shape(&binary.right)?),
+            ))
         }
         _ => None,
     }
@@ -478,7 +483,8 @@ impl<'a> Rewrite<'_, '_, 'a> {
         let Some(first) = params.items.first() else { return };
         let key = first.pattern.span().start;
         let plan: &Plan = self.plan;
-        let Some(component) = plan.components.iter().find(|component| component.param == key).cloned()
+        let Some(component) =
+            plan.components.iter().find(|component| component.param == key).cloned()
         else {
             return;
         };
@@ -517,8 +523,7 @@ impl<'a> Rewrite<'_, '_, 'a> {
                 match rest.unbox().argument {
                     BindingPattern::BindingIdentifier(id) => Some(id),
                     argument => {
-                        object.rest =
-                            Some(BindingRestElement::boxed(span, argument, &builder));
+                        object.rest = Some(BindingRestElement::boxed(span, argument, &builder));
                         return None;
                     }
                 }
@@ -608,9 +613,7 @@ impl<'a> Rewrite<'_, '_, 'a> {
         let plan: &Plan = self.plan;
         let Some(found) = plan.calls.iter().find(|call| call.call == key) else { return };
         let (method, dissolved, callee) = (found.method, found.dissolved, found.callee);
-        if dissolved
-            && let Some(replacement) = dissolve(self.alloc, call, method)
-        {
+        if dissolved && let Some(replacement) = dissolve(self.alloc, call, method) {
             *it = replacement;
             self.changed = true;
             return;
@@ -722,7 +725,9 @@ impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
     }
 }
 
-fn arrow_of<'a, 'b>(expr: &'a mut Expression<'b>) -> Option<&'a mut ArenaBox<'b, ArrowFunctionExpression<'b>>> {
+fn arrow_of<'a, 'b>(
+    expr: &'a mut Expression<'b>,
+) -> Option<&'a mut ArenaBox<'b, ArrowFunctionExpression<'b>>> {
     match expr {
         Expression::ParenthesizedExpression(inner) => arrow_of(&mut inner.expression),
         Expression::ArrowFunctionExpression(arrow) => Some(arrow),
@@ -768,7 +773,11 @@ fn take_defaults<'a>(
     }
 }
 
-fn dissolve<'a>(alloc: &'a Allocator, call: &mut CallExpression<'a>, method: PropsMethod) -> Option<Expression<'a>> {
+fn dissolve<'a>(
+    alloc: &'a Allocator,
+    call: &mut CallExpression<'a>,
+    method: PropsMethod,
+) -> Option<Expression<'a>> {
     match method {
         PropsMethod::Merge => dissolve_merge(alloc, call),
         PropsMethod::Split => dissolve_split(alloc, call),
@@ -776,7 +785,10 @@ fn dissolve<'a>(alloc: &'a Allocator, call: &mut CallExpression<'a>, method: Pro
     }
 }
 
-fn dissolve_merge<'a>(alloc: &'a Allocator, call: &mut CallExpression<'a>) -> Option<Expression<'a>> {
+fn dissolve_merge<'a>(
+    alloc: &'a Allocator,
+    call: &mut CallExpression<'a>,
+) -> Option<Expression<'a>> {
     if !merge_ok(call) {
         return None;
     }
@@ -793,7 +805,10 @@ fn dissolve_merge<'a>(alloc: &'a Allocator, call: &mut CallExpression<'a>) -> Op
     Some(object_expr(alloc, span, props))
 }
 
-fn dissolve_split<'a>(alloc: &'a Allocator, call: &mut CallExpression<'a>) -> Option<Expression<'a>> {
+fn dissolve_split<'a>(
+    alloc: &'a Allocator,
+    call: &mut CallExpression<'a>,
+) -> Option<Expression<'a>> {
     let groups = split_shape(call)?;
     let span = call.span;
     let first = call.arguments.iter_mut().next()?.as_expression_mut()?;
@@ -821,7 +836,10 @@ fn dissolve_split<'a>(alloc: &'a Allocator, call: &mut CallExpression<'a>) -> Op
     Some(array_expr(alloc, span, elements))
 }
 
-fn dissolve_omit<'a>(alloc: &'a Allocator, call: &mut CallExpression<'a>) -> Option<Expression<'a>> {
+fn dissolve_omit<'a>(
+    alloc: &'a Allocator,
+    call: &mut CallExpression<'a>,
+) -> Option<Expression<'a>> {
     let omitted = omit_shape(call)?;
     let span = call.span;
     let first = call.arguments.iter_mut().next()?.as_expression_mut()?;
@@ -839,7 +857,11 @@ fn dissolve_omit<'a>(alloc: &'a Allocator, call: &mut CallExpression<'a>) -> Opt
     Some(object_expr(alloc, span, kept))
 }
 
-fn prepend<'a>(alloc: &'a Allocator, body: &mut FunctionBody<'a>, entries: ArenaVec<'a, Statement<'a>>) {
+fn prepend<'a>(
+    alloc: &'a Allocator,
+    body: &mut FunctionBody<'a>,
+    entries: ArenaVec<'a, Statement<'a>>,
+) {
     if entries.is_empty() {
         return;
     }
@@ -990,8 +1012,11 @@ fn conditional<'a>(
 fn qualified<'a>(alloc: &'a Allocator, props: &str, path: &[String]) -> Option<TSTypeName<'a>> {
     let builder = AstBuilder::new(alloc);
     let props_text: &'a str = alloc.alloc_str(props);
-    let mut name =
-        TSTypeName::IdentifierReference(IdentifierReference::boxed(SPAN, Ident::from(props_text), &builder));
+    let mut name = TSTypeName::IdentifierReference(IdentifierReference::boxed(
+        SPAN,
+        Ident::from(props_text),
+        &builder,
+    ));
     for key in path {
         if !is_identifier_name(key) {
             return None;
@@ -1033,12 +1058,7 @@ fn build_literal<'a>(alloc: &'a Allocator, span: Span, shape: &LitShape) -> Expr
             quasis.push(TemplateElement::new_with_lone_surrogates(
                 *quasi, value, true, *lone, &builder,
             ));
-            Expression::new_template_literal(
-                span,
-                quasis,
-                ArenaVec::new_in(&builder),
-                &builder,
-            )
+            Expression::new_template_literal(span, quasis, ArenaVec::new_in(&builder), &builder)
         }
         LitShape::Add(left, right) => Expression::new_binary_expression(
             span,

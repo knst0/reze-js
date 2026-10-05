@@ -37,7 +37,6 @@ fn only(source: &str, code: Code) -> Diagnostic {
     found.into_iter().next().unwrap()
 }
 
-
 fn module(body: &str) -> String {
     format!("import {{ $action }} from \"reze-js\";\n{body}")
 }

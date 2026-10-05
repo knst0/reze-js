@@ -1,7 +1,6 @@
 import { renderEffect } from "@rezejs/signals/render";
 
 import { DelegatedEvents, Properties } from "../../../crates/reze_compiler/src/html-data.json";
-
 import { setAttribute, setBoolAttribute } from "./attributes";
 import { className, type ClassValue } from "./class-name";
 import { addEventListener, delegateEvents } from "./events";

@@ -226,11 +226,7 @@ function writeSettlement(record: ResourceRecord, snapshot: ResourceSnapshot): vo
   }
 }
 
-export function beforeResourceSettle(
-  record: ResourceRecord,
-  generation: number,
-  snapshot: ResourceSnapshot,
-): boolean {
+export function beforeResourceSettle(record: ResourceRecord, generation: number, snapshot: ResourceSnapshot): boolean {
   const node = record.node as ManagedResourceNode;
   if (generation !== node.generation || record.scope?.disposed === true) {
     releasePending(record, generation);
@@ -329,12 +325,7 @@ export function controlResource(node: object): ResourceController | undefined {
   };
 }
 
-export function withResourceSite<T, A extends unknown[]>(
-  site: SourceSite,
-  factory: (...args: A) => T,
-  receiver: unknown,
-  ...args: A
-): T {
+export function withResourceSite<T, A extends unknown[]>(site: SourceSite, factory: (...args: A) => T, receiver: unknown, ...args: A): T {
   if (!(__REZE_HTML__ || __REZE_HYDRATE__)) {
     return (factory as (this: unknown, ...args: A) => T).apply(receiver, args);
   }
@@ -349,9 +340,7 @@ export function withResourceSite<T, A extends unknown[]>(
     }
   }
   try {
-    return withModuleScope(site.module, () =>
-      (factory as (this: unknown, ...args: A) => T).apply(receiver, args),
-    );
+    return withModuleScope(site.module, () => (factory as (this: unknown, ...args: A) => T).apply(receiver, args));
   } finally {
     pendingSite = prevSite;
   }

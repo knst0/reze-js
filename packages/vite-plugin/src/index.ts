@@ -8,9 +8,9 @@ import type { Environment, Plugin } from "vite";
 import { canonicalModuleId } from "./module-identity";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
 import { SsgClientId, SsgHtmlAdapterId, SsgRedirectId, SsgViewId } from "./ssg/adapter";
+import type { SsgOptions } from "./ssg/options";
 import { HtmlEnv, createSsgPlugin, createSsgShared } from "./ssg/ssg";
 import type { SsgShared } from "./ssg/ssg";
-import type { SsgOptions } from "./ssg/options";
 export interface Options {
   diagnostics?: {
     /** File every diagnostic, `info` included, is appended to as one JSON line. */
@@ -262,9 +262,8 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
       const profile = profileDir === undefined ? undefined : readProfileFacts(resolve(root, profileDir), file, code);
       if (profileDir !== undefined) profileHashes.set(file, profileHash(code));
       const envName = this.environment.name;
-      const ssgTarget = shared.enabled && shared.root !== ""
-        ? (envName === HtmlEnv ? "html" : (shared.isServe ? undefined : "hydrate"))
-        : undefined;
+      const ssgTarget =
+        shared.enabled && shared.root !== "" ? (envName === HtmlEnv ? "html" : shared.isServe ? undefined : "hydrate") : undefined;
       const moduleId = ssgTarget === undefined ? undefined : canonicalModuleId(id, shared.root);
       if (moduleId !== undefined) {
         shared.registry.register(moduleId, code);
@@ -340,9 +339,7 @@ export default function reze(options: Options & { ssg: SsgOptions; fileRoutes: t
 export default function reze(options: Options = {}): Plugin<RezeApi> | Plugin[] | Promise<Plugin[]> {
   const shared = createSsgShared();
   const plugin = rezePlugin(options, shared);
-  const ssg = options.ssg === undefined
-    ? []
-    : createSsgPlugin(options.ssg, shared, options.fileRoutes === true ? {} : options.fileRoutes);
+  const ssg = options.ssg === undefined ? [] : createSsgPlugin(options.ssg, shared, options.fileRoutes === true ? {} : options.fileRoutes);
   if (options.fileRoutes === undefined || options.fileRoutes === false) {
     return options.ssg === undefined ? plugin : [plugin, ...ssg];
   }
@@ -350,7 +347,6 @@ export default function reze(options: Options = {}): Plugin<RezeApi> | Plugin[] 
   return routesPlugins(plugin, routesOptions, options.extensions).then((plugins) => [...ssg, ...plugins]);
 }
 
-// Optional peer: a static import would make every user install @rezejs/router.
 async function loadRouterFs(): Promise<FileRoutesApi> {
   try {
     return await import("@rezejs/router/fs");

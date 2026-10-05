@@ -1,7 +1,7 @@
 use oxc_allocator::{ArenaVec, TakeIn};
 use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, VisitMut, walk_mut};
-use oxc_span::{Span, SPAN};
+use oxc_span::{SPAN, Span};
 use oxc_syntax::scope::ScopeFlags;
 
 use super::EmitContext;
@@ -9,7 +9,9 @@ use crate::CompileTarget;
 use crate::ast::Ast;
 
 pub fn prepare<'a>(ctx: &mut EmitContext<'a, '_>, call: &mut CallExpression<'a>) {
-    let Some(Argument::ArrowFunctionExpression(loader)) = call.arguments.first_mut() else { return };
+    let Some(Argument::ArrowFunctionExpression(loader)) = call.arguments.first_mut() else {
+        return;
+    };
     if !loader.r#async || loader.span != SPAN {
         return;
     }
@@ -34,7 +36,10 @@ pub fn prepare_action<'a>(ctx: &mut EmitContext<'a, '_>, call: &mut CallExpressi
         }
         _ => return,
     };
-    let Some(parameter) = parameters.items.first().filter(|parameter| parameter.span == SPAN) else { return };
+    let Some(parameter) = parameters.items.first().filter(|parameter| parameter.span == SPAN)
+    else {
+        return;
+    };
     let BindingPattern::BindingIdentifier(binding) = &parameter.pattern else { return };
     let action_run = ctx.intern(binding.name.as_str());
     prepare_body(ctx, body, origin, Some(action_run));
@@ -75,20 +80,20 @@ fn prepare_body<'a>(
         )),
         BlockStatement::boxed(
             SPAN,
-            ArenaVec::from_array_in([
-                Statement::new_throw_statement(
-                    SPAN, reject(ctx, run, error), &ast.builder,
-                ),
-            ], &ast.builder),
+            ArenaVec::from_array_in(
+                [Statement::new_throw_statement(SPAN, reject(ctx, run, error), &ast.builder)],
+                &ast.builder,
+            ),
             &ast.builder,
         ),
         &ast.builder,
     );
     let finalizer = BlockStatement::boxed(
         SPAN,
-        ArenaVec::from_array_in([
-            ast.stmt(ast.call(ast.member(ast.ident(run), "end"), [])),
-        ], &ast.builder),
+        ArenaVec::from_array_in(
+            [ast.stmt(ast.call(ast.member(ast.ident(run), "end"), []))],
+            &ast.builder,
+        ),
         &ast.builder,
     );
     body.statements.push(ast.declaration(VariableDeclarationKind::Const, run, Some(start)));
@@ -161,10 +166,20 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
             Some(pattern) => {
                 let body = clause.body.body.take_in(&self.ctx.allocator);
                 clause.body.body.push(Statement::new_block_statement(SPAN, body, &ast.builder));
-                let declaration = VariableDeclarator::new(SPAN, pattern, None, Some(rejected), false, &ast.builder);
+                let declaration = VariableDeclarator::new(
+                    SPAN,
+                    pattern,
+                    None,
+                    Some(rejected),
+                    false,
+                    &ast.builder,
+                );
                 Statement::new_variable_declaration(
-                    SPAN, VariableDeclarationKind::Let,
-                    ArenaVec::from_array_in([declaration], &ast.builder), false, &ast.builder,
+                    SPAN,
+                    VariableDeclarationKind::Let,
+                    ArenaVec::from_array_in([declaration], &ast.builder),
+                    false,
+                    &ast.builder,
                 )
             }
             None if binds_error && self.ctx.options.target == CompileTarget::Hydrate => {
@@ -190,14 +205,23 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
                 statement.handler = Some(CatchClause::boxed(
                     SPAN,
                     Some(CatchParameter::new(
-                        SPAN, BindingPattern::new_binding_identifier(SPAN, error, &ast.builder),
-                        None, &ast.builder,
+                        SPAN,
+                        BindingPattern::new_binding_identifier(SPAN, error, &ast.builder),
+                        None,
+                        &ast.builder,
                     )),
-                    BlockStatement::boxed(SPAN, ArenaVec::from_array_in([
-                        Statement::new_throw_statement(
-                            SPAN, reject(self.ctx, self.run, error), &ast.builder,
+                    BlockStatement::boxed(
+                        SPAN,
+                        ArenaVec::from_array_in(
+                            [Statement::new_throw_statement(
+                                SPAN,
+                                reject(self.ctx, self.run, error),
+                                &ast.builder,
+                            )],
+                            &ast.builder,
                         ),
-                    ], &ast.builder), &ast.builder),
+                        &ast.builder,
+                    ),
                     &ast.builder,
                 ));
             }
@@ -228,11 +252,20 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
             for index in nested_start..self.replay_sites.len() {
                 let span = self.replay_sites[index];
                 let site = self.ctx.origin_site(span);
-                let expected = self.ctx.call("reze-js/internal/hydrate", "willReplayAwait", [ast.ident(self.run), site]);
+                let expected = self.ctx.call(
+                    "reze-js/internal/hydrate",
+                    "willReplayAwait",
+                    [ast.ident(self.run), site],
+                );
                 let site = self.ctx.origin_site(span);
-                let operand = self.ctx.call("reze-js/internal/hydrate", "replayAwaitOperand", [ast.ident(self.run), site]);
+                let operand = self.ctx.call(
+                    "reze-js/internal/hydrate",
+                    "replayAwaitOperand",
+                    [ast.ident(self.run), site],
+                );
                 let site = self.ctx.origin_site(span);
-                let mut suspended = ast.call(ast.member(ast.ident(self.run), "suspend"), [operand, site]);
+                let mut suspended =
+                    ast.call(ast.member(ast.ident(self.run), "suspend"), [operand, site]);
                 if let Some(action_run) = self.action_run {
                     suspended = ast.call(ast.member(ast.ident(action_run), "suspend"), [suspended]);
                 }
@@ -244,7 +277,11 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
                 replayed.push(ast.conditional(expected, resumed, ast.undefined()));
             }
             let site = self.ctx.origin_site(awaited.span);
-            let operand = self.ctx.call("reze-js/internal/hydrate", "replayAwaitOperand", [ast.ident(self.run), site]);
+            let operand = self.ctx.call(
+                "reze-js/internal/hydrate",
+                "replayAwaitOperand",
+                [ast.ident(self.run), site],
+            );
             let replayed = if replayed.is_empty() {
                 operand
             } else {
@@ -252,16 +289,18 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
                 Expression::new_sequence_expression(SPAN, replayed, &ast.builder)
             };
             self.replay_sites.push(awaited.span);
-            value = ast.conditional(
-                ast.member(ast.ident(self.run), "replaying"),
-                replayed,
-                value,
-            );
+            value = ast.conditional(ast.member(ast.ident(self.run), "replaying"), replayed, value);
         } else if self.ctx.options.target == CompileTarget::Html {
             let site = self.ctx.origin_site(awaited.span);
-            let begin = self.ctx.call("reze-js/internal/html", "beginAwaitOperand", [ast.ident(self.run), site]);
+            let begin = self.ctx.call(
+                "reze-js/internal/html",
+                "beginAwaitOperand",
+                [ast.ident(self.run), site],
+            );
             value = Expression::new_sequence_expression(
-                SPAN, ArenaVec::from_array_in([begin, value], &ast.builder), &ast.builder,
+                SPAN,
+                ArenaVec::from_array_in([begin, value], &ast.builder),
+                &ast.builder,
             );
         }
         let suspend = ast.member(ast.ident(self.run), "suspend");

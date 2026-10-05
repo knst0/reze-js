@@ -11,11 +11,11 @@ use oxc_syntax::operator::{BinaryOperator, UnaryOperator};
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
 
+use super::Namer;
 use super::analysis::{AsyncFacts, exported_symbols};
 use super::dsl::PreScan;
 use super::imports::{Syntax, allows, home_of};
 use super::pure::{is_foldable_signal_shape, is_meaningful};
-use super::Namer;
 use crate::diagnostic::{Code, Report};
 use crate::imports::HelperImports;
 
@@ -218,7 +218,11 @@ impl<'a> VisitMut<'a> for Pass<'_, '_, 'a> {
     }
 }
 
-fn rewrite_row<'x, 'r, 'a>(pass: &mut Pass<'x, '_, 'a>, el: &mut JSXElement<'a>, entry: &'r ForPlan) {
+fn rewrite_row<'x, 'r, 'a>(
+    pass: &mut Pass<'x, '_, 'a>,
+    el: &mut JSXElement<'a>,
+    entry: &'r ForPlan,
+) {
     let Some(body) = row_body(el) else { return };
     let mut row = Row {
         alloc: pass.alloc,
@@ -338,12 +342,12 @@ fn rewrite_comparison<'x, 'p, 'a>(
         &builder,
     );
     if negated {
-        lookup = Expression::new_unary_expression(span, UnaryOperator::LogicalNot, lookup, &builder);
+        lookup =
+            Expression::new_unary_expression(span, UnaryOperator::LogicalNot, lookup, &builder);
     }
     *it = lookup;
-    row.reports.push(
-        Report::new(Code::AutoSelector, span).arg("signal", comparison.source_name.as_str()),
-    );
+    row.reports
+        .push(Report::new(Code::AutoSelector, span).arg("signal", comparison.source_name.as_str()));
     *row.changed = true;
     true
 }
@@ -405,13 +409,15 @@ impl<'a> VisitMut<'a> for Wrap<'_, 'a> {
         let JSXChild::Element(element) = child else { return };
         let span = element.span;
         let Some(uses) = self.sels.get(&(span.start, span.end)) else { return };
-        if uses.is_empty() { return; }
+        if uses.is_empty() {
+            return;
+        }
         let JSXChild::Element(element) = child.take_in(&self.alloc) else { unreachable!() };
-        let expression = iife(
-            self.alloc, self.helper, Expression::JSXElement(element), uses,
-        );
+        let expression = iife(self.alloc, self.helper, Expression::JSXElement(element), uses);
         *child = JSXChild::new_expression_container(
-            span, JSXExpression::from(expression), &AstBuilder::new(self.alloc),
+            span,
+            JSXExpression::from(expression),
+            &AstBuilder::new(self.alloc),
         );
     }
 
@@ -428,8 +434,7 @@ impl<'a> VisitMut<'a> for Wrap<'_, 'a> {
             return;
         }
         let builder = AstBuilder::new(self.alloc);
-        let taken =
-            std::mem::replace(it, Expression::new_null_literal(SPAN, &builder));
+        let taken = std::mem::replace(it, Expression::new_null_literal(SPAN, &builder));
         *it = iife(self.alloc, self.helper, taken, uses);
     }
 }
@@ -543,9 +548,7 @@ fn as_row_function<'b, 'a>(expression: &'b mut Expression<'a>) -> Option<RowFunc
         Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => {
             Some(RowFunction::Arrow(arrow))
         }
-        Expression::FunctionExpression(function)
-            if !function.r#async && !function.generator =>
-        {
+        Expression::FunctionExpression(function) if !function.r#async && !function.generator => {
             Some(RowFunction::Function(function))
         }
         _ => None,
@@ -607,17 +610,16 @@ impl ImportView {
 
     fn factory(&self, scoping: &Scoping, callee: &Expression<'_>) -> Option<bool> {
         match callee.without_parentheses() {
-            Expression::Identifier(id) => match self.named.get(
-                &scoping.get_reference(id.reference_id.get()?).symbol_id()?,
-            )? {
-                ImportKind::Signal => Some(true),
-                ImportKind::Computed => Some(false),
-                ImportKind::For => None,
-            },
+            Expression::Identifier(id) => {
+                match self.named.get(&scoping.get_reference(id.reference_id.get()?).symbol_id()?)? {
+                    ImportKind::Signal => Some(true),
+                    ImportKind::Computed => Some(false),
+                    ImportKind::For => None,
+                }
+            }
             Expression::StaticMemberExpression(member) if !member.optional => {
                 let Expression::Identifier(namespace) = &member.object else { return None };
-                let symbol =
-                    scoping.get_reference(namespace.reference_id.get()?).symbol_id()?;
+                let symbol = scoping.get_reference(namespace.reference_id.get()?).symbol_id()?;
                 let source = self.namespaces.get(&symbol)?;
                 let name = member.property.name.as_str();
                 if !matches!(name, "signal" | "computed") || !allows(source, name) {
@@ -670,7 +672,9 @@ impl Declarators<'_, '_, '_> {
         converts: bool,
     ) {
         let (getter, setter) = match &declarator.id {
-            BindingPattern::BindingIdentifier(id) if !signal || converts => (Some(id.symbol_id()), None),
+            BindingPattern::BindingIdentifier(id) if !signal || converts => {
+                (Some(id.symbol_id()), None)
+            }
             BindingPattern::ArrayPattern(pattern) if signal => {
                 let getter = match pattern.elements.first() {
                     Some(Some(BindingPattern::BindingIdentifier(id))) => id.symbol_id(),
@@ -687,14 +691,10 @@ impl Declarators<'_, '_, '_> {
         let Some(getter) = getter else { return };
         let name = self.scoping.symbol_name(getter).to_string();
         let foldable_shape = signal && is_foldable_signal_shape(declarator, call);
-        self.getters.insert(getter, Getter {
-            symbol: getter,
-            name,
-            signal,
-            converts,
-            foldable_shape,
-            setter,
-        });
+        self.getters.insert(
+            getter,
+            Getter { symbol: getter, name, signal, converts, foldable_shape, setter },
+        );
     }
 }
 
@@ -811,9 +811,7 @@ fn row_shape<'b, 'a>(el: &'b JSXElement<'a>) -> Option<RowShape<'b, 'a>> {
                 })
                 .collect();
             let body = match &arrow.body {
-                ArrowFunctionBody::FunctionBody(body) => {
-                    RowShapeBody::Block(&body.statements)
-                }
+                ArrowFunctionBody::FunctionBody(body) => RowShapeBody::Block(&body.statements),
                 _ => RowShapeBody::Expression(arrow.body.as_expression()?),
             };
             Some(RowShape { params, span: arrow.span, body })

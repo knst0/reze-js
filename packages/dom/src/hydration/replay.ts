@@ -1,12 +1,34 @@
 import { getOwner, onCleanup, root, runWithOwner } from "@rezejs/signals";
 import type { ContinuationEvent, ContinuationHandle } from "@rezejs/signals/internal/continuation";
-import { controlResource, type ResourceController, type ResourceRecord as RuntimeResource, type ResourceSnapshot } from "@rezejs/signals/internal/resource";
-import { createScope, registerModuleScope, type ExecutionScope, type FlushDelivery, type ReactiveNode, type SourceSite } from "@rezejs/signals/internal/scope";
+import {
+  controlResource,
+  type ResourceController,
+  type ResourceRecord as RuntimeResource,
+  type ResourceSnapshot,
+} from "@rezejs/signals/internal/resource";
+import {
+  createScope,
+  registerModuleScope,
+  type ExecutionScope,
+  type FlushDelivery,
+  type ReactiveNode,
+  type SourceSite,
+} from "@rezejs/signals/internal/scope";
 import type { ModuleScopeFrame } from "@rezejs/signals/internal/scope";
 
 import type { FrameDecoder } from "./codec";
 import { Instances, registerExecution, type ExecutionObserver, type Instance } from "./execution";
-import { awaitKey, HydrationError, type AwaitRecord, type Handoff, type HeadDefaults, type HydrationPayload, type ResourceRecord, type ResourceStateRecord, type RouteRecord } from "./protocol";
+import {
+  awaitKey,
+  HydrationError,
+  type AwaitRecord,
+  type Handoff,
+  type HeadDefaults,
+  type HydrationPayload,
+  type ResourceRecord,
+  type ResourceStateRecord,
+  type RouteRecord,
+} from "./protocol";
 
 interface ResourceConsumer {
   readonly instance: Instance;
@@ -93,12 +115,15 @@ export class HydrationReplay implements ExecutionObserver {
     this.unregister = registerExecution(this);
     this.owner = this.scope.run(() => root(() => getOwner()!));
     this.instances.bind(this.owner, this.instances.root);
-    const createOwner = (moduleId: string): ReactiveNode => this.run(() => root(() => {
-      const owner = getOwner()!;
-      this.instances.bind(owner, this.instances.module(moduleId));
-      this.instances.modules.add(moduleId);
-      return owner;
-    }));
+    const createOwner = (moduleId: string): ReactiveNode =>
+      this.run(() =>
+        root(() => {
+          const owner = getOwner()!;
+          this.instances.bind(owner, this.instances.module(moduleId));
+          this.instances.modules.add(moduleId);
+          return owner;
+        }),
+      );
     for (const moduleId of payload.modules) registerModuleScope(moduleId, this.scope, undefined, createOwner);
     this.failure.promise.catch(() => {});
     this.timer = window.setTimeout(() => this.armDeadline(), Math.max(0, Math.min(this.deadline - Date.now(), 2_147_483_647)));
@@ -121,14 +146,17 @@ export class HydrationReplay implements ExecutionObserver {
   async load<T>(loader: () => Promise<T>): Promise<T> {
     this.check();
     let complete = false;
-    const loaded = Promise.resolve(this.run(loader)).then((value) => {
-      complete = true;
-      this.wake();
-      return value;
-    }, (error: unknown) => {
-      this.fail(error);
-      throw error;
-    });
+    const loaded = Promise.resolve(this.run(loader)).then(
+      (value) => {
+        complete = true;
+        this.wake();
+        return value;
+      },
+      (error: unknown) => {
+        this.fail(error);
+        throw error;
+      },
+    );
     this.scope.trackPendingWork(loaded);
     await this.drive(() => complete, false);
     return loaded;
@@ -260,8 +288,13 @@ export class HydrationReplay implements ExecutionObserver {
       this.consume("checkpoint", `${instance.id}.suspend`, instance.id, "inline");
       const gate = Promise.withResolvers<unknown>();
       const consumer: ModuleAwaitConsumer = {
-        instance, ...gate, cancel: this.scope.trackPendingWork(gate.promise),
-        ready: false, rejected: false, released: false, value: undefined,
+        instance,
+        ...gate,
+        cancel: this.scope.trackPendingWork(gate.promise),
+        ready: false,
+        rejected: false,
+        released: false,
+        value: undefined,
       };
       (this.moduleAwaits ??= new WeakMap()).set(frame, consumer);
       (this.moduleAwaitsById ??= new Map()).set(`${instance.id}.resume`, consumer);
@@ -274,8 +307,8 @@ export class HydrationReplay implements ExecutionObserver {
     if (consumer === undefined) throw this.mismatch("module await was not registered");
     try {
       Promise.resolve(value).then(
-        value => this.moduleAwaitReady(consumer, value, false),
-        error => this.moduleAwaitReady(consumer, error, true),
+        (value) => this.moduleAwaitReady(consumer, value, false),
+        (error) => this.moduleAwaitReady(consumer, error, true),
       );
     } catch (error) {
       this.moduleAwaitReady(consumer, error, true);
@@ -332,7 +365,14 @@ export class HydrationReplay implements ExecutionObserver {
         const occurrence = consumer.instance.next(`a${site.key}`);
         this.consume("checkpoint", `${id}_${occurrence.toString(36)}.suspend`, consumer.instance.id, "inline");
         const gate = Promise.withResolvers<unknown>();
-        const pending: AwaitConsumer = { id, occurrence, instance: consumer.instance, ...gate, cancel: this.scope.trackPendingWork(gate.promise), released: false };
+        const pending: AwaitConsumer = {
+          id,
+          occurrence,
+          instance: consumer.instance,
+          ...gate,
+          cancel: this.scope.trackPendingWork(gate.promise),
+          released: false,
+        };
         consumer.pending = pending;
         this.awaits.set(awaitKey(id, occurrence), pending);
       } else {
@@ -356,7 +396,8 @@ export class HydrationReplay implements ExecutionObserver {
     const expected = this.nextHandoff();
     if (expected?.delivery !== "inline" || expected.ownerId !== consumer.instance.id) return false;
     const id = `${consumer.instance.id}.a${site.key}`;
-    return expected.kind === "await" ? expected.id === id
+    return expected.kind === "await"
+      ? expected.id === id
       : expected.kind === "checkpoint" && expected.id.startsWith(`${id}_`) && expected.id.endsWith(".suspend");
   }
 
@@ -437,13 +478,26 @@ export class HydrationReplay implements ExecutionObserver {
   private consume(kind: Handoff["kind"], id: string, ownerId: string, delivery: FlushDelivery, index?: number): void {
     this.check();
     let expected = this.data!.handoffs[this.sequence];
-    while (expected !== undefined && (expected.kind !== kind || expected.id !== id || expected.index !== index)
-      && this.retired.has(expected.ownerId) && !this.instances.has(expected.ownerId)) {
+    while (
+      expected !== undefined &&
+      (expected.kind !== kind || expected.id !== id || expected.index !== index) &&
+      this.retired.has(expected.ownerId) &&
+      !this.instances.has(expected.ownerId)
+    ) {
       this.sequence += 1;
       expected = this.data!.handoffs[this.sequence];
     }
-    if (expected === undefined || expected.kind !== kind || expected.id !== id || expected.ownerId !== ownerId || expected.delivery !== delivery || expected.index !== index) {
-      throw this.mismatch(`expected ${expected === undefined ? "end of inputs" : `${expected.kind} ${expected.id}`}, received ${kind} ${id}`);
+    if (
+      expected === undefined ||
+      expected.kind !== kind ||
+      expected.id !== id ||
+      expected.ownerId !== ownerId ||
+      expected.delivery !== delivery ||
+      expected.index !== index
+    ) {
+      throw this.mismatch(
+        `expected ${expected === undefined ? "end of inputs" : `${expected.kind} ${expected.id}`}, received ${kind} ${id}`,
+      );
     }
     this.sequence += 1;
     this.wake();
@@ -453,7 +507,8 @@ export class HydrationReplay implements ExecutionObserver {
     const input = consumer.record.states[consumer.index];
     if (input === undefined) throw this.mismatch(`resource ${consumer.record.id} has extra transitions`, consumer.runtime.site);
     const actual = input.pending || consumer.record.seeded ? undefined : consumer.ready.shift();
-    if (!input.pending && !consumer.record.seeded && actual === undefined) throw this.mismatch(`resource ${consumer.record.id} is not ready`, consumer.runtime.site);
+    if (!input.pending && !consumer.record.seeded && actual === undefined)
+      throw this.mismatch(`resource ${consumer.record.id} is not ready`, consumer.runtime.site);
     if (actual !== undefined && (actual.hasResolved !== input.hasResolved || actual.hasRejection !== input.hasRejection)) {
       throw this.mismatch(`resource ${consumer.record.id} settled differently`, consumer.runtime.site);
     }
@@ -469,7 +524,12 @@ export class HydrationReplay implements ExecutionObserver {
       pending: input.pending,
       hasResolved: input.hasResolved,
       hasRejection: input.hasRejection,
-      resolved: consumer.record.seeded && input.hasResolved ? this.decoder!.read(input.resolved!) : actual === undefined ? consumer.runtime.committed.resolved : actual.resolved,
+      resolved:
+        consumer.record.seeded && input.hasResolved
+          ? this.decoder!.read(input.resolved!)
+          : actual === undefined
+            ? consumer.runtime.committed.resolved
+            : actual.resolved,
       rejection: input.hasRejection ? this.decoder!.read(input.rejection!) : undefined,
     };
   }
@@ -479,7 +539,8 @@ export class HydrationReplay implements ExecutionObserver {
       const expected = this.data!.handoffs[this.sequence];
       if (expected?.kind !== "resource" || expected.delivery !== "inline") return;
       const consumer = this.resourcesById.get(expected.id);
-      if (consumer === undefined || !consumer.record.seeded || consumer.index === 0 || !consumer.record.states[consumer.index]?.pending) return;
+      if (consumer === undefined || !consumer.record.seeded || consumer.index === 0 || !consumer.record.states[consumer.index]?.pending)
+        return;
       this.applyResource(consumer, "inline");
     }
   }

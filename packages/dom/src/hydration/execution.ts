@@ -259,8 +259,10 @@ export class Instances {
   }
 
   snapshot(): OwnerRecord[] {
-    return this.records.map((instance) => instance.parent === undefined
-      ? { id: instance.id, retired: instance.retired }
-      : { id: instance.id, parentId: instance.parent.id, retired: instance.retired });
+    return this.records.map((instance) =>
+      instance.parent === undefined
+        ? { id: instance.id, retired: instance.retired }
+        : { id: instance.id, parentId: instance.parent.id, retired: instance.retired },
+    );
   }
 }

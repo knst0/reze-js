@@ -1,5 +1,6 @@
 import { defaultTreeAdapter, html as htmlNames, parse, parseFragment, serialize } from "parse5";
 import type { DefaultTreeAdapterMap } from "parse5";
+
 import { joinBase, pageDepth } from "./urls";
 
 type HtmlElement = DefaultTreeAdapterMap["element"];
@@ -35,27 +36,30 @@ function* elements(parent: HtmlParent): Generator<HtmlElement> {
 }
 
 function attribute(element: HtmlElement, name: string): string | undefined {
-  return element.attrs.find(attribute => attribute.name === name)?.value;
+  return element.attrs.find((attribute) => attribute.name === name)?.value;
 }
 
 function setAttribute(element: HtmlElement, name: string, value: string): void {
-  const existing = element.attrs.find(attribute => attribute.name === name);
+  const existing = element.attrs.find((attribute) => attribute.name === name);
   if (existing === undefined) element.attrs.push({ name, value });
   else existing.value = value;
 }
 
 function element(tag: string, attributes: Record<string, string> = {}, text?: string): HtmlElement {
-  const node = defaultTreeAdapter.createElement(tag, htmlNames.NS.HTML,
-    Object.entries(attributes).map(([name, value]) => ({ name, value })));
+  const node = defaultTreeAdapter.createElement(
+    tag,
+    htmlNames.NS.HTML,
+    Object.entries(attributes).map(([name, value]) => ({ name, value })),
+  );
   if (text !== undefined) defaultTreeAdapter.insertText(node, text);
   return node;
 }
 
 function templateTree(source: string) {
   const document = parse(source);
-  const root = document.childNodes.find(node => "tagName" in node)! as HtmlElement;
-  const head = root.childNodes.find(node => node.nodeName === "head")! as HtmlElement;
-  const body = root.childNodes.find(node => node.nodeName === "body")! as HtmlElement;
+  const root = document.childNodes.find((node) => "tagName" in node)! as HtmlElement;
+  const head = root.childNodes.find((node) => node.nodeName === "head")! as HtmlElement;
+  const body = root.childNodes.find((node) => node.nodeName === "body")! as HtmlElement;
   return { document, head, body };
 }
 
@@ -64,8 +68,11 @@ function headDefaults(head: HtmlElement): TemplateHead {
   for (const child of head.childNodes) {
     if (!("tagName" in child)) continue;
     if (child.tagName === "title" && result.title === undefined) {
-      const title = child.childNodes.filter(node => node.nodeName === "#text")
-        .map(node => (node as DefaultTreeAdapterMap["textNode"]).value).join("").trim();
+      const title = child.childNodes
+        .filter((node) => node.nodeName === "#text")
+        .map((node) => (node as DefaultTreeAdapterMap["textNode"]).value)
+        .join("")
+        .trim();
       if (title !== "") result.title = title;
     } else if (child.tagName === "meta") {
       const name = attribute(child, "name")?.toLowerCase();
@@ -156,7 +163,7 @@ function appendHtml(parent: HtmlElement, source: string): void {
 }
 
 function mountRoot(document: HtmlParent, rootId: string): HtmlElement {
-  const matches = [...elements(document)].filter(node => attribute(node, "id") === rootId);
+  const matches = [...elements(document)].filter((node) => attribute(node, "id") === rootId);
   if (matches.length !== 1) throw new Error(`[reze] template must contain exactly one mount element ${JSON.stringify(rootId)}`);
   return matches[0]!;
 }
@@ -167,9 +174,11 @@ function rebaseAssets(document: HtmlParent, options: PageTemplate): void {
   const depth = pageDepth(options.pathname);
   for (const node of elements(document)) {
     for (const attr of node.attrs) {
-      const isAsset = attr.name === "src" || attr.name === "poster"
-        || (node.tagName === "object" && attr.name === "data")
-        || (node.tagName === "link" && attr.name === "href" && attribute(node, "rel")?.toLowerCase() !== "canonical");
+      const isAsset =
+        attr.name === "src" ||
+        attr.name === "poster" ||
+        (node.tagName === "object" && attr.name === "data") ||
+        (node.tagName === "link" && attr.name === "href" && attribute(node, "rel")?.toLowerCase() !== "canonical");
       if (!isAsset || /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|[/#])/.test(attr.value)) continue;
       const url = new URL(attr.value, sourceUrl);
       attr.value = joinBase(options.base, url.pathname.slice(1), depth) + url.search + url.hash;
@@ -183,7 +192,10 @@ function appendAssets(head: HtmlElement, assets: HeadAssets): void {
     if (!("tagName" in node) || node.tagName !== "link") continue;
     present.add(`${attribute(node, "rel")?.toLowerCase()}\0${attribute(node, "href")}`);
   }
-  for (const [rel, hrefs] of [["stylesheet", assets.css], ["modulepreload", assets.js]] as const) {
+  for (const [rel, hrefs] of [
+    ["stylesheet", assets.css],
+    ["modulepreload", assets.js],
+  ] as const) {
     for (const href of hrefs) {
       const key = `${rel}\0${href}`;
       if (present.has(key)) continue;
@@ -194,7 +206,11 @@ function appendAssets(head: HtmlElement, assets: HeadAssets): void {
 }
 
 const ScriptEscapes: Record<string, string> = {
-  "<": "\\u003c", ">": "\\u003e", "&": "\\u0026", "\u2028": "\\u2028", "\u2029": "\\u2029",
+  "<": "\\u003c",
+  ">": "\\u003e",
+  "&": "\\u0026",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
 };
 
 function escapeScriptCharacter(character: string): string {
@@ -202,17 +218,22 @@ function escapeScriptCharacter(character: string): string {
 }
 
 function jsonScript(attributeName: string, rootId: string, payload: string): HtmlElement {
-  return element("script", { type: "application/json", [attributeName]: rootId },
-    payload.replace(/[<>&\u2028\u2029]/g, escapeScriptCharacter));
+  return element(
+    "script",
+    { type: "application/json", [attributeName]: rootId },
+    payload.replace(/[<>&\u2028\u2029]/g, escapeScriptCharacter),
+  );
 }
 
-export function buildPage(options: PageTemplate & {
-  metadata: TemplateHead;
-  content: string;
-  payload: string;
-  portals: readonly { placement: string; token: string; html: string }[];
-  assets: HeadAssets;
-}): string {
+export function buildPage(
+  options: PageTemplate & {
+    metadata: TemplateHead;
+    content: string;
+    payload: string;
+    portals: readonly { placement: string; token: string; html: string }[];
+    assets: HeadAssets;
+  },
+): string {
   const { document, head, body } = templateTree(options.templateHtml);
   rebaseAssets(document, options);
   applyHead(head, options.baseline, options.metadata);
@@ -232,12 +253,14 @@ export function buildPage(options: PageTemplate & {
   return serialize(document);
 }
 
-export function buildRedirectPage(options: PageTemplate & {
-  canonical: string;
-  to: string;
-  replace: boolean;
-  redirectSrc: string;
-}): string {
+export function buildRedirectPage(
+  options: PageTemplate & {
+    canonical: string;
+    to: string;
+    replace: boolean;
+    redirectSrc: string;
+  },
+): string {
   const { document, head, body } = templateTree(options.templateHtml);
   rebaseAssets(document, options);
   applyHead(head, options.baseline, { canonical: options.canonical });
@@ -252,8 +275,10 @@ export function buildRedirectPage(options: PageTemplate & {
   defaultTreeAdapter.appendChild(paragraph, element("a", { href: options.to }, `Continue to ${options.to}`));
   defaultTreeAdapter.appendChild(root, paragraph);
   defaultTreeAdapter.appendChild(head, element("meta", { "http-equiv": "refresh", content: `0;url=${options.to}` }));
-  defaultTreeAdapter.appendChild(body, jsonScript("data-reze-redirect", options.rootId,
-    JSON.stringify({ to: options.to, replace: options.replace })));
+  defaultTreeAdapter.appendChild(
+    body,
+    jsonScript("data-reze-redirect", options.rootId, JSON.stringify({ to: options.to, replace: options.replace })),
+  );
   defaultTreeAdapter.appendChild(body, element("script", { type: "module", src: options.redirectSrc }));
   return serialize(document);
 }

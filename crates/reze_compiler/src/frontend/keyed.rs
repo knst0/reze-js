@@ -189,4 +189,3 @@ fn reads_key(
         AstKind::UnaryExpression(unary) if unary.operator == UnaryOperator::Delete
     )
 }
-

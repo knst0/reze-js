@@ -247,25 +247,20 @@ export function asyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> | T): A
   }
   const owner = getOwner();
   if (__REZE_HTML__ || __REZE_HYDRATE__) {
-    const record = registerResource(
-      node,
-      owner,
-      "public",
-      {
-        writeResolved: (value): void => {
-          node.resolved.write(value as T | undefined);
-        },
-        writeRejection: (value): void => {
-          node.rejection.write(value);
-        },
-        writePending: (value): void => {
-          node.pending.write(value);
-        },
-        purge: (): void => {
-          purgeDeps(node);
-        },
+    const record = registerResource(node, owner, "public", {
+      writeResolved: (value): void => {
+        node.resolved.write(value as T | undefined);
       },
-    );
+      writeRejection: (value): void => {
+        node.rejection.write(value);
+      },
+      writePending: (value): void => {
+        node.pending.write(value);
+      },
+      purge: (): void => {
+        purgeDeps(node);
+      },
+    });
     if (owner !== undefined) {
       adopt(node, owner);
     }
@@ -293,25 +288,20 @@ function createInternalAsyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> 
   }
   const owner = getOwner();
   if (__REZE_HTML__ || __REZE_HYDRATE__) {
-    registerResource(
-      node,
-      owner,
-      "internal",
-      {
-        writeResolved: (value): void => {
-          node.resolved.write(value as T | undefined);
-        },
-        writeRejection: (value): void => {
-          node.rejection.write(value);
-        },
-        writePending: (value): void => {
-          node.pending.write(value);
-        },
-        purge: (): void => {
-          purgeDeps(node);
-        },
+    registerResource(node, owner, "internal", {
+      writeResolved: (value): void => {
+        node.resolved.write(value as T | undefined);
       },
-    );
+      writeRejection: (value): void => {
+        node.rejection.write(value);
+      },
+      writePending: (value): void => {
+        node.pending.write(value);
+      },
+      purge: (): void => {
+        purgeDeps(node);
+      },
+    });
   }
   if (owner !== undefined) {
     adopt(node, owner);

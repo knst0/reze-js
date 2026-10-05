@@ -3,13 +3,13 @@ import type { ContinuationHandle } from "@rezejs/signals/internal/continuation";
 import type { SourceSite } from "@rezejs/signals/internal/scope";
 
 import { ClaimIndex } from "./claim";
+import type { FrameDecoder } from "./codec";
 import { currentExecution, moduleExecution } from "./execution";
 import { DirtyForms } from "./forms";
 import { ClaimPlan, type PlanHandle, type RangePlan } from "./plan";
 import { createOwnerTokens, HydrationError, parsePayload, type HydrationPayload } from "./protocol";
 import { HydrationReplay } from "./replay";
 import { CommitStaging } from "./staging";
-import type { FrameDecoder } from "./codec";
 
 export interface HydrationOptions {
   readonly bootstrapUrl?: string;
@@ -28,7 +28,12 @@ export class HydrationSession extends HydrationReplay {
   private mounted: RangePlan | undefined;
   private released = false;
 
-  constructor(readonly element: Element, payload: HydrationPayload, decoder: FrameDecoder, readonly base: string) {
+  constructor(
+    readonly element: Element,
+    payload: HydrationPayload,
+    decoder: FrameDecoder,
+    readonly base: string,
+  ) {
     const index = new ClaimIndex(element, payload.layout, createOwnerTokens(payload.owners));
     super(payload, decoder);
     this.claims = new ClaimPlan(index);
@@ -57,7 +62,8 @@ export class HydrationSession extends HydrationReplay {
   commit(): void {
     this.check();
     if (this.mounted === undefined) throw new HydrationError("hydration has no root view");
-    if (this.element.ownerDocument.location.href !== this.location) throw new HydrationError("page location changed during hydration preparation");
+    if (this.element.ownerDocument.location.href !== this.location)
+      throw new HydrationError("page location changed during hydration preparation");
     const roots = [this.mounted];
     for (const portal of this.portals) if (!portal.instance.retired) roots.push(portal);
     this.claims.validate(roots);
@@ -121,7 +127,8 @@ export function prepareHydration(element: Element, options: HydrationOptions = {
   }
   if (script === undefined) throw new HydrationError("missing hydration state script");
   const { payload, decoder } = parsePayload(script.textContent ?? "");
-  if (payload.rootId !== element.id || document.getElementById(payload.rootId) !== element) throw new HydrationError("hydration mount root does not match payload");
+  if (payload.rootId !== element.id || document.getElementById(payload.rootId) !== element)
+    throw new HydrationError("hydration mount root does not match payload");
   let base = options.base ?? "/";
   const relativeBase = base === "" || base === "./";
   let pathname = payload.pathname;
@@ -133,14 +140,17 @@ export function prepareHydration(element: Element, options: HydrationOptions = {
       if (candidate.src === bootstrap.href) found = true;
     }
     const buildFile = payload.buildId.split("/").map(encodeURIComponent).join("/");
-    if (!found || !bootstrap.pathname.endsWith(`/${buildFile}`)) throw new HydrationError("hydration bootstrap buildId does not match the running module");
+    if (!found || !bootstrap.pathname.endsWith(`/${buildFile}`))
+      throw new HydrationError("hydration bootstrap buildId does not match the running module");
     if (relativeBase) {
-      if (bootstrap.origin !== document.location.origin) throw new HydrationError("relative hydration bootstrap must share the page origin");
+      if (bootstrap.origin !== document.location.origin)
+        throw new HydrationError("relative hydration bootstrap must share the page origin");
       base = bootstrap.pathname.slice(0, -buildFile.length - 1);
       pathname = base + pathname;
     }
   }
-  if (document.location.pathname !== new URL(pathname, document.location.href).pathname) throw new HydrationError("hydration page pathname does not match payload");
+  if (document.location.pathname !== new URL(pathname, document.location.href).pathname)
+    throw new HydrationError("hydration page pathname does not match payload");
   const session = new HydrationSession(element, payload, decoder, base);
   sessions.set(element, session);
   if (getOwner() !== undefined) onCleanup(() => session.dispose());

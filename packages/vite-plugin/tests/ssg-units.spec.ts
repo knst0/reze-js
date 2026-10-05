@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { parse } from "parse5";
 import type { DefaultTreeAdapterMap } from "parse5";
 import { afterEach, beforeEach, expect, test } from "vitest";
@@ -14,15 +15,15 @@ import { canonicalPageUrl, joinBase, normalizePageUrl, outputFileFor, planOutput
 let dir: string;
 
 function elements(parent: DefaultTreeAdapterMap["parentNode"]): DefaultTreeAdapterMap["element"][] {
-  return parent.childNodes.flatMap(node => "tagName" in node ? [node, ...elements(node)] : []);
+  return parent.childNodes.flatMap((node) => ("tagName" in node ? [node, ...elements(node)] : []));
 }
 
 function attribute(node: DefaultTreeAdapterMap["element"], name: string): string | undefined {
-  return node.attrs.find(attr => attr.name === name)?.value;
+  return node.attrs.find((attr) => attr.name === name)?.value;
 }
 
 function text(node: DefaultTreeAdapterMap["parentNode"]): string {
-  return node.childNodes.map(child => "value" in child ? child.value : "childNodes" in child ? text(child) : "").join("");
+  return node.childNodes.map((child) => ("value" in child ? child.value : "childNodes" in child ? text(child) : "")).join("");
 }
 
 beforeEach(() => {
@@ -32,7 +33,6 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
-
 
 test("ssg options reject a missing entry, a loose selector and a dead timeout", () => {
   expect(() => resolveSsgOptions({ entry: "" }, "/root")).toThrow(/ssg\.entry/);
@@ -57,7 +57,9 @@ test("the template requires one bootstrap script and one mount root", () => {
   const html = `<html><head></head><body><div id="app"></div><script type="module" src="/@reze/ssg-client.js"></script></body></html>`;
   validateTemplate(html, "index.html", "app", "/@reze/ssg-client.js");
   expect(() => validateTemplate(html.replace("ssg-client", "other"), "index.html", "app", "/@reze/ssg-client.js")).toThrow(/exactly one/);
-  expect(() => validateTemplate(`${html}<script type="module" src="/@reze/ssg-client.js"></script>`, "index.html", "app", "/@reze/ssg-client.js")).toThrow(/exactly one/);
+  expect(() =>
+    validateTemplate(`${html}<script type="module" src="/@reze/ssg-client.js"></script>`, "index.html", "app", "/@reze/ssg-client.js"),
+  ).toThrow(/exactly one/);
   expect(() => validateTemplate(html.replace('id="app"', 'id="root"'), "index.html", "app", "/@reze/ssg-client.js")).toThrow(/mount|id/);
 });
 
@@ -69,24 +71,39 @@ test("page assembly preserves nested roots, raw text and decoded head values", (
   expect(baseline).toEqual({ title: "Base & title", description: "base & description" });
   const payload = { message: "</script><script>alert(1)</script>&\u2028\u2029" };
   const page = buildPage({
-    templateHtml, templateFile: "index.html", baseline, rootId: "app", base: "./", pathname: "/a/b/",
-    metadata: { title: "Page $& <x>" }, content: "<p>new</p>", payload: JSON.stringify(payload),
+    templateHtml,
+    templateFile: "index.html",
+    baseline,
+    rootId: "app",
+    base: "./",
+    pathname: "/a/b/",
+    metadata: { title: "Page $& <x>" },
+    content: "<p>new</p>",
+    payload: JSON.stringify(payload),
     portals: [],
     assets: { css: ["../../assets/a.css", "../../assets/b.css"], js: ["../../assets/shared.js"] },
   });
   const nodes = elements(parse(page));
-  const root = nodes.find(node => attribute(node, "id") === "app")!;
+  const root = nodes.find((node) => attribute(node, "id") === "app")!;
   expect(text(root)).toBe("new");
-  expect(text(nodes.find(node => attribute(node, "id") === "after")!)).toBe("kept");
-  expect(text(nodes.find(node => node.tagName === "title")!)).toBe("Page $& <x>");
-  expect(attribute(nodes.find(node => attribute(node, "name") === "description")!, "content")).toBe("base & description");
-  const scripts = nodes.filter(node => node.tagName === "script");
+  expect(text(nodes.find((node) => attribute(node, "id") === "after")!)).toBe("kept");
+  expect(text(nodes.find((node) => node.tagName === "title")!)).toBe("Page $& <x>");
+  expect(
+    attribute(
+      nodes.find((node) => attribute(node, "name") === "description")!,
+      "content",
+    ),
+  ).toBe("base & description");
+  const scripts = nodes.filter((node) => node.tagName === "script");
   expect(scripts).toHaveLength(3);
   expect(text(scripts[0]!)).toBe(`globalThis.fake = '<div id="app"></div>';`);
   expect(attribute(scripts[1]!, "src")).toBe("../../assets/boot.js");
   expect(JSON.parse(text(scripts[2]!))).toEqual(payload);
-  expect(nodes.filter(node => node.tagName === "link").map(node => [attribute(node, "rel"), attribute(node, "href")]))
-    .toEqual([["stylesheet", "../../assets/a.css"], ["stylesheet", "../../assets/b.css"], ["modulepreload", "../../assets/shared.js"]]);
+  expect(nodes.filter((node) => node.tagName === "link").map((node) => [attribute(node, "rel"), attribute(node, "href")])).toEqual([
+    ["stylesheet", "../../assets/a.css"],
+    ["stylesheet", "../../assets/b.css"],
+    ["modulepreload", "../../assets/shared.js"],
+  ]);
 });
 
 test("the built bootstrap is matched by file name, not by guesswork", () => {
@@ -99,17 +116,36 @@ test("redirect pages drop the bootstrap and carry an accessible target", () => {
   const html = `<html><head><title>T</title></head><body><div id="app"></div><script type="module" src="/docs/assets/ssg-abc.js"></script></body></html>`;
   const to = "/b/?query=</script>&\u2028\u2029";
   const page = buildRedirectPage({
-    templateHtml: html, templateFile: "index.html", baseline: {}, canonical: to, to,
-    replace: true, rootId: "app", base: "/docs/", pathname: "/old/", redirectSrc: "/docs/assets/redirect-def.js",
+    templateHtml: html,
+    templateFile: "index.html",
+    baseline: {},
+    canonical: to,
+    to,
+    replace: true,
+    rootId: "app",
+    base: "/docs/",
+    pathname: "/old/",
+    redirectSrc: "/docs/assets/redirect-def.js",
   });
   const nodes = elements(parse(page));
-  expect(nodes.filter(node => node.tagName === "script").map(node => attribute(node, "src")))
-    .toEqual([undefined, "/docs/assets/redirect-def.js"]);
-  expect(attribute(nodes.find(node => node.tagName === "a")!, "href")).toBe(to);
-  expect(attribute(nodes.find(node => attribute(node, "http-equiv") === "refresh")!, "content")).toBe(`0;url=${to}`);
-  expect(JSON.parse(text(nodes.find(node => attribute(node, "data-reze-redirect") === "app")!))).toEqual({ to, replace: true });
+  expect(nodes.filter((node) => node.tagName === "script").map((node) => attribute(node, "src"))).toEqual([
+    undefined,
+    "/docs/assets/redirect-def.js",
+  ]);
+  expect(
+    attribute(
+      nodes.find((node) => node.tagName === "a")!,
+      "href",
+    ),
+  ).toBe(to);
+  expect(
+    attribute(
+      nodes.find((node) => attribute(node, "http-equiv") === "refresh")!,
+      "content",
+    ),
+  ).toBe(`0;url=${to}`);
+  expect(JSON.parse(text(nodes.find((node) => attribute(node, "data-reze-redirect") === "app")!))).toEqual({ to, replace: true });
 });
-
 
 test("the export graph tells router apps from standalone ones", () => {
   const files = new Map([
@@ -173,27 +209,52 @@ test("asset links respect absolute, origin and relative bases", () => {
 });
 
 test("the client registry maps canonical assets and selects page closures", () => {
-  const registry = buildClientRegistry([
-    { type: "asset", fileName: "assets/a-1.png", originalFileName: "src/a.png" },
-    {
-      type: "chunk", fileName: "assets/view-1.js", isEntry: false, facadeModuleId: null,
-      moduleIds: ["\0reze:ssg-view.tsx"], imports: ["assets/shared-1.js"], dynamicImports: ["assets/route-1.js"],
-      viteMetadata: { importedCss: ["assets/view-1.css"] },
-    },
-    {
-      type: "chunk", fileName: "assets/shared-1.js", isEntry: false, facadeModuleId: null,
-      moduleIds: ["/root/src/shared.ts"], imports: [], dynamicImports: [], viteMetadata: {},
-    },
-    {
-      type: "chunk", fileName: "assets/route-1.js", isEntry: false, facadeModuleId: null,
-      moduleIds: ["/root/src/routes/post.tsx"], imports: [], dynamicImports: [],
-      viteMetadata: { importedCss: ["assets/route-1.css"] },
-    },
-    {
-      type: "chunk", fileName: "assets/boot-1.js", isEntry: true, facadeModuleId: "\0reze:ssg-client.js",
-      moduleIds: ["\0reze:ssg-client.js"], imports: ["assets/view-1.js"], dynamicImports: [], viteMetadata: {},
-    },
-  ], "/root");
+  const registry = buildClientRegistry(
+    [
+      { type: "asset", fileName: "assets/a-1.png", originalFileName: "src/a.png" },
+      {
+        type: "chunk",
+        fileName: "assets/view-1.js",
+        isEntry: false,
+        facadeModuleId: null,
+        moduleIds: ["\0reze:ssg-view.tsx"],
+        imports: ["assets/shared-1.js"],
+        dynamicImports: ["assets/route-1.js"],
+        viteMetadata: { importedCss: ["assets/view-1.css"] },
+      },
+      {
+        type: "chunk",
+        fileName: "assets/shared-1.js",
+        isEntry: false,
+        facadeModuleId: null,
+        moduleIds: ["/root/src/shared.ts"],
+        imports: [],
+        dynamicImports: [],
+        viteMetadata: {},
+      },
+      {
+        type: "chunk",
+        fileName: "assets/route-1.js",
+        isEntry: false,
+        facadeModuleId: null,
+        moduleIds: ["/root/src/routes/post.tsx"],
+        imports: [],
+        dynamicImports: [],
+        viteMetadata: { importedCss: ["assets/route-1.css"] },
+      },
+      {
+        type: "chunk",
+        fileName: "assets/boot-1.js",
+        isEntry: true,
+        facadeModuleId: "\0reze:ssg-client.js",
+        moduleIds: ["\0reze:ssg-client.js"],
+        imports: ["assets/view-1.js"],
+        dynamicImports: [],
+        viteMetadata: {},
+      },
+    ],
+    "/root",
+  );
   expect(registry.assetFile("src/a.png")).toBe("assets/a-1.png");
   expect(registry.entryChunk("\0reze:ssg-client.js").fileName).toBe("assets/boot-1.js");
   expect(() => registry.assetFile("src/missing.png")).toThrow(/no client output/);
@@ -204,8 +265,13 @@ test("the client registry maps canonical assets and selects page closures", () =
 });
 
 test("ambiguous asset outputs fail instead of selecting the last file", () => {
-  expect(() => buildClientRegistry([
-    { type: "asset", fileName: "assets/first.svg", originalFileNames: ["src/logo.svg"] },
-    { type: "asset", fileName: "assets/second.svg", originalFileNames: ["src/logo.svg"] },
-  ], "/root")).toThrow(/asset "src\/logo.svg" has ambiguous client outputs/);
+  expect(() =>
+    buildClientRegistry(
+      [
+        { type: "asset", fileName: "assets/first.svg", originalFileNames: ["src/logo.svg"] },
+        { type: "asset", fileName: "assets/second.svg", originalFileNames: ["src/logo.svg"] },
+      ],
+      "/root",
+    ),
+  ).toThrow(/asset "src\/logo.svg" has ambiguous client outputs/);
 });

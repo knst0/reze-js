@@ -11,7 +11,16 @@ import type { StagingBatch, StyleValue } from "./staging";
 
 type Props = Record<string, unknown>;
 
-function prepareProperty(session: HydrationSession, owner: ReactiveNode | undefined, node: Element, site: Site, name: string, value: unknown, previous: unknown, isSvg: boolean): unknown {
+function prepareProperty(
+  session: HydrationSession,
+  owner: ReactiveNode | undefined,
+  node: Element,
+  site: Site,
+  name: string,
+  value: unknown,
+  previous: unknown,
+  isSvg: boolean,
+): unknown {
   if (name === "style") return queueStyle(node, site, value as StyleValue, previous);
   if (name === "class") queueProp(node, site, name, value);
   else if (name.startsWith("on")) {
@@ -37,7 +46,10 @@ export function queueSpread(node: Element, site: Site, props: Props = {}, isSvg 
   if (!hasChildren) prepareInsert(node, site, -1, () => props.children);
   renderEffect(() => {
     const ref = props.ref;
-    if (typeof ref === "function") stageRef(site, () => { ref(node); });
+    if (typeof ref === "function")
+      stageRef(site, () => {
+        ref(node);
+      });
   });
   const applied: Props = {};
   const batches = new Map<string, StagingBatch>();

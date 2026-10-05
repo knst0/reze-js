@@ -28,7 +28,7 @@ afterEach(async () => {
 async function start(options: Pick<Options, "diagnostics" | "profile">) {
   const warnings: string[] = [];
   const logger = createLogger("silent");
-  logger.warn = message => warnings.push(message);
+  logger.warn = (message) => warnings.push(message);
   server = await createServer({
     configFile: false,
     root,
@@ -41,8 +41,11 @@ async function start(options: Pick<Options, "diagnostics" | "profile">) {
 
 test("Vite reports source locations and persists all diagnostic severities", async () => {
   const jsonl = join(root, "diagnostics", "records.jsonl");
-  writeFileSync(join(root, "src", "Warn.tsx"), 'export function App(props){\nreturn <div children={props.children}>nested</div>;\n}');
-  writeFileSync(join(root, "src", "Info.tsx"), 'import {$signal} from "reze-js"; export function App(){let count=$signal(1);return <p>{count}</p>}');
+  writeFileSync(join(root, "src", "Warn.tsx"), "export function App(props){\nreturn <div children={props.children}>nested</div>;\n}");
+  writeFileSync(
+    join(root, "src", "Info.tsx"),
+    'import {$signal} from "reze-js"; export function App(){let count=$signal(1);return <p>{count}</p>}',
+  );
   writeFileSync(join(root, "src", "Bad.tsx"), "export function Bad(){\nreturn <div>;\n}");
   const { vite, warnings } = await start({ diagnostics: { jsonl } });
   await vite.transformRequest("/src/Warn.tsx");
@@ -52,14 +55,17 @@ test("Vite reports source locations and persists all diagnostic severities", asy
     loc: { file: join(root, "src", "Bad.tsx"), line: 3, column: 0 },
     diagnostics: [expect.objectContaining({ code: "PARSE_ERROR", severity: "error" })],
   });
-  const records = readFileSync(jsonl, "utf8").trim().split("\n").map(line => JSON.parse(line));
-  expect(records.map(record => [record.code, record.severity, basename(record.file), record.start.line])).toEqual([
+  const records = readFileSync(jsonl, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(records.map((record) => [record.code, record.severity, basename(record.file), record.start.line])).toEqual([
     ["CHILDREN_PROP_IGNORED", "warn", "Warn.tsx", 2],
     ["SIGNAL_FOLDED", "info", "Info.tsx", 1],
     ["PARSE_ERROR", "error", "Bad.tsx", 3],
   ]);
-  expect(warnings.filter(message => message.includes("CHILDREN_PROP_IGNORED"))).toHaveLength(1);
-  expect(warnings.some(message => message.includes("SIGNAL_FOLDED"))).toBe(false);
+  expect(warnings.filter((message) => message.includes("CHILDREN_PROP_IGNORED"))).toHaveLength(1);
+  expect(warnings.some((message) => message.includes("SIGNAL_FOLDED"))).toBe(false);
 });
 
 test("profiling HTTP admits transformed files and accumulates their sessions", async () => {
@@ -77,10 +83,12 @@ test("profiling HTTP admits transformed files and accumulates their sessions", a
   await vite.transformRequest("/src/App.tsx");
   expect((await post(JSON.stringify(tree))).status).toBe(200);
   expect((await post(JSON.stringify(tree))).status).toBe(200);
-  const records = readdirSync(profileDir).map(name => JSON.parse(readFileSync(join(profileDir, name), "utf8")));
-  expect(records).toEqual([expect.objectContaining({
-    v: 1,
-    file,
-    components: [{ component: "App", file, mounts: 2, props: 2, reruns: 0, writes: 6 }],
-  })]);
+  const records = readdirSync(profileDir).map((name) => JSON.parse(readFileSync(join(profileDir, name), "utf8")));
+  expect(records).toEqual([
+    expect.objectContaining({
+      v: 1,
+      file,
+      components: [{ component: "App", file, mounts: 2, props: 2, reruns: 0, writes: 6 }],
+    }),
+  ]);
 });

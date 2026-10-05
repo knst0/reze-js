@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use reze_compiler::{CATALOG, Code, CompileTarget, Diagnostic, Example, Options, compile, render_skill};
+use reze_compiler::{
+    CATALOG, Code, CompileTarget, Diagnostic, Example, Options, compile, render_skill,
+};
 
 fn diagnostics(source: &str) -> Vec<Diagnostic> {
     match compile(source, "example.tsx", &Options::default()) {
@@ -15,9 +17,7 @@ fn diagnostics(source: &str) -> Vec<Diagnostic> {
 /// with a `hydrate`/`html` target and no `moduleId`.
 fn example_options(code: Code) -> Options {
     match code {
-        Code::MissingModuleId => {
-            Options { target: CompileTarget::Hydrate, ..Options::default() }
-        }
+        Code::MissingModuleId => Options { target: CompileTarget::Hydrate, ..Options::default() },
         _ => Options::default(),
     }
 }

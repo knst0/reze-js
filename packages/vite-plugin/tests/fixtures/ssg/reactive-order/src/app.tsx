@@ -1,5 +1,6 @@
-import { $action, $computed, $signal, Errored, Loading, render } from "reze-js";
 import { signal } from "@rezejs/signals";
+import { $action, $computed, $signal, Errored, Loading, render } from "reze-js";
+
 import { ModuleClass, moduleBranchValue, moduleCatchValue, moduleGetter, moduleTrace } from "./module-resources.js";
 
 const shared = { items: ["x"] };
@@ -38,12 +39,16 @@ async function Slow() {
 
 async function Flaky(props: { round: number }) {
   const round = props.round;
-  const text = await Promise.resolve(round).then(async round => {
+  const text = await Promise.resolve(round).then(async (round) => {
     if (typeof document !== "undefined") await fetch(`/round-probe.json?round=${round}`);
     if (round !== 0) throw new Error("flaky failed");
     return "ok";
   });
-  return <b id="flaky" ref={node => node.setAttribute("data-hydrated", "")}>{text}</b>;
+  return (
+    <b id="flaky" ref={(node) => node.setAttribute("data-hydrated", "")}>
+      {text}
+    </b>
+  );
 }
 
 async function nestedInput(value: number): Promise<number> {
@@ -65,9 +70,7 @@ function NestedActions() {
   let syncRuns = $signal(0);
   let syncTrace = $signal("");
   const run = $action(async () => {
-    value = await nestedInput(
-      (typeof document === "undefined" ? await nestedInput(2) : await nestedInput(9)) + await nestedInput(3),
-    );
+    value = await nestedInput((typeof document === "undefined" ? await nestedInput(2) : await nestedInput(9)) + (await nestedInput(3)));
   });
   const recover = $action(async () => {
     try {
@@ -95,11 +98,19 @@ function NestedActions() {
   sync();
   return (
     <section>
-      <p id="nested-value" ref={node => node.setAttribute("data-hydrated", "")}>{value}</p>
+      <p id="nested-value" ref={(node) => node.setAttribute("data-hydrated", "")}>
+        {value}
+      </p>
       <p id="nested-rejection">{rejection}</p>
-      <button id="nested-run" type="button" onClick={run}>run nested action</button>
-      <p id="nested-sync-result">{syncRuns}:{syncTrace}</p>
-      <button id="nested-sync" type="button" onClick={sync}>run synchronous operand</button>
+      <button id="nested-run" type="button" onClick={run}>
+        run nested action
+      </button>
+      <p id="nested-sync-result">
+        {syncRuns}:{syncTrace}
+      </p>
+      <button id="nested-sync" type="button" onClick={sync}>
+        run synchronous operand
+      </button>
     </section>
   );
 }
@@ -117,10 +128,18 @@ export default function App() {
   return (
     <main>
       <h1>reactive</h1>
-      <p id="module-branch" ref={node => node.setAttribute("data-hydrated", "")}>{moduleBranchValue()}</p>
-      <p id="module-getter" ref={node => node.setAttribute("data-hydrated", "")}>{moduleGetter.value()}</p>
-      <p id="module-class" ref={node => node.setAttribute("data-hydrated", "")}>{ModuleClass.value.value()}</p>
-      <p id="module-catch" ref={node => node.setAttribute("data-hydrated", "")}>{moduleCatchValue()}</p>
+      <p id="module-branch" ref={(node) => node.setAttribute("data-hydrated", "")}>
+        {moduleBranchValue()}
+      </p>
+      <p id="module-getter" ref={(node) => node.setAttribute("data-hydrated", "")}>
+        {moduleGetter.value()}
+      </p>
+      <p id="module-class" ref={(node) => node.setAttribute("data-hydrated", "")}>
+        {ModuleClass.value.value()}
+      </p>
+      <p id="module-catch" ref={(node) => node.setAttribute("data-hydrated", "")}>
+        {moduleCatchValue()}
+      </p>
       <p id="module-runs">{moduleTrace()}</p>
       <p id="counts">
         {count}:{step}:{derived}:{other}

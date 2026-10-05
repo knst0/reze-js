@@ -50,20 +50,29 @@ impl<'a> HelperImports<'a> {
         for (source, bindings) in facade.into_iter().chain(pending) {
             let mut specs = ArenaVec::with_capacity_in(bindings.len(), &builder);
             for (export, alias) in bindings {
-                let imported = ModuleExportName::new_identifier_name(SPAN, Ident::from(export), &builder);
+                let imported =
+                    ModuleExportName::new_identifier_name(SPAN, Ident::from(export), &builder);
                 let local = BindingIdentifier::new(SPAN, Ident::from(alias), &builder);
                 specs.push(ImportDeclarationSpecifier::new_import_specifier(
-                    SPAN, imported, local, ImportOrExportKind::Value, &builder,
+                    SPAN,
+                    imported,
+                    local,
+                    ImportOrExportKind::Value,
+                    &builder,
                 ));
             }
             let existing = program.body.iter_mut().find_map(|statement| {
                 let Statement::ImportDeclaration(decl) = statement else { return None };
-                if decl.source.value.as_str() != source || decl.import_kind != ImportOrExportKind::Value {
+                if decl.source.value.as_str() != source
+                    || decl.import_kind != ImportOrExportKind::Value
+                {
                     return None;
                 }
-                if decl.specifiers.as_ref().is_some_and(|specs| specs.iter().any(|specifier| {
-                    matches!(specifier, ImportDeclarationSpecifier::ImportNamespaceSpecifier(_))
-                })) {
+                if decl.specifiers.as_ref().is_some_and(|specs| {
+                    specs.iter().any(|specifier| {
+                        matches!(specifier, ImportDeclarationSpecifier::ImportNamespaceSpecifier(_))
+                    })
+                }) {
                     return None;
                 }
                 Some(decl)
@@ -73,15 +82,24 @@ impl<'a> HelperImports<'a> {
             } else {
                 let source = StringLiteral::new(SPAN, Str::from(source), None, &builder);
                 declarations.push(Statement::ImportDeclaration(ImportDeclaration::boxed(
-                    SPAN, Some(specs), source, None, None, ImportOrExportKind::Value, &builder,
+                    SPAN,
+                    Some(specs),
+                    source,
+                    None,
+                    None,
+                    ImportOrExportKind::Value,
+                    &builder,
                 )));
             }
         }
         if !declarations.is_empty() {
-            let insert_at = program.body.iter().rposition(|statement| {
-                matches!(statement, Statement::ImportDeclaration(_))
-            }).map_or(0, |index| index + 1);
-            let mut body = ArenaVec::with_capacity_in(program.body.len() + declarations.len(), &builder);
+            let insert_at = program
+                .body
+                .iter()
+                .rposition(|statement| matches!(statement, Statement::ImportDeclaration(_)))
+                .map_or(0, |index| index + 1);
+            let mut body =
+                ArenaVec::with_capacity_in(program.body.len() + declarations.len(), &builder);
             let old = std::mem::replace(&mut program.body, ArenaVec::new_in(&builder));
             let mut old = old.into_iter();
             body.extend(old.by_ref().take(insert_at));

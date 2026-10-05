@@ -17,14 +17,7 @@ export type WireValue =
   | { readonly tag: "bigint"; readonly value: string }
   | { readonly tag: "ref"; readonly id: number };
 
-export type NativeErrorKind =
-  | "Error"
-  | "EvalError"
-  | "RangeError"
-  | "ReferenceError"
-  | "SyntaxError"
-  | "TypeError"
-  | "URIError";
+export type NativeErrorKind = "Error" | "EvalError" | "RangeError" | "ReferenceError" | "SyntaxError" | "TypeError" | "URIError";
 
 export type WireNode =
   | {
@@ -106,9 +99,7 @@ export class FrameEncoder {
 
   capture(slotId: string, values: readonly unknown[]): CapturedFrame {
     if (!Array.isArray(values)) {
-      throw new CodecError(
-        `reze: cannot capture hydration slot "${slotId}" for route "${this.pathname}": values must be an array`,
-      );
+      throw new CodecError(`reze: cannot capture hydration slot "${slotId}" for route "${this.pathname}": values must be an array`);
     }
     const state: EncodeState = { slot: slotId, seen: new Set<number>(), nodes: [] };
     const roots = values.map((value, index) => this.encodeValue(value, state, [index]));
@@ -156,12 +147,7 @@ export class FrameEncoder {
     return { tag: "ref", id };
   }
 
-  private snapshotObject(
-    value: object,
-    id: number,
-    state: EncodeState,
-    path: readonly (string | number)[],
-  ): WireNode {
+  private snapshotObject(value: object, id: number, state: EncodeState, path: readonly (string | number)[]): WireNode {
     if (Array.isArray(value)) return this.snapshotArray(value, id, state, path);
     if (Object.prototype.toString.call(value) === "[object Module]") {
       throw this.unsupported(state.slot, path, "module namespace");
@@ -175,12 +161,7 @@ export class FrameEncoder {
     throw this.unsupported(state.slot, path, describe(value));
   }
 
-  private snapshotArray(
-    value: unknown[],
-    id: number,
-    state: EncodeState,
-    path: readonly (string | number)[],
-  ): WireNode {
+  private snapshotArray(value: unknown[], id: number, state: EncodeState, path: readonly (string | number)[]): WireNode {
     if (Object.getPrototypeOf(value) !== Array.prototype) {
       throw this.unsupported(state.slot, path, describe(value));
     }
@@ -205,12 +186,7 @@ export class FrameEncoder {
     return { id, kind: "array", length, items, extra };
   }
 
-  private snapshotDate(
-    value: Date,
-    id: number,
-    state: EncodeState,
-    path: readonly (string | number)[],
-  ): WireNode {
+  private snapshotDate(value: Date, id: number, state: EncodeState, path: readonly (string | number)[]): WireNode {
     const extra = Object.getOwnPropertyNames(value)[0];
     if (extra !== undefined) {
       throw this.unsupported(state.slot, [...path, extra], `Date with unsupported own property ${JSON.stringify(extra)}`);
@@ -221,12 +197,7 @@ export class FrameEncoder {
     return { id, kind: "date", time: encodeNumber(value.getTime()) };
   }
 
-  private snapshotError(
-    value: Error,
-    id: number,
-    state: EncodeState,
-    path: readonly (string | number)[],
-  ): WireNode {
+  private snapshotError(value: Error, id: number, state: EncodeState, path: readonly (string | number)[]): WireNode {
     const proto: unknown = Object.getPrototypeOf(value);
     const native = typeof proto === "object" && proto !== null ? ERROR_KIND_BY_PROTO.get(proto) : undefined;
     if (native === undefined) {
@@ -262,12 +233,7 @@ export class FrameEncoder {
     };
   }
 
-  private snapshotRecord(
-    value: Record<string, unknown>,
-    id: number,
-    state: EncodeState,
-    path: readonly (string | number)[],
-  ): WireNode {
+  private snapshotRecord(value: Record<string, unknown>, id: number, state: EncodeState, path: readonly (string | number)[]): WireNode {
     if (Object.getOwnPropertySymbols(value).length > 0) {
       throw this.unsupported(state.slot, path, "record with symbol properties");
     }
@@ -279,9 +245,7 @@ export class FrameEncoder {
   }
 
   private unsupported(slot: string, path: readonly (string | number)[], detail: string): CodecError {
-    return new CodecError(
-      `reze: unsupported hydration value ${detail} at ${formatPath(path)} (slot "${slot}", route "${this.pathname}")`,
-    );
+    return new CodecError(`reze: unsupported hydration value ${detail} at ${formatPath(path)} (slot "${slot}", route "${this.pathname}")`);
   }
 }
 
@@ -679,12 +643,7 @@ function createShell(node: WireNode): unknown {
   }
 }
 
-function fillNode(
-  shell: unknown,
-  node: WireNode,
-  shells: Map<number, Materialized>,
-  frameIndex: number,
-): void {
+function fillNode(shell: unknown, node: WireNode, shells: Map<number, Materialized>, frameIndex: number): void {
   switch (node.kind) {
     case "array": {
       const arrayShell = shell as unknown[];
@@ -740,8 +699,7 @@ function fillNode(
       }
       defineSilent(errorShell, "message", node.message);
       const proto: unknown = Object.getPrototypeOf(errorShell);
-      const protoName: unknown =
-        typeof proto === "object" && proto !== null && "name" in proto ? proto.name : undefined;
+      const protoName: unknown = typeof proto === "object" && proto !== null && "name" in proto ? proto.name : undefined;
       if (node.name === protoName) {
         if (Object.hasOwn(errorShell, "name")) Reflect.deleteProperty(errorShell, "name");
       } else {

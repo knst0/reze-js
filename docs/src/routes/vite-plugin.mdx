@@ -20,14 +20,14 @@ See [installation](/installation) for the complete project configuration.
 
 ## Options
 
-| Option | Type | Behavior |
-| --- | --- | --- |
-| `diagnostics` | `{ jsonl?: string }` | Append all compiler diagnostics to this file as JSON lines. Parent directories are created when diagnostics are written. |
-| `extensions` | `string[]` | Replace the transformed file extensions. Omitted or empty lists use the defaults. |
-| `links` | `string` | Name a module exporting `link` to handle compiled native anchors with `href`. |
-| `fileRoutes` | `boolean` or options object | Enable generated file-system routes. Requires `@rezejs/router`. |
-| `ssg` | options object | Pre-render the application to static HTML with hydration. See [static site generation](#static-site-generation). |
-| `profile` | `{ dir: string }` | Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. |
+| Option        | Type                        | Behavior                                                                                                                                                            |
+| ------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `diagnostics` | `{ jsonl?: string }`        | Append all compiler diagnostics to this file as JSON lines. Parent directories are created when diagnostics are written.                                            |
+| `extensions`  | `string[]`                  | Replace the transformed file extensions. Omitted or empty lists use the defaults.                                                                                   |
+| `links`       | `string`                    | Name a module exporting `link` to handle compiled native anchors with `href`.                                                                                       |
+| `fileRoutes`  | `boolean` or options object | Enable generated file-system routes. Requires `@rezejs/router`.                                                                                                     |
+| `ssg`         | options object              | Pre-render the application to static HTML with hydration. See [static site generation](#static-site-generation).                                                    |
+| `profile`     | `{ dir: string }`           | Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. |
 
 The exported `DEFAULT_ROUTE_EXTENSIONS` contains `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`. Leading dots are optional in custom extension entries. Files in `node_modules` are excluded from the compiler transform.
 
@@ -48,13 +48,13 @@ export default defineConfig({
 
 With file routes enabled, `reze()` returns an awaitable plugin list accepted by Vite. It serves `virtual:reze-routes`, whose `routes` and `paths` exports are consumed by the application's router setup.
 
-| `fileRoutes` option | Default | Contract |
-| --- | --- | --- |
-| `dir` | `"src/routes"` | Route directory relative to Vite's root; it must exist. |
-| `types` | `"src/routes.gen.d.ts"` | Generated declaration file relative to Vite's root. Set to `false` to disable generation. |
-| `links` | `true` | Claim native anchors for router navigation and active/pending attributes. |
-| `history` | `"browser"` | Generate link types for browser or `"hash"` history. This does not construct the application's history object. |
-| `extensions` | Top-level extensions, otherwise default script extensions | Select files discovered as routes. |
+| `fileRoutes` option | Default                                                   | Contract                                                                                                       |
+| ------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `dir`               | `"src/routes"`                                            | Route directory relative to Vite's root; it must exist.                                                        |
+| `types`             | `"src/routes.gen.d.ts"`                                   | Generated declaration file relative to Vite's root. Set to `false` to disable generation.                      |
+| `links`             | `true`                                                    | Claim native anchors for router navigation and active/pending attributes.                                      |
+| `history`           | `"browser"`                                               | Generate link types for browser or `"hash"` history. This does not construct the application's history object. |
+| `extensions`        | Top-level extensions, otherwise default script extensions | Select files discovered as routes.                                                                             |
 
 Keep the `history` option consistent with the history passed to `createRouter`. Browser link types account for Vite's `base`; hash link types use the hash prefix. The generated declarations are build output: change route files or configuration rather than editing declarations by hand.
 
@@ -86,14 +86,14 @@ export { Shell as default } from "./Shell";
 
 Without routes, the default export is the whole page and serves exactly `/`; combining that shape with `ssg.paths` is an error. Detecting the shape reads the static export graph without executing the application; ambiguous or missing exports fail the build before any page renders.
 
-| `ssg` option | Default | Contract |
-| --- | --- | --- |
-| `entry` | required | Project-relative application module, as above. |
-| `template` | `"index.html"` | HTML template. It must contain exactly one `<script type="module" src="/@reze/ssg-client.js"></script>`; other scripts and styles are preserved. |
-| `selector` | `"#app"` | Mount selector: `#` plus an ASCII identifier. The mount root must carry that id. |
-| `trailingSlash` | `"always"` | `"always"` or `"never"`. Shapes canonical URLs; the static file layout is identical either way. |
-| `timeoutMs` | `30000` | Per-page deadline: a finite number above zero. Unsettled registered work fails the page instead of emitting a placeholder. |
-| `paths` | `{}` | Dynamic-leaf params: each pattern maps to param records or a one-shot callback returning them. Callbacks run once per production build. |
+| `ssg` option    | Default        | Contract                                                                                                                                         |
+| --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `entry`         | required       | Project-relative application module, as above.                                                                                                   |
+| `template`      | `"index.html"` | HTML template. It must contain exactly one `<script type="module" src="/@reze/ssg-client.js"></script>`; other scripts and styles are preserved. |
+| `selector`      | `"#app"`       | Mount selector: `#` plus an ASCII identifier. The mount root must carry that id.                                                                 |
+| `trailingSlash` | `"always"`     | `"always"` or `"never"`. Shapes canonical URLs; the static file layout is identical either way.                                                  |
+| `timeoutMs`     | `30000`        | Per-page deadline: a finite number above zero. Unsettled registered work fails the page instead of emitting a placeholder.                       |
+| `paths`         | `{}`           | Dynamic-leaf params: each pattern maps to param records or a one-shot callback returning them. Callbacks run once per production build.          |
 
 Static leaves are enumerated automatically; each dynamic leaf pattern needs its normalized key in `paths`. `[]` skips a dynamic leaf explicitly, unknown keys or unmatched URLs fail the build, and an empty page set is an error. `/` is written to `index.html`, `/a/b` to `a/b/index.html`. The input template is not published as a separate client-only shell: without a `/` page, no root `index.html` is emitted.
 

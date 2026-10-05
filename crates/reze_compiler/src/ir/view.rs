@@ -65,7 +65,9 @@ impl View {
                                 visit(ViewReference::Expression(data));
                             }
                         }
-                        ElementProp::Ref(target) if client_work => ref_target_exprs(&target.target, visit),
+                        ElementProp::Ref(target) if client_work => {
+                            ref_target_exprs(&target.target, visit)
+                        }
                         ElementProp::Event(_) | ElementProp::Ref(_) => {}
                         ElementProp::Spread(spread) => {
                             for part in &spread.parts {
@@ -75,7 +77,9 @@ impl View {
                                             attr_value_exprs(&entry.value, visit);
                                         }
                                     }
-                                    SpreadPart::Generic { expr, .. } => visit(ViewReference::Expression(*expr)),
+                                    SpreadPart::Generic { expr, .. } => {
+                                        visit(ViewReference::Expression(*expr))
+                                    }
                                 }
                             }
                         }
@@ -94,7 +98,11 @@ impl View {
                 }
             }
             ViewKind::Component(component) => {
-                if component.island.as_ref().is_none_or(|island| matches!(&island.loader, IslandLoader::Direct)) {
+                if component
+                    .island
+                    .as_ref()
+                    .is_none_or(|island| matches!(&island.loader, IslandLoader::Direct))
+                {
                     visit(ViewReference::Expression(component.callee));
                 }
                 for segment in &component.props {
@@ -102,14 +110,19 @@ impl View {
                         ComponentSegment::Object(entries) => {
                             for entry in entries {
                                 match entry {
-                                    ComponentProp::Value { value, .. } | ComponentProp::Getter { value, .. } => {
+                                    ComponentProp::Value { value, .. }
+                                    | ComponentProp::Getter { value, .. } => {
                                         component_value_exprs(value, visit);
                                     }
-                                    ComponentProp::ForwardRef(target) => assign_target_exprs(target, visit),
+                                    ComponentProp::ForwardRef(target) => {
+                                        assign_target_exprs(target, visit)
+                                    }
                                 }
                             }
                         }
-                        ComponentSegment::Spread { expr, .. } => visit(ViewReference::Expression(*expr)),
+                        ComponentSegment::Spread { expr, .. } => {
+                            visit(ViewReference::Expression(*expr))
+                        }
                     }
                 }
                 if let Some(island) = &component.island

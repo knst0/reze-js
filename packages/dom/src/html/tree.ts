@@ -150,21 +150,13 @@ export function isLfStripTag(tag: string, ns: HtmlNamespaceKey): boolean {
 
 function checkTag(tag: string, site?: unknown): void {
   if (!TagPattern.test(tag)) {
-    throw new HtmlRecordError(
-      `Invalid element tag "${tag}"; expected a tag name with optional namespace prefix`,
-      formatSite(site),
-      site,
-    );
+    throw new HtmlRecordError(`Invalid element tag "${tag}"; expected a tag name with optional namespace prefix`, formatSite(site), site);
   }
 }
 
 function checkNamespace(ns: HtmlNamespaceKey, site?: unknown): void {
   if (ns !== "" && ns !== "svg" && ns !== "math") {
-    throw new HtmlRecordError(
-      `Invalid namespace key "${ns as string}"; expected "", "svg" or "math"`,
-      formatSite(site),
-      site,
-    );
+    throw new HtmlRecordError(`Invalid namespace key "${ns as string}"; expected "", "svg" or "math"`, formatSite(site), site);
   }
 }
 
@@ -276,20 +268,11 @@ export function attachChild(parent: HtmlParent, child: HtmlNode, site?: unknown)
 }
 
 /** Inserts `child` before the direct child `anchor`. */
-export function insertBefore(
-  parent: HtmlParent,
-  child: HtmlNode,
-  anchor: HtmlNode,
-  site?: unknown,
-): void {
+export function insertBefore(parent: HtmlParent, child: HtmlNode, anchor: HtmlNode, site?: unknown): void {
   checkPlaceable(parent, child, site ?? child.meta.site);
   const index = parent.children.indexOf(anchor);
   if (index === -1 || anchor.parent !== parent) {
-    throw new HtmlRecordError(
-      "Cannot insert before an anchor from another parent",
-      `${describeParent(parent)} <- ${child.kind}`,
-      site,
-    );
+    throw new HtmlRecordError("Cannot insert before an anchor from another parent", `${describeParent(parent)} <- ${child.kind}`, site);
   }
   child.parent = parent;
   parent.children.splice(index, 0, child);

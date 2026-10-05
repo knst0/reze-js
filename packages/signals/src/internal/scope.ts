@@ -52,11 +52,16 @@ let activeScope: ExecutionScope | undefined;
 let activeModuleId: string | undefined;
 let scopes: Set<ExecutionScope> | undefined;
 let nodeScopes: WeakMap<ReactiveNode, ExecutionScope> | undefined;
-let moduleScopes: Map<string, {
-  scope: ExecutionScope;
-  owner: ReactiveNode | undefined;
-  createOwner?: (moduleId: string) => ReactiveNode;
-}> | undefined;
+let moduleScopes:
+  | Map<
+      string,
+      {
+        scope: ExecutionScope;
+        owner: ReactiveNode | undefined;
+        createOwner?: (moduleId: string) => ReactiveNode;
+      }
+    >
+  | undefined;
 let observer: ScopeObserver | undefined;
 
 export function setScopeObserver(next: ScopeObserver | undefined): void {
@@ -80,10 +85,7 @@ export interface ScopeContext {
   readonly moduleId: string | undefined;
 }
 
-export function enterScopeContext(
-  scope: ExecutionScope | undefined,
-  moduleId: string | undefined,
-): ScopeContext {
+export function enterScopeContext(scope: ExecutionScope | undefined, moduleId: string | undefined): ScopeContext {
   const prev: ScopeContext = { scope: activeScope, moduleId: activeModuleId };
   activeScope = scope;
   activeModuleId = moduleId;
@@ -201,12 +203,7 @@ export interface ScopeObserver {
   onModuleAwait?(frame: ModuleScopeFrame, site: SourceSite): void;
   interceptModuleAwait?(frame: ModuleScopeFrame, value: unknown): Promise<unknown> | undefined;
   onModuleResume?(frame: ModuleScopeFrame): void;
-  onContinuationEvent?(
-    handle: ContinuationHandle,
-    event: ContinuationEvent,
-    site: SourceSite | undefined,
-    value: unknown,
-  ): void;
+  onContinuationEvent?(handle: ContinuationHandle, event: ContinuationEvent, site: SourceSite | undefined, value: unknown): void;
   interceptSuspend?(
     handle: ContinuationHandle,
     site: SourceSite | undefined,
@@ -219,7 +216,6 @@ export interface ScopeObserver {
   ): { readonly value: unknown } | undefined;
   resolveUniqueId?(request: UniqueIdRequest): string | undefined;
 }
-
 
 interface QueueState {
   list: (ReactiveNode | undefined)[];

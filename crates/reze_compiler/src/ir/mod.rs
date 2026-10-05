@@ -14,9 +14,9 @@ use oxc_syntax::symbol::SymbolId;
 
 use crate::diagnostic::{Code, Report};
 use crate::frontend::analysis::{Intrinsic, SharedFacts};
-use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
-use crate::frontend::pure::{has_jsx, is_defined, inline_entries, static_property};
+use crate::frontend::pure::{has_jsx, inline_entries, is_defined, static_property};
 use crate::html::*;
+use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 use schedule::{EffectGroup, MemberKind, SchedMember, Schedule, ValueMode};
 use sites::{SiteId, SiteRegistry};
@@ -64,9 +64,18 @@ pub fn build_module_ir<'x>(
         has_views: false,
     };
     builder.visit_program(program);
-    let Builder { views, by_span, module_id, islands, source_sites, reports, has_views, .. } = builder;
-    ModuleIr { views, by_span, module_id, islands, sites: pre.sites, callback_sites: source_sites, reports, has_views }
-
+    let Builder { views, by_span, module_id, islands, source_sites, reports, has_views, .. } =
+        builder;
+    ModuleIr {
+        views,
+        by_span,
+        module_id,
+        islands,
+        sites: pre.sites,
+        callback_sites: source_sites,
+        reports,
+        has_views,
+    }
 }
 
 struct Builder<'x> {
@@ -146,8 +155,7 @@ impl Builder<'_> {
     fn stable_callee(&self, e: &Expression<'_>) -> Option<ExprRef> {
         let Expression::CallExpression(call) = e.without_parentheses() else { return None };
         let Expression::Identifier(id) = &call.callee else { return None };
-        let plain =
-            call.arguments.is_empty() && !call.optional && call.type_arguments.is_none();
+        let plain = call.arguments.is_empty() && !call.optional && call.type_arguments.is_none();
         (plain
             && self.facts.is_stable_getter(self.scoping, id)
             && self.facts.folded_read(call).is_none())
@@ -294,7 +302,11 @@ impl Builder<'_> {
         }
     }
 
-    fn items<'b, 'x>(&mut self, children: &'b [JSXChild<'x>], is_native: bool) -> Vec<Item<'b, 'x>> {
+    fn items<'b, 'x>(
+        &mut self,
+        children: &'b [JSXChild<'x>],
+        is_native: bool,
+    ) -> Vec<Item<'b, 'x>> {
         let mut items = Vec::new();
         self.collect_items(children, is_native, &mut items);
         items
@@ -323,10 +335,7 @@ impl Builder<'_> {
         }
     }
 
-    fn live_branch<'b, 'x>(
-        &mut self,
-        e: &'b Expression<'x>,
-    ) -> Option<Option<&'b Expression<'x>>> {
+    fn live_branch<'b, 'x>(&mut self, e: &'b Expression<'x>) -> Option<Option<&'b Expression<'x>>> {
         let inner = e.without_parentheses();
         let (live, dropped) = match inner {
             Expression::BooleanLiteral(_) | Expression::NullLiteral(_) => return Some(None),
@@ -473,13 +482,14 @@ impl Builder<'_> {
                 (matches!(parent.tag.as_str(), "mi" | "mo" | "mn" | "ms" | "mtext")
                     && !matches!(tag, "mglyph" | "malignmark"))
                     || (parent.tag == "annotation-xml"
-                        && (tag == "svg" || parent.attrs.iter().any(|attr| {
-                            attr.name.eq_ignore_ascii_case("encoding")
-                                && attr.value.as_deref().is_some_and(|value| {
-                                    value.eq_ignore_ascii_case("text/html")
-                                        || value.eq_ignore_ascii_case("application/xhtml+xml")
-                                })
-                        })))
+                        && (tag == "svg"
+                            || parent.attrs.iter().any(|attr| {
+                                attr.name.eq_ignore_ascii_case("encoding")
+                                    && attr.value.as_deref().is_some_and(|value| {
+                                        value.eq_ignore_ascii_case("text/html")
+                                            || value.eq_ignore_ascii_case("application/xhtml+xml")
+                                    })
+                            })))
             }
         };
         if html_context {
@@ -489,12 +499,51 @@ impl Builder<'_> {
                 _ => Namespace::Html,
             };
         }
-        let breaks_out = matches!(tag,
-            "b" | "big" | "blockquote" | "body" | "br" | "center" | "code" | "dd" | "div" | "dl"
-            | "dt" | "em" | "embed" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "head" | "hr"
-            | "i" | "img" | "li" | "listing" | "menu" | "meta" | "nobr" | "ol" | "p" | "pre"
-            | "ruby" | "s" | "small" | "span" | "strong" | "strike" | "sub" | "sup" | "table"
-            | "tt" | "u" | "ul" | "var"
+        let breaks_out = matches!(
+            tag,
+            "b" | "big"
+                | "blockquote"
+                | "body"
+                | "br"
+                | "center"
+                | "code"
+                | "dd"
+                | "div"
+                | "dl"
+                | "dt"
+                | "em"
+                | "embed"
+                | "h1"
+                | "h2"
+                | "h3"
+                | "h4"
+                | "h5"
+                | "h6"
+                | "head"
+                | "hr"
+                | "i"
+                | "img"
+                | "li"
+                | "listing"
+                | "menu"
+                | "meta"
+                | "nobr"
+                | "ol"
+                | "p"
+                | "pre"
+                | "ruby"
+                | "s"
+                | "small"
+                | "span"
+                | "strong"
+                | "strike"
+                | "sub"
+                | "sup"
+                | "table"
+                | "tt"
+                | "u"
+                | "ul"
+                | "var"
         );
         if breaks_out { Namespace::Html } else { parent.ns }
     }
@@ -573,19 +622,13 @@ impl Builder<'_> {
                 items.push(Item::Expr(e));
             } else {
                 self.report(
-                    Report::new(Code::ChildrenPropIgnored, a.span)
-                        .fix(vec![self.removal(a.span)]),
+                    Report::new(Code::ChildrenPropIgnored, a.span).fix(vec![self.removal(a.span)]),
                 );
             }
         }
     }
 
-    fn native_children(
-        &mut self,
-        state: &mut ElementState,
-        parent: u32,
-        items: Vec<Item<'_, '_>>,
-    ) {
+    fn native_children(&mut self, state: &mut ElementState, parent: u32, items: Vec<Item<'_, '_>>) {
         let base = state.view.inserts.len();
         let mut pending = Vec::new();
         let segments = self.segments(items);
@@ -637,9 +680,18 @@ impl Builder<'_> {
                 }
                 Some(value) => {
                     pending.push((state.view.inserts.len(), static_count));
-                    state.view.inserts.push(InsertOp { slot: state.view.inserts.len() as u32, parent, value, anchor: Anchor::End });
+                    state.view.inserts.push(InsertOp {
+                        slot: state.view.inserts.len() as u32,
+                        parent,
+                        value,
+                        anchor: Anchor::End,
+                    });
                     let index = state.view.inserts.len() - 1;
-                    state.view.schedule.children.push(SchedMember { kind: MemberKind::Insert, index });
+                    state
+                        .view
+                        .schedule
+                        .children
+                        .push(SchedMember { kind: MemberKind::Insert, index });
                     after_dynamic = true;
                 }
             }
@@ -872,7 +924,11 @@ impl Builder<'_> {
         }
         if link.is_some() {
             self.reference(state, node);
-            state.view.links.push(LinkProp { node, after_prop: state.view.props.len(), href: link_href });
+            state.view.links.push(LinkProp {
+                node,
+                after_prop: state.view.props.len(),
+                href: link_href,
+            });
         }
     }
 
@@ -952,10 +1008,9 @@ impl Builder<'_> {
         if is_static {
             let class = keys.attribute();
             if !class.is_empty() {
-                state.view.statics.nodes[node as usize].attrs.push(StaticAttr {
-                    name: "class".to_string(),
-                    value: Some(class.clone()),
-                });
+                state.view.statics.nodes[node as usize]
+                    .attrs
+                    .push(StaticAttr { name: "class".to_string(), value: Some(class.clone()) });
                 state.view.props.push(ElementProp::Attr(Attr {
                     node,
                     target: AttrTarget::Attr("class".to_string()),
@@ -967,10 +1022,9 @@ impl Builder<'_> {
         if let Some(toggles) = self.class_toggles(&values) {
             if !toggles.0.is_empty() {
                 let class = toggles.0.join(" ");
-                state.view.statics.nodes[node as usize].attrs.push(StaticAttr {
-                    name: "class".to_string(),
-                    value: Some(class.clone()),
-                });
+                state.view.statics.nodes[node as usize]
+                    .attrs
+                    .push(StaticAttr { name: "class".to_string(), value: Some(class.clone()) });
             }
             self.reference(state, node);
             for (token, value) in toggles.1 {
@@ -1017,22 +1071,15 @@ impl Builder<'_> {
                 NativeValue::Bare | NativeValue::View(_) => {}
             }
         }
-        let target = if is_string {
-            AttrTarget::Attr("class".to_string())
-        } else {
-            AttrTarget::Class
-        };
+        let target =
+            if is_string { AttrTarget::Attr("class".to_string()) } else { AttrTarget::Class };
         let value = if parts.len() == 1 {
             parts.pop().expect("one part")
         } else {
             AttrValue::ClassParts(parts)
         };
         self.reference(state, node);
-        state.view.props.push(ElementProp::Attr(Attr {
-            node,
-            target,
-            value,
-        }));
+        state.view.props.push(ElementProp::Attr(Attr { node, target, value }));
     }
 }
 
@@ -1084,9 +1131,9 @@ impl Builder<'_> {
             return None;
         }
         let is_toggled = |token: &str| toggles.iter().any(|(t, _)| t == token);
-        let has_conflict = static_tokens.iter().any(|t| {
-            off_tokens.iter().any(|o| o == t) || is_toggled(t)
-        }) || off_tokens.iter().any(|t| is_toggled(t));
+        let has_conflict =
+            static_tokens.iter().any(|t| off_tokens.iter().any(|o| o == t) || is_toggled(t))
+                || off_tokens.iter().any(|t| is_toggled(t));
         if has_conflict {
             return None;
         }
@@ -1134,7 +1181,12 @@ impl Builder<'_> {
             }
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
-                    self.class_pieces(element.as_expression()?, static_tokens, off_tokens, toggles)?;
+                    self.class_pieces(
+                        element.as_expression()?,
+                        static_tokens,
+                        off_tokens,
+                        toggles,
+                    )?;
                 }
             }
             _ => return None,
@@ -1160,7 +1212,13 @@ impl Builder<'_> {
         );
     }
 
-    fn attr_kind(&mut self, a: &JSXAttribute<'_>, name: &str, tag: &str, namespace: Namespace) -> AttrKind {
+    fn attr_kind(
+        &mut self,
+        a: &JSXAttribute<'_>,
+        name: &str,
+        tag: &str,
+        namespace: Namespace,
+    ) -> AttrKind {
         if name == "style" {
             return AttrKind::Style;
         }
@@ -1188,10 +1246,9 @@ impl Builder<'_> {
             };
         }
         if name == "key" {
-            self.report(
-                Report::new(Code::KeyOnElement, a.span).fix(vec![self.removal(a.span)]),
-            );
-        } else if namespace != Namespace::MathMl && !name.contains(['-', ':'])
+            self.report(Report::new(Code::KeyOnElement, a.span).fix(vec![self.removal(a.span)]));
+        } else if namespace != Namespace::MathMl
+            && !name.contains(['-', ':'])
             && let Some(suggestion) = crate::html::suggest_attribute(name)
         {
             let name_span = a.name.span();
@@ -1254,10 +1311,9 @@ impl Builder<'_> {
         if let (AttrKind::Style, NativeValue::Expr(e)) = (&kind, &value)
             && let Some(style) = self.fold_style(e)
         {
-            state.view.statics.nodes[node as usize].attrs.push(StaticAttr {
-                name: "style".to_string(),
-                value: Some(style.clone()),
-            });
+            state.view.statics.nodes[node as usize]
+                .attrs
+                .push(StaticAttr { name: "style".to_string(), value: Some(style.clone()) });
             state.view.props.push(ElementProp::Attr(Attr {
                 node,
                 target: AttrTarget::Style,
@@ -1271,10 +1327,9 @@ impl Builder<'_> {
                     match literal {
                         InlineLiteral::Absent => {}
                         InlineLiteral::Bare => {
-                            state.view.statics.nodes[node as usize].attrs.push(StaticAttr {
-                                name: html_name.clone(),
-                                value: None,
-                            });
+                            state.view.statics.nodes[node as usize]
+                                .attrs
+                                .push(StaticAttr { name: html_name.clone(), value: None });
                             state.view.props.push(ElementProp::Attr(Attr {
                                 node,
                                 target: AttrTarget::Attr(html_name),
@@ -1307,7 +1362,9 @@ impl Builder<'_> {
         };
         self.reference(state, node);
         let value = match value {
-            NativeValue::Expr(e) if self.fold_dynamic(e, false) => AttrValue::Dynamic(self.tracked(e)),
+            NativeValue::Expr(e) if self.fold_dynamic(e, false) => {
+                AttrValue::Dynamic(self.tracked(e))
+            }
             NativeValue::Bare => AttrValue::True,
             NativeValue::Str(value) => AttrValue::Str(value),
             NativeValue::Expr(expr) => AttrValue::Expr(ExprRef::of(expr)),
@@ -1320,20 +1377,23 @@ impl Builder<'_> {
         }
     }
 
-    fn inline_static(&self, kind: &AttrKind, value: &NativeValue<'_, '_>) -> Option<(String, InlineLiteral)> {
+    fn inline_static(
+        &self,
+        kind: &AttrKind,
+        value: &NativeValue<'_, '_>,
+    ) -> Option<(String, InlineLiteral)> {
         let html_name = match kind {
-            AttrKind::Attr(n) | AttrKind::AttrNs(_, n) | AttrKind::InlineProp(n) | AttrKind::Bool(n) => {
-                n.clone()
-            }
+            AttrKind::Attr(n)
+            | AttrKind::AttrNs(_, n)
+            | AttrKind::InlineProp(n)
+            | AttrKind::Bool(n) => n.clone(),
             AttrKind::Style => "style".to_string(),
             AttrKind::Prop(_) | AttrKind::LateProp(_) => return None,
         };
         let literal = match value {
             NativeValue::Bare => Literal::Bool(true),
             NativeValue::Str(s) => Literal::Str(s.clone()),
-            NativeValue::Expr(e)
-                if matches!(kind, AttrKind::Bool(_) | AttrKind::InlineProp(_)) =>
-            {
+            NativeValue::Expr(e) if matches!(kind, AttrKind::Bool(_) | AttrKind::InlineProp(_)) => {
                 match self.fold_truthy(e) {
                     Some(truthy) => Literal::Bool(truthy),
                     None => return None,
@@ -1383,7 +1443,6 @@ fn is_routable_href(href: &str) -> bool {
     !(first.is_ascii_alphabetic() && scheme_end.is_some_and(|end| href.as_bytes()[end] == b':'))
 }
 
-
 impl Builder<'_> {
     fn event_lowercase(&mut self, a: &JSXAttribute<'_>, name: &str) {
         let name_span = a.name.span();
@@ -1414,10 +1473,9 @@ impl Builder<'_> {
         let handler = match value {
             NativeValue::Expr(e) => e,
             NativeValue::Str(s) => {
-                state.view.statics.nodes[node as usize].attrs.push(StaticAttr {
-                    name: format!("on{event}"),
-                    value: Some(s),
-                });
+                state.view.statics.nodes[node as usize]
+                    .attrs
+                    .push(StaticAttr { name: format!("on{event}"), value: Some(s) });
                 return;
             }
             NativeValue::Bare | NativeValue::View(_) => return,
@@ -1503,17 +1561,31 @@ fn close_spread(parts: &mut [SpreadPart], is_svg: bool) -> bool {
         keys.insert(key.as_str())
             && !key.as_bytes().first().is_some_and(u8::is_ascii_digit)
             && !key.starts_with("on")
-            && !matches!(key.as_str(),
-                "children" | "ref" | "__proto__" | "constructor" | "toString" | "toLocaleString"
-                | "valueOf" | "hasOwnProperty" | "isPrototypeOf" | "propertyIsEnumerable"
-                | "__defineGetter__" | "__defineSetter__" | "__lookupGetter__" | "__lookupSetter__")
+            && !matches!(
+                key.as_str(),
+                "children"
+                    | "ref"
+                    | "__proto__"
+                    | "constructor"
+                    | "toString"
+                    | "toLocaleString"
+                    | "valueOf"
+                    | "hasOwnProperty"
+                    | "isPrototypeOf"
+                    | "propertyIsEnumerable"
+                    | "__defineGetter__"
+                    | "__defineSetter__"
+                    | "__lookupGetter__"
+                    | "__lookupSetter__"
+            )
     });
     drop(keys);
     if !safe {
         return false;
     }
     for attr in entries {
-        let AttrTarget::Attr(mut key) = std::mem::replace(&mut attr.target, AttrTarget::Text) else {
+        let AttrTarget::Attr(mut key) = std::mem::replace(&mut attr.target, AttrTarget::Text)
+        else {
             unreachable!("closed spread keys were checked");
         };
         attr.target = if key == "style" {
@@ -1567,7 +1639,11 @@ impl Builder<'_> {
                             } else {
                                 AttrValue::Expr(ExprRef::of(expression))
                             };
-                            current.push(Attr { node, target: AttrTarget::Attr(key.to_string()), value });
+                            current.push(Attr {
+                                node,
+                                target: AttrTarget::Attr(key.to_string()),
+                                value,
+                            });
                         }
                     } else {
                         flush(&mut parts, &mut current);
@@ -1604,13 +1680,19 @@ impl Builder<'_> {
         let closed = close_spread(&mut parts, is_svg);
         self.reference(state, node);
         state.view.props.push(ElementProp::Spread(SpreadSegment {
-            node, parts, closed, is_svg, has_children,
+            node,
+            parts,
+            closed,
+            is_svg,
+            has_children,
         }));
     }
 
     fn spread_prop(&mut self, node: u32, key: &str, a: &JSXAttribute<'_>) -> Option<Attr> {
         Some(match &a.value {
-            None => Attr { node, target: AttrTarget::Attr(key.to_string()), value: AttrValue::True },
+            None => {
+                Attr { node, target: AttrTarget::Attr(key.to_string()), value: AttrValue::True }
+            }
             Some(JSXAttributeValue::StringLiteral(s)) => Attr {
                 node,
                 target: AttrTarget::Attr(key.to_string()),
@@ -1885,7 +1967,7 @@ impl Builder<'_> {
                 if self.fold_dynamic(e, true) {
                     ComponentProp::Getter { key: key.to_string(), value }
                 } else {
-                    ComponentProp::Value { key: key.to_string(), value: value }
+                    ComponentProp::Value { key: key.to_string(), value }
                 }
             }
         })
@@ -1900,9 +1982,7 @@ impl Builder<'_> {
             });
         }
         Some(match items.into_iter().next()? {
-            Item::Text(text) => {
-                ComponentProp::Value { key, value: ComponentValue::Str(text) }
-            }
+            Item::Text(text) => ComponentProp::Value { key, value: ComponentValue::Str(text) },
             Item::Element(el) => {
                 let id = self.build_root(el);
                 ComponentProp::Getter { key, value: ComponentValue::Nested(id) }
@@ -1920,10 +2000,9 @@ impl Builder<'_> {
                     let id = self.push_view(ViewKind::Flow(FlowView::Show(branch)), e.span());
                     ComponentProp::Getter { key, value: ComponentValue::Nested(id) }
                 }
-                None => ComponentProp::Getter {
-                    key,
-                    value: ComponentValue::Dynamic(self.tracked(e)),
-                },
+                None => {
+                    ComponentProp::Getter { key, value: ComponentValue::Dynamic(self.tracked(e)) }
+                }
             },
         })
     }
@@ -1986,7 +2065,8 @@ pub enum ImportBase {
 
 impl IslandPlan {
     pub fn scan(program: &Program<'_>, scoping: &Scoping) -> Self {
-        let mut plan = Self { imports: HashMap::new(), uses: HashMap::new(), pruned: HashSet::new() };
+        let mut plan =
+            Self { imports: HashMap::new(), uses: HashMap::new(), pruned: HashSet::new() };
         {
             let mut imports = IslandImports { plan: &mut plan, scoping };
             imports.visit_program(program);
@@ -2109,7 +2189,9 @@ fn has_island_attr(attributes: &[JSXAttributeItem<'_>]) -> bool {
     })
 }
 
-fn root_object<'a, 'b>(object: &'b JSXMemberExpressionObject<'a>) -> Option<&'b IdentifierReference<'a>> {
+fn root_object<'a, 'b>(
+    object: &'b JSXMemberExpressionObject<'a>,
+) -> Option<&'b IdentifierReference<'a>> {
     match object {
         JSXMemberExpressionObject::IdentifierReference(id) => Some(id),
         JSXMemberExpressionObject::MemberExpression(member) => root_object(&member.object),
@@ -2222,9 +2304,7 @@ impl Builder<'_> {
     }
 
     fn is_global(&self, id: &IdentifierReference<'_>) -> bool {
-        id.reference_id.get().is_some_and(|r| {
-            self.scoping.get_reference(r).symbol_id().is_none()
-        })
+        id.reference_id.get().is_some_and(|r| self.scoping.get_reference(r).symbol_id().is_none())
     }
 
     fn is_global_named(&self, id: &IdentifierReference<'_>, name: &str) -> bool {
@@ -2434,8 +2514,7 @@ impl Builder<'_> {
     }
 
     fn fold_dynamic(&self, e: &Expression<'_>, jsx_is_dynamic: bool) -> bool {
-        let mut check =
-            DynamicCheck { jsx_is_dynamic, facts: self.facts, found: false };
+        let mut check = DynamicCheck { jsx_is_dynamic, facts: self.facts, found: false };
         check.visit_expression(e);
         check.found
     }
@@ -2493,7 +2572,10 @@ impl<'a> Visit<'a> for DynamicCheck<'_> {
     fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
 }
 
-fn exported_symbols(program: &Program<'_>, scoping: &Scoping) -> std::collections::HashSet<SymbolId> {
+fn exported_symbols(
+    program: &Program<'_>,
+    scoping: &Scoping,
+) -> std::collections::HashSet<SymbolId> {
     let mut exported = std::collections::HashSet::new();
     let resolved = |local: &IdentifierReference<'_>| {
         scoping.get_reference(local.reference_id.get()?).symbol_id()
@@ -2692,10 +2774,13 @@ fn take_attr_tracking(value: &mut AttrValue, deps: &mut Vec<SymbolId>) -> bool {
             }
             tracked
         }
-        AttrValue::True | AttrValue::Str(_) | AttrValue::Expr(_) | AttrValue::View(_) | AttrValue::Truthy(_) => false,
+        AttrValue::True
+        | AttrValue::Str(_)
+        | AttrValue::Expr(_)
+        | AttrValue::View(_)
+        | AttrValue::Truthy(_) => false,
     }
 }
-
 
 impl Builder<'_> {
     fn build_flow(&mut self, el: &JSXElement<'_>, intrinsic: Intrinsic) -> Option<FlowView> {
@@ -2866,9 +2951,8 @@ impl Builder<'_> {
         let intrinsic = Intrinsic::Errored;
         let attributes = self.flow_attributes(el, intrinsic, &["fallback"]);
         let child = self.case_children(el, intrinsic)?;
-        let fallback = self
-            .fallback_function(&attributes)
-            .or_else(|| self.flow_fallback(&attributes));
+        let fallback =
+            self.fallback_function(&attributes).or_else(|| self.flow_fallback(&attributes));
         Some(FlowView::Errored { child, fallback })
     }
 
@@ -2906,7 +2990,8 @@ impl Builder<'_> {
             self.report(Report::new(Code::InlineEach, array.span));
         }
         let each = self.required_source(el, intrinsic, &attributes, "each")?;
-        let map = self.row_function(el, &attributes, intrinsic, "one function `(item, index) => …`")?;
+        let map =
+            self.row_function(el, &attributes, intrinsic, "one function `(item, index) => …`")?;
         let fallback = self.flow_fallback(&attributes);
         let key = match keyed {
             Some(a) => Some(self.flow_key(a)),
@@ -2996,10 +3081,7 @@ impl Builder<'_> {
         }
     }
 
-    fn static_count<'b, 'x>(
-        &self,
-        attributes: &[(String, &'b JSXAttribute<'x>)],
-    ) -> Option<u32> {
+    fn static_count<'b, 'x>(&self, attributes: &[(String, &'b JSXAttribute<'x>)]) -> Option<u32> {
         let (_, a) = attributes.iter().rev().find(|(name, _)| *name == "count")?;
         let JSXAttributeValue::ExpressionContainer(c) = a.value.as_ref()? else { return None };
         let count = c.expression.as_expression()?;
@@ -3222,9 +3304,7 @@ impl Builder<'_> {
             "media" => Some(IslandTrigger::Media),
             "interaction" => Some(IslandTrigger::Interaction),
             _ => {
-                self.report(
-                    Report::new(Code::IslandTrigger, span).arg("value", name.to_string()),
-                );
+                self.report(Report::new(Code::IslandTrigger, span).arg("value", name.to_string()));
                 None
             }
         }

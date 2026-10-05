@@ -18,13 +18,13 @@ const Router = createRouter({ routes, paths, history: createBrowserHistory(impor
 
 `createRouter(config)` compiles the table once and returns the router component. Mount it with an optional `root` shell whose `props.children` is the matched branch. `Router.match(url)` matches without rendering and returns root-to-leaf hits (`[]` when nothing matches). `Router.paths` is the configured builders tree, `Router.routes` the configured table.
 
-| Option | Default | Meaning |
-| ------ | ------- | ------- |
-| `routes` | required | `RouteDefinition[]`, or the generated `routes` |
-| `paths` | none | Builders from `virtual:reze-routes`, or `buildPaths(table)` |
-| `history` | `createBrowserHistory()` | Browser, hash, or memory history |
-| `links` | `true` for window histories, `false` for memory | Route same-origin `<a>` clicks document-wide |
-| `preload` | `true` | Load and preload a link's route on hover, focus, or touch; needs `links` |
+| Option    | Default                                         | Meaning                                                                  |
+| --------- | ----------------------------------------------- | ------------------------------------------------------------------------ |
+| `routes`  | required                                        | `RouteDefinition[]`, or the generated `routes`                           |
+| `paths`   | none                                            | Builders from `virtual:reze-routes`, or `buildPaths(table)`              |
+| `history` | `createBrowserHistory()`                        | Browser, hash, or memory history                                         |
+| `links`   | `true` for window histories, `false` for memory | Route same-origin `<a>` clicks document-wide                             |
+| `preload` | `true`                                          | Load and preload a link's route on hover, focus, or touch; needs `links` |
 
 ## Histories
 
@@ -80,7 +80,11 @@ export function Meta() {
   const match = useMatch(() => "/blog/*");
   const isRouting = useIsRouting();
   const matches = useCurrentMatches();
-  return <p>{location().pathname} has {Object.keys(params()).length} params</p>;
+  return (
+    <p>
+      {location().pathname} has {Object.keys(params()).length} params
+    </p>
+  );
 }
 ```
 
@@ -110,7 +114,11 @@ import { useLinkState } from "@rezejs/router";
 
 export function Pill(props: { href: "/about" }) {
   const state = useLinkState(() => props.href);
-  return <a href={props.href} data-active={state.active() ? "" : null}>About</a>;
+  return (
+    <a href={props.href} data-active={state.active() ? "" : null}>
+      About
+    </a>
+  );
 }
 ```
 

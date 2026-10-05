@@ -1,6 +1,20 @@
 const ControlWrites = new Set([
-  "value", "defaultvalue", "checked", "defaultchecked", "selected", "defaultselected",
-  "selectedindex", "type", "name", "form", "min", "max", "step", "multiple", "size", "disabled",
+  "value",
+  "defaultvalue",
+  "checked",
+  "defaultchecked",
+  "selected",
+  "defaultselected",
+  "selectedindex",
+  "type",
+  "name",
+  "form",
+  "min",
+  "max",
+  "step",
+  "multiple",
+  "size",
+  "disabled",
 ]);
 
 export class DirtyForms {
@@ -13,7 +27,9 @@ export class DirtyForms {
     const trees = new Set<Node>();
     for (const element of elements) trees.add(element.getRootNode());
     for (const tree of trees) {
-      const controls = (tree as ParentNode).querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input,textarea,select");
+      const controls = (tree as ParentNode).querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+        "input,textarea,select",
+      );
       for (const control of controls) {
         if (control.localName === "select") {
           const select = control as HTMLSelectElement;
@@ -29,9 +45,9 @@ export class DirtyForms {
           if (input.type === "radio" && input.name !== "") {
             const owner = input.form ?? tree;
             let names = this.radioGroups.get(owner);
-            if (names === undefined) this.radioGroups.set(owner, names = new Map());
+            if (names === undefined) this.radioGroups.set(owner, (names = new Map()));
             let group = names.get(input.name);
-            if (group === undefined) names.set(input.name, group = []);
+            if (group === undefined) names.set(input.name, (group = []));
             group.push(input);
           } else if ((input.type === "checkbox" || input.type === "radio") && input.checked !== input.defaultChecked) {
             this.mark(input);
@@ -67,7 +83,7 @@ export class DirtyForms {
       if (value == null || value === false) form = input.closest("form");
       else {
         const target = input.ownerDocument.getElementById(String(value));
-        form = target?.localName === "form" ? target as HTMLFormElement : null;
+        form = target?.localName === "form" ? (target as HTMLFormElement) : null;
       }
     }
     const group = this.radioGroups.get(form ?? input.getRootNode())?.get(nameValue);

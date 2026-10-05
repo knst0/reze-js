@@ -1,6 +1,7 @@
 import logoUrl from "./logo.svg?url";
 import inlineLogo from "./logo.svg?inline";
 import emittedLogo from "./logo.svg?no-inline";
+
 import "./styles.css";
 
 export { logoUrl, inlineLogo, emittedLogo };

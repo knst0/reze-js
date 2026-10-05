@@ -2,14 +2,14 @@ use oxc_allocator::CloneIn;
 use oxc_ast::ast::{Expression, Statement, VariableDeclarationKind};
 use oxc_syntax::operator::UnaryOperator;
 
+use super::native::NativeTarget;
+use super::{EmitContext, client, native};
 use crate::ast::Ast;
 use crate::ir::layout::logical_path;
 use crate::ir::view::{
-    Anchor, Attr, AttrTarget, ElementView, EventHandler, EventKind, InsertOp, LateProp,
-    LinkProp, RefTarget, SpreadSegment, StaticNodeKind, View,
+    Anchor, Attr, AttrTarget, ElementView, EventHandler, EventKind, InsertOp, LateProp, LinkProp,
+    RefTarget, SpreadSegment, StaticNodeKind, View,
 };
-use super::{EmitContext, client, native};
-use super::native::NativeTarget;
 
 const HYDRATE: &str = "reze-js/internal/hydrate";
 
@@ -57,21 +57,21 @@ pub fn emit<'a, 'm>(
         let kind = element.statics.nodes[index].kind;
         let path = logical_path(&element.statics, index as u32);
         let claim = match kind {
-            StaticNodeKind::Element => ctx.call(HYDRATE, "claimElement", [
-                ast.ident(root),
-                ast.string(&path),
-                ast.ident(target.site),
-            ]),
-            StaticNodeKind::Text => ctx.call(HYDRATE, "claimText", [
-                ast.ident(root),
-                ast.string(&path),
-                ast.ident(target.site),
-            ]),
-            StaticNodeKind::Marker => ctx.call(HYDRATE, "claimMarker", [
-                ast.ident(root),
-                ast.string(&path),
-                ast.ident(target.site),
-            ]),
+            StaticNodeKind::Element => ctx.call(
+                HYDRATE,
+                "claimElement",
+                [ast.ident(root), ast.string(&path), ast.ident(target.site)],
+            ),
+            StaticNodeKind::Text => ctx.call(
+                HYDRATE,
+                "claimText",
+                [ast.ident(root), ast.string(&path), ast.ident(target.site)],
+            ),
+            StaticNodeKind::Marker => ctx.call(
+                HYDRATE,
+                "claimMarker",
+                [ast.ident(root), ast.string(&path), ast.ident(target.site)],
+            ),
         };
         let access = client::accessor(ctx, element, &target.bindings, index as u32);
         out.push(ast.declaration(
@@ -106,42 +106,42 @@ impl<'a> NativeTarget<'a> for Target<'a> {
         let ast = Ast::new(ctx.allocator);
         let node = self.bindings.name(attr.node);
         let queued = match &attr.target {
-            AttrTarget::Text => ctx.call(HYDRATE, "queueText", [
-                ast.ident(node),
-                ast.ident(self.site),
-                ast.ident(value),
-            ]),
-            AttrTarget::Attr(key) => ctx.call(HYDRATE, "queueAttr", [
-                ast.ident(node),
-                ast.ident(self.site),
-                ast.string(key),
-                ast.ident(value),
-            ]),
-            AttrTarget::AttrNs(ns, key) => ctx.call(HYDRATE, "queueAttrNS", [
-                ast.ident(node),
-                ast.ident(self.site),
-                ast.string(ns),
-                ast.string(key),
-                ast.ident(value),
-            ]),
-            AttrTarget::Bool(key) => ctx.call(HYDRATE, "queueBool", [
-                ast.ident(node),
-                ast.ident(self.site),
-                ast.string(key),
-                ast.ident(value),
-            ]),
-            AttrTarget::Prop(key) => ctx.call(HYDRATE, "queueProp", [
-                ast.ident(node),
-                ast.ident(self.site),
-                ast.string(key),
-                ast.ident(value),
-            ]),
-            AttrTarget::Class => ctx.call(HYDRATE, "queueProp", [
-                ast.ident(node),
-                ast.ident(self.site),
-                ast.string("class"),
-                ast.ident(value),
-            ]),
+            AttrTarget::Text => ctx.call(
+                HYDRATE,
+                "queueText",
+                [ast.ident(node), ast.ident(self.site), ast.ident(value)],
+            ),
+            AttrTarget::Attr(key) => ctx.call(
+                HYDRATE,
+                "queueAttr",
+                [ast.ident(node), ast.ident(self.site), ast.string(key), ast.ident(value)],
+            ),
+            AttrTarget::AttrNs(ns, key) => ctx.call(
+                HYDRATE,
+                "queueAttrNS",
+                [
+                    ast.ident(node),
+                    ast.ident(self.site),
+                    ast.string(ns),
+                    ast.string(key),
+                    ast.ident(value),
+                ],
+            ),
+            AttrTarget::Bool(key) => ctx.call(
+                HYDRATE,
+                "queueBool",
+                [ast.ident(node), ast.ident(self.site), ast.string(key), ast.ident(value)],
+            ),
+            AttrTarget::Prop(key) => ctx.call(
+                HYDRATE,
+                "queueProp",
+                [ast.ident(node), ast.ident(self.site), ast.string(key), ast.ident(value)],
+            ),
+            AttrTarget::Class => ctx.call(
+                HYDRATE,
+                "queueProp",
+                [ast.ident(node), ast.ident(self.site), ast.string("class"), ast.ident(value)],
+            ),
             AttrTarget::ClassToggle(token) => {
                 let mut args = vec![
                     ast.ident(node),
@@ -155,8 +155,7 @@ impl<'a> NativeTarget<'a> for Target<'a> {
                 ctx.call(HYDRATE, "queueToggle", args)
             }
             AttrTarget::Style => {
-                let mut args =
-                    vec![ast.ident(node), ast.ident(self.site), ast.ident(value)];
+                let mut args = vec![ast.ident(node), ast.ident(self.site), ast.ident(value)];
                 if let Some(name) = previous {
                     args.push(ast.ident(name));
                 }
@@ -234,13 +233,17 @@ impl<'a> NativeTarget<'a> for Target<'a> {
     ) -> Expression<'a> {
         let ast = Ast::new(ctx.allocator);
         let node = self.bindings.name(spread.node);
-        let queued = ctx.call(HYDRATE, "queueSpread", [
-            ast.ident(node),
-            ast.ident(self.site),
-            ast.ident(value),
-            ast.boolean(spread.is_svg),
-            ast.boolean(spread.has_children),
-        ]);
+        let queued = ctx.call(
+            HYDRATE,
+            "queueSpread",
+            [
+                ast.ident(node),
+                ast.ident(self.site),
+                ast.ident(value),
+                ast.boolean(spread.is_svg),
+                ast.boolean(spread.has_children),
+            ],
+        );
         let direct = client::write_spread(ctx, spread, ast.ident(node), ast.ident(value));
         ast.conditional(ast.ident(self.preparing), queued, direct)
     }
@@ -255,28 +258,30 @@ impl<'a> NativeTarget<'a> for Target<'a> {
         let parent = self.bindings.name(insert.parent);
         let slot = ast.number(insert.slot as f64);
         let prepared = match insert.anchor {
-            Anchor::Only => ctx.call(HYDRATE, "prepareInsert", [
-                ast.ident(parent),
-                ast.ident(self.site),
-                slot,
-                value.clone_in(ctx.allocator),
-            ]),
+            Anchor::Only => ctx.call(
+                HYDRATE,
+                "prepareInsert",
+                [ast.ident(parent), ast.ident(self.site), slot, value.clone_in(ctx.allocator)],
+            ),
             Anchor::Before(anchor) => {
                 let target = self.bindings.name(anchor);
-                ctx.call(HYDRATE, "prepareInsert", [
-                    ast.ident(parent),
-                    ast.ident(self.site),
-                    slot,
-                    value.clone_in(ctx.allocator),
-                    ast.ident(target),
-                ])
+                ctx.call(
+                    HYDRATE,
+                    "prepareInsert",
+                    [
+                        ast.ident(parent),
+                        ast.ident(self.site),
+                        slot,
+                        value.clone_in(ctx.allocator),
+                        ast.ident(target),
+                    ],
+                )
             }
-            Anchor::End => ctx.call(HYDRATE, "prepareAppend", [
-                ast.ident(parent),
-                ast.ident(self.site),
-                slot,
-                value.clone_in(ctx.allocator),
-            ]),
+            Anchor::End => ctx.call(
+                HYDRATE,
+                "prepareAppend",
+                [ast.ident(parent), ast.ident(self.site), slot, value.clone_in(ctx.allocator)],
+            ),
         };
         let direct = client::write_insert(ctx, insert, &self.bindings, value);
         ast.conditional(ast.ident(self.preparing), prepared, direct)
@@ -293,11 +298,7 @@ impl<'a> NativeTarget<'a> for Target<'a> {
         client::write_link(ctx, ast.ident(node), href)
     }
 
-    fn effect(
-        &mut self,
-        ctx: &mut EmitContext<'a, '_>,
-        callback: Expression<'a>,
-    ) -> Statement<'a> {
+    fn effect(&mut self, ctx: &mut EmitContext<'a, '_>, callback: Expression<'a>) -> Statement<'a> {
         let ast = Ast::new(ctx.allocator);
         ast.stmt(ctx.call(HYDRATE, "prepareEffect", [callback, ast.ident(self.site)]))
     }
@@ -310,16 +311,12 @@ impl<'a> NativeTarget<'a> for Target<'a> {
     ) -> Expression<'a> {
         let ast = Ast::new(ctx.allocator);
         let node = self.bindings.name(late.node);
-        let queued = ctx.call(HYDRATE, "queueProp", [
-            ast.ident(node),
-            ast.ident(self.site),
-            ast.string("value"),
-            ast.ident(value),
-        ]);
-        let direct = ast.assign(
-            ast.member(ast.ident(node), ctx.intern("value")),
-            ast.ident(value),
+        let queued = ctx.call(
+            HYDRATE,
+            "queueProp",
+            [ast.ident(node), ast.ident(self.site), ast.string("value"), ast.ident(value)],
         );
+        let direct = ast.assign(ast.member(ast.ident(node), ctx.intern("value")), ast.ident(value));
         ast.conditional(ast.ident(self.preparing), queued, direct)
     }
 }

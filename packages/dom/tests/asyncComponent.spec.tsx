@@ -1,6 +1,6 @@
+import { signal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import { asyncComponent, asyncComputed, catchError, effect, flush, Loading, onCleanup, root, Show } from "reze-js";
-import { signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);

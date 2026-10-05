@@ -61,8 +61,7 @@ function elementPlan(session: HydrationSession, node: Element, site: Site): Elem
 }
 
 function initialAttributes(plan: ElementPlan, site: Site): readonly (readonly [string, string | null])[] | undefined {
-  return site.layout !== undefined && "nodes" in site.layout
-    ? site.layout.nodes[plan.index ?? 0]?.attrs : undefined;
+  return site.layout !== undefined && "nodes" in site.layout ? site.layout.nodes[plan.index ?? 0]?.attrs : undefined;
 }
 
 function domString(value: unknown): string {
@@ -144,7 +143,10 @@ export function stageListener(node: Element, _site: Site, name: string, handler:
 export function stageRef(_site: Site, callback: () => void): void {
   const session = preparingSession();
   if (session === undefined) untrack(callback);
-  else session.deferCommit(() => { callback(); });
+  else
+    session.deferCommit(() => {
+      callback();
+    });
 }
 
 export function deref<T extends Element>(node: T): T {
@@ -162,7 +164,14 @@ export function stageDelegation(moduleId: string, events: string[]): void {
   } else delegateEvents(events);
 }
 
-function prepareInsertion(parent: Element, site: Site, slot: number, value: unknown, anchor: PlanHandle | undefined, append: boolean): void {
+function prepareInsertion(
+  parent: Element,
+  site: Site,
+  slot: number,
+  value: unknown,
+  anchor: PlanHandle | undefined,
+  append: boolean,
+): void {
   const session = sessionFor(parent);
   if (session === undefined) {
     if (append) insert(parent, value, null);
@@ -175,14 +184,17 @@ function prepareInsertion(parent: Element, site: Site, slot: number, value: unkn
   const instance = session.instances.reserve(slot < 0 ? "spread" : `i${slot.toString(36)}`, site, target.instance);
   session.instances.own(instance);
   session.instances.run(instance, () => {
-    const range = new BoundRange(session, instance, "insertion", site, binding => {
+    const range = new BoundRange(session, instance, "insertion", site, (binding) => {
       if (target !== undefined) {
         if (!append && before === undefined) session.claims.clear(target);
         target.opaque = false;
         session.claims.attach(target, binding.planned, before);
       }
     });
-    session.adoptBinding(() => { target = undefined; before = undefined; });
+    session.adoptBinding(() => {
+      target = undefined;
+      before = undefined;
+    });
     range.bind(value);
   });
 }

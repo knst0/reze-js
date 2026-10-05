@@ -5,7 +5,10 @@ import { HydrationError } from "./protocol";
 export class RawGroup {
   private upgraded = false;
 
-  constructor(readonly root: ElementPlan, readonly run: TextRun) {}
+  constructor(
+    readonly root: ElementPlan,
+    readonly run: TextRun,
+  ) {}
 
   bind(): void {
     this.run.parts.length = 0;
@@ -19,12 +22,22 @@ export class RawGroup {
   update(range: RangePlan, value: unknown): void {
     while (typeof value === "function" && !managedPlans.has(value)) value = value();
     const type = typeof value;
-    if (range.children.length === 1 && range.children[0]!.kind === "text"
-      && (value == null || type === "boolean" || type === "string" || type === "number" || type === "bigint")) {
+    if (
+      range.children.length === 1 &&
+      range.children[0]!.kind === "text" &&
+      (value == null || type === "boolean" || type === "string" || type === "number" || type === "bigint")
+    ) {
       range.children[0]!.handle.data = value == null || type === "boolean" ? "" : String(value);
       return;
     }
-    if (value !== null && type === "object" && !Array.isArray(value) && !managedPlans.has(value as object) && (value as Node).nodeType === undefined) return;
+    if (
+      value !== null &&
+      type === "object" &&
+      !Array.isArray(value) &&
+      !managedPlans.has(value as object) &&
+      (value as Node).nodeType === undefined
+    )
+      return;
     if (type === "symbol") return;
     const children: NodePlan[] = [];
     this.collect(value, children, false);

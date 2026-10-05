@@ -20,23 +20,69 @@ impl<'a> Bindings<'a> {
     }
 }
 
-pub fn bindings<'a>(ctx: &mut EmitContext<'a, '_>, element: &ElementView, all_nodes: bool) -> Bindings<'a> {
-    let names = element.statics.nodes.iter().enumerate().map(|(index, node)| {
-        (index == 0 || all_nodes || node.referenced).then(|| ctx.fresh("_el$"))
-    }).collect();
+pub fn bindings<'a>(
+    ctx: &mut EmitContext<'a, '_>,
+    element: &ElementView,
+    all_nodes: bool,
+) -> Bindings<'a> {
+    let names = element
+        .statics
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| {
+            (index == 0 || all_nodes || node.referenced).then(|| ctx.fresh("_el$"))
+        })
+        .collect();
     Bindings { names }
 }
 
 pub trait NativeTarget<'a> {
     const CLIENT_WORK: bool;
     const CAPTURE_INSERT: bool = false;
-    fn attr(&mut self, ctx: &mut EmitContext<'a, '_>, attr: &Attr, value: &'a str, previous: Option<&'a str>) -> Expression<'a>;
-    fn event(&mut self, ctx: &mut EmitContext<'a, '_>, event: &EventHandler, handler: &'a str, data: Option<&'a str>) -> Vec<Statement<'a>>;
-    fn reference(&mut self, ctx: &mut EmitContext<'a, '_>, target: &RefTarget) -> Vec<Statement<'a>>;
-    fn spread(&mut self, ctx: &mut EmitContext<'a, '_>, spread: &SpreadSegment, value: &'a str) -> Expression<'a>;
-    fn insert(&mut self, ctx: &mut EmitContext<'a, '_>, insert: &InsertOp, value: Expression<'a>) -> Expression<'a>;
-    fn late_value(&mut self, ctx: &mut EmitContext<'a, '_>, late: &LateProp, value: &'a str) -> Expression<'a>;
-    fn link(&mut self, ctx: &mut EmitContext<'a, '_>, link: &LinkProp, href: Option<Expression<'a>>) -> Statement<'a>;
+    fn attr(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        attr: &Attr,
+        value: &'a str,
+        previous: Option<&'a str>,
+    ) -> Expression<'a>;
+    fn event(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        event: &EventHandler,
+        handler: &'a str,
+        data: Option<&'a str>,
+    ) -> Vec<Statement<'a>>;
+    fn reference(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        target: &RefTarget,
+    ) -> Vec<Statement<'a>>;
+    fn spread(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        spread: &SpreadSegment,
+        value: &'a str,
+    ) -> Expression<'a>;
+    fn insert(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        insert: &InsertOp,
+        value: Expression<'a>,
+    ) -> Expression<'a>;
+    fn late_value(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        late: &LateProp,
+        value: &'a str,
+    ) -> Expression<'a>;
+    fn link(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        link: &LinkProp,
+        href: Option<Expression<'a>>,
+    ) -> Statement<'a>;
     fn effect(&mut self, ctx: &mut EmitContext<'a, '_>, callback: Expression<'a>) -> Statement<'a>;
 }
 
@@ -56,7 +102,13 @@ pub fn schedule<'a>(
         immediate(ctx, element, target, *member, out);
     }
     if ctx.cold && element.schedule.effects.len() > 1 {
-        effect(ctx, element, target, element.schedule.effects.iter().flat_map(|group| group.members.iter().copied()), out);
+        effect(
+            ctx,
+            element,
+            target,
+            element.schedule.effects.iter().flat_map(|group| group.members.iter().copied()),
+            out,
+        );
     } else {
         for group in &element.schedule.effects {
             effect(ctx, element, target, group.members.iter().copied(), out);
@@ -138,7 +190,11 @@ fn closed_spread_body<'a>(
     }
 }
 
-fn read_value<'a>(ctx: &mut EmitContext<'a, '_>, value: Expression<'a>, reads: &mut Vec<Statement<'a>>) -> &'a str {
+fn read_value<'a>(
+    ctx: &mut EmitContext<'a, '_>,
+    value: Expression<'a>,
+    reads: &mut Vec<Statement<'a>>,
+) -> &'a str {
     let ast = Ast::new(ctx.allocator);
     let name = ctx.fresh("_v$");
     reads.push(ast.declaration(VariableDeclarationKind::Const, name, Some(value)));
@@ -165,9 +221,13 @@ fn attr_write<'a>(
             writes.push(ast.stmt(ast.assign(ast.ident(previous), write)));
         } else {
             let body = ast.block([
-                ast.stmt(write), ast.stmt(ast.assign(ast.ident(previous), ast.ident(name))),
+                ast.stmt(write),
+                ast.stmt(ast.assign(ast.ident(previous), ast.ident(name))),
             ]);
-            writes.push(ast.if_stmt(ast.binary(ast.ident(name), BinaryOperator::StrictInequality, ast.ident(previous)), body));
+            writes.push(ast.if_stmt(
+                ast.binary(ast.ident(name), BinaryOperator::StrictInequality, ast.ident(previous)),
+                body,
+            ));
         }
     } else {
         writes.push(ast.stmt(target.attr(ctx, attr, name, None)));
@@ -241,11 +301,12 @@ fn embedded(element: &ElementView, attr: &Attr) -> bool {
         _ => return false,
     };
     element.statics.nodes[attr.node as usize].attrs.iter().any(|static_attr| {
-        static_attr.name == name && match (&attr.value, &static_attr.value) {
-            (AttrValue::True, None) => true,
-            (AttrValue::Str(value), Some(initial)) => value == initial,
-            _ => false,
-        }
+        static_attr.name == name
+            && match (&attr.value, &static_attr.value) {
+                (AttrValue::True, None) => true,
+                (AttrValue::Str(value), Some(initial)) => value == initial,
+                _ => false,
+            }
     })
 }
 
@@ -258,7 +319,9 @@ fn spread_value<'a>(ctx: &mut EmitContext<'a, '_>, spread: &SpreadSegment) -> Ex
             SpreadPart::Entries(entries) => {
                 let mut properties: Vec<ObjectPropertyKind<'a>> = Vec::with_capacity(entries.len());
                 for attr in entries {
-                    let AttrTarget::Attr(key) = &attr.target else { unreachable!("generic props retain their original key") };
+                    let AttrTarget::Attr(key) = &attr.target else {
+                        unreachable!("generic props retain their original key")
+                    };
                     let value = ctx.value(&attr.value);
                     properties.push(if matches!(attr.value, AttrValue::Dynamic(_)) {
                         ast.getter(key, value)

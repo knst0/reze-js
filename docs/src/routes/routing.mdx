@@ -73,16 +73,16 @@ export default function Home() {
 
 ## File names
 
-| File | URL | Notes |
-| ---- | --- | ----- |
-| `index.tsx` | `/` | Root page |
-| `about.tsx` | `/about` | Static segment, matched case-insensitively |
-| `blog.tsx` + `blog/index.tsx` | `/blog` | `blog.tsx` is the layout, `blog/index.tsx` fills it |
-| `blog/[id].tsx` | `/blog/42` | Required param, available as `params.id` |
-| `archive/[[page]].tsx` | `/archive`, `/archive/2` | Optional param; must not precede a required segment |
-| `docs/[...path].tsx` | `/docs/a/b` | Splat; must be the last segment |
-| `[...404].tsx` | any unmatched path | Catch-all; pair with a static prefix to scope it |
-| `(auth)/login.tsx` | `/login` | Group contributes no segment |
+| File                              | URL                              | Notes                                                    |
+| --------------------------------- | -------------------------------- | -------------------------------------------------------- |
+| `index.tsx`                       | `/`                              | Root page                                                |
+| `about.tsx`                       | `/about`                         | Static segment, matched case-insensitively               |
+| `blog.tsx` + `blog/index.tsx`     | `/blog`                          | `blog.tsx` is the layout, `blog/index.tsx` fills it      |
+| `blog/[id].tsx`                   | `/blog/42`                       | Required param, available as `params.id`                 |
+| `archive/[[page]].tsx`            | `/archive`, `/archive/2`         | Optional param; must not precede a required segment      |
+| `docs/[...path].tsx`              | `/docs/a/b`                      | Splat; must be the last segment                          |
+| `[...404].tsx`                    | any unmatched path               | Catch-all; pair with a static prefix to scope it         |
+| `(auth)/login.tsx`                | `/login`                         | Group contributes no segment                             |
 | `(auth).tsx` + `(auth)/login.tsx` | `/login` inside the group layout | A file named like a directory is that directory's layout |
 
 Nesting follows the directory tree: a file named like a directory is the layout for everything under it. `blog.tsx` renders on every `/blog/*` page with the child page as `props.children`:
@@ -212,8 +212,12 @@ export function BackButton() {
 export function Actions() {
   return (
     <nav>
-      <a href="/about" replace>About without a history entry</a>
-      <a href="/blog" noscroll>Blog without scrolling</a>
+      <a href="/about" replace>
+        About without a history entry
+      </a>
+      <a href="/blog" noscroll>
+        Blog without scrolling
+      </a>
     </nav>
   );
 }
@@ -273,7 +277,9 @@ export function Filters() {
   const [query, setQuery] = useSearchParams();
   return (
     <section>
-      <p>{location().pathname} tagged {query().tag}</p>
+      <p>
+        {location().pathname} tagged {query().tag}
+      </p>
       <button onClick={() => setQuery({ tag: "reze" })}>Tag</button>
       <button onClick={() => setQuery({ tag: null })}>Clear</button>
     </section>

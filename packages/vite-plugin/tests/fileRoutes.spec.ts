@@ -27,7 +27,7 @@ function paragraph(html: string): string {
   while (queue.length > 0) {
     const node = queue.pop()!;
     if (!("childNodes" in node)) continue;
-    if (node.nodeName === "p") return node.childNodes.map(child => "value" in child ? child.value : "").join("");
+    if (node.nodeName === "p") return node.childNodes.map((child) => ("value" in child ? child.value : "")).join("");
     queue.push(...node.childNodes);
   }
   throw new Error("missing rendered paragraph");
@@ -54,17 +54,25 @@ const selections: RouteSelection[] = [
   },
 ];
 
-test.each(selections)("$name", async ({ extensions, fileRoutes, pages }) => {
-  const routes = join(root, fileRoutes.dir ?? "src/routes");
-  mkdirSync(routes, { recursive: true });
-  writeFileSync(join(routes, "index.tsx"), "export default function Home(){return <p>home</p>}");
-  writeFileSync(join(routes, "guide.jsx"), "export default function Guide(){return <p>guide</p>}");
-  const outDir = join(root, "dist");
-  await buildSsgFixture({
-    fixtureDir: root,
-    outDir,
-    plugins: await reze({ extensions, fileRoutes, ssg: { entry: "src/app.tsx" } }),
-  });
-  expect(listBuiltFiles(outDir).filter(file => file.endsWith(".html")).sort()).toEqual(pages.map(([file]) => file).sort());
-  for (const [file, expected] of pages) expect(paragraph(readFileSync(join(outDir, file), "utf8"))).toBe(expected);
-}, 30_000);
+test.each(selections)(
+  "$name",
+  async ({ extensions, fileRoutes, pages }) => {
+    const routes = join(root, fileRoutes.dir ?? "src/routes");
+    mkdirSync(routes, { recursive: true });
+    writeFileSync(join(routes, "index.tsx"), "export default function Home(){return <p>home</p>}");
+    writeFileSync(join(routes, "guide.jsx"), "export default function Guide(){return <p>guide</p>}");
+    const outDir = join(root, "dist");
+    await buildSsgFixture({
+      fixtureDir: root,
+      outDir,
+      plugins: await reze({ extensions, fileRoutes, ssg: { entry: "src/app.tsx" } }),
+    });
+    expect(
+      listBuiltFiles(outDir)
+        .filter((file) => file.endsWith(".html"))
+        .sort(),
+    ).toEqual(pages.map(([file]) => file).sort());
+    for (const [file, expected] of pages) expect(paragraph(readFileSync(join(outDir, file), "utf8"))).toBe(expected);
+  },
+  30_000,
+);

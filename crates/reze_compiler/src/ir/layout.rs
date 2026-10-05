@@ -3,7 +3,7 @@ use std::cell::{Ref, RefCell};
 
 use html5ever::tendril::{StrTendril, TendrilSink};
 use html5ever::tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink};
-use html5ever::{Attribute, LocalName, Namespace, QualName, parse_fragment, ParseOpts};
+use html5ever::{Attribute, LocalName, Namespace, ParseOpts, QualName, parse_fragment};
 use oxc_span::Span;
 
 use crate::diagnostic::{Code, Report};
@@ -23,14 +23,41 @@ const RAWTEXT_TOPOLOGY: [&str; 9] =
     ["script", "style", "textarea", "title", "iframe", "noembed", "noframes", "xmp", "plaintext"];
 const FOREIGN_TOPOLOGY: [&str; 5] = ["svg", "math", "foreignobject", "annotation-xml", "image"];
 const SAME_NEST_TOPOLOGY: [&str; 29] = [
-    "a", "button", "form", "li", "dt", "dd", "p", "option", "optgroup", "select", "h1", "h2",
-    "h3", "h4", "h5", "h6", "nobr", "b", "big", "code", "em", "font", "i", "s", "small",
-    "strike", "strong", "tt", "u",
+    "a", "button", "form", "li", "dt", "dd", "p", "option", "optgroup", "select", "h1", "h2", "h3",
+    "h4", "h5", "h6", "nobr", "b", "big", "code", "em", "font", "i", "s", "small", "strike",
+    "strong", "tt", "u",
 ];
 const P_CLOSERS: [&str; 30] = [
-    "address", "article", "aside", "blockquote", "center", "details", "dialog", "dir", "div",
-    "dl", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "main", "menu",
-    "nav", "ol", "p", "section", "summary", "ul", "h1", "h2", "h3", "h4", "h5", "h6",
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "center",
+    "details",
+    "dialog",
+    "dir",
+    "div",
+    "dl",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "header",
+    "hgroup",
+    "main",
+    "menu",
+    "nav",
+    "ol",
+    "p",
+    "section",
+    "summary",
+    "ul",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
 ];
 const RAWTEXT_TAGS: [&str; 7] =
     ["script", "style", "iframe", "noembed", "noframes", "xmp", "plaintext"];
@@ -54,17 +81,14 @@ pub enum PathStep {
 }
 
 pub fn is_content_host(node: &StaticNode) -> bool {
-    node.kind == StaticNodeKind::Element
-        && node.tag == "template"
-        && node.ns == ViewNs::Html
+    node.kind == StaticNodeKind::Element && node.tag == "template" && node.ns == ViewNs::Html
 }
 
 pub fn path_steps(tree: &StaticTree, ancestor: u32, node: u32) -> Vec<PathStep> {
     let mut current = node;
     let mut reversed = Vec::new();
     while current != ancestor {
-        let parent =
-            tree.nodes[current as usize].parent.expect("ancestor above every node");
+        let parent = tree.nodes[current as usize].parent.expect("ancestor above every node");
         let index = tree.nodes[parent as usize]
             .children
             .iter()
@@ -108,11 +132,12 @@ pub(crate) fn serialize_static(tree: &StaticTree) -> String {
 
 pub(crate) fn needs_text_nodes(tree: &StaticTree, node: &StaticNode) -> bool {
     (is_rawtext_element(node) || is_rcdata_element(node))
-        && (node.children.len() > 1 || node.children.iter().any(|&id| {
-            let child = &tree.nodes[id as usize];
-            child.kind == StaticNodeKind::Marker
-                || (child.kind == StaticNodeKind::Text && child.text.is_empty())
-        }))
+        && (node.children.len() > 1
+            || node.children.iter().any(|&id| {
+                let child = &tree.nodes[id as usize];
+                child.kind == StaticNodeKind::Marker
+                    || (child.kind == StaticNodeKind::Text && child.text.is_empty())
+            }))
 }
 
 pub(crate) fn serialize_client_static(tree: &StaticTree) -> String {
@@ -122,7 +147,14 @@ pub(crate) fn serialize_client_static(tree: &StaticTree) -> String {
     html
 }
 
-fn push_static(out: &mut String, tree: &StaticTree, id: u32, rawtext: bool, rcdata: bool, text_nodes: bool) {
+fn push_static(
+    out: &mut String,
+    tree: &StaticTree,
+    id: u32,
+    rawtext: bool,
+    rcdata: bool,
+    text_nodes: bool,
+) {
     let node = &tree.nodes[id as usize];
     match node.kind {
         StaticNodeKind::Element => {
@@ -140,12 +172,17 @@ fn push_static(out: &mut String, tree: &StaticTree, id: u32, rawtext: bool, rcda
                 let child_rawtext = is_rawtext_element(node);
                 let child_rcdata = is_rcdata_element(node);
                 let reconstruct = text_nodes && needs_text_nodes(tree, node);
-                if !reconstruct && node.ns == ViewNs::Html
+                if !reconstruct
+                    && node.ns == ViewNs::Html
                     && LF_STRIP_TAGS.contains(&node.tag.as_str())
-                    && node.children.iter()
+                    && node
+                        .children
+                        .iter()
                         .map(|&child| &tree.nodes[child as usize])
                         .find(|child| !child_rcdata || child.kind != StaticNodeKind::Marker)
-                        .is_some_and(|child| child.kind == StaticNodeKind::Text && child.text.starts_with('\n'))
+                        .is_some_and(|child| {
+                            child.kind == StaticNodeKind::Text && child.text.starts_with('\n')
+                        })
                 {
                     out.push('\n');
                 }
@@ -180,17 +217,13 @@ pub fn normalize(view: &mut ElementView, origin: Span, reports: &mut Vec<Report>
     }
     if let Some((detail, hint)) = rawtext_error(&view.statics) {
         reports.push(
-            Report::new(Code::ParserRelocation, origin)
-                .arg("detail", detail)
-                .arg("hint", hint),
+            Report::new(Code::ParserRelocation, origin).arg("detail", detail).arg("hint", hint),
         );
         return;
     }
     if let Some((detail, hint)) = col_error(&view.statics) {
         reports.push(
-            Report::new(Code::ParserRelocation, origin)
-                .arg("detail", detail)
-                .arg("hint", hint),
+            Report::new(Code::ParserRelocation, origin).arg("detail", detail).arg("hint", hint),
         );
         return;
     }
@@ -216,9 +249,10 @@ fn rawtext_error(tree: &StaticTree) -> Option<(String, String)> {
         }
         let tag = lowercase_tag(&node.tag);
         if tag == "plaintext" {
-            let opaque = node.children.iter().any(|&child| {
-                tree.nodes[child as usize].kind != StaticNodeKind::Marker
-            });
+            let opaque = node
+                .children
+                .iter()
+                .any(|&child| tree.nodes[child as usize].kind != StaticNodeKind::Marker);
             if opaque {
                 return Some((
                     "renders content inside `<plaintext>`, which swallows the rest of the template as text".to_string(),
@@ -231,7 +265,8 @@ fn rawtext_error(tree: &StaticTree) -> Option<(String, String)> {
                 if child.kind == StaticNodeKind::Text && closing_delimiter(&child.text, &tag) {
                     return Some((
                         format!("has text that closes `<{tag}>` early"),
-                        "use a non-raw-text element or move the content into an external resource".to_string(),
+                        "use a non-raw-text element or move the content into an external resource"
+                            .to_string(),
                     ));
                 }
             }
@@ -430,12 +465,7 @@ impl TreeSink for LayoutSink {
         })
     }
 
-    fn create_element(
-        &self,
-        name: QualName,
-        _attrs: Vec<Attribute>,
-        flags: ElementFlags,
-    ) -> usize {
+    fn create_element(&self, name: QualName, _attrs: Vec<Attribute>, flags: ElementFlags) -> usize {
         let mut nodes = self.nodes.borrow_mut();
         let id = nodes.len();
         let template = Self::is_html_template(&name);
@@ -450,11 +480,7 @@ impl TreeSink for LayoutSink {
         });
         if template {
             let contents = nodes.len();
-            nodes.push(PNode {
-                parent: Some(id),
-                children: Vec::new(),
-                kind: PKind::Fragment,
-            });
+            nodes.push(PNode { parent: Some(id), children: Vec::new(), kind: PKind::Fragment });
             if let PKind::Element { contents: slot, .. } = &mut nodes[id].kind {
                 *slot = Some(contents);
             }
@@ -465,11 +491,7 @@ impl TreeSink for LayoutSink {
     fn create_comment(&self, _text: StrTendril) -> usize {
         let mut nodes = self.nodes.borrow_mut();
         let id = nodes.len();
-        nodes.push(PNode {
-            parent: None,
-            children: Vec::new(),
-            kind: PKind::Comment,
-        });
+        nodes.push(PNode { parent: None, children: Vec::new(), kind: PKind::Comment });
         id
     }
 
@@ -686,11 +708,9 @@ impl Matcher<'_, '_> {
             return;
         }
         let (tag, raw, ns) = match &parsed.nodes[pid].kind {
-            PKind::Element { name, .. } => (
-                name.local.as_str().to_ascii_lowercase(),
-                name.local.as_str(),
-                view_ns(&name.ns),
-            ),
+            PKind::Element { name, .. } => {
+                (name.local.as_str().to_ascii_lowercase(), name.local.as_str(), view_ns(&name.ns))
+            }
             _ => {
                 self.fail(
                     "replaces an element with text or a comment".to_string(),
@@ -781,10 +801,9 @@ impl Matcher<'_, '_> {
             match self.tree.nodes[sid as usize].kind {
                 StaticNodeKind::Element => {
                     let (p_tag, p_ns) = match &parsed.nodes[pid].kind {
-                        PKind::Element { name, .. } => (
-                            name.local.as_str().to_ascii_lowercase(),
-                            view_ns(&name.ns),
-                        ),
+                        PKind::Element { name, .. } => {
+                            (name.local.as_str().to_ascii_lowercase(), view_ns(&name.ns))
+                        }
                         _ => {
                             self.fail(
                                 "replaces an element with text or a comment".to_string(),
@@ -840,9 +859,7 @@ impl Matcher<'_, '_> {
                             }
                             None => {
                                 self.fail(
-                                    format!(
-                                        "restructures `<{s_tag}>` next to an implied `<tr>`"
-                                    ),
+                                    format!("restructures `<{s_tag}>` next to an implied `<tr>`"),
                                     "wrap table cells in an explicit `<tr>`".to_string(),
                                 );
                                 return;
@@ -853,8 +870,7 @@ impl Matcher<'_, '_> {
                         && parent_ns == ViewNs::Html
                         && parent_tag == "table"
                     {
-                        match self.implied(parsed, s_parent, &s_ids[si..], pid, Implied::Colgroup)
-                        {
+                        match self.implied(parsed, s_parent, &s_ids[si..], pid, Implied::Colgroup) {
                             Some(consumed) => {
                                 si += consumed;
                                 pi += 1;
@@ -864,8 +880,7 @@ impl Matcher<'_, '_> {
                                     format!(
                                         "restructures `<{s_tag}>` next to an implied `<colgroup>`"
                                     ),
-                                    "wrap `<col>` elements in an explicit `<colgroup>`"
-                                        .to_string(),
+                                    "wrap `<col>` elements in an explicit `<colgroup>`".to_string(),
                                 );
                                 return;
                             }
@@ -893,10 +908,7 @@ impl Matcher<'_, '_> {
                     let (ok, text) = {
                         let snode = &self.tree.nodes[sid as usize];
                         let parent = &self.tree.nodes[s_parent as usize];
-                        (
-                            parsed_text_equal(&snode.text, &parsed_text, parent),
-                            snode.text.clone(),
-                        )
+                        (parsed_text_equal(&snode.text, &parsed_text, parent), snode.text.clone())
                     };
                     if !ok {
                         self.fail(
@@ -947,10 +959,7 @@ impl Matcher<'_, '_> {
                     StaticNodeKind::Marker => "drops a marker here".to_string(),
                 }
             };
-            self.fail(
-                detail,
-                "restructure the markup so the parser keeps every node".to_string(),
-            );
+            self.fail(detail, "restructure the markup so the parser keeps every node".to_string());
         } else if pi < p_ids.len() {
             let extra = match &parsed.nodes[p_ids[pi]].kind {
                 PKind::Element { name, .. } => {
@@ -977,9 +986,13 @@ impl Matcher<'_, '_> {
         let mut run = 0;
         for &sid in s_suffix {
             let snode = &self.tree.nodes[sid as usize];
-            if run != 0 && (snode.kind == StaticNodeKind::Marker
-                || (snode.kind == StaticNodeKind::Text
-                    && snode.text.bytes().all(|byte| matches!(byte, b'\t' | b'\n' | b'\x0c' | b'\r' | b' '))))
+            if run != 0
+                && (snode.kind == StaticNodeKind::Marker
+                    || (snode.kind == StaticNodeKind::Text
+                        && snode
+                            .text
+                            .bytes()
+                            .all(|byte| matches!(byte, b'\t' | b'\n' | b'\x0c' | b'\r' | b' '))))
             {
                 run += 1;
                 continue;
@@ -1027,7 +1040,8 @@ impl Matcher<'_, '_> {
             let mut group = Vec::new();
             for &sid in &s_suffix[..run] {
                 let snode = &self.tree.nodes[sid as usize];
-                let cell = snode.tag.eq_ignore_ascii_case("td") || snode.tag.eq_ignore_ascii_case("th");
+                let cell =
+                    snode.tag.eq_ignore_ascii_case("td") || snode.tag.eq_ignore_ascii_case("th");
                 if cell || (!group.is_empty() && snode.kind != StaticNodeKind::Element) {
                     group.push(sid);
                 } else {
@@ -1082,4 +1096,3 @@ impl Matcher<'_, '_> {
         id
     }
 }
-

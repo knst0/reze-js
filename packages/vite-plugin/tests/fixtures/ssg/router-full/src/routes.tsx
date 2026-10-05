@@ -1,6 +1,6 @@
-import { $computed, $signal, asyncComponent, effect, type JSX } from "reze-js";
 import { defineRoute, defineRoutes, useNavigate } from "@rezejs/router";
 import type { RouteProps } from "@rezejs/router";
+import { $computed, $signal, asyncComponent, effect, type JSX } from "reze-js";
 
 import { logoUrl, inlineLogo, emittedLogo, metaLogo, inlineMetaLogo } from "./assets";
 import { readHits } from "./counter-state";
@@ -37,7 +37,7 @@ function About() {
 
 function PostPage(props: RouteProps<{ id: string }, { title: string }>) {
   return (
-    <article id="post" ref={node => node.setAttribute("data-hydrated", "")}>
+    <article id="post" ref={(node) => node.setAttribute("data-hydrated", "")}>
       <h1 id="post-title">{props.data.title}</h1>
       <p id="post-id">{props.params.id}</p>
     </article>
@@ -103,15 +103,22 @@ interface AliasData {
 }
 
 function AliasView(props: { data: AliasData }) {
-  return asyncComponent(async (): Promise<[AliasData, AliasData]> => {
-    const first = await Promise.resolve(props.data);
-    first.items.push("n");
-    const second = await Promise.resolve(props.data);
-    return [first, second];
-  }, values => {
-    const [first, second] = values();
-    return <p id="alias">{first === second ? "same" : "diff"}:{second.items.join(",")}</p>;
-  });
+  return asyncComponent(
+    async (): Promise<[AliasData, AliasData]> => {
+      const first = await Promise.resolve(props.data);
+      first.items.push("n");
+      const second = await Promise.resolve(props.data);
+      return [first, second];
+    },
+    (values) => {
+      const [first, second] = values();
+      return (
+        <p id="alias">
+          {first === second ? "same" : "diff"}:{second.items.join(",")}
+        </p>
+      );
+    },
+  );
 }
 
 function AliasPage(props: RouteProps<Record<string, string>, { items: string[] }>) {
@@ -147,7 +154,7 @@ function CodecPage(props: RouteProps<Record<string, string>, CodecData>) {
     ["proto", Object.getPrototypeOf(data.proto) === null && data.proto["__proto__"] === "kept"],
   ];
   return (
-    <article id="codec" ref={node => node.setAttribute("data-hydrated", "")}>
+    <article id="codec" ref={(node) => node.setAttribute("data-hydrated", "")}>
       {checks.map(([name, ok]) => (
         <p id={`codec-${name}`}>{ok ? "ok" : "FAIL"}</p>
       ))}

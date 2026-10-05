@@ -74,6 +74,7 @@ const total = computed((prev = 0) => prev + count());
   reading a computed while it evaluates warns and returns the stale value.
 - A throw in the getter propagates to the reader; under `catchError` it goes
   to the handler and the computed keeps its previous value.
+
 ```tsx
 import { $computed, $signal } from "reze-js";
 

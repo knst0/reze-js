@@ -2,7 +2,15 @@
 import { endTracking, getOwner, isErrorHandled, markPure, setActiveSub, startTracking, track } from "./context";
 import { FlagDirty, FlagMutable, FlagNone, FlagOwnsChildren, FlagPending, FlagRecursedCheck } from "./flags";
 import { checkDirty, disposeAllDepsInReverse, disposeChildren, type Link, type ReactiveNode, shallowPropagate } from "./graph";
-import { currentModuleId, enterScopeContext, getActiveScope, registerNodeScope, restoreScopeContext, scopeOfNode, type ScopeContext } from "./internal/scope";
+import {
+  currentModuleId,
+  enterScopeContext,
+  getActiveScope,
+  registerNodeScope,
+  restoreScopeContext,
+  scopeOfNode,
+  type ScopeContext,
+} from "./internal/scope";
 import { profileCreated, profileReran } from "./profile";
 import { differs } from "./signal";
 class ComputedNode<T = unknown> implements ReactiveNode {

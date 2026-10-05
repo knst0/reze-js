@@ -170,12 +170,18 @@ fn compile_module(
 
     let program = allocator.alloc(parsed.program);
     let hot_plan = codegen::hot::should_apply(options).then(|| codegen::hot::collect(program));
-    let module_id = (options.target != CompileTarget::Client).then_some(options.module_id.as_deref()).flatten();
+    let module_id =
+        (options.target != CompileTarget::Client).then_some(options.module_id.as_deref()).flatten();
     let sites = ir::collect_sites(program, module_id, source);
     let normalized = frontend::normalize(&allocator, program, source);
     let mut module = ir::build_module_ir(
-        normalized.program, &normalized.scoping, &normalized.facts,
-        source, module_id, options.links.is_some(), sites,
+        normalized.program,
+        &normalized.scoping,
+        &normalized.facts,
+        source,
+        module_id,
+        options.links.is_some(),
+        sites,
     );
     for view in &mut module.views {
         if let ir::view::ViewKind::Element(element) = &mut view.kind {
@@ -188,7 +194,9 @@ fn compile_module(
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(diagnostics);
     }
-    if !module.has_views && !normalized.content_changed && normalized.facts.folded_bindings.is_empty()
+    if !module.has_views
+        && !normalized.content_changed
+        && normalized.facts.folded_bindings.is_empty()
         && normalized.facts.dynamic_tags.is_empty()
         && !(options.debug_names && options.target != CompileTarget::Html)
         && options.target == CompileTarget::Client
@@ -198,16 +206,27 @@ fn compile_module(
     let cold = options.target != CompileTarget::Html
         && is_cold(source, filename, options.profile.as_ref());
     let changed = codegen::EmitContext::new(
-        &allocator, options, source, filename, &module, &normalized.facts, &normalized.scoping,
-        normalized.namer, normalized.helpers, cold,
-    ).emit(normalized.program, hot_plan.as_ref());
+        &allocator,
+        options,
+        source,
+        filename,
+        &module,
+        &normalized.facts,
+        &normalized.scoping,
+        normalized.namer,
+        normalized.helpers,
+        cold,
+    )
+    .emit(normalized.program, hot_plan.as_ref());
     if !changed && !normalized.content_changed {
         return Ok(None);
     }
-    let output = Codegen::new().with_options(CodegenOptions {
-        source_map_path: options.source_map.then(|| filename.into()),
-        ..CodegenOptions::default()
-    }).build(normalized.program);
+    let output = Codegen::new()
+        .with_options(CodegenOptions {
+            source_map_path: options.source_map.then(|| filename.into()),
+            ..CodegenOptions::default()
+        })
+        .build(normalized.program);
     Ok(Some(Output {
         code: output.code,
         map: output.map.map(codegen::serialize_source_map),

@@ -1,7 +1,7 @@
+import { computed, signal, signal as rawSignal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import * as R from "reze-js";
 import { $computed, $computed as derive, $signal, $signal as sig, effect, For, Show } from "reze-js";
-import { computed, signal, signal as rawSignal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -134,7 +134,13 @@ test("compiled signal reads and writes drive classes, text, and neighboring bind
     }
     readOther = () => other;
     return (
-      <button class={count > 1 ? "big" : ""} onClick={() => { count++; count += 2; }}>
+      <button
+        class={count > 1 ? "big" : ""}
+        onClick={() => {
+          count++;
+          count += 2;
+        }}
+      >
         {count}
       </button>
     );
@@ -180,7 +186,7 @@ test("compiled signal assignments store templates, shorthands, and branch result
       seen.push(c);
       c = pick(list);
       seen.push(c);
-      c = (c = 3);
+      c = c = 3;
       seen.push(c);
       return seen;
     };
@@ -209,7 +215,7 @@ test("compiled signal updates run in loop and short-circuit positions in order",
       trace.push(i);
       ok ? i++ : i--;
       trace.push(i);
-      i++, i--;
+      (i++, i--);
       trace.push(i);
       void i++;
       trace.push(i);
@@ -252,7 +258,11 @@ test("compiled never-written signals render stable values while written ones sta
     let title = $signal("Reze");
     const fixed = $signal(1);
     let count = $signal(0);
-    return <h1 onClick={() => (count += 1)}>{title}: {fixed} {count}</h1>;
+    return (
+      <h1 onClick={() => (count += 1)}>
+        {title}: {fixed} {count}
+      </h1>
+    );
   });
   const h1 = el.querySelector("h1")!;
   expect(h1.textContent).toBe("Reze: 1 0");
@@ -309,10 +319,7 @@ test("compiled signals drive attributes, styles, inputs, and component props", (
     let text = $signal("a");
     return (
       <div>
-        <div
-          class={size > 1 ? "big" : ""}
-          style={{ width: `${size * 10}px` }}
-        >
+        <div class={size > 1 ? "big" : ""} style={{ width: `${size * 10}px` }}>
           <input value={text} onInput={(e) => (text = e.currentTarget.value)} />
           <Card size={size}>
             {size} {text}
@@ -349,15 +356,16 @@ test("compiled signals drive list rows and conditional branches", () => {
     let open = $signal(false);
     return (
       <ul>
-        <For each={rows}>
-          {(row) => (
-            <li class={selected === row.id ? "on" : ""} onClick={() => (selected = row.id)} />
-          )}
-        </For>
+        <For each={rows}>{(row) => <li class={selected === row.id ? "on" : ""} onClick={() => (selected = row.id)} />}</For>
         <Show when={open} fallback={<i>closed</i>}>
           <p onClick={() => (open = false)}>open</p>
         </Show>
-        <button onClick={() => { rows = [...rows, { id: rows.length + 1 }]; open = !open; }} />
+        <button
+          onClick={() => {
+            rows = [...rows, { id: rows.length + 1 }];
+            open = !open;
+          }}
+        />
       </ul>
     );
   });
@@ -383,7 +391,12 @@ test("compiled typed and JSX-free signals expose live values through plain funct
       n += 1;
     };
     read = () => n;
-    return <p onClick={() => (count = 1)}>{count ?? "empty"}{list.join(",")}</p>;
+    return (
+      <p onClick={() => (count = 1)}>
+        {count ?? "empty"}
+        {list.join(",")}
+      </p>
+    );
   });
   const p = el.querySelector("p")!;
   expect(p.textContent).toBe("empty");
@@ -435,7 +448,11 @@ test("compiled computed alias, namespace, and merged imports derive from shared 
     const c = $computed(a() + b());
     const d = derive(a() + 1);
     const e = R.$computed(a() + 1);
-    return <output>{c} {d} {e}</output>;
+    return (
+      <output>
+        {c} {d} {e}
+      </output>
+    );
   });
   expect(el.textContent).toBe("3 2 2");
   setA!(2);
@@ -451,11 +468,7 @@ test("compiled computed values drive list selection and conditional branches", (
     const big = $computed(picked > 3);
     return (
       <ul>
-        <For each={rows}>
-          {(row) => (
-            <li class={selected === row.id ? "on" : ""} onClick={() => (picked = row.id)} />
-          )}
-        </For>
+        <For each={rows}>{(row) => <li class={selected === row.id ? "on" : ""} onClick={() => (picked = row.id)} />}</For>
         <Show when={big}>
           <p>big</p>
         </Show>
@@ -477,7 +490,12 @@ test("compiled signals and computed values survive async component awaits", asyn
     const twice = $computed(n * 2);
     const user = await gate.promise;
     const title = $computed(`${user}${props.id}:${n}`);
-    return <p title={title} onClick={() => (n += 1)}>{user}{twice}</p>;
+    return (
+      <p title={title} onClick={() => (n += 1)}>
+        {user}
+        {twice}
+      </p>
+    );
   }
   const { el } = mount(() => <Card id={1} />);
   expect(el.innerHTML).toBe("");
@@ -507,10 +525,14 @@ test("compiled signals with equals:false notify on same values while defaults do
     });
     name = "a";
     plain = "a";
-    return <output>{name}{plain}</output>;
+    return (
+      <output>
+        {name}
+        {plain}
+      </output>
+    );
   });
   tick();
   expect(liveRuns).toEqual(["a", "a"]);
   expect(plainRuns).toEqual(["a"]);
 });
-

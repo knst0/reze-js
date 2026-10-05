@@ -1,6 +1,5 @@
 import { AttributeEscapes, TextEscapes } from "../../../../crates/reze_compiler/src/html-data.json";
 import type { LayoutNode, RangeKind } from "../hydration/protocol";
-
 import {
   type HtmlElement,
   type HtmlNode,
@@ -94,15 +93,7 @@ function hasClosingDelimiter(text: string, tag: string): boolean {
   let index = lower.indexOf(needle);
   while (index !== -1) {
     const after = lower[index + needle.length];
-    if (
-      after === undefined ||
-      after === "\t" ||
-      after === "\n" ||
-      after === "\f" ||
-      after === " " ||
-      after === "/" ||
-      after === ">"
-    ) {
+    if (after === undefined || after === "\t" || after === "\n" || after === "\f" || after === " " || after === "/" || after === ">") {
       return true;
     }
     index = lower.indexOf(needle, index + 1);
@@ -133,11 +124,7 @@ function containerKind(el: HtmlElement): ContainerKind {
 }
 
 function failLayout(detail: string, hint: string, el: HtmlElement): never {
-  throw new HtmlRecordError(
-    `Cannot serialize <${el.tag}> that ${detail}; ${hint}`,
-    formatSite(el.meta.site),
-    el.meta.site,
-  );
+  throw new HtmlRecordError(`Cannot serialize <${el.tag}> that ${detail}; ${hint}`, formatSite(el.meta.site), el.meta.site);
 }
 
 const TableMembers: Record<string, true> = { tr: true, td: true, th: true };
@@ -171,9 +158,7 @@ function normalizeList(children: HtmlNode[], kind: ContainerKind): EmitChild[] {
     if (!children.some((child) => child.kind === "range")) {
       return children;
     }
-    return children.map((child) =>
-      child.kind === "range" ? normalizedRange(child, kind) : child,
-    );
+    return children.map((child) => (child.kind === "range" ? normalizedRange(child, kind) : child));
   }
   const out: EmitChild[] = [];
   let run: EmitChild[] = [];
@@ -328,11 +313,7 @@ function subgroupCells(run: EmitChild[]): EmitChild[] {
     }
   };
   for (const item of run) {
-    if (
-      item.kind === "element" &&
-      item.ns === "" &&
-      (item.tag.toLowerCase() === "td" || item.tag.toLowerCase() === "th")
-    ) {
+    if (item.kind === "element" && item.ns === "" && (item.tag.toLowerCase() === "td" || item.tag.toLowerCase() === "th")) {
       group.push(item);
       continue;
     }
@@ -439,12 +420,7 @@ function emitVerbatimText(el: HtmlElement, out: string[], escaped: boolean): voi
   out.push(escaped ? escapeWith(combined, TextEscapes) : combined);
 }
 
-function emitAttributes(
-  el: HtmlElement,
-  out: string[],
-  token: string | undefined,
-  selectedOptions: Set<HtmlElement> | undefined,
-): void {
+function emitAttributes(el: HtmlElement, out: string[], token: string | undefined, selectedOptions: Set<HtmlElement> | undefined): void {
   if (token !== undefined) {
     out.push(' data-rz="', escapeWith(token, AttributeEscapes), '"');
   }
@@ -466,9 +442,7 @@ function emitAttributes(
     out.push(" style");
     appendAttributeValue(out, style.cssText);
   } else if (style.mode === "map" && style.properties.size > 0) {
-    const css = [...style.properties]
-      .map(([property, value]) => `${property}: ${value};`)
-      .join(" ");
+    const css = [...style.properties].map(([property, value]) => `${property}: ${value};`).join(" ");
     out.push(' style="', escapeWith(css, AttributeEscapes), '"');
   }
   if (el.ns !== "") {
@@ -493,11 +467,7 @@ function emitAttributes(
  * Resolves the hydration token an element emits, validating its charset.
  * Shared by markup emission and layout records so both accept the same roots.
  */
-function resolveElementToken(
-  el: HtmlElement,
-  rootToken: string | undefined,
-  isRoot: boolean,
-): string | undefined {
+function resolveElementToken(el: HtmlElement, rootToken: string | undefined, isRoot: boolean): string | undefined {
   const token = isRoot && rootToken !== undefined ? rootToken : el.meta.token;
   if (token !== undefined && !isValidToken(token)) {
     throw new HtmlRecordError(
@@ -616,9 +586,8 @@ function matchSelectOption(select: HtmlElement, value: string): Set<HtmlElement>
   collectOptions(select, options);
   for (const option of options) {
     const attribute = option.attributes.get("value");
-    const current = option.hasValue && option.value !== undefined
-      ? option.value
-      : attribute === undefined ? optionText(option) : attribute.value ?? "";
+    const current =
+      option.hasValue && option.value !== undefined ? option.value : attribute === undefined ? optionText(option) : (attribute.value ?? "");
     if (current === value) {
       matched.add(option);
       break;
@@ -738,9 +707,7 @@ function layoutChild(node: EmitChild, ctx: LayoutContext): LayoutNode {
       return layoutElementNode(node, ctx, false);
     case "text": {
       const index = staticLayoutIndex(node.meta);
-      return index === undefined
-        ? { kind: "text", text: node.data }
-        : { kind: "text", text: node.data, index };
+      return index === undefined ? { kind: "text", text: node.data } : { kind: "text", text: node.data, index };
     }
     case "marker": {
       const index = staticLayoutIndex(node.meta);
@@ -756,7 +723,7 @@ function layoutChild(node: EmitChild, ctx: LayoutContext): LayoutNode {
 function layoutElementNode(el: HtmlElement, ctx: LayoutContext, isRoot: boolean): LayoutNode {
   const token = resolveElementToken(el, ctx.rootToken, isRoot);
   checkElementShape(el);
-  const site = token === undefined ? undefined : ctx.resolver?.elementSite?.(el) ?? siteKeyOf(el.meta.site);
+  const site = token === undefined ? undefined : (ctx.resolver?.elementSite?.(el) ?? siteKeyOf(el.meta.site));
   const index = staticLayoutIndex(el.meta);
   let children: readonly LayoutNode[];
   let opaque: true | undefined;
@@ -848,9 +815,6 @@ export function describeNodes(nodes: readonly HtmlNode[], options?: HtmlLayoutOp
  * only one side keep using `serializeToString`/`serializeNodes` or
  * `describeLayout`/`describeNodes`.
  */
-export function serializeWithLayout(
-  root: HtmlElement,
-  options?: HtmlLayoutOptions,
-): { html: string; layout: LayoutNode[] } {
+export function serializeWithLayout(root: HtmlElement, options?: HtmlLayoutOptions): { html: string; layout: LayoutNode[] } {
   return { html: serializeToString(root, options), layout: describeLayout(root, options) };
 }

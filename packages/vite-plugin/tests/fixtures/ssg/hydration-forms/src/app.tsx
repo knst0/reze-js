@@ -43,12 +43,7 @@ export default function App() {
         <option value="b">b</option>
         <option value="c">c</option>
       </select>
-      <input
-        id="agree"
-        type="checkbox"
-        checked={agreed}
-        onChange={(event) => (agreed = (event.target as HTMLInputElement).checked)}
-      />
+      <input id="agree" type="checkbox" checked={agreed} onChange={(event) => (agreed = (event.target as HTMLInputElement).checked)} />
       <textarea id="bio" value="hello world" rows={3} />
       <details id="more">
         <summary>more</summary>

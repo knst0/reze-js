@@ -52,8 +52,14 @@ export class CommitStaging {
   constructor(readonly execution: HydrationReplay) {}
 
   attribute(node: Element, name: string, value: unknown, namespace?: string): void {
-    this.writes.push({ gate: this.gate(), node, name, value: value == null || value === false ? null : String(value),
-      kind: namespace === undefined ? "attribute" : "namespace", ...(namespace === undefined ? {} : { namespace }) });
+    this.writes.push({
+      gate: this.gate(),
+      node,
+      name,
+      value: value == null || value === false ? null : String(value),
+      kind: namespace === undefined ? "attribute" : "namespace",
+      ...(namespace === undefined ? {} : { namespace }),
+    });
   }
 
   boolean(node: Element, name: string, value: unknown): void {
@@ -67,17 +73,35 @@ export class CommitStaging {
   classes(plan: ElementPlan, value: ClassValue, initial?: readonly (readonly [string, string | null])[]): void {
     const mirror = this.mirror(plan.node, initial);
     className(mirror, value);
-    this.writes.push({ gate: this.gate(), node: plan.node, name: "class", value: mirror.getAttribute("class"),
-      kind: "class", classes: (mirror as ClassElement).$$class });
+    this.writes.push({
+      gate: this.gate(),
+      node: plan.node,
+      name: "class",
+      value: mirror.getAttribute("class"),
+      kind: "class",
+      classes: (mirror as ClassElement).$$class,
+    });
   }
 
-  toggle(plan: ElementPlan, token: string, value: unknown, previous: unknown, initial?: readonly (readonly [string, string | null])[]): boolean {
+  toggle(
+    plan: ElementPlan,
+    token: string,
+    value: unknown,
+    previous: unknown,
+    initial?: readonly (readonly [string, string | null])[],
+  ): boolean {
     const next = !!value;
     if (next !== previous) {
       const mirror = this.mirror(plan.node, initial);
       mirror.classList.toggle(token, next);
-      this.writes.push({ gate: this.gate(), node: plan.node, name: "class", value: mirror.getAttribute("class"),
-        kind: "class", classes: (mirror as ClassElement).$$class });
+      this.writes.push({
+        gate: this.gate(),
+        node: plan.node,
+        name: "class",
+        value: mirror.getAttribute("class"),
+        kind: "class",
+        classes: (mirror as ClassElement).$$class,
+      });
     }
     return next;
   }
@@ -123,9 +147,15 @@ export class CommitStaging {
       if (!write.gate.live || !forms.allows(write.node, write.name, write.value)) continue;
       runWithOwner(write.gate.owner, () => {
         switch (write.kind) {
-          case "attribute": setAttribute(write.node, write.name, write.value); break;
-          case "namespace": setAttributeNS(write.node, write.namespace!, write.name, write.value); break;
-          case "boolean": setBoolAttribute(write.node, write.name, write.value); break;
+          case "attribute":
+            setAttribute(write.node, write.name, write.value);
+            break;
+          case "namespace":
+            setAttributeNS(write.node, write.namespace!, write.name, write.value);
+            break;
+          case "boolean":
+            setBoolAttribute(write.node, write.name, write.value);
+            break;
           case "class":
             setAttribute(write.node, "class", write.value);
             (write.node as ClassElement).$$class = write.classes;
@@ -166,7 +196,9 @@ export class CommitStaging {
       gate = { owner, live: true };
       this.gates.set(owner, gate);
       const current = gate;
-      onCleanup(() => { current.live = false; });
+      onCleanup(() => {
+        current.live = false;
+      });
     }
     return gate;
   }

@@ -6,7 +6,6 @@ import { installLinks } from "./links";
 import { compileRoutes, matchBranches } from "./match";
 import {
   initRouterState,
-  isLeavePrevented,
   loadPositions,
   onPop,
   parseLocation,
@@ -81,14 +80,18 @@ function outlet(state: RouterState, depth: number): () => JSX.Element {
  * Binds an already-settled SSG state to the router outlet without starting a navigation, installing listeners, or
  * touching history. Preparation owns matching, data and redirect capture; mount the result inside the page scope.
  */
-export function createSettledRouter(state: RouterState): (props: { root?: (props: { children: JSX.Element }) => JSX.Element }) => JSX.Element {
+export function createSettledRouter(
+  state: RouterState,
+): (props: { root?: (props: { children: JSX.Element }) => JSX.Element }) => JSX.Element {
   return function SettledRouter(props: { root?: (props: { children: JSX.Element }) => JSX.Element }): JSX.Element {
     const root = props.root;
     return provideContext(RouterContext, state, () => {
       state.owner = getOwner();
       const host = state.commitHost;
       if (host !== undefined) {
-        onCleanup(() => { state.generation++; });
+        onCleanup(() => {
+          state.generation++;
+        });
         host.deferCommit(() => {
           if (state.history.scroll) loadPositions(state);
           installRouterListeners(state, true, true, state.history.scroll);
@@ -149,7 +152,7 @@ export function createRouter(config: RouterConfig): RouterInstance {
 }
 
 function installRouterListeners(state: RouterState, isLinking: boolean, isPreloading: boolean, isScrollManaged: boolean): void {
-  const unlisten = state.history.listen(entry => onPop(state, entry));
+  const unlisten = state.history.listen((entry) => onPop(state, entry));
   const scrollRestoration = isScrollManaged && typeof window !== "undefined" ? window.history.scrollRestoration : undefined;
   const onPageHide = (): void => persistPositions(state);
   if (scrollRestoration !== undefined) {

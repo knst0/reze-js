@@ -1,12 +1,12 @@
 mod calls;
-mod continuation;
-pub mod hot;
 mod client;
 mod composite;
+mod continuation;
+pub mod hot;
 mod html;
 mod hydrate;
-mod native;
 mod module_scope;
+mod native;
 mod optimize;
 
 use std::cell::RefCell;
@@ -16,7 +16,7 @@ use oxc_allocator::{Allocator, ArenaVec, TakeIn};
 use oxc_ast::ast::*;
 use oxc_ast_visit::{VisitMut, walk_mut};
 use oxc_semantic::Scoping;
-use oxc_span::{GetSpan, GetSpanMut, Span, SPAN};
+use oxc_span::{GetSpan, GetSpanMut, SPAN, Span};
 use oxc_str::Ident;
 use oxc_syntax::node::NodeId;
 use oxc_syntax::operator::{BinaryOperator, UnaryOperator};
@@ -60,10 +60,22 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         cold: bool,
     ) -> Self {
         Self {
-            allocator, options, source, filename, ir, facts, scoping, namer, helpers, cold,
+            allocator,
+            options,
+            source,
+            filename,
+            ir,
+            facts,
+            scoping,
+            namer,
+            helpers,
+            cold,
             changed: false,
-            expressions: RefCell::new(HashMap::new()), sites: HashMap::new(),
-            positions: source_positions(source, ir), hoisted: Vec::new(), delegated: BTreeSet::new(),
+            expressions: RefCell::new(HashMap::new()),
+            sites: HashMap::new(),
+            positions: source_positions(source, ir),
+            hoisted: Vec::new(),
+            delegated: BTreeSet::new(),
         }
     }
 
@@ -72,7 +84,9 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         if self.options.target != CompileTarget::Client {
             module_scope::apply(&mut self, program);
             let ast = Ast::new(self.allocator);
-            let module = ast.string(self.ir.module_id.as_deref().expect("managed target has canonical module identity"));
+            let module = ast.string(
+                self.ir.module_id.as_deref().expect("managed target has canonical module identity"),
+            );
             let source = if self.options.target == CompileTarget::Html {
                 "reze-js/internal/html"
             } else {
@@ -89,7 +103,12 @@ impl<'a, 'm> EmitContext<'a, 'm> {
             let ast = Ast::new(self.allocator);
             let events = ast.array(self.delegated.iter().map(|event| ast.string(event)));
             let call = if self.options.target == CompileTarget::Hydrate {
-                let module = ast.string(self.ir.module_id.as_deref().expect("managed target has canonical module identity"));
+                let module = ast.string(
+                    self.ir
+                        .module_id
+                        .as_deref()
+                        .expect("managed target has canonical module identity"),
+                );
                 self.call("reze-js/internal/hydrate", "stageDelegation", [module, events])
             } else {
                 self.call(RUNTIME_MODULE, "delegateEvents", [events])
@@ -98,19 +117,30 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         }
         if let Some(plan) = hot_plan {
             self.changed |= hot::apply(
-                self.allocator, program, plan, self.filename, &mut self.namer, &mut self.helpers,
+                self.allocator,
+                program,
+                plan,
+                self.filename,
+                &mut self.namer,
+                &mut self.helpers,
             );
         }
         self.helpers.install(self.allocator, program);
-        if !self.scoping.scope_descendants_from_root().any(|scope| {
-            self.scoping.scope_flags(scope).contains_direct_eval()
-        }) {
+        if !self
+            .scoping
+            .scope_descendants_from_root()
+            .any(|scope| self.scoping.scope_flags(scope).contains_direct_eval())
+        {
             self.changed |= optimize::prune_imports(program, self.scoping);
             optimize::hoist_templates(&mut self, program);
         }
         if !self.hoisted.is_empty() {
             let ast = Ast::new(self.allocator);
-            let at = program.body.iter().rposition(|statement| matches!(statement, Statement::ImportDeclaration(_))).map_or(0, |index| index + 1);
+            let at = program
+                .body
+                .iter()
+                .rposition(|statement| matches!(statement, Statement::ImportDeclaration(_)))
+                .map_or(0, |index| index + 1);
             let old = std::mem::replace(&mut program.body, ArenaVec::new_in(&ast.builder));
             let mut body = ArenaVec::with_capacity_in(old.len() + self.hoisted.len(), &ast.builder);
             let mut old = old.into_iter();
@@ -122,7 +152,9 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         self.changed
     }
 
-    pub fn intern(&self, value: &str) -> &'a str { self.allocator.alloc_str(value) }
+    pub fn intern(&self, value: &str) -> &'a str {
+        self.allocator.alloc_str(value)
+    }
 
     pub fn fresh(&mut self, base: &str) -> &'a str {
         self.allocator.alloc_str(&self.namer.fresh(base))
@@ -133,22 +165,34 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         Ast::new(self.allocator).ident(name)
     }
 
-    pub fn call(&mut self, source: &str, export: &str, args: impl IntoIterator<Item = Expression<'a>>) -> Expression<'a> {
+    pub fn call(
+        &mut self,
+        source: &str,
+        export: &str,
+        args: impl IntoIterator<Item = Expression<'a>>,
+    ) -> Expression<'a> {
         Ast::new(self.allocator).call(self.helper(source, export), args)
     }
 
     pub fn expr(&self, reference: ExprRef) -> Expression<'a> {
-        self.expressions.borrow_mut().remove(&reference.id).expect("retained source expression is moved exactly once")
+        self.expressions
+            .borrow_mut()
+            .remove(&reference.id)
+            .expect("retained source expression is moved exactly once")
     }
 
-    pub fn delegate(&mut self, event: &str) { self.delegated.insert(event.to_string()); }
+    pub fn delegate(&mut self, event: &str) {
+        self.delegated.insert(event.to_string());
+    }
 
     pub fn view(&mut self, id: ViewId) -> Expression<'a> {
         let view = self.ir.view(id);
         let mut expression = if let Some(expression) = composite::emit(self, view) {
             expression
         } else {
-            let ViewKind::Element(element) = &view.kind else { unreachable!("composite view emitted above") };
+            let ViewKind::Element(element) = &view.kind else {
+                unreachable!("composite view emitted above")
+            };
             match self.options.target {
                 CompileTarget::Client => client::emit(self, element),
                 CompileTarget::Hydrate => hydrate::emit(self, view, element),
@@ -183,7 +227,11 @@ impl<'a, 'm> EmitContext<'a, 'm> {
 
     pub fn flow_getter(&self, source: &FlowSource) -> Expression<'a> {
         let value = self.expr(source.expr);
-        if source.getter.is_some() { call_callee(value) } else { Ast::new(self.allocator).arrow([], value) }
+        if source.getter.is_some() {
+            call_callee(value)
+        } else {
+            Ast::new(self.allocator).arrow([], value)
+        }
     }
 
     pub fn value(&mut self, value: &AttrValue) -> Expression<'a> {
@@ -194,7 +242,10 @@ impl<'a, 'm> EmitContext<'a, 'm> {
             AttrValue::Expr(value) => self.expr(*value),
             AttrValue::View(id) => self.view(*id),
             AttrValue::Dynamic(dynamic) => self.expr(dynamic.expr),
-            AttrValue::Truthy(value) => ast.unary(UnaryOperator::LogicalNot, ast.unary(UnaryOperator::LogicalNot, self.expr(*value))),
+            AttrValue::Truthy(value) => ast.unary(
+                UnaryOperator::LogicalNot,
+                ast.unary(UnaryOperator::LogicalNot, self.expr(*value)),
+            ),
             AttrValue::ClassParts(parts) => ast.array(parts.iter().map(|part| self.value(part))),
             AttrValue::TextParts(parts) => self.text(parts),
         }
@@ -218,23 +269,45 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         match child {
             Child::StaticText(text) => ast.string(text),
             Child::View(id) => self.view(*id),
-            Child::Dynamic(dynamic) if dynamic.mode == crate::ir::schedule::ValueMode::Once => self.expr(dynamic.expr),
+            Child::Dynamic(dynamic) if dynamic.mode == crate::ir::schedule::ValueMode::Once => {
+                self.expr(dynamic.expr)
+            }
             Child::Dynamic(dynamic) => self.getter(dynamic),
             Child::Conditional(branch) => {
                 let test = self.expr(branch.test);
                 let consequent = self.child(&branch.consequent);
                 let alternate = branch.alternate.as_ref().map(|child| self.child(child));
                 if self.options.target == CompileTarget::Client {
-                    let test = if branch.test_is_boolean { test } else {
-                        ast.unary(UnaryOperator::LogicalNot, ast.unary(UnaryOperator::LogicalNot, test))
+                    let test = if branch.test_is_boolean {
+                        test
+                    } else {
+                        ast.unary(
+                            UnaryOperator::LogicalNot,
+                            ast.unary(UnaryOperator::LogicalNot, test),
+                        )
                     };
                     let memo = self.fresh("_c$");
-                    let computed = self.call("reze-js/internal/reactivity", "computed", [ast.arrow([], test)]);
-                    let value = ast.conditional(ast.call(ast.ident(memo), []), consequent, alternate.unwrap_or_else(|| ast.boolean(false)));
-                    return ast.call(ast.block_arrow([], [
-                        ast.declaration(VariableDeclarationKind::Const, memo, Some(computed)),
-                        ast.return_stmt(ast.arrow([], value)),
-                    ]), []);
+                    let computed =
+                        self.call("reze-js/internal/reactivity", "computed", [ast.arrow([], test)]);
+                    let value = ast.conditional(
+                        ast.call(ast.ident(memo), []),
+                        consequent,
+                        alternate.unwrap_or_else(|| ast.boolean(false)),
+                    );
+                    return ast.call(
+                        ast.block_arrow(
+                            [],
+                            [
+                                ast.declaration(
+                                    VariableDeclarationKind::Const,
+                                    memo,
+                                    Some(computed),
+                                ),
+                                ast.return_stmt(ast.arrow([], value)),
+                            ],
+                        ),
+                        [],
+                    );
                 }
                 let site = self.range_site(branch.origin, "branch");
                 let mut args = vec![site, ast.arrow([], test), ast.arrow([], consequent)];
@@ -248,7 +321,11 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         }
     }
 
-    pub fn assign_ref(&self, target: &crate::ir::view::AssignTarget, value: Expression<'a>) -> Expression<'a> {
+    pub fn assign_ref(
+        &self,
+        target: &crate::ir::view::AssignTarget,
+        value: Expression<'a>,
+    ) -> Expression<'a> {
         let ast = Ast::new(self.allocator);
         let target = match target {
             crate::ir::view::AssignTarget::Identifier(name) => ast.ident(self.intern(name)),
@@ -256,10 +333,22 @@ impl<'a, 'm> EmitContext<'a, 'm> {
                 let object = self.expr(*object);
                 match key {
                     MemberKey::Static(name) if name.starts_with('#') => {
-                        let private = PrivateIdentifier::new(SPAN, Ident::from(self.intern(&name[1..])), &ast.builder);
-                        Expression::new_private_field_expression(SPAN, object, private, false, &ast.builder)
+                        let private = PrivateIdentifier::new(
+                            SPAN,
+                            Ident::from(self.intern(&name[1..])),
+                            &ast.builder,
+                        );
+                        Expression::new_private_field_expression(
+                            SPAN,
+                            object,
+                            private,
+                            false,
+                            &ast.builder,
+                        )
                     }
-                    MemberKey::Static(name) if crate::html::is_identifier_name(name) => ast.member(object, self.intern(name)),
+                    MemberKey::Static(name) if crate::html::is_identifier_name(name) => {
+                        ast.member(object, self.intern(name))
+                    }
                     MemberKey::Static(name) => ast.index(object, ast.string(name)),
                     MemberKey::Computed(key) => ast.index(object, self.expr(*key)),
                 }
@@ -275,36 +364,67 @@ impl<'a, 'm> EmitContext<'a, 'm> {
 
     pub fn site_name(&mut self, view: &View) -> &'a str {
         let site = view.site.as_ref().expect("managed view has an original source site");
-        if let Some(&name) = self.sites.get(&site.ordinal) { return name; }
+        if let Some(&name) = self.sites.get(&site.ordinal) {
+            return name;
+        }
         let layout = layout(Ast::new(self.allocator), view);
         self.hoist_site(site, view.origin, layout)
     }
 
     fn origin_site(&mut self, origin: Span) -> Expression<'a> {
-        let site = self.ir.callback_sites.get(&(origin.start, origin.end))
+        let site = self
+            .ir
+            .callback_sites
+            .get(&(origin.start, origin.end))
             .expect("managed call retains its original source site");
-        let name = if let Some(&name) = self.sites.get(&site.ordinal) { name } else {
+        let name = if let Some(&name) = self.sites.get(&site.ordinal) {
+            name
+        } else {
             self.hoist_site(site, origin, None)
         };
         Ast::new(self.allocator).ident(name)
     }
 
     fn range_site(&mut self, origin: Span, kind: &str) -> Expression<'a> {
-        let site = self.ir.callback_sites.get(&(origin.start, origin.end)).expect("optimized range retains its original source site");
-        let name = if let Some(&name) = self.sites.get(&site.ordinal) { name } else {
+        let site = self
+            .ir
+            .callback_sites
+            .get(&(origin.start, origin.end))
+            .expect("optimized range retains its original source site");
+        let name = if let Some(&name) = self.sites.get(&site.ordinal) {
+            name
+        } else {
             let ast = Ast::new(self.allocator);
             self.hoist_site(site, origin, Some(ast.object([ast.prop("range", ast.string(kind))])))
         };
         Ast::new(self.allocator).ident(name)
     }
 
-    fn hoist_site(&mut self, site: &SiteId, origin: Span, layout: Option<Expression<'a>>) -> &'a str {
+    fn hoist_site(
+        &mut self,
+        site: &SiteId,
+        origin: Span,
+        layout: Option<Expression<'a>>,
+    ) -> &'a str {
         let ast = Ast::new(self.allocator);
         let name = self.fresh("_site$");
         let (line, column) = self.positions[&origin.start];
         let mut fields = vec![
-            ast.prop("key", ast.string(&self.ir.sites.as_ref().expect("managed target has source sites").key(*site))),
-            ast.prop("module", ast.string(self.ir.module_id.as_deref().expect("managed target has canonical module identity"))),
+            ast.prop(
+                "key",
+                ast.string(
+                    &self.ir.sites.as_ref().expect("managed target has source sites").key(*site),
+                ),
+            ),
+            ast.prop(
+                "module",
+                ast.string(
+                    self.ir
+                        .module_id
+                        .as_deref()
+                        .expect("managed target has canonical module identity"),
+                ),
+            ),
             ast.prop("ordinal", ast.number(f64::from(site.ordinal))),
             ast.prop("line", ast.number(f64::from(line))),
             ast.prop("column", ast.number(f64::from(column))),
@@ -320,7 +440,9 @@ impl<'a, 'm> EmitContext<'a, 'm> {
 }
 
 fn call_callee(expression: Expression<'_>) -> Expression<'_> {
-    let Expression::CallExpression(call) = unparenthesize(expression) else { unreachable!("getter proof identifies a call") };
+    let Expression::CallExpression(call) = unparenthesize(expression) else {
+        unreachable!("getter proof identifies a call")
+    };
     call.unbox().callee
 }
 
@@ -332,7 +454,11 @@ fn unparenthesize(mut expression: Expression<'_>) -> Expression<'_> {
 }
 
 fn namespace(namespace: Namespace) -> &'static str {
-    match namespace { Namespace::Html => "", Namespace::Svg => "svg", Namespace::MathMl => "math" }
+    match namespace {
+        Namespace::Html => "",
+        Namespace::Svg => "svg",
+        Namespace::MathMl => "math",
+    }
 }
 
 fn layout<'a>(ast: Ast<'a>, view: &View) -> Option<Expression<'a>> {
@@ -362,20 +488,33 @@ fn layout<'a>(ast: Ast<'a>, view: &View) -> Option<Expression<'a>> {
                 }
                 ast.object(fields)
             });
-            let inserts = element.inserts.iter().map(|insert| ast.object([
-                ast.prop("slot", ast.number(f64::from(insert.slot))),
-                ast.prop("parent", ast.number(f64::from(insert.parent))),
-                ast.prop("anchor", match insert.anchor { Anchor::Only => ast.string("only"), Anchor::End => ast.string("end"), Anchor::Before(index) => ast.number(f64::from(index)) }),
-            ]));
+            let inserts = element.inserts.iter().map(|insert| {
+                ast.object([
+                    ast.prop("slot", ast.number(f64::from(insert.slot))),
+                    ast.prop("parent", ast.number(f64::from(insert.parent))),
+                    ast.prop(
+                        "anchor",
+                        match insert.anchor {
+                            Anchor::Only => ast.string("only"),
+                            Anchor::End => ast.string("end"),
+                            Anchor::Before(index) => ast.number(f64::from(index)),
+                        },
+                    ),
+                ])
+            });
             return Some(ast.object([
-                ast.prop("tag", ast.string(&element.tag)), ast.prop("ns", ast.string(namespace(element.namespace))),
-                ast.prop("nodes", ast.array(nodes)), ast.prop("inserts", ast.array(inserts)),
+                ast.prop("tag", ast.string(&element.tag)),
+                ast.prop("ns", ast.string(namespace(element.namespace))),
+                ast.prop("nodes", ast.array(nodes)),
+                ast.prop("inserts", ast.array(inserts)),
             ]));
         }
         ViewKind::Fragment(_) => "fragment",
         ViewKind::Component(component) if component.island.is_some() => "island",
         ViewKind::Component(_) => return None,
-        ViewKind::Flow(FlowView::For { .. } | FlowView::Repeat { .. } | FlowView::Rows { .. }) => "list",
+        ViewKind::Flow(FlowView::For { .. } | FlowView::Repeat { .. } | FlowView::Rows { .. }) => {
+            "list"
+        }
         ViewKind::Flow(FlowView::Portal { .. }) => "portal",
         ViewKind::Flow(_) => "branch",
     };
@@ -386,8 +525,13 @@ fn source_positions(source: &str, ir: &ModuleIr) -> HashMap<u32, (u32, u32)> {
     if ir.sites.is_none() {
         return HashMap::new();
     }
-    let mut offsets: Vec<u32> = ir.views.iter().filter(|view| view.site.is_some()).map(|view| view.origin.start)
-        .chain(ir.callback_sites.keys().map(|(start, _)| *start)).collect();
+    let mut offsets: Vec<u32> = ir
+        .views
+        .iter()
+        .filter(|view| view.site.is_some())
+        .map(|view| view.origin.start)
+        .chain(ir.callback_sites.keys().map(|(start, _)| *start))
+        .collect();
     offsets.sort_unstable();
     offsets.dedup();
     let mut out = HashMap::with_capacity(offsets.len());
@@ -398,10 +542,15 @@ fn source_positions(source: &str, ir: &ModuleIr) -> HashMap<u32, (u32, u32)> {
             out.insert(offset as u32, (line, column));
             wanted.next();
         }
-        if wanted.peek().is_none() { break; }
+        if wanted.peek().is_none() {
+            break;
+        }
         match character {
             '\n' if previous_cr => {}
-            '\r' | '\n' | '\u{2028}' | '\u{2029}' => { line += 1; column = 0; }
+            '\r' | '\n' | '\u{2028}' | '\u{2029}' => {
+                line += 1;
+                column = 0;
+            }
             character => column += character.len_utf16() as u32,
         }
         previous_cr = character == '\r';
@@ -409,7 +558,9 @@ fn source_positions(source: &str, ir: &ModuleIr) -> HashMap<u32, (u32, u32)> {
     out
 }
 
-struct Replace<'c, 'a, 'm> { ctx: &'c mut EmitContext<'a, 'm> }
+struct Replace<'c, 'a, 'm> {
+    ctx: &'c mut EmitContext<'a, 'm>,
+}
 
 impl<'a> VisitMut<'a> for Replace<'_, 'a, '_> {
     fn visit_statement(&mut self, statement: &mut Statement<'a>) {
@@ -427,19 +578,26 @@ impl<'a> VisitMut<'a> for Replace<'_, 'a, '_> {
             Ok(body) => {
                 let ArrowFunctionBody::FunctionBody(body) = body else { unreachable!() };
                 let ast = Ast::new(self.ctx.allocator);
-                *statement = Statement::new_block_statement(SPAN, body.unbox().statements, &ast.builder);
+                *statement =
+                    Statement::new_block_statement(SPAN, body.unbox().statements, &ast.builder);
             }
             Err(argument) => returned.argument = Some(argument),
         }
     }
 
     fn visit_arrow_function_expression(&mut self, arrow: &mut ArrowFunctionExpression<'a>) {
-        let inline_expression = arrow.body.as_expression().is_some_and(|expression|
-            matches!(expression.without_parentheses(), Expression::JSXElement(_) | Expression::JSXFragment(_))
-        );
+        let inline_expression = arrow.body.as_expression().is_some_and(|expression| {
+            matches!(
+                expression.without_parentheses(),
+                Expression::JSXElement(_) | Expression::JSXFragment(_)
+            )
+        });
         walk_mut::walk_arrow_function_expression(self, arrow);
         if inline_expression {
-            let expression = arrow.body.as_expression_mut().expect("view arrow has an expression body")
+            let expression = arrow
+                .body
+                .as_expression_mut()
+                .expect("view arrow has an expression body")
                 .take_in(&self.ctx.allocator);
             arrow.body = match inline_view_body(expression) {
                 Ok(body) => body,
@@ -481,7 +639,13 @@ impl<'a> VisitMut<'a> for Replace<'_, 'a, '_> {
             let view = self.ctx.ir.by_span[&(span.start, span.end)];
             let mut wanted = HashSet::new();
             let mut seen = HashSet::new();
-            collect_references(self.ctx.ir, view, self.ctx.options.target != CompileTarget::Html, &mut seen, &mut wanted);
+            collect_references(
+                self.ctx.ir,
+                view,
+                self.ctx.options.target != CompileTarget::Html,
+                &mut seen,
+                &mut wanted,
+            );
             Harvest { ctx: self.ctx, wanted }.visit_expression(expression);
             *expression = self.ctx.view(view);
             self.ctx.changed = true;
@@ -492,7 +656,8 @@ impl<'a> VisitMut<'a> for Replace<'_, 'a, '_> {
 
     fn visit_variable_declarator(&mut self, declarator: &mut VariableDeclarator<'a>) {
         if self.ctx.facts.folded_getter(declarator).is_some() {
-            let BindingPattern::ArrayPattern(pattern) = declarator.id.take_in(&self.ctx.allocator) else {
+            let BindingPattern::ArrayPattern(pattern) = declarator.id.take_in(&self.ctx.allocator)
+            else {
                 unreachable!("folded signal has a getter binding")
             };
             let mut pattern = pattern.unbox();
@@ -509,7 +674,9 @@ impl<'a> VisitMut<'a> for Replace<'_, 'a, '_> {
             let binding = match &declarator.id {
                 BindingPattern::BindingIdentifier(binding) => Some(binding.as_ref()),
                 BindingPattern::ArrayPattern(pattern) => match pattern.elements.first() {
-                    Some(Some(BindingPattern::BindingIdentifier(binding))) => Some(binding.as_ref()),
+                    Some(Some(BindingPattern::BindingIdentifier(binding))) => {
+                        Some(binding.as_ref())
+                    }
                     _ => None,
                 },
                 _ => None,
@@ -517,15 +684,26 @@ impl<'a> VisitMut<'a> for Replace<'_, 'a, '_> {
             if let Some(binding) = binding
                 && let Some(call) = declarator.init.as_mut().and_then(call_mut)
                 && call.arguments.len() < 2
-                && !call.arguments.iter().any(|argument| matches!(argument, Argument::SpreadElement(_)))
-                && matches!(self.ctx.facts.primitive(self.ctx.scoping, &call.callee),
-                    Some(crate::frontend::analysis::Primitive::Signal | crate::frontend::analysis::Primitive::Computed | crate::frontend::analysis::Primitive::Action))
+                && !call
+                    .arguments
+                    .iter()
+                    .any(|argument| matches!(argument, Argument::SpreadElement(_)))
+                && matches!(
+                    self.ctx.facts.primitive(self.ctx.scoping, &call.callee),
+                    Some(
+                        crate::frontend::analysis::Primitive::Signal
+                            | crate::frontend::analysis::Primitive::Computed
+                            | crate::frontend::analysis::Primitive::Action
+                    )
+                )
             {
                 let ast = Ast::new(self.ctx.allocator);
                 if call.arguments.is_empty() {
                     call.arguments.push(Argument::from(ast.undefined()));
                 }
-                call.arguments.push(Argument::from(ast.object([ast.prop("name", ast.string(binding.name.as_str()))])));
+                call.arguments.push(Argument::from(
+                    ast.object([ast.prop("name", ast.string(binding.name.as_str()))]),
+                ));
                 self.ctx.changed = true;
             }
         }
@@ -552,15 +730,27 @@ fn inline_view_body(expression: Expression<'_>) -> Result<ArrowFunctionBody<'_>,
 fn call_mut<'e, 'a>(expression: &'e mut Expression<'a>) -> Option<&'e mut CallExpression<'a>> {
     match expression {
         Expression::CallExpression(call) => Some(call),
-        Expression::ParenthesizedExpression(parenthesized) => call_mut(&mut parenthesized.expression),
+        Expression::ParenthesizedExpression(parenthesized) => {
+            call_mut(&mut parenthesized.expression)
+        }
         _ => None,
     }
 }
 
-fn collect_references(ir: &ModuleIr, id: ViewId, client: bool, seen: &mut HashSet<ViewId>, wanted: &mut HashSet<NodeId>) {
-    if !seen.insert(id) { return; }
+fn collect_references(
+    ir: &ModuleIr,
+    id: ViewId,
+    client: bool,
+    seen: &mut HashSet<ViewId>,
+    wanted: &mut HashSet<NodeId>,
+) {
+    if !seen.insert(id) {
+        return;
+    }
     ir.view(id).for_each_reference(client, &mut |reference| match reference {
-        ViewReference::Expression(reference) => { wanted.insert(reference.id); }
+        ViewReference::Expression(reference) => {
+            wanted.insert(reference.id);
+        }
         ViewReference::View(id) => collect_references(ir, id, client, seen, wanted),
     });
 }
@@ -599,17 +789,25 @@ impl<'a> VisitMut<'a> for Harvest<'_, 'a, '_> {
         if let Some(value) = &attribute.value {
             let id = value.node_id();
             if self.wanted.remove(&id) {
-                let mut expression = match attribute.value.take().expect("attribute value present") {
+                let mut expression = match attribute.value.take().expect("attribute value present")
+                {
                     JSXAttributeValue::StringLiteral(value) => {
                         let decoded = crate::html::decode_entities(value.value.as_str());
-                        Expression::new_string_literal(value.span, oxc_str::Str::from_str_in(&decoded, &ast.builder), None, &ast.builder)
+                        Expression::new_string_literal(
+                            value.span,
+                            oxc_str::Str::from_str_in(&decoded, &ast.builder),
+                            None,
+                            &ast.builder,
+                        )
                     }
                     JSXAttributeValue::Element(element) => Expression::JSXElement(element),
                     JSXAttributeValue::Fragment(fragment) => Expression::JSXFragment(fragment),
-                    JSXAttributeValue::ExpressionContainer(container) => match container.unbox().expression {
-                        JSXExpression::EmptyExpression(_) => ast.undefined(),
-                        expression => expression.into_expression(),
-                    },
+                    JSXAttributeValue::ExpressionContainer(container) => {
+                        match container.unbox().expression {
+                            JSXExpression::EmptyExpression(_) => ast.undefined(),
+                            expression => expression.into_expression(),
+                        }
+                    }
                 };
                 Replace { ctx: self.ctx }.visit_expression(&mut expression);
                 self.ctx.expressions.borrow_mut().insert(id, expression);
@@ -626,7 +824,11 @@ fn jsx_name<'a>(allocator: &'a Allocator, name: JSXElementName<'a>) -> Expressio
         JSXElementName::IdentifierReference(identifier) => Expression::Identifier(identifier),
         JSXElementName::ThisExpression(this) => Expression::ThisExpression(this),
         JSXElementName::MemberExpression(member) => jsx_member(allocator, member.unbox()),
-        JSXElementName::Identifier(identifier) => Expression::new_identifier(identifier.span, Ident::from(allocator.alloc_str(identifier.name.as_str())), &ast.builder),
+        JSXElementName::Identifier(identifier) => Expression::new_identifier(
+            identifier.span,
+            Ident::from(allocator.alloc_str(identifier.name.as_str())),
+            &ast.builder,
+        ),
         JSXElementName::NamespacedName(_) => unreachable!("namespaced JSX names are native tags"),
     }
 }
@@ -634,11 +836,19 @@ fn jsx_name<'a>(allocator: &'a Allocator, name: JSXElementName<'a>) -> Expressio
 fn jsx_member<'a>(allocator: &'a Allocator, member: JSXMemberExpression<'a>) -> Expression<'a> {
     let ast = Ast::new(allocator);
     let object = match member.object {
-        JSXMemberExpressionObject::IdentifierReference(identifier) => Expression::Identifier(identifier),
+        JSXMemberExpressionObject::IdentifierReference(identifier) => {
+            Expression::Identifier(identifier)
+        }
         JSXMemberExpressionObject::ThisExpression(this) => Expression::ThisExpression(this),
-        JSXMemberExpressionObject::MemberExpression(member) => jsx_member(allocator, member.unbox()),
+        JSXMemberExpressionObject::MemberExpression(member) => {
+            jsx_member(allocator, member.unbox())
+        }
     };
-    let property = IdentifierName::new(member.property.span, Ident::from(allocator.alloc_str(member.property.name.as_str())), &ast.builder);
+    let property = IdentifierName::new(
+        member.property.span,
+        Ident::from(allocator.alloc_str(member.property.name.as_str())),
+        &ast.builder,
+    );
     Expression::new_static_member_expression(member.span, object, property, false, &ast.builder)
 }
 
@@ -658,9 +868,12 @@ pub fn serialize_source_map(map: oxc_sourcemap::SourceMap<'_>) -> String {
     for token in &mut parts.tokens {
         if let Some(name) = token.get_name_id() {
             *token = oxc_sourcemap::Token::new(
-                token.get_dst_line(), token.get_dst_col(),
-                token.get_src_line(), token.get_src_col(),
-                token.get_source_id(), names[name as usize],
+                token.get_dst_line(),
+                token.get_dst_col(),
+                token.get_src_line(),
+                token.get_src_col(),
+                token.get_source_id(),
+                names[name as usize],
             );
         }
     }

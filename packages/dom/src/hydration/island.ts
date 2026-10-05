@@ -12,14 +12,25 @@ import { preparingSession } from "./session";
 
 type Component<P> = (props: P) => JSX.Element;
 
-export function prepareIsland<P>(site: Site, trigger: IslandTrigger, load: () => Component<P> | PromiseLike<Component<P>>, props: P, fallback?: () => JSX.Element, options?: IslandOptions): JSX.Element {
+export function prepareIsland<P>(
+  site: Site,
+  trigger: IslandTrigger,
+  load: () => Component<P> | PromiseLike<Component<P>>,
+  props: P,
+  fallback?: () => JSX.Element,
+  options?: IslandOptions,
+): JSX.Element {
   const session = preparingSession();
   if (session === undefined) return island(trigger, load, props, fallback, options);
   return managedRange(session, "island", "island", site, () => {
     if (trigger === "eager") {
       const loaded = load();
       if (typeof loaded === "function") return prepareComponent(site, loaded, props);
-      return prepareAsyncComponent(site, () => Promise.resolve(loaded).then(component => [component]), values => prepareComponent(site, values()[0]!, props));
+      return prepareAsyncComponent(
+        site,
+        () => Promise.resolve(loaded).then((component) => [component]),
+        (values) => prepareComponent(site, values()[0]!, props),
+      );
     }
     let host: Element | undefined;
     let shell: JSX.Element;
@@ -39,7 +50,11 @@ export function prepareIsland<P>(site: Site, trigger: IslandTrigger, load: () =>
       if (view === undefined && direct === undefined) {
         const loaded = load();
         if (typeof loaded === "function") direct = loaded;
-        else view = asyncComponent(() => Promise.resolve(loaded).then(component => [component]), values => createComponent(values()[0]!, props));
+        else
+          view = asyncComponent(
+            () => Promise.resolve(loaded).then((component) => [component]),
+            (values) => createComponent(values()[0]!, props),
+          );
       }
       if (view !== undefined) {
         const current = view();

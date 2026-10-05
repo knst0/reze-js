@@ -1,14 +1,9 @@
 import type { JSX } from "@rezejs/dom";
 import { setRecordAttribute, type HtmlElement } from "@rezejs/dom/internal/html";
-import { compileRoutes, joinRoutePaths, matchPath, routeEntryId } from "../match";
+
 import { routerBase, type HistoryEntry, type RouterHistory } from "../history";
-import {
-  commit,
-  initRouterState,
-  pathnameOf,
-  settleEntry,
-  type RouterState,
-} from "../navigation";
+import { compileRoutes, joinRoutePaths, matchPath, routeEntryId } from "../match";
+import { commit, initRouterState, pathnameOf, settleEntry, type RouterState } from "../navigation";
 import { createSettledRouter } from "../router";
 import { installLinkTarget } from "../target";
 import type { PageMetadata, Params, RouteDefinition } from "../types";
@@ -117,9 +112,28 @@ export function describeSsgRoutes(routes: readonly RouteDefinition[]): SsgRouteD
 }
 
 const ReservedSegments = new Set([
-  "con", "prn", "aux", "nul",
-  "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
-  "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+  "con",
+  "prn",
+  "aux",
+  "nul",
+  "com1",
+  "com2",
+  "com3",
+  "com4",
+  "com5",
+  "com6",
+  "com7",
+  "com8",
+  "com9",
+  "lpt1",
+  "lpt2",
+  "lpt3",
+  "lpt4",
+  "lpt5",
+  "lpt6",
+  "lpt7",
+  "lpt8",
+  "lpt9",
 ]);
 
 function decodeParam(value: string, what: string): string {
@@ -156,7 +170,10 @@ function printableParam(value: unknown, what: string): string {
   throw new Error(`[reze-router] ${what} must be a string, number or boolean`);
 }
 
-function buildSsgPath(descriptor: SsgRouteDescriptor, params: SsgStaticParams): { pathname: string; values: Record<string, string | readonly string[]> } {
+function buildSsgPath(
+  descriptor: SsgRouteDescriptor,
+  params: SsgStaticParams,
+): { pathname: string; values: Record<string, string | readonly string[]> } {
   const parts: string[] = [];
   const values: Record<string, string | readonly string[]> = {};
   for (const segment of descriptor.pattern.split("/")) {
@@ -212,10 +229,14 @@ export function enumerateSsgUrls(
     const descriptor = byPattern.get(key);
     if (descriptor === undefined) {
       const known = descriptors.map((candidate) => candidate.pattern).sort();
-      throw new Error(`[reze-router] ssg.paths has unknown route pattern ${JSON.stringify(key)}; expected one of ${known.map((pattern) => JSON.stringify(pattern)).join(", ") || "none"}`);
+      throw new Error(
+        `[reze-router] ssg.paths has unknown route pattern ${JSON.stringify(key)}; expected one of ${known.map((pattern) => JSON.stringify(pattern)).join(", ") || "none"}`,
+      );
     }
     if (descriptor.dynamics.length === 0) {
-      throw new Error(`[reze-router] ssg.paths has an entry for static route ${JSON.stringify(key)}; remove it, static leaves enumerate once`);
+      throw new Error(
+        `[reze-router] ssg.paths has an entry for static route ${JSON.stringify(key)}; remove it, static leaves enumerate once`,
+      );
     }
   }
   const out: SsgEnumeratedUrl[] = [];
@@ -225,13 +246,20 @@ export function enumerateSsgUrls(
     const file = outputFile(pathname);
     const clash = files.get(file);
     if (clash !== undefined) {
-      throw new Error(`[reze-router] ssg.paths produces duplicate output ${JSON.stringify(file)} for ${JSON.stringify(clash)} and ${JSON.stringify(pathname)}`);
+      throw new Error(
+        `[reze-router] ssg.paths produces duplicate output ${JSON.stringify(file)} for ${JSON.stringify(clash)} and ${JSON.stringify(pathname)}`,
+      );
     }
     files.set(file, pathname);
-    const key = pathname.split("/").map((segment) => decodeParam(segment, `ssg.paths output ${JSON.stringify(pathname)}`)).join("/");
+    const key = pathname
+      .split("/")
+      .map((segment) => decodeParam(segment, `ssg.paths output ${JSON.stringify(pathname)}`))
+      .join("/");
     const other = folded.get(key);
     if (other !== undefined && other !== pathname) {
-      throw new Error(`[reze-router] ssg.paths produces colliding URLs ${JSON.stringify(other)} and ${JSON.stringify(pathname)} after decoding`);
+      throw new Error(
+        `[reze-router] ssg.paths produces colliding URLs ${JSON.stringify(other)} and ${JSON.stringify(pathname)} after decoding`,
+      );
     }
     folded.set(key, pathname);
     out.push({ url: canonicalUrl(pathname, opts.trailingSlash), file, leafId, params: values });
@@ -243,7 +271,9 @@ export function enumerateSsgUrls(
     }
     const sets = paths[descriptor.pattern];
     if (sets === undefined) {
-      throw new Error(`[reze-router] ssg.paths is missing dynamic route ${JSON.stringify(descriptor.pattern)}; map it to [] to skip the leaf`);
+      throw new Error(
+        `[reze-router] ssg.paths is missing dynamic route ${JSON.stringify(descriptor.pattern)}; map it to [] to skip the leaf`,
+      );
     }
     for (const params of sets) {
       for (const key of Object.keys(params)) {
@@ -253,7 +283,9 @@ export function enumerateSsgUrls(
       }
       const built = buildSsgPath(descriptor, params);
       if (matchPath(descriptor.pattern, built.pathname) === undefined) {
-        throw new Error(`[reze-router] ssg.paths[${JSON.stringify(descriptor.pattern)}] produces ${JSON.stringify(built.pathname)}, which does not match its own leaf`);
+        throw new Error(
+          `[reze-router] ssg.paths[${JSON.stringify(descriptor.pattern)}] produces ${JSON.stringify(built.pathname)}, which does not match its own leaf`,
+        );
       }
       push(built.pathname, descriptor.id, built.values);
     }
@@ -309,11 +341,7 @@ export function uninstallSsgLinkTarget(): void {
  * `session.run(hMount(...))`. The adapter records `matches` through its own session hook after preparation and before
  * mounting, then mounts, settles, and polls `takeSsgRedirect(handle)` for imperative navigation during the view.
  */
-export function prepareSsgRoute(
-  routes: readonly RouteDefinition[],
-  path: string,
-  opts?: SsgPrepareOptions,
-): Promise<SsgPreparedRoute> {
+export function prepareSsgRoute(routes: readonly RouteDefinition[], path: string, opts?: SsgPrepareOptions): Promise<SsgPreparedRoute> {
   const branches = compileRoutes(routes);
   const history = createCaptureHistory(path, opts?.base ?? "");
   const state = initRouterState({ history, branches, env: "html" });

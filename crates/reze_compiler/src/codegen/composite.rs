@@ -56,11 +56,7 @@ fn component<'a, 'm>(
             }
             CompileTarget::Hydrate => {
                 let site = ctx.site(view);
-                ctx.call(
-                    HYDRATE,
-                    "prepareComponent",
-                    vec![site, ctx.expr(component.callee), props],
-                )
+                ctx.call(HYDRATE, "prepareComponent", vec![site, ctx.expr(component.callee), props])
             }
         },
     }
@@ -138,8 +134,7 @@ fn ref_arrow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, target: &'m AssignTarget) ->
             let slot = ctx.intern(name);
             let check = is_function(&ast, ast.ident(slot));
             let then = ast.call(ast.ident(slot), [ast.ident(element)]);
-            let write =
-                ctx.assign_ref(target, ast.ident(element));
+            let write = ctx.assign_ref(target, ast.ident(element));
             body.push(ast.stmt(ast.conditional(check, then, write)));
         }
         AssignTarget::Member { object, key } => {
@@ -148,7 +143,11 @@ fn ref_arrow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, target: &'m AssignTarget) ->
                 None
             } else {
                 let holder = ctx.fresh("_o$");
-                body.push(ast.declaration(VariableDeclarationKind::Const, holder, Some(object_value)));
+                body.push(ast.declaration(
+                    VariableDeclarationKind::Const,
+                    holder,
+                    Some(object_value),
+                ));
                 Some(holder)
             };
             let receiver = || match holder {
@@ -192,10 +191,7 @@ fn ref_arrow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, target: &'m AssignTarget) ->
                     ));
                     (
                         ast.index(receiver(), ast.ident(index)),
-                        ast.assign(
-                            ast.index(receiver(), ast.ident(index)),
-                            ast.ident(element),
-                        ),
+                        ast.assign(ast.index(receiver(), ast.ident(index)), ast.ident(element)),
                     )
                 }
             };
@@ -350,7 +346,11 @@ fn fragment<'a, 'm>(
     }
 }
 
-fn flow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View, flow: &'m FlowView) -> Expression<'a> {
+fn flow<'a, 'm>(
+    ctx: &mut EmitContext<'a, 'm>,
+    view: &'m View,
+    flow: &'m FlowView,
+) -> Expression<'a> {
     let ast = Ast::new(ctx.allocator);
     match flow {
         FlowView::Show(branch) => {
@@ -459,21 +459,19 @@ fn flow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View, flow: &'m FlowVie
                 }
             }
         }
-        FlowView::Rows { times, map } => {
-            match ctx.options.target {
-                CompileTarget::Client => rows(ctx, *times, *map),
-                CompileTarget::Html | CompileTarget::Hydrate => {
-                    let site = ctx.site(view);
-                    let map = ctx.expr(*map);
-                    let (source, helper) = if ctx.options.target == CompileTarget::Html {
-                        (HTML, "hRows")
-                    } else {
-                        (HYDRATE, "prepareRows")
-                    };
-                    ctx.call(source, helper, [site, ast.number(f64::from(*times)), map])
-                }
+        FlowView::Rows { times, map } => match ctx.options.target {
+            CompileTarget::Client => rows(ctx, *times, *map),
+            CompileTarget::Html | CompileTarget::Hydrate => {
+                let site = ctx.site(view);
+                let map = ctx.expr(*map);
+                let (source, helper) = if ctx.options.target == CompileTarget::Html {
+                    (HTML, "hRows")
+                } else {
+                    (HYDRATE, "prepareRows")
+                };
+                ctx.call(source, helper, [site, ast.number(f64::from(*times)), map])
             }
-        }
+        },
         FlowView::Loading { child, fallback } => {
             let child = render_flow(ctx, child);
             let fallback = fallback.as_ref().map(|fallback| render_flow(ctx, fallback));
@@ -600,7 +598,8 @@ fn island_call<'a, 'm>(
                 None,
                 &ast.builder,
             );
-            let then = ast.call(ast.member(source, ctx.intern("then")), [ast.arrow([module], body)]);
+            let then =
+                ast.call(ast.member(source, ctx.intern("then")), [ast.arrow([module], body)]);
             ast.arrow(Vec::new(), then)
         }
     };

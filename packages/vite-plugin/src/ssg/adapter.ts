@@ -32,12 +32,11 @@ ${shellImport}${shellExport}export function SsgView(props = {}) {
 }
 
 export function clientBootSource(options: { mode: AppMode; rootId: string }): string {
-  const routerImport = options.mode.kind === "router"
-    ? `import { prepareHydratedRouter } from "@rezejs/router/internal/hydrate";\n`
-    : "";
-  const mount = options.mode.kind === "router"
-    ? `const router = await session.load(() => prepareHydratedRouter(view.routes, session, session.base));\nawait hydrate(() => view.SsgView({ router }), root);`
-    : "await hydrate(() => view.SsgView(), root);";
+  const routerImport = options.mode.kind === "router" ? `import { prepareHydratedRouter } from "@rezejs/router/internal/hydrate";\n` : "";
+  const mount =
+    options.mode.kind === "router"
+      ? `const router = await session.load(() => prepareHydratedRouter(view.routes, session, session.base));\nawait hydrate(() => view.SsgView({ router }), root);`
+      : "await hydrate(() => view.SsgView(), root);";
   return `import { prepareHydration } from "reze-js/internal/hydrate";
 import { hydrate } from "reze-js";
 ${routerImport}

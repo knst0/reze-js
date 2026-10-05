@@ -7,9 +7,9 @@ use oxc_span::SPAN;
 use oxc_str::{Ident, Str};
 use oxc_syntax::symbol::SymbolId;
 
-use crate::frontend::imports::{allows, home_of};
-use crate::ast::Ast;
 use crate::RUNTIME_MODULE;
+use crate::ast::Ast;
+use crate::frontend::imports::{allows, home_of};
 
 use super::EmitContext;
 
@@ -88,11 +88,7 @@ impl<'a> VisitMut<'a> for TemplateReferences<'a> {
 }
 
 pub(super) fn prune_imports(program: &mut Program<'_>, scoping: &Scoping) -> bool {
-    let mut references = References {
-        scoping,
-        symbols: HashSet::new(),
-        generated: HashSet::new(),
-    };
+    let mut references = References { scoping, symbols: HashSet::new(), generated: HashSet::new() };
     references.visit_program(program);
     let mut changed = false;
     program.body.retain_mut(|statement| {
@@ -107,7 +103,11 @@ pub(super) fn prune_imports(program: &mut Program<'_>, scoping: &Scoping) -> boo
             let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else { return true };
             named.import_kind.is_type()
                 || !allows(source, named.imported.name().as_str())
-                || named.local.symbol_id.get().is_some_and(|symbol| references.symbols.contains(&symbol))
+                || named
+                    .local
+                    .symbol_id
+                    .get()
+                    .is_some_and(|symbol| references.symbols.contains(&symbol))
                 || references.generated.contains(&named.local.name)
         });
         changed |= before != specifiers.len();

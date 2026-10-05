@@ -2,10 +2,11 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { extname, join, relative, sep } from "node:path";
-import { createBuilder, version as viteVersion } from "vite";
-import type { Plugin } from "vite";
+
 import { chromium, firefox, webkit } from "playwright";
 import type { Browser, Page } from "playwright";
+import { createBuilder, version as viteVersion } from "vite";
+import type { Plugin } from "vite";
 
 export type SsgBrowserName = "chromium" | "firefox" | "webkit";
 
@@ -17,7 +18,10 @@ const Engines = {
 
 export function resolveBrowsers(raw: string | undefined = process.env.REZE_SSG_BROWSERS): SsgBrowserName[] {
   if (raw === undefined || raw.trim() === "") return ["chromium"];
-  const names = raw.split(",").map((part) => part.trim().toLowerCase()).filter((part) => part.length > 0);
+  const names = raw
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter((part) => part.length > 0);
   const out: SsgBrowserName[] = [];
   for (const name of names) {
     if (name !== "chromium" && name !== "firefox" && name !== "webkit") {
@@ -77,7 +81,8 @@ export async function expectBuildFails(plugins: Plugin | Plugin[], fixtureDir: s
     else message = String(error);
   }
   if (message === "") throw new Error("[reze-test] expected the build to fail, but it succeeded");
-  if (!pattern.test(message)) throw new Error(`[reze-test] build failed without the expected context ${String(pattern)}:\n${message.slice(0, 4000)}`);
+  if (!pattern.test(message))
+    throw new Error(`[reze-test] build failed without the expected context ${String(pattern)}:\n${message.slice(0, 4000)}`);
   return message;
 }
 
@@ -227,7 +232,11 @@ export async function launchEngine(name: SsgBrowserName): Promise<Browser> {
   }
 }
 
-export async function openPage(browser: Browser, url: string, options?: { javaScript?: boolean; beforeHydration?: (page: Page) => Promise<void> }): Promise<OpenPageResult> {
+export async function openPage(
+  browser: Browser,
+  url: string,
+  options?: { javaScript?: boolean; beforeHydration?: (page: Page) => Promise<void> },
+): Promise<OpenPageResult> {
   const context = await browser.newContext({ javaScriptEnabled: options?.javaScript ?? true });
   const page = await context.newPage();
   const errors: unknown[] = [];
@@ -236,7 +245,7 @@ export async function openPage(browser: Browser, url: string, options?: { javaSc
   page.on("request", (request) => requests.push(request.url()));
   if (options?.beforeHydration !== undefined) {
     const bootstrap = Promise.withResolvers<void>();
-    await page.route("**/*.js", async route => {
+    await page.route("**/*.js", async (route) => {
       await bootstrap.promise;
       await route.continue();
     });

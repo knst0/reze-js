@@ -21,7 +21,12 @@ impl<'a> Ast<'a> {
     }
 
     pub fn string(&self, value: &str) -> Expression<'a> {
-        Expression::new_string_literal(SPAN, Str::from_str_in(value, &self.builder), None, &self.builder)
+        Expression::new_string_literal(
+            SPAN,
+            Str::from_str_in(value, &self.builder),
+            None,
+            &self.builder,
+        )
     }
 
     pub fn number(&self, value: f64) -> Expression<'a> {
@@ -61,19 +66,36 @@ impl<'a> Ast<'a> {
     pub fn assign(&self, target: Expression<'a>, value: Expression<'a>) -> Expression<'a> {
         let target = match target {
             Expression::Identifier(node) => AssignmentTarget::AssignmentTargetIdentifier(node),
-            Expression::StaticMemberExpression(node) => AssignmentTarget::StaticMemberExpression(node),
-            Expression::ComputedMemberExpression(node) => AssignmentTarget::ComputedMemberExpression(node),
-            Expression::PrivateFieldExpression(node) => AssignmentTarget::PrivateFieldExpression(node),
+            Expression::StaticMemberExpression(node) => {
+                AssignmentTarget::StaticMemberExpression(node)
+            }
+            Expression::ComputedMemberExpression(node) => {
+                AssignmentTarget::ComputedMemberExpression(node)
+            }
+            Expression::PrivateFieldExpression(node) => {
+                AssignmentTarget::PrivateFieldExpression(node)
+            }
             _ => unreachable!("generated assignment requires a reference"),
         };
-        Expression::new_assignment_expression(SPAN, AssignmentOperator::Assign, target, value, &self.builder)
+        Expression::new_assignment_expression(
+            SPAN,
+            AssignmentOperator::Assign,
+            target,
+            value,
+            &self.builder,
+        )
     }
 
     pub fn unary(&self, op: UnaryOperator, value: Expression<'a>) -> Expression<'a> {
         Expression::new_unary_expression(SPAN, op, value, &self.builder)
     }
 
-    pub fn binary(&self, left: Expression<'a>, op: BinaryOperator, right: Expression<'a>) -> Expression<'a> {
+    pub fn binary(
+        &self,
+        left: Expression<'a>,
+        op: BinaryOperator,
+        right: Expression<'a>,
+    ) -> Expression<'a> {
         Expression::new_binary_expression(SPAN, left, op, right, &self.builder)
     }
 
@@ -87,19 +109,42 @@ impl<'a> Ast<'a> {
     }
 
     pub fn array(&self, values: impl IntoIterator<Item = Expression<'a>>) -> Expression<'a> {
-        let values = ArenaVec::from_iter_in(values.into_iter().map(ArrayExpressionElement::from), &self.builder);
+        let values = ArenaVec::from_iter_in(
+            values.into_iter().map(ArrayExpressionElement::from),
+            &self.builder,
+        );
         Expression::new_array_expression(SPAN, values, &self.builder)
     }
 
-    pub fn object(&self, props: impl IntoIterator<Item = ObjectPropertyKind<'a>>) -> Expression<'a> {
+    pub fn object(
+        &self,
+        props: impl IntoIterator<Item = ObjectPropertyKind<'a>>,
+    ) -> Expression<'a> {
         let props = ArenaVec::from_iter_in(props, &self.builder);
         Expression::new_object_expression(SPAN, props, &self.builder)
     }
 
-    fn property(&self, key: &str, value: Expression<'a>, kind: PropertyKind) -> ObjectPropertyKind<'a> {
-        let name = PropertyKey::new_string_literal(SPAN, Str::from_str_in(key, &self.builder), None, &self.builder);
+    fn property(
+        &self,
+        key: &str,
+        value: Expression<'a>,
+        kind: PropertyKind,
+    ) -> ObjectPropertyKind<'a> {
+        let name = PropertyKey::new_string_literal(
+            SPAN,
+            Str::from_str_in(key, &self.builder),
+            None,
+            &self.builder,
+        );
         ObjectPropertyKind::new_object_property(
-            SPAN, kind, name, value, false, false, key == "__proto__", &self.builder,
+            SPAN,
+            kind,
+            name,
+            value,
+            false,
+            false,
+            key == "__proto__",
+            &self.builder,
         )
     }
 
@@ -137,19 +182,43 @@ impl<'a> Ast<'a> {
         kind: FormalParameterKind,
     ) -> oxc_allocator::ArenaBox<'a, FormalParameters<'a>> {
         let params = names.into_iter().map(|name| {
-            let pattern = BindingPattern::new_binding_identifier(SPAN, Ident::from(name), &self.builder);
+            let pattern =
+                BindingPattern::new_binding_identifier(SPAN, Ident::from(name), &self.builder);
             FormalParameter::new(
-                SPAN, ArenaVec::new_in(&self.builder), pattern, None, None, false, None, false, false,
+                SPAN,
+                ArenaVec::new_in(&self.builder),
+                pattern,
+                None,
+                None,
+                false,
+                None,
+                false,
+                false,
                 &self.builder,
             )
         });
-        FormalParameters::boxed(SPAN, kind, ArenaVec::from_iter_in(params, &self.builder), None, &self.builder)
+        FormalParameters::boxed(
+            SPAN,
+            kind,
+            ArenaVec::from_iter_in(params, &self.builder),
+            None,
+            &self.builder,
+        )
     }
 
-    pub fn arrow(&self, params: impl IntoIterator<Item = &'a str>, value: Expression<'a>) -> Expression<'a> {
+    pub fn arrow(
+        &self,
+        params: impl IntoIterator<Item = &'a str>,
+        value: Expression<'a>,
+    ) -> Expression<'a> {
         Expression::new_arrow_function_expression(
-            SPAN, false, None, self.params(params, FormalParameterKind::ArrowFormalParameters), None,
-            ArrowFunctionBody::from(value), &self.builder,
+            SPAN,
+            false,
+            None,
+            self.params(params, FormalParameterKind::ArrowFormalParameters),
+            None,
+            ArrowFunctionBody::from(value),
+            &self.builder,
         )
     }
 
@@ -159,12 +228,19 @@ impl<'a> Ast<'a> {
         statements: impl IntoIterator<Item = Statement<'a>>,
     ) -> Expression<'a> {
         let body = ArrowFunctionBody::new_function_body(
-            SPAN, ArenaVec::new_in(&self.builder), ArenaVec::from_iter_in(statements, &self.builder),
+            SPAN,
+            ArenaVec::new_in(&self.builder),
+            ArenaVec::from_iter_in(statements, &self.builder),
             &self.builder,
         );
         Expression::new_arrow_function_expression(
-            SPAN, false, None, self.params(params, FormalParameterKind::ArrowFormalParameters), None,
-            body, &self.builder,
+            SPAN,
+            false,
+            None,
+            self.params(params, FormalParameterKind::ArrowFormalParameters),
+            None,
+            body,
+            &self.builder,
         )
     }
 
@@ -182,15 +258,24 @@ impl<'a> Ast<'a> {
         name: &'a str,
         value: Option<Expression<'a>>,
     ) -> Statement<'a> {
-        let pattern = BindingPattern::new_binding_identifier(SPAN, Ident::from(name), &self.builder);
+        let pattern =
+            BindingPattern::new_binding_identifier(SPAN, Ident::from(name), &self.builder);
         let decl = VariableDeclarator::new(SPAN, pattern, None, value, false, &self.builder);
         Statement::new_variable_declaration(
-            SPAN, kind, ArenaVec::from_array_in([decl], &self.builder), false, &self.builder,
+            SPAN,
+            kind,
+            ArenaVec::from_array_in([decl], &self.builder),
+            false,
+            &self.builder,
         )
     }
 
     pub fn block(&self, statements: impl IntoIterator<Item = Statement<'a>>) -> Statement<'a> {
-        Statement::new_block_statement(SPAN, ArenaVec::from_iter_in(statements, &self.builder), &self.builder)
+        Statement::new_block_statement(
+            SPAN,
+            ArenaVec::from_iter_in(statements, &self.builder),
+            &self.builder,
+        )
     }
 
     pub fn if_stmt(&self, test: Expression<'a>, body: Statement<'a>) -> Statement<'a> {

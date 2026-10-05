@@ -21,6 +21,7 @@ export function htmlAsset(id: string): string {
 
 export function markModule(moduleId: string): void {
   const session = moduleExecution(moduleId);
-  if (!(session instanceof HtmlSession)) throw new HydrationError(`HTML module ${JSON.stringify(moduleId)} was not registered before import`);
+  if (!(session instanceof HtmlSession))
+    throw new HydrationError(`HTML module ${JSON.stringify(moduleId)} was not registered before import`);
   session.instances.modules.add(moduleId);
 }

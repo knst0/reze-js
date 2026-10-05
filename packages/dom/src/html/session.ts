@@ -1,13 +1,30 @@
 import { getOwner, onCleanup, root, runWithOwner } from "@rezejs/signals";
 import type { ContinuationEvent, ContinuationHandle } from "@rezejs/signals/internal/continuation";
 import type { ResourceRecord as RuntimeResource, ResourceSnapshot } from "@rezejs/signals/internal/resource";
-import { createScope, registerModuleScope, ScopeTimeoutError, type ExecutionScope, type FlushDelivery, type ReactiveNode, type SourceSite } from "@rezejs/signals/internal/scope";
+import {
+  createScope,
+  registerModuleScope,
+  ScopeTimeoutError,
+  type ExecutionScope,
+  type FlushDelivery,
+  type ReactiveNode,
+  type SourceSite,
+} from "@rezejs/signals/internal/scope";
 import type { ModuleScopeFrame } from "@rezejs/signals/internal/scope";
 
 import { FrameEncoder } from "../hydration/codec";
 import { Instances, registerExecution, type ExecutionObserver, type Instance } from "../hydration/execution";
-import { HydrationError, type AwaitRecord, type Handoff, type HeadDefaults, type HydrationPayload, type LayoutNode, type ResourceRecord, type ResourceStateRecord, type RouteRecord } from "../hydration/protocol";
-
+import {
+  HydrationError,
+  type AwaitRecord,
+  type Handoff,
+  type HeadDefaults,
+  type HydrationPayload,
+  type LayoutNode,
+  type ResourceRecord,
+  type ResourceStateRecord,
+  type RouteRecord,
+} from "../hydration/protocol";
 import type { HtmlLayoutRangeInfo } from "./serialize";
 import type { HtmlRange } from "./tree";
 export interface HtmlSessionOptions {
@@ -64,12 +81,15 @@ export class HtmlSession implements ExecutionObserver {
     this.owner = this.scope.run(() => root(() => getOwner()!));
     this.instances.bind(this.owner, this.instances.root);
     this.failure.promise.catch(() => {});
-    const createOwner = (moduleId: string): ReactiveNode => this.run(() => root(() => {
-      const owner = getOwner()!;
-      this.instances.bind(owner, this.instances.module(moduleId));
-      this.instances.modules.add(moduleId);
-      return owner;
-    }));
+    const createOwner = (moduleId: string): ReactiveNode =>
+      this.run(() =>
+        root(() => {
+          const owner = getOwner()!;
+          this.instances.bind(owner, this.instances.module(moduleId));
+          this.instances.modules.add(moduleId);
+          return owner;
+        }),
+      );
     for (const moduleId of options.modules ?? []) registerModuleScope(moduleId, this.scope, undefined, createOwner);
   }
 
@@ -178,7 +198,8 @@ export class HtmlSession implements ExecutionObserver {
   }
 
   onFlushBoundary(_scope: ExecutionScope, delivery: FlushDelivery, phase: "before" | "after"): void {
-    if (!this.failed && !this.disposed) this.record(phase === "before" ? "flush" : "checkpoint", `flush.${phase}`, this.instances.current().id, delivery);
+    if (!this.failed && !this.disposed)
+      this.record(phase === "before" ? "flush" : "checkpoint", `flush.${phase}`, this.instances.current().id, delivery);
   }
 
   onModuleAwait(frame: ModuleScopeFrame, site: SourceSite): void {
@@ -248,7 +269,14 @@ export class HtmlSession implements ExecutionObserver {
           if (record.outerOperands !== undefined) record.outerOperands.length = 0;
         }
         const frame = this.encoder.capture(suspended.id, [value]);
-        this.awaits.push({ id: suspended.id, ownerId: record.instance.id, occurrence: suspended.occurrence, status: event === "resume" ? "resolved" : "rejected", value: frame.values[0]!, frame: frame.frame });
+        this.awaits.push({
+          id: suspended.id,
+          ownerId: record.instance.id,
+          occurrence: suspended.occurrence,
+          status: event === "resume" ? "resolved" : "rejected",
+          value: frame.values[0]!,
+          frame: frame.frame,
+        });
         this.record("await", suspended.id, record.instance.id, "scheduled", suspended.occurrence);
         return;
       }
@@ -259,7 +287,14 @@ export class HtmlSession implements ExecutionObserver {
         const occurrence = record.instance.next(`a${site.key}`);
         const gate = Promise.withResolvers<void>();
         const cancel = this.scope.trackPendingWork(gate.promise);
-        record.suspended = { id, occurrence, release: () => { cancel(); gate.resolve(); } };
+        record.suspended = {
+          id,
+          occurrence,
+          release: () => {
+            cancel();
+            gate.resolve();
+          },
+        };
         this.record("checkpoint", `${id}_${occurrence.toString(36)}.suspend`, record.instance.id, "inline");
       } else {
         record.suspended?.release();

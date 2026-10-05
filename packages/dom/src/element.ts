@@ -1,5 +1,4 @@
 import { MathMLNamespace, SVGNamespace } from "../../../crates/reze_compiler/src/html-data.json";
-
 import { spread } from "./spread";
 
 type Props = Record<string, unknown>;

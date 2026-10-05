@@ -2,6 +2,7 @@ import { $computed, $signal, effect, lazy, Loading } from "reze-js";
 
 import { buildGreeting } from "./data";
 import logoUrl from "./logo.svg?url";
+
 import "./styles.css";
 
 const Late = lazy(() => import("./Late"));
@@ -20,7 +21,12 @@ function SpreadChildren() {
     },
   };
   const content = <section {...props} />;
-  return <aside>{content}<output id="spread-reads">{reads}</output></aside>;
+  return (
+    <aside>
+      {content}
+      <output id="spread-reads">{reads}</output>
+    </aside>
+  );
 }
 
 export default function App() {

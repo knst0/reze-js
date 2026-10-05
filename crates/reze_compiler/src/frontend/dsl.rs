@@ -15,8 +15,8 @@ use oxc_ast_visit::{VisitMut, walk_mut};
 
 use super::Namer;
 use super::imports::{ImportResult, Syntax, SyntaxImports, allows};
-use crate::diagnostic::{Code, Edit, Report};
 use super::pure::is_component_name;
+use crate::diagnostic::{Code, Edit, Report};
 pub struct DeclPlan {
     pub primitive: Syntax,
     pub setter: Option<String>,
@@ -56,8 +56,14 @@ pub fn prescan(
         has_action: false,
     };
     declarations.visit_program(program);
-    let Declarations { variables, declarators, reports: decl_reports, action_callees, has_action, .. } =
-        declarations;
+    let Declarations {
+        variables,
+        declarators,
+        reports: decl_reports,
+        action_callees,
+        has_action,
+        ..
+    } = declarations;
     reports.extend(decl_reports);
     let mut decls = HashMap::new();
     let mut by_symbol = HashMap::new();
@@ -147,7 +153,11 @@ impl Declarations<'_, '_, '_> {
             .any(|&r| self.scoping.get_reference(r).flags().is_write())
     }
 
-    fn declare(&mut self, declaration: &VariableDeclaration<'_>, declarator: &VariableDeclarator<'_>) {
+    fn declare(
+        &mut self,
+        declaration: &VariableDeclaration<'_>,
+        declarator: &VariableDeclarator<'_>,
+    ) {
         let Some(init) = &declarator.init else { return };
         let Some(call) = dollar_call(init) else { return };
         let Some(primitive) = callee_syntax(self.scoping, self.syntax, &call.callee) else {
@@ -255,8 +265,7 @@ impl<'a> Visit<'a> for Declarations<'_, '_, '_> {
     }
 
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
-        if let Some(primitive) =
-            symbol_of(self.scoping, it).and_then(|s| self.syntax.syntax_of(s))
+        if let Some(primitive) = symbol_of(self.scoping, it).and_then(|s| self.syntax.syntax_of(s))
             && !self.consumed.contains(&it.span.start)
         {
             self.reports.push(misused(primitive, it.span));
@@ -420,13 +429,15 @@ impl Analyzer<'_, '_> {
     }
 
     fn computed_written(&mut self, span: Span, symbol: SymbolId) {
-        self.reports.push(Report::new(Code::ComputedWritten, span).arg("computed", self.name(symbol)));
+        self.reports
+            .push(Report::new(Code::ComputedWritten, span).arg("computed", self.name(symbol)));
     }
 
     fn update(&mut self, it: &UpdateExpression<'_>, symbol: SymbolId) {
         if !self.discarded.contains(&it.span.start) {
             self.reports.push(
-                Report::new(Code::SignalUpdateInExpression, it.span).arg("signal", self.name(symbol)),
+                Report::new(Code::SignalUpdateInExpression, it.span)
+                    .arg("signal", self.name(symbol)),
             );
             return;
         }
@@ -441,7 +452,8 @@ impl Analyzer<'_, '_> {
             }
             Some(Expression::FunctionExpression(function)) if function.generator => {
                 self.reports.push(
-                    Report::new(Code::ActionUnsupported, function.span).arg("construct", "generator"),
+                    Report::new(Code::ActionUnsupported, function.span)
+                        .arg("construct", "generator"),
                 );
             }
             Some(Expression::FunctionExpression(function)) => {
@@ -555,10 +567,9 @@ impl Analyzer<'_, '_> {
                 let Some((span, symbol)) = first.found else { continue };
                 let variable = match &declarator.id {
                     BindingPattern::BindingIdentifier(id) => id.name.to_string(),
-                    pattern => {
-                        self.source[pattern.span().start as usize..pattern.span().end as usize]
-                            .to_string()
-                    }
+                    pattern => self.source
+                        [pattern.span().start as usize..pattern.span().end as usize]
+                        .to_string(),
                 };
                 let report = Report::new(Code::SignalReadOnce, span)
                     .arg("variable", variable)
@@ -621,7 +632,8 @@ impl<'a> Visit<'a> for Analyzer<'_, '_> {
     fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
         if it.r#await && self.in_action_body() {
             let span = Span::sized(it.span.start, 9);
-            self.reports.push(Report::new(Code::ActionUnsupported, span).arg("construct", "for await"));
+            self.reports
+                .push(Report::new(Code::ActionUnsupported, span).arg("construct", "for await"));
         }
         walk::walk_for_of_statement(self, it);
     }
@@ -629,7 +641,8 @@ impl<'a> Visit<'a> for Analyzer<'_, '_> {
     fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
         if it.kind == VariableDeclarationKind::AwaitUsing && self.in_action_body() {
             let span = Span::sized(it.span.start, 11);
-            self.reports.push(Report::new(Code::ActionUnsupported, span).arg("construct", "await using"));
+            self.reports
+                .push(Report::new(Code::ActionUnsupported, span).arg("construct", "await using"));
         }
         walk::walk_variable_declaration(self, it);
     }
@@ -695,8 +708,7 @@ impl<'a> Visit<'a> for Analyzer<'_, '_> {
     }
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
-        if let AssignmentTarget::AssignmentTargetIdentifier(id) = &it.left
-        {
+        if let AssignmentTarget::AssignmentTargetIdentifier(id) = &it.left {
             let found = self.reactive_of(id).map(|(symbol, primitive)| (symbol, primitive));
             if let Some((symbol, primitive)) = found {
                 match primitive {
@@ -717,8 +729,7 @@ impl<'a> Visit<'a> for Analyzer<'_, '_> {
     }
 
     fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
-        if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &it.argument
-        {
+        if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &it.argument {
             let found = self.reactive_of(id).map(|(symbol, primitive)| (symbol, primitive));
             if let Some((symbol, primitive)) = found {
                 match primitive {
@@ -757,7 +768,8 @@ impl<'a> Visit<'a> for Analyzer<'_, '_> {
             (false, _) => {}
             (true, Syntax::Signal) => {
                 self.reports.push(
-                    Report::new(Code::SignalAssignPattern, it.span).arg("signal", self.name(symbol)),
+                    Report::new(Code::SignalAssignPattern, it.span)
+                        .arg("signal", self.name(symbol)),
                 );
             }
             (true, Syntax::Computed) => {
@@ -1054,7 +1066,6 @@ struct Normalizer<'x, 'p, 's, 'a> {
     changed: bool,
 }
 
-
 impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
     fn decl_plan(&self, symbol: SymbolId) -> Option<&DeclPlan> {
         let start = self.pre.by_symbol.get(&symbol)?;
@@ -1233,7 +1244,9 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
 
     fn normalize_assign(&mut self, it: &mut Expression<'a>) -> bool {
         let Expression::AssignmentExpression(assignment) = it else { return false };
-        let AssignmentTarget::AssignmentTargetIdentifier(id) = &assignment.left else { return false };
+        let AssignmentTarget::AssignmentTargetIdentifier(id) = &assignment.left else {
+            return false;
+        };
         let Some(reference) = id.reference_id.get() else { return false };
         let Some(symbol) = self.scoping.get_reference(reference).symbol_id() else { return false };
         let Some(plan) = self.decl_plan(symbol) else { return false };
@@ -1298,7 +1311,8 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
                 };
                 let mut args = ArenaVec::new_in(&builder);
                 args.push(Argument::from(value));
-                let set = call_expr(self.alloc, SPAN, ident_expr(self.alloc, SPAN, setter_text), args);
+                let set =
+                    call_expr(self.alloc, SPAN, ident_expr(self.alloc, SPAN, setter_text), args);
                 Expression::new_logical_expression(
                     span,
                     getter_call(self.alloc, SPAN, getter_name),
@@ -1353,8 +1367,11 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         let setter_text: &'a str = self.alloc.alloc_str(&setter);
         let getter_name: &'a str = self.alloc.alloc_str(self.scoping.symbol_name(symbol));
         let one = Expression::new_numeric_literal(SPAN, 1.0, None, NumberBase::Decimal, &builder);
-        let binary_operator =
-            if operator == UpdateOperator::Increment { BinaryOperator::Addition } else { BinaryOperator::Subtraction };
+        let binary_operator = if operator == UpdateOperator::Increment {
+            BinaryOperator::Addition
+        } else {
+            BinaryOperator::Subtraction
+        };
         let mut args = ArenaVec::new_in(&builder);
         args.push(Argument::from(Expression::new_binary_expression(
             SPAN,
@@ -1425,8 +1442,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
     ) {
         let outer = self.action_depth.replace(0);
         let run_text: &'a str = self.alloc.alloc_str(&self.pre.run);
-        let items =
-            std::mem::replace(&mut arrow.params.items, ArenaVec::new_in(&self.alloc));
+        let items = std::mem::replace(&mut arrow.params.items, ArenaVec::new_in(&self.alloc));
         let mut params = ArenaVec::new_in(&self.alloc);
         params.push(run_param(self.alloc, SPAN, run_text));
         for item in items {
@@ -1450,8 +1466,8 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
                         &builder,
                     )),
                 );
-                let expression = Expression::try_from(taken)
-                    .unwrap_or_else(|_| dummy(self.alloc, params_span));
+                let expression =
+                    Expression::try_from(taken).unwrap_or_else(|_| dummy(self.alloc, params_span));
                 let span = expression.span();
                 let mut statements = ArenaVec::new_in(&builder);
                 statements.push(Statement::new_return_statement(span, Some(expression), &builder));
@@ -1462,8 +1478,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
                     &builder,
                 );
                 self.action_block(&mut block, run_text);
-                arrow.body =
-                    ArrowFunctionBody::FunctionBody(ArenaBox::new_in(block, &builder));
+                arrow.body = ArrowFunctionBody::FunctionBody(ArenaBox::new_in(block, &builder));
             }
         }
         let mut args = ArenaVec::new_in(&self.alloc);
@@ -1485,8 +1500,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
     ) {
         let outer = self.action_depth.replace(0);
         let run_text: &'a str = self.alloc.alloc_str(&self.pre.run);
-        let items =
-            std::mem::replace(&mut function.params.items, ArenaVec::new_in(&self.alloc));
+        let items = std::mem::replace(&mut function.params.items, ArenaVec::new_in(&self.alloc));
         let mut params = ArenaVec::new_in(&self.alloc);
         params.push(run_param(self.alloc, SPAN, run_text));
         for item in items {
@@ -1657,9 +1671,7 @@ impl<'a> VisitMut<'a> for Normalizer<'_, '_, '_, 'a> {
         if self.action_depth == Some(0) {
             let run_text: &'a str = self.alloc.alloc_str(&self.pre.run);
             let try_awaits = block_awaits(&it.block);
-            if try_awaits
-                && let Some(handler) = it.handler.as_mut()
-            {
+            if try_awaits && let Some(handler) = it.handler.as_mut() {
                 self.prepend_resume(&mut handler.body, run_text);
             }
             let catch_awaits =

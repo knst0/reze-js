@@ -107,8 +107,7 @@ impl SharedFacts {
                 let Expression::Identifier(namespace) = &member.object else { return None };
                 let source = self.namespaces.get(&Self::symbol(scoping, namespace)?)?;
                 let name = member.property.name.as_str();
-                super::imports::allows(source, name)
-                    .then(|| Primitive::from_export(name))?
+                super::imports::allows(source, name).then(|| Primitive::from_export(name))?
             }
             _ => None,
         }
@@ -346,7 +345,8 @@ fn report_intrinsic_values(
                 && super::imports::allows(source, member.property.name.as_str())
             {
                 reports.push(
-                    Report::new(Code::ControlFlowAsValue, member.span).arg("name", intrinsic.name()),
+                    Report::new(Code::ControlFlowAsValue, member.span)
+                        .arg("name", intrinsic.name()),
                 );
             }
         }
@@ -355,8 +355,9 @@ fn report_intrinsic_values(
 
 pub(crate) fn exported_symbols(program: &Program<'_>, scoping: &Scoping) -> HashSet<SymbolId> {
     let mut exported = HashSet::new();
-    let resolved =
-        |local: &IdentifierReference<'_>| scoping.get_reference(local.reference_id.get()?).symbol_id();
+    let resolved = |local: &IdentifierReference<'_>| {
+        scoping.get_reference(local.reference_id.get()?).symbol_id()
+    };
     for statement in &program.body {
         match statement {
             Statement::ExportDeclaration(export) => {
@@ -435,10 +436,9 @@ impl Collector<'_, '_> {
         };
         let Some(getter) = binding(0) else { return };
         let init = call.arguments.first().and_then(Argument::as_expression);
-        let fold = init.map(|init| fold_seed(init, self.scoping)).unwrap_or(Fold {
-            text: None,
-            kind: None,
-        });
+        let fold = init
+            .map(|init| fold_seed(init, self.scoping))
+            .unwrap_or(Fold { text: None, kind: None });
         self.signals.push(SignalDecl {
             span: declarator.span,
             factory_reference: match call.callee.without_parentheses() {
@@ -531,9 +531,7 @@ fn seed_number(e: &Expression<'_>, scoping: &Scoping) -> Option<f64> {
     match e.without_parentheses() {
         Expression::NumericLiteral(n) => Some(n.value),
         Expression::Identifier(id) if is_global_ref(id, "NaN", scoping) => Some(f64::NAN),
-        Expression::Identifier(id) if is_global_ref(id, "Infinity", scoping) => {
-            Some(f64::INFINITY)
-        }
+        Expression::Identifier(id) if is_global_ref(id, "Infinity", scoping) => Some(f64::INFINITY),
         Expression::UnaryExpression(u) => {
             let value = seed_number(&u.argument, scoping)?;
             match u.operator {
@@ -862,7 +860,8 @@ fn plan(
     }
     let mut declared = std::vec::Vec::new();
     statements[..=last].iter().for_each(|statement| declared_symbols(statement, &mut declared));
-    let mut references = References { scoping, symbols: HashSet::new(), ordered: std::vec::Vec::new() };
+    let mut references =
+        References { scoping, symbols: HashSet::new(), ordered: std::vec::Vec::new() };
     statements[last + 1..].iter().for_each(|statement| references.visit_statement(statement));
     let mut seen = HashSet::new();
     let kept: std::vec::Vec<(SymbolId, &str)> = declared
@@ -988,8 +987,7 @@ pub(crate) fn jsx_intrinsic(
             named.get(&SharedFacts::symbol(scoping, id)?).copied()
         }
         JSXElementName::MemberExpression(member) => {
-            let JSXMemberExpressionObject::IdentifierReference(namespace) = &member.object
-            else {
+            let JSXMemberExpressionObject::IdentifierReference(namespace) = &member.object else {
                 return None;
             };
             let source = namespaces.get(&SharedFacts::symbol(scoping, namespace)?)?;
@@ -1003,7 +1001,6 @@ pub(crate) fn jsx_intrinsic(
         _ => None,
     }
 }
-
 
 struct RuntimeCallCollector<'s, 't> {
     scoping: &'s Scoping,
@@ -1019,7 +1016,11 @@ fn collect_runtime_calls(
     dynamic_tags: &mut HashMap<NodeId, super::dynamic::DynamicTag>,
 ) -> HashMap<NodeId, RuntimeCallKind> {
     let mut collector = RuntimeCallCollector {
-        scoping, factories: HashMap::new(), namespaces: HashMap::new(), calls: HashMap::new(), dynamic_tags,
+        scoping,
+        factories: HashMap::new(),
+        namespaces: HashMap::new(),
+        calls: HashMap::new(),
+        dynamic_tags,
     };
     for statement in &program.body {
         let Statement::ImportDeclaration(import) = statement else { continue };

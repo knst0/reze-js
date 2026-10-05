@@ -1,4 +1,5 @@
 import { join } from "node:path";
+
 import { defineConfig } from "vitest/config";
 
 import { nodeSpecs, sourceAliases } from "../../vitest.shared";
@@ -9,9 +10,6 @@ export default defineConfig({
   test: {
     name: "@rezejs/router (node)",
     include: [nodeSpecs],
-    alias: [
-      { find: "@rezejs/dom/internal/html", replacement: join(root, "packages/dom/src/internal/html.ts") },
-      ...sourceAliases,
-    ],
+    alias: [{ find: "@rezejs/dom/internal/html", replacement: join(root, "packages/dom/src/internal/html.ts") }, ...sourceAliases],
   },
 });

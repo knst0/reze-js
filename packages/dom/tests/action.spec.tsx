@@ -1,7 +1,7 @@
+import { action } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import * as R from "reze-js";
 import { $action, $action as act, $signal, effect, For, Show, store } from "reze-js";
-import { action } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -96,9 +96,7 @@ test("a compiled action supports expression bodies, bare parameters, and destruc
   };
   const save = $action(async (x: number) => await put(x));
   const pick = $action((list: number[]) => ({ first: list[0] }));
-  const withDefaults = $action(
-    async ({ id }: { id: number }, [first] = [0], ...rest: number[]) => await put(id, first, rest),
-  );
+  const withDefaults = $action(async ({ id }: { id: number }, [first] = [0], ...rest: number[]) => await put(id, first, rest));
   expect(await save(7)).toBe("7");
   expect(await pick([9])).toEqual({ first: 9 });
   expect(await withDefaults({ id: 5 }, [10], 20, 30)).toBe("5|10|20,30");

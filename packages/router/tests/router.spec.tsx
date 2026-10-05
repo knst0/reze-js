@@ -12,12 +12,15 @@ import {
   useSearchParams,
   type BeforeLeaveEvent,
   type HistoryEntry,
+  type Location,
   type Navigate,
+  type NavigateOptions,
   type Params,
   type RouteDefinition,
   type RouterHistory,
   type RouteModule,
   type RouteProps,
+  type SearchInit,
 } from "../src";
 
 afterEach(() => {
@@ -32,6 +35,8 @@ interface Controls {
   navigate: Navigate;
   isRouting: () => boolean;
 }
+
+type SearchParamsState = [query: () => Location["query"], set: (next: SearchInit, options?: NavigateOptions) => void];
 
 interface SetupOptions {
   history?: RouterHistory;
@@ -211,7 +216,7 @@ test("leave guards prevent navigation, retry completes it, and prevented history
 });
 
 test("the search params setter merges into the query and deletes nullish keys", () => {
-  let setQuery!: ReturnType<typeof useSearchParams>[1];
+  let setQuery!: SearchParamsState[1];
   const { history } = setup([{ path: "/s", component: Home }], "/s?page=2", (children) => {
     setQuery = useSearchParams()[1];
     return children;
@@ -294,7 +299,7 @@ const pages: RouteDefinition[] = [
   { path: "/about", component: About },
 ];
 
-function silenceScroll(): ReturnType<typeof vi.spyOn> {
+function silenceScroll() {
   return vi.spyOn(window, "scrollTo").mockImplementation(() => {});
 }
 
@@ -402,7 +407,7 @@ test("scroll positions outlive the document through sessionStorage", () => {
 
 test("navigating while route modules load builds on the pending location", async () => {
   const module = Promise.withResolvers<RouteModule>();
-  let setQuery!: ReturnType<typeof useSearchParams>[1];
+  let setQuery!: SearchParamsState[1];
   const { el, history, navigate } = setup(
     [
       { path: "/", component: Home },
@@ -452,7 +457,7 @@ test("a throwing leave guard is reported without blocking, and guards also cover
 });
 
 test("repeated query keys keep every value and the setter writes arrays in place of the key", () => {
-  let search!: ReturnType<typeof useSearchParams>;
+  let search!: SearchParamsState;
   const { history } = setup([{ path: "/s", component: Home }], "/s?tag=a&q=x&tag=b", (children) => {
     search = useSearchParams();
     return children;

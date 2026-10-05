@@ -1,6 +1,7 @@
-import { blake3 } from "@noble/hashes/blake3";
 import { existsSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
+
+import { blake3 } from "@noble/hashes/blake3";
 
 const moduleSeparator = new Uint8Array(1);
 
@@ -24,7 +25,11 @@ function splitId(rawId: string): { path: string; suffix: string } {
   const beforeHash = hash < 0 ? rawId : rawId.slice(0, hash);
   const question = beforeHash.indexOf("?");
   if (question < 0) return { path: beforeHash, suffix: fragment };
-  const query = beforeHash.slice(question + 1).split("&").filter((part) => !/^t=\d{13}$/.test(part)).join("&");
+  const query = beforeHash
+    .slice(question + 1)
+    .split("&")
+    .filter((part) => !/^t=\d{13}$/.test(part))
+    .join("&");
   return { path: beforeHash.slice(0, question), suffix: (query === "" ? "" : `?${query}`) + fragment };
 }
 
@@ -38,9 +43,7 @@ export function canonicalModuleId(rawId: string, root: string, options?: Canonic
   if (path.startsWith("virtual:")) return path + suffix;
   const normalized = normalizePath(path);
   const rootPath = normalizePath(root);
-  const file = normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)
-    ? normalized
-    : posix.join(rootPath, normalized);
+  const file = normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) ? normalized : posix.join(rootPath, normalized);
   const relative = relativeWithin(rootPath, file);
   if (relative !== undefined) return (relative || ".") + suffix;
   if (options?.packageName && options.packageRoot) {
@@ -56,8 +59,13 @@ export function canonicalModuleId(rawId: string, root: string, options?: Canonic
       const manifest = posix.join(directory, "package.json");
       if (existsSync(manifest)) {
         const metadata: unknown = JSON.parse(readFileSync(manifest, "utf8"));
-        if (typeof metadata === "object" && metadata !== null && "name" in metadata
-          && typeof metadata.name === "string" && metadata.name !== "") {
+        if (
+          typeof metadata === "object" &&
+          metadata !== null &&
+          "name" in metadata &&
+          typeof metadata.name === "string" &&
+          metadata.name !== ""
+        ) {
           return `${metadata.name}/${posix.relative(directory, file)}${suffix}`;
         }
       }

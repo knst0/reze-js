@@ -15,7 +15,8 @@ export function materializeBundle(outputs: readonly (BundleOutput & { code?: str
   const chunks: { fileName: string; code: string }[] = [];
   for (const output of outputs) {
     if (output.type !== "chunk") continue;
-    if (output.code === undefined) throw new Error(`[reze] HTML bundle chunk ${JSON.stringify(output.fileName)} has no source to materialize`);
+    if (output.code === undefined)
+      throw new Error(`[reze] HTML bundle chunk ${JSON.stringify(output.fileName)} has no source to materialize`);
     const target = join(dir, output.fileName);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, output.code);

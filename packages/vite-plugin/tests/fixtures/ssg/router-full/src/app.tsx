@@ -1,5 +1,5 @@
-import type { JSX } from "reze-js";
 import { useLocation } from "@rezejs/router";
+import type { JSX } from "reze-js";
 
 import { routes } from "./routes";
 

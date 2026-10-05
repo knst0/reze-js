@@ -2,13 +2,17 @@ use oxc_allocator::{ArenaVec, TakeIn};
 use oxc_ast::ast::{Argument, CallExpression, Expression};
 
 use super::{EmitContext, continuation};
-use crate::{CompileTarget, RUNTIME_MODULE};
 use crate::ast::Ast;
 use crate::frontend::analysis::RuntimeCallKind;
 use crate::frontend::dynamic::DynamicTag;
 use crate::ir::view::Namespace;
+use crate::{CompileTarget, RUNTIME_MODULE};
 
-pub fn rewrite<'a>(ctx: &mut EmitContext<'a, '_>, call: &mut CallExpression<'a>, kind: RuntimeCallKind) {
+pub fn rewrite<'a>(
+    ctx: &mut EmitContext<'a, '_>,
+    call: &mut CallExpression<'a>,
+    kind: RuntimeCallKind,
+) {
     if kind == RuntimeCallKind::AsyncComponent {
         continuation::prepare(ctx, call);
     }
@@ -25,7 +29,9 @@ pub fn rewrite<'a>(ctx: &mut EmitContext<'a, '_>, call: &mut CallExpression<'a>,
             let receiver = match call.callee.without_parentheses() {
                 Expression::StaticMemberExpression(member) => match &member.object {
                     Expression::Identifier(namespace) => ast.ident(namespace.name.as_str()),
-                    _ => unreachable!("statically resolved factory receiver is an imported namespace"),
+                    _ => unreachable!(
+                        "statically resolved factory receiver is an imported namespace"
+                    ),
                 },
                 _ => ast.undefined(),
             };
@@ -33,16 +39,35 @@ pub fn rewrite<'a>(ctx: &mut EmitContext<'a, '_>, call: &mut CallExpression<'a>,
             next.push(Argument::from(receiver));
             ctx.helper("reze-js/internal/reactivity", "withResourceSite")
         }
-        RuntimeCallKind::AsyncComponent | RuntimeCallKind::Dynamic | RuntimeCallKind::DynamicElement | RuntimeCallKind::Island => {
+        RuntimeCallKind::AsyncComponent
+        | RuntimeCallKind::Dynamic
+        | RuntimeCallKind::DynamicElement
+        | RuntimeCallKind::Island => {
             let (source, export) = match (ctx.options.target, kind) {
-                (CompileTarget::Html, RuntimeCallKind::AsyncComponent) => ("reze-js/internal/html", "hAsyncComponent"),
-                (CompileTarget::Html, RuntimeCallKind::Dynamic) => ("reze-js/internal/html", "hDynamic"),
-                (CompileTarget::Html, RuntimeCallKind::DynamicElement) => ("reze-js/internal/html", "hDynamicElement"),
-                (CompileTarget::Html, RuntimeCallKind::Island) => ("reze-js/internal/html", "hIsland"),
-                (CompileTarget::Hydrate, RuntimeCallKind::AsyncComponent) => ("reze-js/internal/hydrate", "prepareAsyncComponent"),
-                (CompileTarget::Hydrate, RuntimeCallKind::Dynamic) => ("reze-js/internal/hydrate", "prepareDynamic"),
-                (CompileTarget::Hydrate, RuntimeCallKind::DynamicElement) => ("reze-js/internal/hydrate", "prepareDynamicElement"),
-                (CompileTarget::Hydrate, RuntimeCallKind::Island) => ("reze-js/internal/hydrate", "prepareIsland"),
+                (CompileTarget::Html, RuntimeCallKind::AsyncComponent) => {
+                    ("reze-js/internal/html", "hAsyncComponent")
+                }
+                (CompileTarget::Html, RuntimeCallKind::Dynamic) => {
+                    ("reze-js/internal/html", "hDynamic")
+                }
+                (CompileTarget::Html, RuntimeCallKind::DynamicElement) => {
+                    ("reze-js/internal/html", "hDynamicElement")
+                }
+                (CompileTarget::Html, RuntimeCallKind::Island) => {
+                    ("reze-js/internal/html", "hIsland")
+                }
+                (CompileTarget::Hydrate, RuntimeCallKind::AsyncComponent) => {
+                    ("reze-js/internal/hydrate", "prepareAsyncComponent")
+                }
+                (CompileTarget::Hydrate, RuntimeCallKind::Dynamic) => {
+                    ("reze-js/internal/hydrate", "prepareDynamic")
+                }
+                (CompileTarget::Hydrate, RuntimeCallKind::DynamicElement) => {
+                    ("reze-js/internal/hydrate", "prepareDynamicElement")
+                }
+                (CompileTarget::Hydrate, RuntimeCallKind::Island) => {
+                    ("reze-js/internal/hydrate", "prepareIsland")
+                }
                 _ => unreachable!("managed call has a non-client target"),
             };
             ctx.helper(source, export)

@@ -138,8 +138,7 @@ pub fn apply<'a>(
             after.push((index, wanted.clone()));
         }
         if let Some(variables) = top_const(statement) {
-            if variables.kind != VariableDeclarationKind::Const
-                || variables.declarations.len() != 1
+            if variables.kind != VariableDeclarationKind::Const || variables.declarations.len() != 1
             {
                 continue;
             }
@@ -157,7 +156,10 @@ pub fn apply<'a>(
                 let init = declarator.init.take().expect("hot component has an initializer");
                 let id = format!("{filename}#{binding}");
                 declarator.init =
-                    Some(ast.call(ast.ident(*alias), [import_meta_hot(allocator), ast.string(&id), init]));
+                    Some(ast.call(
+                        ast.ident(*alias),
+                        [import_meta_hot(allocator), ast.string(&id), init],
+                    ));
                 changed = true;
             }
         }
@@ -210,9 +212,7 @@ fn accept_tail(allocator: &Allocator) -> Statement<'_> {
 /// The component name a top-level statement declares, if it declares one.
 fn declared_name<'a>(statement: &Statement<'a>) -> Option<&'a str> {
     match statement {
-        Statement::FunctionDeclaration(function) => {
-            function.id.as_ref().map(|id| id.name.as_str())
-        }
+        Statement::FunctionDeclaration(function) => function.id.as_ref().map(|id| id.name.as_str()),
         Statement::ExportDeclaration(export) => match &export.declaration {
             Declaration::FunctionDeclaration(function) => {
                 function.id.as_ref().map(|id| id.name.as_str())

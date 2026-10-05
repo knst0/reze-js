@@ -10,9 +10,9 @@ use oxc_syntax::number::NumberBase;
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::scope::ScopeFlags;
 
+use super::Namer;
 use super::analysis::AsyncFacts;
 use super::pure::{is_component_name, is_declared_component};
-use super::Namer;
 use crate::diagnostic::{Code, Report};
 use crate::imports::HelperImports;
 
@@ -66,8 +66,14 @@ pub fn apply<'a>(
         return false;
     }
     let async_component = helpers.require(allocator, namer, "reze-js", "asyncComponent");
-    let mut rewrite =
-        Rewrite { alloc: allocator, plan: &plan, namer, async_component, done: HashSet::new(), changed: false };
+    let mut rewrite = Rewrite {
+        alloc: allocator,
+        plan: &plan,
+        namer,
+        async_component,
+        done: HashSet::new(),
+        changed: false,
+    };
     rewrite.visit_program(program);
     rewrite.changed
 }
@@ -261,8 +267,7 @@ fn split_body<'a>(
         }
     }
     let (Some(head), Some(first), Some(last)) = (head, first, last) else { return false };
-    let context: Option<&'a str> =
-        entry.context.then(|| alloc.alloc_str(&namer.fresh("_c$")));
+    let context: Option<&'a str> = entry.context.then(|| alloc.alloc_str(&namer.fresh("_c$")));
     if let Some(context) = context {
         for (index, statement) in body.statements.iter_mut().enumerate() {
             if index < first || index > last {
@@ -314,14 +319,23 @@ fn split_body<'a>(
     let mut arguments = ArenaVec::new_in(&builder);
     arguments.push(Argument::from(load_arrow));
     arguments.push(Argument::from(body_arrow));
-    let call =
-        Expression::new_call_expression(entry.function_span, reference(alloc, SPAN, async_component), None, arguments, false, &builder);
+    let call = Expression::new_call_expression(
+        entry.function_span,
+        reference(alloc, SPAN, async_component),
+        None,
+        arguments,
+        false,
+        &builder,
+    );
     outside.push(Statement::new_return_statement(SPAN, Some(call), &builder));
     body.statements = outside;
     true
 }
 
-fn narrow_return<'a>(alloc: &'a Allocator, returned: &mut Option<ArenaBox<'a, TSTypeAnnotation<'a>>>) {
+fn narrow_return<'a>(
+    alloc: &'a Allocator,
+    returned: &mut Option<ArenaBox<'a, TSTypeAnnotation<'a>>>,
+) {
     let Some(annotation) = returned else { return };
     let TSType::TSTypeReference(reference) = &mut annotation.type_annotation else { return };
     let TSTypeName::IdentifierReference(name) = &reference.type_name else { return };
@@ -359,8 +373,13 @@ fn wrap_tracked<'a>(alloc: &'a Allocator, context: &'a str, slot: &mut Expressio
     let builder = AstBuilder::new(alloc);
     let span = slot.span();
     let inner = std::mem::replace(slot, Expression::new_null_literal(span, &builder));
-    let params =
-        FormalParameters::boxed(SPAN, FormalParameterKind::ArrowFormalParameters, ArenaVec::new_in(&builder), None, &builder);
+    let params = FormalParameters::boxed(
+        SPAN,
+        FormalParameterKind::ArrowFormalParameters,
+        ArenaVec::new_in(&builder),
+        None,
+        &builder,
+    );
     let thunk = Expression::new_arrow_function_expression(
         SPAN,
         false,
@@ -433,7 +452,12 @@ fn reference<'a>(alloc: &'a Allocator, span: Span, name: &'a str) -> Expression<
     Expression::new_identifier(span, Ident::from(name), &builder)
 }
 
-fn values_read<'a>(alloc: &'a Allocator, span: Span, values: &'a str, index: usize) -> Expression<'a> {
+fn values_read<'a>(
+    alloc: &'a Allocator,
+    span: Span,
+    values: &'a str,
+    index: usize,
+) -> Expression<'a> {
     let builder = AstBuilder::new(alloc);
     let empty: ArenaVec<'a, Argument<'a>> = ArenaVec::new_in(&builder);
     let call = Expression::new_call_expression(
@@ -516,4 +540,3 @@ fn has_await(statement: &Statement<'_>) -> bool {
     check.visit_statement(statement);
     check.found
 }
-

@@ -13,11 +13,11 @@ const elementTypes = new WeakMap<Site, Map<string, ElementComponent>>();
 
 export function prepareElementType(site: Site, tag: string, namespace: NamespaceKey = ""): ElementComponent {
   let cache = elementTypes.get(site);
-  if (cache === undefined) elementTypes.set(site, cache = new Map());
+  if (cache === undefined) elementTypes.set(site, (cache = new Map()));
   const key = `${namespace}:${tag}`;
   let component = cache.get(key);
   if (component === undefined) {
-    component = props => {
+    component = (props) => {
       if (preparingSession() === undefined) {
         return (namespace === "svg" ? elementSVG(tag) : namespace === "math" ? elementMathML(tag) : element(tag))(props);
       }
@@ -30,7 +30,10 @@ export function prepareElementType(site: Site, tag: string, namespace: Namespace
   return component;
 }
 
-export function prepareDynamicElement(site: Site, source: () => string | ((props: Props) => JSX.Element) | null | undefined | false): (props: Props) => JSX.Element {
+export function prepareDynamicElement(
+  site: Site,
+  source: () => string | ((props: Props) => JSX.Element) | null | undefined | false,
+): (props: Props) => JSX.Element {
   return prepareDynamic(site, () => {
     const type = source();
     if (typeof type !== "string") return type;

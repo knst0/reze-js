@@ -117,8 +117,8 @@ export function armIsland(trigger: IslandTrigger, start: (value: boolean) => unk
     }
   } else if (trigger === "visible" && host !== undefined) {
     const observer = new IntersectionObserver(
-      entries => {
-        if (entries.some(entry => entry.isIntersecting)) {
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
           observer.disconnect();
           start(true);
         }

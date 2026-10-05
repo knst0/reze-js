@@ -24,16 +24,25 @@ test.each([
 });
 
 test("external linked packages use their own package-relative identity", () => {
-  expect(canonicalModuleId("/one/shared/src/ui.tsx?raw", "/one/app", {
-    packageName: "@acme/ui", packageRoot: "/one/shared",
-  })).toBe("@acme/ui/src/ui.tsx?raw");
-  expect(canonicalModuleId("/two/shared/src/ui.tsx?raw", "/two/app", {
-    packageName: "@acme/ui", packageRoot: "/two/shared",
-  })).toBe("@acme/ui/src/ui.tsx?raw");
+  expect(
+    canonicalModuleId("/one/shared/src/ui.tsx?raw", "/one/app", {
+      packageName: "@acme/ui",
+      packageRoot: "/one/shared",
+    }),
+  ).toBe("@acme/ui/src/ui.tsx?raw");
+  expect(
+    canonicalModuleId("/two/shared/src/ui.tsx?raw", "/two/app", {
+      packageName: "@acme/ui",
+      packageRoot: "/two/shared",
+    }),
+  ).toBe("@acme/ui/src/ui.tsx?raw");
   expect(() => canonicalModuleId("/unknown/ui.tsx", "/proj")).toThrow("owning package");
-  expect(() => canonicalModuleId("/outside/ui.tsx", "/proj", {
-    packageName: "@acme/ui", packageRoot: "/other",
-  })).toThrow("owning package");
+  expect(() =>
+    canonicalModuleId("/outside/ui.tsx", "/proj", {
+      packageName: "@acme/ui",
+      packageRoot: "/other",
+    }),
+  ).toThrow("owning package");
 });
 
 test("an unowned drive never falls back to the process working directory", () => {

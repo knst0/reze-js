@@ -97,7 +97,9 @@ export function resolveAppMode(entryId: string, env: ExportGraphEnv): AppMode {
   for (const name of Interesting) {
     const origins = [...new Set(ambiguous[name] ?? [])];
     if (origins.length > 1) {
-      throw new Error(`[reze] SSG entry export ${JSON.stringify(name)} is ambiguous across origins: ${origins.map((origin) => JSON.stringify(origin)).join(", ")}`);
+      throw new Error(
+        `[reze] SSG entry export ${JSON.stringify(name)} is ambiguous across origins: ${origins.map((origin) => JSON.stringify(origin)).join(", ")}`,
+      );
     }
   }
   if (names.routes !== undefined) return { kind: "router", hasShell: names.default !== undefined };

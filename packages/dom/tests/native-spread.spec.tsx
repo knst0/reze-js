@@ -1,5 +1,5 @@
-import { cleanup, mount, tick } from "@rezejs/testing-library";
 import { signal } from "@rezejs/signals";
+import { cleanup, mount, tick } from "@rezejs/testing-library";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);

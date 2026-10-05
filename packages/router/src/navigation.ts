@@ -182,9 +182,8 @@ export function resolveHref(state: RouterState, href: string): string | undefine
 /** A promise-like of any shape, not just `instanceof Promise`. */
 export function isThenable<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
   return (
-    (typeof value === "object" && value !== null) ||
-    typeof value === "function"
-  ) && typeof (value as PromiseLike<T>).then === "function";
+    ((typeof value === "object" && value !== null) || typeof value === "function") && typeof (value as PromiseLike<T>).then === "function"
+  );
 }
 
 /** `resolveHref` outside the page: parses against a dummy origin and strips the router base, never touching `document`. */
@@ -440,7 +439,16 @@ function settleData(
 ): SettleOutcome | Promise<SettleOutcome> {
   const route = routes[index]!;
   const push = (ownMeta: PageMetadata, failure: unknown): SettleOutcome | Promise<SettleOutcome> => {
-    matches.push({ route, path, params, data, hasData: failure === undefined ? hasData : false, error: failure, meta: ownMeta, info: route.info });
+    matches.push({
+      route,
+      path,
+      params,
+      data,
+      hasData: failure === undefined ? hasData : false,
+      error: failure,
+      meta: ownMeta,
+      info: route.info,
+    });
     return settleRoute(state, generation, routes, params, path, location, intent, index + 1, matches);
   };
   const afterMeta = (ownMeta: PageMetadata): SettleOutcome | Promise<SettleOutcome> => {
@@ -515,10 +523,11 @@ export function commit(
   state.setIsRouting(false);
   state.setPendingKey(undefined);
   const host = state.commitHost;
-  if (host !== undefined) host.deferCommit(() => {
-    state.commitHost = undefined;
-    state.env = "browser";
-  });
+  if (host !== undefined)
+    host.deferCommit(() => {
+      state.commitHost = undefined;
+      state.env = "browser";
+    });
   if (metadata !== undefined) {
     if (host !== undefined) host.deferCommit(() => applyMetadata(state, metadata));
     else applyMetadata(state, metadata);
@@ -678,7 +687,6 @@ export function navigate(state: RouterState, to: string | number, options: Navig
   }
   let path: string | undefined;
   if (url.origin === RelativeOrigin) {
-    // `paths` builders emit the served base; strip it back to the router path the branches match.
     path = state.history.resolve(url) ?? url.pathname + url.search + url.hash;
   } else {
     path = state.env === "browser" ? resolveHref(state, to) : resolveHrefNoDom(state, to);
@@ -688,9 +696,7 @@ export function navigate(state: RouterState, to: string | number, options: Navig
     }
   }
   if (!force && isLeavePrevented(state, path, options, (retryForce = true) => navigate(state, to, options, retryForce))) return;
-  // Hover warming runs preloads only: a navigation it triggers is ignored, never committed or captured.
   if (state.warming > 0) return;
-  // SSG preparation captures imperative navigation as a redirect instead of touching history.
   if (state.env === "html") {
     state.redirectCaptured = { to: path, replace: options.replace ?? false };
     state.generation++;

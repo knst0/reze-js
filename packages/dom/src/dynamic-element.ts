@@ -1,5 +1,4 @@
 import { SVGElements } from "../../../crates/reze_compiler/src/html-data.json";
-
 import { dynamic, type PropsOf } from "./dynamic";
 import { element, elementMathML, elementSVG } from "./element";
 import type { JSX } from "./jsx";

@@ -1,6 +1,6 @@
+import { signal } from "@rezejs/signals";
 import { cleanup, mount, tick } from "@rezejs/testing-library";
 import { For, Match, onCleanup, Show, Switch } from "reze-js";
-import { signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -465,8 +465,12 @@ test("keyed row writes reexecute on replacement without losing row identity", ()
     const writes: number[] = [];
     const deleted: string[] = [];
     const target = Object.create({
-      get id(): number { return id; },
-      set id(value: number) { writes.push(value); },
+      get id(): number {
+        return id;
+      },
+      set id(value: number) {
+        writes.push(value);
+      },
     }) as Row;
     target.label = label;
     const row = new Proxy(target, {
@@ -485,7 +489,11 @@ test("keyed row writes reexecute on replacement without losing row identity", ()
       <For each={rows()} keyed={(row) => row.id}>
         {(row: (...args: number[]) => Row) => (
           <li data-label={row().label}>
-            {(row().id = 5)}{row().id++}{delete (row() as Partial<Row>).id}{[row().id] = [7]}{row(1).id}
+            {(row().id = 5)}
+            {row().id++}
+            {delete (row() as Partial<Row>).id}
+            {([row().id] = [7])}
+            {row(1).id}
           </li>
         )}
       </For>

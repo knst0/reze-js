@@ -1,7 +1,7 @@
-import type { JSX } from "./jsx";
 import { HydrationError } from "./hydration/protocol";
 import { mountRange } from "./hydration/range";
 import { prepareHydration, stagedSession } from "./hydration/session";
+import type { JSX } from "./jsx";
 
 /** Claims compiler-generated SSG nodes without replacing them. Failure before commit preserves the root DOM. */
 export async function hydrate(code: () => JSX.Element, element: Element): Promise<() => void> {

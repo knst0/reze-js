@@ -149,7 +149,7 @@ const user = asyncComputed(async (c) => {
 });
 
 export function Name() {
-  return <p>{user.isPending() ? "Loading…" : (user.value()?.name ?? "?" )}</p>;
+  return <p>{user.isPending() ? "Loading…" : (user.value()?.name ?? "?")}</p>;
 }
 ```
 
@@ -177,17 +177,11 @@ export function List() {
       <For each={todos}>
         {(todo) => (
           <li>
-            <input
-              type="checkbox"
-              checked={todo.done}
-              onChange={() => (todo.done = !todo.done)}
-            />
+            <input type="checkbox" checked={todo.done} onChange={() => (todo.done = !todo.done)} />
           </li>
         )}
       </For>
-      <button onClick={() => todos.push({ id: todos.length + 1, done: false })}>
-        add
-      </button>
+      <button onClick={() => todos.push({ id: todos.length + 1, done: false })}>add</button>
     </ul>
   );
 }
@@ -248,11 +242,7 @@ export function List() {
       <For each={todos}>
         {(todo) => (
           <li>
-            <input
-              type="checkbox"
-              checked={todo.done}
-              onChange={() => toggle(todo).catch(() => {})}
-            />
+            <input type="checkbox" checked={todo.done} onChange={() => toggle(todo).catch(() => {})} />
           </li>
         )}
       </For>

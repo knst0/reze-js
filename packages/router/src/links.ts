@@ -20,11 +20,6 @@ function anchorPath(state: RouterState, anchor: Element): string | undefined {
   return resolveHref(state, href);
 }
 
-/**
- * Loads `path`'s route modules and runs their `preload` with intent `"preload"`; `false` when a module failed to load.
- * Only preloads run: `meta`/`redirect` callbacks never execute, rejections are swallowed, and a navigation a preload
- * triggers is ignored while warming holds.
- */
 async function preloadPath(state: RouterState, path: string): Promise<boolean> {
   const location = parseLocation({ path, state: undefined, index: 0 });
   const match = matchPathname(state, location.pathname);
@@ -69,7 +64,7 @@ export function installLinks(state: RouterState, isPreloading: boolean): () => v
   if (!isPreloading) return () => document.removeEventListener("click", onClick);
 
   let lastPreloaded: string | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: number | undefined;
   const preloadAnchor = (anchor: Element): void => {
     const path = anchorPath(state, anchor);
     if (path === undefined || path === lastPreloaded) return;
@@ -83,17 +78,17 @@ export function installLinks(state: RouterState, isPreloading: boolean): () => v
     if (anchor !== undefined) preloadAnchor(anchor);
   };
   const onOver = (event: MouseEvent): void => {
-    clearTimeout(timer);
+    window.clearTimeout(timer);
     const anchor = anchorOf(event);
-    if (anchor !== undefined) timer = setTimeout(preloadAnchor, HoverDelayMs, anchor);
+    if (anchor !== undefined) timer = window.setTimeout(preloadAnchor, HoverDelayMs, anchor);
   };
-  const onOut = (): void => clearTimeout(timer);
+  const onOut = (): void => window.clearTimeout(timer);
   document.addEventListener("mouseover", onOver);
   document.addEventListener("mouseout", onOut);
   document.addEventListener("focusin", onIntent);
   document.addEventListener("touchstart", onIntent, { passive: true });
   return () => {
-    clearTimeout(timer);
+    window.clearTimeout(timer);
     document.removeEventListener("click", onClick);
     document.removeEventListener("mouseover", onOver);
     document.removeEventListener("mouseout", onOut);

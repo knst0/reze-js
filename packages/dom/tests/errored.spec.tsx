@@ -1,6 +1,6 @@
+import { computed, signal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import { catchError, Errored, Loading, onCleanup } from "reze-js";
-import { computed, signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);

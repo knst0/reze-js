@@ -23,7 +23,10 @@ export function ShowcaseCards() {
     if (!track) return;
     const card = track.firstElementChild as HTMLElement | null;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    track.scrollBy({ left: direction * ((card?.offsetWidth ?? 0) + (Number.parseFloat(getComputedStyle(track).columnGap) || 0)), behavior: reduced ? "auto" : "smooth" });
+    track.scrollBy({
+      left: direction * ((card?.offsetWidth ?? 0) + (Number.parseFloat(getComputedStyle(track).columnGap) || 0)),
+      behavior: reduced ? "auto" : "smooth",
+    });
   };
 
   return (
@@ -36,7 +39,10 @@ export function ShowcaseCards() {
           →
         </button>
       </div>
-      <div ref={(el: HTMLDivElement) => attach(el)} class="showcase-track flex gap-4 overflow-x-auto overscroll-x-contain snap-x snap-mandatory pb-1">
+      <div
+        ref={(el: HTMLDivElement) => attach(el)}
+        class="showcase-track flex gap-4 overflow-x-auto overscroll-x-contain snap-x snap-mandatory pb-1"
+      >
         <ShowcaseContext value={{ online, setOnline }}>
           <figure class="card showcase-first w-88 h-96 shrink-0 grid place-items-center snap-start">
             <Counter />
@@ -122,7 +128,7 @@ function Todos() {
           )}
         </For>
       </ul>
-      <button type="button" class="btn mt-auto" onClick={() => (context.setOnline(prev => !prev))}>
+      <button type="button" class="btn mt-auto" onClick={() => context.setOnline((prev) => !prev)}>
         {context.online() ? "🛜 Online" : "📴 Offline"}
       </button>
     </div>

@@ -1,6 +1,6 @@
+import { signal } from "@rezejs/signals";
 import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
 import { $props, effect, mergeProps, omitProps, render, type ClassValue, type JSX } from "reze-js";
-import { signal } from "@rezejs/signals";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -760,7 +760,11 @@ test("$props.merge of literals passes the last defined value", () => {
       2: number;
       label: string;
     };
-    return <p>{merged[1]}:{merged.label}:{merged[2]}</p>;
+    return (
+      <p>
+        {merged[1]}:{merged.label}:{merged[2]}
+      </p>
+    );
   }
   const { el } = mount(() => <View />);
   expect(el.textContent).toBe("2:last:3");
@@ -777,7 +781,11 @@ test("$props.merge evaluates literal sources in order", () => {
       3: number;
       a: number;
     };
-    return <p>{merged.a}:{merged[3]}</p>;
+    return (
+      <p>
+        {merged.a}:{merged[3]}
+      </p>
+    );
   }
   const { el } = mount(() => <View />);
   expect(calls).toEqual(["first", "second", "third"]);
@@ -787,7 +795,14 @@ test("$props.merge evaluates literal sources in order", () => {
 test("$props.merge keeps later getters live", () => {
   const [v, setV] = signal(1);
   function View() {
-    const merged = $props.merge({ a: 0 }, { get a() { return v(); } }) as { a: number };
+    const merged = $props.merge(
+      { a: 0 },
+      {
+        get a() {
+          return v();
+        },
+      },
+    ) as { a: number };
     return <p>{merged.a}</p>;
   }
   const { el } = mount(() => <View />);
@@ -801,7 +816,11 @@ test("$props.splitByGroups and $props.omit divide literal props", () => {
   function View() {
     const [picked, rest] = $props.splitByGroups({ x: 1, y: 2 }, ["x"]);
     const kept = $props.omit({ x: 1, y: 2 }, "x");
-    return <p>{picked.x}:{rest.y}:{kept.y}</p>;
+    return (
+      <p>
+        {picked.x}:{rest.y}:{kept.y}
+      </p>
+    );
   }
   const { el } = mount(() => <View />);
   expect(el.textContent).toBe("1:2:2");

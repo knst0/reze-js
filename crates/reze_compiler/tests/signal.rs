@@ -26,9 +26,6 @@ fn errors(source: &str) -> Vec<Diagnostic> {
     compile(source, "test.tsx", &options()).err().expect("fails")
 }
 
-
-
-
 fn only(source: &str, code: Code) -> Diagnostic {
     let found: Vec<_> = errors(source).into_iter().filter(|d| d.code == code).collect();
     assert_eq!(found.len(), 1, "{found:?}");
@@ -177,7 +174,6 @@ fn a_file_that_mentions_the_name_without_importing_it_is_left_alone() {
             .is_none()
     );
 }
-
 
 fn computed_module(body: &str) -> String {
     format!(

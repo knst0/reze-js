@@ -35,7 +35,8 @@ pub fn apply<'a>(ctx: &mut EmitContext<'a, '_>, program: &mut Program<'a>) {
                 }
             }
             Statement::ExpressionStatement(mut statement) => {
-                let clear = scope_expression(ctx, &mut statement.expression, None, &mut program.body);
+                let clear =
+                    scope_expression(ctx, &mut statement.expression, None, &mut program.body);
                 program.body.push(Statement::ExpressionStatement(statement));
                 if let Some(temporary) = clear {
                     let ast = Ast::new(ctx.allocator);
@@ -47,7 +48,10 @@ pub fn apply<'a>(ctx: &mut EmitContext<'a, '_>, program: &mut Program<'a>) {
                     && class_needs_scope(class)
                 {
                     let ExportDefaultDeclarationKind::ClassDeclaration(mut class) =
-                        export.declaration.take_in(&ctx.allocator) else { unreachable!() };
+                        export.declaration.take_in(&ctx.allocator)
+                    else {
+                        unreachable!()
+                    };
                     if let Some(binding) = &class.id {
                         let name = ctx.intern(binding.name.as_str());
                         let declaration = class_variable(ctx, class);
@@ -55,13 +59,24 @@ pub fn apply<'a>(ctx: &mut EmitContext<'a, '_>, program: &mut Program<'a>) {
                         let ast = Ast::new(ctx.allocator);
                         program.body.push(Statement::new_export_named_declaration(
                             SPAN,
-                            ArenaVec::from_array_in([ExportSpecifier::new(
-                                SPAN,
-                                ModuleExportName::new_identifier_reference(SPAN, name, &ast.builder),
-                                ModuleExportName::new_identifier_name(SPAN, "default", &ast.builder),
-                                ImportOrExportKind::Value,
+                            ArenaVec::from_array_in(
+                                [ExportSpecifier::new(
+                                    SPAN,
+                                    ModuleExportName::new_identifier_reference(
+                                        SPAN,
+                                        name,
+                                        &ast.builder,
+                                    ),
+                                    ModuleExportName::new_identifier_name(
+                                        SPAN,
+                                        "default",
+                                        &ast.builder,
+                                    ),
+                                    ImportOrExportKind::Value,
+                                    &ast.builder,
+                                )],
                                 &ast.builder,
-                            )], &ast.builder),
+                            ),
                             ImportOrExportKind::Value,
                             &ast.builder,
                         ));
@@ -80,16 +95,16 @@ pub fn apply<'a>(ctx: &mut EmitContext<'a, '_>, program: &mut Program<'a>) {
                 }
             }
             statement @ (Statement::BlockStatement(_)
-                | Statement::IfStatement(_)
-                | Statement::SwitchStatement(_)
-                | Statement::WhileStatement(_)
-                | Statement::DoWhileStatement(_)
-                | Statement::ForStatement(_)
-                | Statement::ForInStatement(_)
-                | Statement::ForOfStatement(_)
-                | Statement::LabeledStatement(_)
-                | Statement::TryStatement(_)
-                | Statement::ThrowStatement(_)) => program.body.push(scope_statement(ctx, statement)),
+            | Statement::IfStatement(_)
+            | Statement::SwitchStatement(_)
+            | Statement::WhileStatement(_)
+            | Statement::DoWhileStatement(_)
+            | Statement::ForStatement(_)
+            | Statement::ForInStatement(_)
+            | Statement::ForOfStatement(_)
+            | Statement::LabeledStatement(_)
+            | Statement::TryStatement(_)
+            | Statement::ThrowStatement(_)) => program.body.push(scope_statement(ctx, statement)),
             statement => program.body.push(statement),
         }
     }
@@ -111,16 +126,26 @@ fn class_variable<'a>(
     VariableDeclaration::boxed(
         SPAN,
         VariableDeclarationKind::Let,
-        ArenaVec::from_array_in([VariableDeclarator::new(
-            SPAN, BindingPattern::new_binding_identifier(SPAN, name, &ast.builder),
-            None, Some(Expression::ClassExpression(class)), false, &ast.builder,
-        )], &ast.builder),
+        ArenaVec::from_array_in(
+            [VariableDeclarator::new(
+                SPAN,
+                BindingPattern::new_binding_identifier(SPAN, name, &ast.builder),
+                None,
+                Some(Expression::ClassExpression(class)),
+                false,
+                &ast.builder,
+            )],
+            &ast.builder,
+        ),
         false,
         &ast.builder,
     )
 }
 
-fn scope_statement<'a>(ctx: &mut EmitContext<'a, '_>, mut statement: Statement<'a>) -> Statement<'a> {
+fn scope_statement<'a>(
+    ctx: &mut EmitContext<'a, '_>,
+    mut statement: Statement<'a>,
+) -> Statement<'a> {
     let mut check = Initializer::default();
     check.visit_statement(&statement);
     if !check.call {
@@ -131,21 +156,38 @@ fn scope_statement<'a>(ctx: &mut EmitContext<'a, '_>, mut statement: Statement<'
     if check.awaited {
         ModuleAwaits { ctx, frame, await_count: 0 }.visit_statement(&mut statement);
     }
-    let module_id = ast.string(ctx.options.module_id.as_deref().expect("selected target has a module ID"));
+    let module_id =
+        ast.string(ctx.options.module_id.as_deref().expect("selected target has a module ID"));
     let begin = ctx.call("reze-js/internal/reactivity", "beginModuleScope", [module_id]);
     ctx.changed = true;
-    Statement::new_block_statement(SPAN, ArenaVec::from_array_in([
-        ast.declaration(VariableDeclarationKind::Const, frame, Some(begin)),
-        Statement::new_try_statement(
-            SPAN,
-            BlockStatement::boxed(SPAN, ArenaVec::from_array_in([statement], &ast.builder), &ast.builder),
-            None,
-            Some(BlockStatement::boxed(SPAN, ArenaVec::from_array_in([
-                ast.stmt(ast.call(ast.member(ast.ident(frame), "end"), [])),
-            ], &ast.builder), &ast.builder)),
+    Statement::new_block_statement(
+        SPAN,
+        ArenaVec::from_array_in(
+            [
+                ast.declaration(VariableDeclarationKind::Const, frame, Some(begin)),
+                Statement::new_try_statement(
+                    SPAN,
+                    BlockStatement::boxed(
+                        SPAN,
+                        ArenaVec::from_array_in([statement], &ast.builder),
+                        &ast.builder,
+                    ),
+                    None,
+                    Some(BlockStatement::boxed(
+                        SPAN,
+                        ArenaVec::from_array_in(
+                            [ast.stmt(ast.call(ast.member(ast.ident(frame), "end"), []))],
+                            &ast.builder,
+                        ),
+                        &ast.builder,
+                    )),
+                    &ast.builder,
+                ),
+            ],
             &ast.builder,
         ),
-    ], &ast.builder), &ast.builder)
+        &ast.builder,
+    )
 }
 
 fn variables<'a>(
@@ -161,7 +203,8 @@ fn variables<'a>(
             BindingPattern::BindingIdentifier(binding) => Some(ctx.intern(binding.name.as_str())),
             _ => None,
         };
-        let clear = variable.init.as_mut().and_then(|value| scope_expression(ctx, value, name, output));
+        let clear =
+            variable.init.as_mut().and_then(|value| scope_expression(ctx, value, name, output));
         let mut next = declaration.clone_in(ctx.allocator);
         next.declarations.push(variable);
         if let Some(export) = &export {
@@ -189,7 +232,10 @@ fn scope_expression<'a>(
         return None;
     }
     if let Expression::CallExpression(call) = expression.without_parentheses()
-        && matches!(ctx.facts.runtime_calls.get(&call.node_id.get()), Some(RuntimeCallKind::AsyncComputed | RuntimeCallKind::UniqueId))
+        && matches!(
+            ctx.facts.runtime_calls.get(&call.node_id.get()),
+            Some(RuntimeCallKind::AsyncComputed | RuntimeCallKind::UniqueId)
+        )
     {
         let mut arguments = Initializer::default();
         for argument in &call.arguments {
@@ -201,7 +247,8 @@ fn scope_expression<'a>(
     }
     let ast = Ast::new(ctx.allocator);
     let origin = expression.span();
-    let module_id = ast.string(ctx.options.module_id.as_deref().expect("selected target has a module ID"));
+    let module_id =
+        ast.string(ctx.options.module_id.as_deref().expect("selected target has a module ID"));
     let mut value = expression.take_in(&ctx.allocator);
     if let Some(name) = inferred_name
         && matches!(value.without_parentheses(), Expression::ClassExpression(class) if class.id.is_none())
@@ -210,7 +257,11 @@ fn scope_expression<'a>(
     }
     ctx.changed = true;
     if !check.awaited {
-        *expression = ctx.call("reze-js/internal/reactivity", "withModuleScope", [module_id, ast.arrow([], value)]);
+        *expression = ctx.call(
+            "reze-js/internal/reactivity",
+            "withModuleScope",
+            [module_id, ast.arrow([], value)],
+        );
         *expression.span_mut() = origin;
         return None;
     }
@@ -223,22 +274,45 @@ fn scope_expression<'a>(
     output.push(ast.declaration(VariableDeclarationKind::Let, frame, Some(begin)));
     output.push(Statement::new_try_statement(
         SPAN,
-        BlockStatement::boxed(SPAN, ArenaVec::from_array_in([
-            ast.stmt(ast.assign(ast.ident(result), value)),
-        ], &ast.builder), &ast.builder),
+        BlockStatement::boxed(
+            SPAN,
+            ArenaVec::from_array_in([ast.stmt(ast.assign(ast.ident(result), value))], &ast.builder),
+            &ast.builder,
+        ),
         Some(CatchClause::boxed(
             SPAN,
-            Some(CatchParameter::new(SPAN, BindingPattern::new_binding_identifier(SPAN, error, &ast.builder), None, &ast.builder)),
-            BlockStatement::boxed(SPAN, ArenaVec::from_array_in([
-                ast.stmt(ast.call(ast.member(ast.ident(frame), "reject"), [ast.ident(error)])),
-                Statement::new_throw_statement(SPAN, ast.ident(error), &ast.builder),
-            ], &ast.builder), &ast.builder),
+            Some(CatchParameter::new(
+                SPAN,
+                BindingPattern::new_binding_identifier(SPAN, error, &ast.builder),
+                None,
+                &ast.builder,
+            )),
+            BlockStatement::boxed(
+                SPAN,
+                ArenaVec::from_array_in(
+                    [
+                        ast.stmt(
+                            ast.call(ast.member(ast.ident(frame), "reject"), [ast.ident(error)]),
+                        ),
+                        Statement::new_throw_statement(SPAN, ast.ident(error), &ast.builder),
+                    ],
+                    &ast.builder,
+                ),
+                &ast.builder,
+            ),
             &ast.builder,
         )),
-        Some(BlockStatement::boxed(SPAN, ArenaVec::from_array_in([
-            ast.stmt(ast.call(ast.member(ast.ident(frame), "end"), [])),
-            ast.stmt(ast.assign(ast.ident(frame), ast.undefined())),
-        ], &ast.builder), &ast.builder)),
+        Some(BlockStatement::boxed(
+            SPAN,
+            ArenaVec::from_array_in(
+                [
+                    ast.stmt(ast.call(ast.member(ast.ident(frame), "end"), [])),
+                    ast.stmt(ast.assign(ast.ident(frame), ast.undefined())),
+                ],
+                &ast.builder,
+            ),
+            &ast.builder,
+        )),
         &ast.builder,
     ));
     *expression = ast.ident(result);
@@ -341,11 +415,16 @@ impl<'a> VisitMut<'a> for ModuleAwaits<'_, 'a, '_> {
             );
             let body = clause.body.body.take_in(&self.ctx.allocator);
             clause.body.body.push(Statement::new_block_statement(SPAN, body, &ast.builder));
-            let rejected = ast.call(ast.member(ast.ident(self.frame), "reject"), [ast.ident(error)]);
-            let declaration = VariableDeclarator::new(SPAN, pattern, None, Some(rejected), false, &ast.builder);
+            let rejected =
+                ast.call(ast.member(ast.ident(self.frame), "reject"), [ast.ident(error)]);
+            let declaration =
+                VariableDeclarator::new(SPAN, pattern, None, Some(rejected), false, &ast.builder);
             Statement::new_variable_declaration(
-                SPAN, VariableDeclarationKind::Let,
-                ArenaVec::from_array_in([declaration], &ast.builder), false, &ast.builder,
+                SPAN,
+                VariableDeclarationKind::Let,
+                ArenaVec::from_array_in([declaration], &ast.builder),
+                false,
+                &ast.builder,
             )
         } else {
             ast.stmt(ast.call(ast.member(ast.ident(self.frame), "resume"), [ast.undefined()]))
@@ -364,9 +443,12 @@ impl<'a> VisitMut<'a> for ModuleAwaits<'_, 'a, '_> {
             self.visit_block_statement(finalizer);
             if suspended {
                 let ast = Ast::new(self.ctx.allocator);
-                finalizer.body.insert(0, ast.stmt(ast.call(
-                    ast.member(ast.ident(self.frame), "resume"), [ast.undefined()],
-                )));
+                finalizer.body.insert(
+                    0,
+                    ast.stmt(
+                        ast.call(ast.member(ast.ident(self.frame), "resume"), [ast.undefined()]),
+                    ),
+                );
             }
         }
     }

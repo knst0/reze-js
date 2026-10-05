@@ -76,10 +76,27 @@ export interface Handoff {
 }
 
 export type LayoutNode =
-  | { readonly kind: "element"; readonly tag: string; readonly ns: NamespaceKey; readonly token?: string; readonly site?: string; readonly index?: number; readonly opaque?: true; readonly children: readonly LayoutNode[] }
+  | {
+      readonly kind: "element";
+      readonly tag: string;
+      readonly ns: NamespaceKey;
+      readonly token?: string;
+      readonly site?: string;
+      readonly index?: number;
+      readonly opaque?: true;
+      readonly children: readonly LayoutNode[];
+    }
   | { readonly kind: "text"; readonly text: string; readonly index?: number }
   | { readonly kind: "marker"; readonly index?: number }
-  | { readonly kind: "range"; readonly token: string; readonly ownerId: string; readonly site?: string; readonly range: RangeKind; readonly placement?: "body" | "inert"; readonly children: readonly LayoutNode[] };
+  | {
+      readonly kind: "range";
+      readonly token: string;
+      readonly ownerId: string;
+      readonly site?: string;
+      readonly range: RangeKind;
+      readonly placement?: "body" | "inert";
+      readonly children: readonly LayoutNode[];
+    };
 
 export interface HeadDefaults {
   readonly title?: string;
@@ -119,7 +136,7 @@ function ownerToken(tokens: ReadonlyMap<string, string>, id: string): string {
 
 function compactLayout(node: LayoutNode, tokens: ReadonlyMap<string, string>): LayoutNode {
   if (node.kind === "text" || node.kind === "marker") return node;
-  const children = node.children.map(child => compactLayout(child, tokens));
+  const children = node.children.map((child) => compactLayout(child, tokens));
   if (node.kind === "range") {
     return { ...node, token: ownerToken(tokens, node.token), ownerId: ownerToken(tokens, node.ownerId), children };
   }
@@ -129,17 +146,24 @@ function compactLayout(node: LayoutNode, tokens: ReadonlyMap<string, string>): L
 export function serializePayload(payload: HydrationPayload, tokens = createOwnerTokens(payload.owners)): string {
   const compact = {
     ...payload,
-    owners: payload.owners.map(owner => owner.parentId === undefined ? owner : {
-      id: owner.id.slice(owner.parentId.length + 1),
-      parentId: ownerToken(tokens, owner.parentId),
-      retired: owner.retired,
-    }),
-    resources: payload.resources.map(resource => ({ ...resource, ownerId: ownerToken(tokens, resource.ownerId) })),
-    awaitSlots: payload.awaitSlots.map(slot => ({ ...slot, ownerId: ownerToken(tokens, slot.ownerId) })),
-    handoffs: payload.handoffs.map(handoff => ({ ...handoff, ownerId: ownerToken(tokens, handoff.ownerId) })),
-    layout: payload.layout.map(node => compactLayout(node, tokens)),
+    owners: payload.owners.map((owner) =>
+      owner.parentId === undefined
+        ? owner
+        : {
+            id: owner.id.slice(owner.parentId.length + 1),
+            parentId: ownerToken(tokens, owner.parentId),
+            retired: owner.retired,
+          },
+    ),
+    resources: payload.resources.map((resource) => ({ ...resource, ownerId: ownerToken(tokens, resource.ownerId) })),
+    awaitSlots: payload.awaitSlots.map((slot) => ({ ...slot, ownerId: ownerToken(tokens, slot.ownerId) })),
+    handoffs: payload.handoffs.map((handoff) => ({ ...handoff, ownerId: ownerToken(tokens, handoff.ownerId) })),
+    layout: payload.layout.map((node) => compactLayout(node, tokens)),
   };
-  return JSON.stringify(compact).replace(/[<>&\u2028\u2029]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  return JSON.stringify(compact).replace(
+    /[<>&\u2028\u2029]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
 }
 
 export class HydrationError extends Error {
@@ -187,8 +211,10 @@ export function parsePayload(text: string): { payload: HydrationPayload; decoder
 function expandOwnerToken(value: unknown, ids: readonly string[]): string {
   const token = textValue(value, "owner token");
   const index = Number.parseInt(token, 36);
-  requireCondition(Number.isSafeInteger(index) && index >= 0 && index < ids.length
-    && index.toString(36) === token, `invalid owner token ${token}`);
+  requireCondition(
+    Number.isSafeInteger(index) && index >= 0 && index < ids.length && index.toString(36) === token,
+    `invalid owner token ${token}`,
+  );
   return ids[index]!;
 }
 
@@ -206,11 +232,19 @@ export function validatePayload(input: unknown): { payload: HydrationPayload; de
   const data = record(input, "payload");
   requireCondition(data.version === 1, "unsupported hydration protocol version");
   const buildId = textValue(data.buildId, "buildId");
-  requireCondition(!buildId.startsWith("/") && !buildId.includes("\\") && !/[?#:]/.test(buildId)
-    && buildId.split("/").every((part) => part !== "" && part !== "." && part !== ".."), "invalid bootstrap buildId");
+  requireCondition(
+    !buildId.startsWith("/") &&
+      !buildId.includes("\\") &&
+      !/[?#:]/.test(buildId) &&
+      buildId.split("/").every((part) => part !== "" && part !== "." && part !== ".."),
+    "invalid bootstrap buildId",
+  );
   requireCondition(ROOT_ID.test(textValue(data.rootId, "rootId")), "invalid mount root id");
   requireCondition(textValue(data.pathname, "pathname").startsWith("/") && !/[?#]/.test(data.pathname as string), "invalid page pathname");
-  requireCondition(typeof data.timeoutMs === "number" && Number.isFinite(data.timeoutMs) && data.timeoutMs > 0, "invalid hydration deadline");
+  requireCondition(
+    typeof data.timeoutMs === "number" && Number.isFinite(data.timeoutMs) && data.timeoutMs > 0,
+    "invalid hydration deadline",
+  );
   const head = record(data.headDefaults, "headDefaults");
   for (const key of ["title", "description", "canonical", "robots"]) {
     if (Object.hasOwn(head, key)) requireCondition(typeof head[key] === "string", `invalid headDefaults.${key}`);
@@ -253,8 +287,10 @@ export function validatePayload(input: unknown): { payload: HydrationPayload; de
     requireCondition(states.length > 0, `resource ${id} has no initial state`);
     for (const rawState of states) {
       const state = record(rawState, `resource ${id} state`);
-      requireCondition(typeof state.pending === "boolean" && typeof state.hasResolved === "boolean"
-        && typeof state.hasRejection === "boolean", `invalid resource flags ${id}`);
+      requireCondition(
+        typeof state.pending === "boolean" && typeof state.hasResolved === "boolean" && typeof state.hasRejection === "boolean",
+        `invalid resource flags ${id}`,
+      );
       const frame = integer(state.frame, `resource ${id} frame`);
       decoder.validate({ tag: "undefined" }, frame);
       requireCondition(Object.hasOwn(state, "resolved") === (resource.seeded && state.hasResolved), `inconsistent resolved presence ${id}`);
@@ -299,16 +335,20 @@ export function validatePayload(input: unknown): { payload: HydrationPayload; de
       case "resource": {
         const resource = resources.get(id);
         const index = integer(handoff.index, `resource handoff ${id} index`);
-        requireCondition(resource !== undefined && resource.owner === owner && index < resource.length
-          && index === (consumedResources.get(id) ?? 0), `invalid resource handoff ${id}`);
+        requireCondition(
+          resource !== undefined && resource.owner === owner && index < resource.length && index === (consumedResources.get(id) ?? 0),
+          `invalid resource handoff ${id}`,
+        );
         consumedResources.set(id, index + 1);
         break;
       }
       case "await": {
         const key = awaitKey(id, integer(handoff.index, `await handoff ${id} occurrence`));
         const input = awaits.get(key);
-        requireCondition(input?.ownerId === owner && !consumedAwaits.has(key)
-          && handoff.delivery === (input.status === "thrown" ? "inline" : "scheduled"), `invalid await handoff ${key}`);
+        requireCondition(
+          input?.ownerId === owner && !consumedAwaits.has(key) && handoff.delivery === (input.status === "thrown" ? "inline" : "scheduled"),
+          `invalid await handoff ${key}`,
+        );
         consumedAwaits.add(key);
         break;
       }
@@ -363,7 +403,10 @@ function validateLayout(roots: unknown[], owners: ReadonlyMap<string, boolean>):
         tokenValue(node.token, "range token");
         requireCondition(owners.has(tokenValue(node.ownerId, "range owner")), "unknown range owner");
         requireCondition(RANGE_KINDS.has(node.range), "invalid range kind");
-        requireCondition(!Object.hasOwn(node, "placement") || node.placement === "body" || node.placement === "inert", "invalid portal placement");
+        requireCondition(
+          !Object.hasOwn(node, "placement") || node.placement === "body" || node.placement === "inert",
+          "invalid portal placement",
+        );
         for (const child of arrayValue(node.children, "range children")) queue.push(child);
         break;
       case "text":

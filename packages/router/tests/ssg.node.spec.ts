@@ -74,7 +74,9 @@ test("enumerateSsgUrls rejects unknown keys, static entries, bad params, and col
   ]);
   expect(() => enumerateSsgUrls(descriptors, { "/missing": [] }, { trailingSlash: "always" })).toThrow("unknown route pattern");
   expect(() => enumerateSsgUrls(descriptors, { "/": [] }, { trailingSlash: "always" })).toThrow("static route");
-  expect(() => enumerateSsgUrls(descriptors, { "/blog/:id": [{ id: "x", extra: "y" }] }, { trailingSlash: "always" })).toThrow("unknown param");
+  expect(() => enumerateSsgUrls(descriptors, { "/blog/:id": [{ id: "x", extra: "y" }] }, { trailingSlash: "always" })).toThrow(
+    "unknown param",
+  );
   expect(() => enumerateSsgUrls(descriptors, {}, { trailingSlash: "always" })).toThrow("missing dynamic route");
   expect(() => enumerateSsgUrls(descriptors, { "/blog/:id": [{}] }, { trailingSlash: "always" })).toThrow("missing required param");
   expect(() => enumerateSsgUrls(descriptors, { "/blog/:id": [{ id: "a b" }, { id: "a%20b" }] }, { trailingSlash: "always" })).toThrow(
@@ -85,7 +87,10 @@ test("enumerateSsgUrls rejects unknown keys, static entries, bad params, and col
 test("enumerateSsgUrls rejects an empty page set and decoded collisions", () => {
   const dynamicOnly = describeSsgRoutes([{ path: "/blog/:id", component: Home }]);
   expect(() => enumerateSsgUrls(dynamicOnly, { "/blog/:id": [] }, { trailingSlash: "always" })).toThrow("enumerates no pages");
-  const encodedPair = describeSsgRoutes([{ path: "/caf%C3%A9", component: Home }, { path: "/caf\u00e9", component: Home }]);
+  const encodedPair = describeSsgRoutes([
+    { path: "/caf%C3%A9", component: Home },
+    { path: "/caf\u00e9", component: Home },
+  ]);
   expect(() => enumerateSsgUrls(encodedPair, {}, { trailingSlash: "always" })).toThrow("colliding URLs");
 });
 
@@ -121,13 +126,15 @@ test("prepareSsgRoute settles preloads and merges metadata root-to-leaf", async 
       component: Home,
       preload: () => Promise.resolve("root-data"),
       meta: { title: "Root", description: "root desc" },
-      children: [{
-        id: "post",
-        path: "/blog/:id",
-        component: Home,
-        preload: ({ params }) => ({ title: `Post ${params.id}` }),
-        meta: ({ data }) => ({ title: data.title }),
-      }],
+      children: [
+        {
+          id: "post",
+          path: "/blog/:id",
+          component: Home,
+          preload: ({ params }) => ({ title: `Post ${params.id}` }),
+          meta: ({ data }) => ({ title: data.title }),
+        },
+      ],
     },
   ];
   const prepared = await prepareSsgRoute(routes, "/blog/7");
@@ -143,7 +150,10 @@ test("prepareSsgRoute settles preloads and merges metadata root-to-leaf", async 
 test("prepareSsgRoute distinguishes missing preloads from undefined data", async () => {
   const routes: RouteDefinition[] = [
     {
-      id: "root", path: "/", component: Home, preload: () => undefined,
+      id: "root",
+      path: "/",
+      component: Home,
+      preload: () => undefined,
       children: [{ id: "plain", path: "/plain", component: Home }],
     },
   ];

@@ -102,7 +102,8 @@ export class ClaimPlan {
     const layout = site.layout;
     const statics = layout !== undefined && "nodes" in layout ? layout.nodes : undefined;
     const claimed = this.index.roots.get(instance.id);
-    if (claimed !== undefined && claimed.layout.site !== site.key) throw new HydrationError(`native root site mismatch ${instance.id}`, site);
+    if (claimed !== undefined && claimed.layout.site !== site.key)
+      throw new HydrationError(`native root site mismatch ${instance.id}`, site);
     const nodes: NodePlan[] = [];
     const paths = new Map<string, NodePlan>();
     const count = statics?.length ?? 1;
@@ -116,21 +117,34 @@ export class ClaimPlan {
         this.texts.push(handle);
         this.handles.set(handle, plan);
       } else if (descriptor?.kind === "marker") {
-        const node = existing !== undefined && !(existing instanceof ClaimedText) && existing.nodeType === 8
-          ? existing as Comment : this.index.root.ownerDocument.createComment("");
+        const node =
+          existing !== undefined && !(existing instanceof ClaimedText) && existing.nodeType === 8
+            ? (existing as Comment)
+            : this.index.root.ownerDocument.createComment("");
         plan = { kind: "marker", node, index };
         this.handles.set(node, plan);
       } else {
         const name = descriptor?.tag ?? tag;
         const namespace = descriptor?.ns ?? ns;
         if (name === undefined) throw new HydrationError("native claim has no element layout", site);
-        const node = existing !== undefined && !(existing instanceof ClaimedText) && existing.nodeType === 1
-          ? existing as Element : this.index.root.ownerDocument.createElementNS(Namespaces[namespace], name);
+        const node =
+          existing !== undefined && !(existing instanceof ClaimedText) && existing.nodeType === 1
+            ? (existing as Element)
+            : this.index.root.ownerDocument.createElementNS(Namespaces[namespace], name);
         if (existing === undefined) {
           for (const [key, value] of descriptor?.attrs ?? []) node.setAttribute(key, value ?? "");
         }
-        plan = { kind: "element", node, tag: name, ns: namespace, instance, index,
-          ...(index === 0 ? { token: instance.id, site } : {}), children: [], opaque: false };
+        plan = {
+          kind: "element",
+          node,
+          tag: name,
+          ns: namespace,
+          instance,
+          index,
+          ...(index === 0 ? { token: instance.id, site } : {}),
+          children: [],
+          opaque: false,
+        };
         this.handles.set(node, plan);
       }
       nodes.push(plan);
@@ -215,9 +229,14 @@ export class ClaimPlan {
     let index = 0;
     for (const expected of layout) {
       const plan = plans[index];
-      if (expected.kind === "element" && expected.index === undefined && expected.token === undefined
-        && expected.ns === "" && ParserContainers.has(expected.tag)
-        && (plan?.kind !== "element" || plan.tag !== expected.tag)) {
+      if (
+        expected.kind === "element" &&
+        expected.index === undefined &&
+        expected.token === undefined &&
+        expected.ns === "" &&
+        ParserContainers.has(expected.tag) &&
+        (plan?.kind !== "element" || plan.tag !== expected.tag)
+      ) {
         const count = this.projectedLength(expected.children);
         this.consumed.add(expected);
         this.match(plans.slice(index, index + count), expected.children);
@@ -226,7 +245,9 @@ export class ClaimPlan {
       }
       if (plan === undefined || plan.kind !== expected.kind) {
         const token = expected.kind === "range" || expected.kind === "element" ? expected.token : undefined;
-        throw new HydrationError(`final ${expected.kind} topology mismatch${token === undefined ? "" : ` at ${token}`}: found ${plan?.kind ?? "no node"}`);
+        throw new HydrationError(
+          `final ${expected.kind} topology mismatch${token === undefined ? "" : ` at ${token}`}: found ${plan?.kind ?? "no node"}`,
+        );
       }
       this.consumed.add(expected);
       if (plan.kind === "text" && expected.kind === "text") {
@@ -236,16 +257,27 @@ export class ClaimPlan {
       } else if (plan.kind === "marker") {
         if (this.index.nodes.get(expected) !== plan.node) throw new HydrationError("static marker mismatch");
       } else if (plan.kind === "range" && expected.kind === "range") {
-        if (plan.token !== expected.token || plan.range !== expected.range || plan.site?.key !== expected.site
-          || plan.instance.id !== expected.ownerId || plan.instance.retired) {
+        if (
+          plan.token !== expected.token ||
+          plan.range !== expected.range ||
+          plan.site?.key !== expected.site ||
+          plan.instance.id !== expected.ownerId ||
+          plan.instance.retired
+        ) {
           throw new HydrationError(`range mismatch ${expected.token}`, plan.site);
         }
         plan.claimed = this.index.ranges.get(expected.token)!;
         this.match(plan.children, expected.children);
       } else if (plan.kind === "element" && expected.kind === "element") {
-        if (plan.tag !== expected.tag || plan.ns !== expected.ns || plan.token !== expected.token
-          || plan.site?.key !== expected.site || plan.node !== this.index.nodes.get(expected)
-          || plan.opaque !== (expected.opaque === true) || plan.instance.retired) {
+        if (
+          plan.tag !== expected.tag ||
+          plan.ns !== expected.ns ||
+          plan.token !== expected.token ||
+          plan.site?.key !== expected.site ||
+          plan.node !== this.index.nodes.get(expected) ||
+          plan.opaque !== (expected.opaque === true) ||
+          plan.instance.retired
+        ) {
           throw new HydrationError(`native topology mismatch ${expected.token ?? expected.tag}`, plan.site);
         }
         if (!plan.opaque) {
@@ -261,8 +293,10 @@ export class ClaimPlan {
   private projectedLength(layout: readonly LayoutNode[]): number {
     let count = 0;
     for (const node of layout) {
-      count += node.kind === "element" && node.index === undefined && node.token === undefined
-        && node.ns === "" && ParserContainers.has(node.tag) ? this.projectedLength(node.children) : 1;
+      count +=
+        node.kind === "element" && node.index === undefined && node.token === undefined && node.ns === "" && ParserContainers.has(node.tag)
+          ? this.projectedLength(node.children)
+          : 1;
     }
     return count;
   }

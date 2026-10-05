@@ -211,7 +211,7 @@ so hydration can subscribe without repeating the request:
 ```tsx
 async function UserCard(props: { id: string }) {
   const id = props.id;
-  const user = await fetch(`/api/users/${id}`).then(response => response.json());
+  const user = await fetch(`/api/users/${id}`).then((response) => response.json());
   return <p>{user.name}</p>;
 }
 ```

@@ -71,7 +71,9 @@ export async function resolvePathsCallbacks(
       }
       for (const [name, param] of Object.entries(entry)) {
         if (param !== undefined && typeof param !== "string" && !Array.isArray(param)) {
-          throw new Error(`[reze] ssg.paths[${JSON.stringify(pattern)}][${index}][${JSON.stringify(name)}] must be a string, an array of strings, or undefined`);
+          throw new Error(
+            `[reze] ssg.paths[${JSON.stringify(pattern)}][${index}][${JSON.stringify(name)}] must be a string, an array of strings, or undefined`,
+          );
         }
         if (Array.isArray(param) && param.some((part) => typeof part !== "string")) {
           throw new Error(`[reze] ssg.paths[${JSON.stringify(pattern)}][${index}][${JSON.stringify(name)}] must hold strings only`);

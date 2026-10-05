@@ -35,7 +35,8 @@ export type HydratedRouter = (props: { root?: (props: { children: JSX.Element })
 
 function deferredHistory(base: string, host: RouterHydrationHost): RouterHistory {
   const prefix = routerBase(base);
-  const strip = (pathname: string): string | undefined => pathname === prefix ? "/" : pathname.startsWith(prefix + "/") ? pathname.slice(prefix.length) : undefined;
+  const strip = (pathname: string): string | undefined =>
+    pathname === prefix ? "/" : pathname.startsWith(prefix + "/") ? pathname.slice(prefix.length) : undefined;
   const stored = window.history.state as { reze?: unknown; index: number; state: unknown } | null;
   const entry: HistoryEntry = {
     path: (strip(location.pathname) ?? location.pathname) + location.search + location.hash,
@@ -43,7 +44,9 @@ function deferredHistory(base: string, host: RouterHydrationHost): RouterHistory
     index: typeof stored === "object" && stored !== null && stored.reze === 1 ? stored.index : window.history.length - 1,
   };
   let live: RouterHistory | undefined;
-  host.deferCommit(() => { live = createBrowserHistory(base); });
+  host.deferCommit(() => {
+    live = createBrowserHistory(base);
+  });
   const active = (): RouterHistory => {
     if (live === undefined) throw new Error("[reze-router] history mutation before hydration commit");
     return live;
@@ -52,8 +55,8 @@ function deferredHistory(base: string, host: RouterHydrationHost): RouterHistory
     get: () => live?.get() ?? entry,
     push: (path, state) => active().push(path, state),
     replace: (path, state) => active().replace(path, state),
-    go: delta => active().go(delta),
-    listen: listener => active().listen(listener),
+    go: (delta) => active().go(delta),
+    listen: (listener) => active().listen(listener),
     resolve(url) {
       const pathname = strip(url.pathname);
       return pathname === undefined ? undefined : pathname + url.search + url.hash;
@@ -64,14 +67,20 @@ function deferredHistory(base: string, host: RouterHydrationHost): RouterHistory
 }
 
 /** Loads the initial branch before view setup; route callbacks are replaced by recorded inputs and browser writes wait for commit. */
-export async function prepareHydratedRouter(routes: readonly RouteDefinition[], host: RouterHydrationHost, base = ""): Promise<HydratedRouter> {
-  const state = host.run(() => initRouterState({
-    history: deferredHistory(base, host),
-    branches: compileRoutes(routes),
-    env: "hydrate",
-    headBaseline: host.headDefaults,
-    commitHost: host,
-  }));
+export async function prepareHydratedRouter(
+  routes: readonly RouteDefinition[],
+  host: RouterHydrationHost,
+  base = "",
+): Promise<HydratedRouter> {
+  const state = host.run(() =>
+    initRouterState({
+      history: deferredHistory(base, host),
+      branches: compileRoutes(routes),
+      env: "hydrate",
+      headBaseline: host.headDefaults,
+      commitHost: host,
+    }),
+  );
   const entry = state.history.get();
   const location = parseLocation(entry);
   state.target = entry;
@@ -79,19 +88,22 @@ export async function prepareHydratedRouter(routes: readonly RouteDefinition[], 
   const match = matchPathname(state, location.pathname);
   if (match !== undefined) await host.run(() => loadBranch(match));
   return host.run(() => {
-    const matches: ActiveMatch[] = match === undefined ? [] : match.branch.routes.map(route => {
-      const seed = host.readRoute(route.id);
-      return {
-        route,
-        path: match.path,
-        params: seed.params as Params,
-        data: seed.hasData ? seed.data : undefined,
-        hasData: seed.hasData,
-        error: route.isLoaded ? undefined : route.loadError,
-        meta: {},
-        info: route.info,
-      };
-    });
+    const matches: ActiveMatch[] =
+      match === undefined
+        ? []
+        : match.branch.routes.map((route) => {
+            const seed = host.readRoute(route.id);
+            return {
+              route,
+              path: match.path,
+              params: seed.params as Params,
+              data: seed.hasData ? seed.data : undefined,
+              hasData: seed.hasData,
+              error: route.isLoaded ? undefined : route.loadError,
+              meta: {},
+              info: route.info,
+            };
+          });
     commit(state, entry, location, matches, undefined, "none");
     return createSettledRouter(state);
   });

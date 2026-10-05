@@ -81,7 +81,13 @@ const frontmatterRoute: Plugin<[], Root> = () => (ast, file) => {
     value: {
       type: "ObjectExpression",
       properties: [
-        { type: "Property", kind: "init", computed: false, key: { type: "Identifier", name: "title" }, value: { type: "Literal", value: title } },
+        {
+          type: "Property",
+          kind: "init",
+          computed: false,
+          key: { type: "Identifier", name: "title" },
+          value: { type: "Literal", value: title },
+        },
         {
           type: "Property",
           kind: "init",

@@ -1,4 +1,13 @@
-import type { Awaitable, PageMetadata, Params, RouteComponent, RouteDefinition, PreloadArgs, RouteRedirect, RouteResolvedArgs } from "./types";
+import type {
+  Awaitable,
+  PageMetadata,
+  Params,
+  RouteComponent,
+  RouteDefinition,
+  PreloadArgs,
+  RouteRedirect,
+  RouteResolvedArgs,
+} from "./types";
 
 const Static = 0;
 const Param = 1;

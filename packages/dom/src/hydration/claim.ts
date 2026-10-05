@@ -41,7 +41,10 @@ export class TextRun {
 }
 
 export class ClaimedText {
-  constructor(readonly run: TextRun, public index: number) {}
+  constructor(
+    readonly run: TextRun,
+    public index: number,
+  ) {}
 
   get data(): string {
     return this.run.parts[this.index]!;
@@ -182,8 +185,11 @@ export class ClaimIndex {
       if (cursor?.nodeType === 1 && expected.ns !== "" && expected.tag !== (expected.ns === "svg" ? "svg" : "math")) {
         const wrapper = cursor as Element;
         const tag = expected.ns === "svg" ? "svg" : "math";
-        if (wrapper.localName === tag && wrapper.namespaceURI === Namespaces[expected.ns]
-          && wrapper.getAttribute("data-reze-context") === expected.ns) {
+        if (
+          wrapper.localName === tag &&
+          wrapper.namespaceURI === Namespaces[expected.ns] &&
+          wrapper.getAttribute("data-reze-context") === expected.ns
+        ) {
           if (this.scan([expected], wrapper, wrapper.firstChild, root) !== null) throw this.error("unexpected portal transport child");
           this.contexts.push(wrapper);
           cursor = wrapper.nextSibling;
@@ -208,9 +214,7 @@ export class ClaimIndex {
       this.nodes.set(expected, element);
       this.staticNode(owner, expected.index, element);
       if (expected.opaque !== true) {
-        const container = element.localName === "template" && expected.ns === ""
-          ? (element as HTMLTemplateElement).content
-          : element;
+        const container = element.localName === "template" && expected.ns === "" ? (element as HTMLTemplateElement).content : element;
         const end = this.scan(expected.children, container, container.firstChild, owner);
         if (end !== null) throw this.error(`unexpected child in ${expected.tag}`);
       }
@@ -232,7 +236,9 @@ export class ClaimIndex {
 
   private bodyPortal(layout: Extract<LayoutNode, { kind: "range" }>): PortalPosition {
     if (layout.placement === "inert") {
-      const templates = this.root.ownerDocument.querySelectorAll<HTMLTemplateElement>(`template[data-reze-portal="${this.token(layout.token)}"]`);
+      const templates = this.root.ownerDocument.querySelectorAll<HTMLTemplateElement>(
+        `template[data-reze-portal="${this.token(layout.token)}"]`,
+      );
       if (templates.length !== 1) throw this.error(`missing or duplicate inert portal container ${layout.token}`);
       const parent = templates[0]!.content;
       return { parent, start: parent.firstChild };

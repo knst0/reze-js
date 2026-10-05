@@ -129,7 +129,10 @@ pub fn is_foldable_signal_shape(
         BindingPattern::BindingIdentifier(_) => true,
         BindingPattern::ArrayPattern(pattern) => {
             let is_identifier = |index: usize| {
-                matches!(pattern.elements.get(index), Some(Some(BindingPattern::BindingIdentifier(_))))
+                matches!(
+                    pattern.elements.get(index),
+                    Some(Some(BindingPattern::BindingIdentifier(_)))
+                )
             };
             pattern.rest.is_none()
                 && (1..=2).contains(&pattern.elements.len())

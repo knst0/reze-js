@@ -33,7 +33,15 @@ export class BoundRange implements RangeController {
     private readonly place?: (range: BoundRange) => void,
   ) {
     [this.version, this.setVersion] = signal(0);
-    this.plan = { kind: "range", token: instance.id, range: kind, instance, ...(site === undefined ? {} : { site }), children: [], controller: this };
+    this.plan = {
+      kind: "range",
+      token: instance.id,
+      range: kind,
+      instance,
+      ...(site === undefined ? {} : { site }),
+      children: [],
+      controller: this,
+    };
     this.view = () => {
       this.track();
       if (!this.active) return this.planned;
@@ -170,7 +178,14 @@ export function appendPlanned(session: HydrationSession, parent: ParentPlan, val
   }
 }
 
-export function managedRange(session: HydrationSession, kind: RangeKind, role: string, site: Site, build: () => unknown, place?: (range: BoundRange) => void): RangeValue {
+export function managedRange(
+  session: HydrationSession,
+  kind: RangeKind,
+  role: string,
+  site: Site,
+  build: () => unknown,
+  place?: (range: BoundRange) => void,
+): RangeValue {
   const instance = session.instances.reserve(role, site);
   session.instances.own(instance);
   return session.instances.run(instance, () => {
@@ -181,11 +196,13 @@ export function managedRange(session: HydrationSession, kind: RangeKind, role: s
 }
 
 export function mountRange(session: HydrationSession, build: () => unknown): void {
-  session.instances.run(session.instances.root, () => root(() => {
-    const range = new BoundRange(session, session.instances.root, "fragment");
-    session.mount(range.planned);
-    range.bind(untrack(build));
-  }));
+  session.instances.run(session.instances.root, () =>
+    root(() => {
+      const range = new BoundRange(session, session.instances.root, "fragment");
+      session.mount(range.planned);
+      range.bind(untrack(build));
+    }),
+  );
 }
 
 function materializePlan(plan: NodePlan, parent: Node): void {

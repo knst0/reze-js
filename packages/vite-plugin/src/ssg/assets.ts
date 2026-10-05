@@ -16,7 +16,9 @@ export interface BundleChunk {
   moduleIds: readonly string[];
   imports: readonly string[];
   dynamicImports: readonly string[];
-  viteMetadata?: { importedAssets?: Set<string> | readonly string[] | undefined; importedCss?: Set<string> | readonly string[] | undefined } | undefined;
+  viteMetadata?:
+    | { importedAssets?: Set<string> | readonly string[] | undefined; importedCss?: Set<string> | readonly string[] | undefined }
+    | undefined;
 }
 
 export type BundleOutput = BundleAsset | BundleChunk;
