@@ -13,6 +13,10 @@ The compiler parses and prints JavaScript through Oxc. Reactive syntax, props, a
 
 Static template strings are shared when doing so reduces emitted code size. Each use still creates its own DOM nodes. Compiler-only imports are removed after lowering; ordinary calls and re-exports retain the imports they use. Generated variable names and formatting are not a public API.
 
+Browser parser normalization also happens at compile time. Table structure, raw-text elements, and HTML/SVG/MathML boundaries use the same layout for client rendering and hydration. Ordinary trees bypass the HTML parser; lowercase tag names are inspected without allocating normalized copies.
+
+Known string-valued classes use a direct attribute update. They do not pull the object/array class-merging helper or its per-element bookkeeping into an ordinary client bundle. JSX returned directly by a function or concise arrow is lowered into that function's body rather than adding a per-call wrapper closure.
+
 Framework runtime package entrypoints are dependencies, not compiler input. The Vite plugin leaves them uncompiled even when workspace links resolve outside `node_modules`.
 
 ## Compiler syntax versus runtime APIs

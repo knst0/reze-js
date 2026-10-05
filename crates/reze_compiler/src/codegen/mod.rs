@@ -422,25 +422,30 @@ impl<'a> VisitMut<'a> for Replace<'_, 'a, '_> {
             return;
         }
         let Statement::ReturnStatement(returned) = statement else { unreachable!() };
-        let mut argument = returned.argument.take().expect("view return has an argument");
-        while let Expression::ParenthesizedExpression(parenthesized) = argument {
-            argument = parenthesized.unbox().expression;
+        let argument = returned.argument.take().expect("view return has an argument");
+        match inline_view_body(argument) {
+            Ok(body) => {
+                let ArrowFunctionBody::FunctionBody(body) = body else { unreachable!() };
+                let ast = Ast::new(self.ctx.allocator);
+                *statement = Statement::new_block_statement(SPAN, body.unbox().statements, &ast.builder);
+            }
+            Err(argument) => returned.argument = Some(argument),
         }
-        let is_inline_block = matches!(&argument,
-            Expression::CallExpression(call) if call.arguments.is_empty()
-                && matches!(&call.callee, Expression::ArrowFunctionExpression(arrow)
-                    if !arrow.r#async && arrow.params.items.is_empty() && arrow.params.rest.is_none()
-                        && matches!(&arrow.body, ArrowFunctionBody::FunctionBody(body) if body.directives.is_empty()))
+    }
+
+    fn visit_arrow_function_expression(&mut self, arrow: &mut ArrowFunctionExpression<'a>) {
+        let inline_expression = arrow.body.as_expression().is_some_and(|expression|
+            matches!(expression.without_parentheses(), Expression::JSXElement(_) | Expression::JSXFragment(_))
         );
-        if !is_inline_block {
-            returned.argument = Some(argument);
-            return;
+        walk_mut::walk_arrow_function_expression(self, arrow);
+        if inline_expression {
+            let expression = arrow.body.as_expression_mut().expect("view arrow has an expression body")
+                .take_in(&self.ctx.allocator);
+            arrow.body = match inline_view_body(expression) {
+                Ok(body) => body,
+                Err(expression) => ArrowFunctionBody::from(expression),
+            };
         }
-        let Expression::CallExpression(call) = argument else { unreachable!() };
-        let Expression::ArrowFunctionExpression(arrow) = call.unbox().callee else { unreachable!() };
-        let ArrowFunctionBody::FunctionBody(body) = arrow.unbox().body else { unreachable!() };
-        let ast = Ast::new(self.ctx.allocator);
-        *statement = Statement::new_block_statement(SPAN, body.unbox().statements, &ast.builder);
     }
 
     fn visit_call_expression(&mut self, call: &mut CallExpression<'a>) {
@@ -526,6 +531,22 @@ impl<'a> VisitMut<'a> for Replace<'_, 'a, '_> {
         }
         walk_mut::walk_variable_declarator(self, declarator);
     }
+}
+
+fn inline_view_body(expression: Expression<'_>) -> Result<ArrowFunctionBody<'_>, Expression<'_>> {
+    let expression = unparenthesize(expression);
+    let is_inline_block = matches!(&expression,
+        Expression::CallExpression(call) if call.arguments.is_empty()
+            && matches!(&call.callee, Expression::ArrowFunctionExpression(arrow)
+                if !arrow.r#async && arrow.params.items.is_empty() && arrow.params.rest.is_none()
+                    && matches!(&arrow.body, ArrowFunctionBody::FunctionBody(body) if body.directives.is_empty()))
+    );
+    if !is_inline_block {
+        return Err(expression);
+    }
+    let Expression::CallExpression(call) = expression else { unreachable!() };
+    let Expression::ArrowFunctionExpression(arrow) = call.unbox().callee else { unreachable!() };
+    Ok(arrow.unbox().body)
 }
 
 fn call_mut<'e, 'a>(expression: &'e mut Expression<'a>) -> Option<&'e mut CallExpression<'a>> {

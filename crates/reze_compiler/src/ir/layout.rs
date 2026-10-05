@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::{Ref, RefCell};
 
 use html5ever::tendril::{StrTendril, TendrilSink};
@@ -37,6 +38,14 @@ const RCDATA_TAGS: [&str; 2] = ["textarea", "title"];
 const LF_STRIP_TAGS: [&str; 3] = ["pre", "listing", "textarea"];
 const COL_SECTIONS: [&str; 4] = ["thead", "tbody", "tfoot", "tr"];
 const ROW_SECTIONS: [&str; 3] = ["thead", "tbody", "tfoot"];
+
+fn lowercase_tag(tag: &str) -> Cow<'_, str> {
+    if tag.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        Cow::Owned(tag.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(tag)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PathStep {
@@ -205,7 +214,7 @@ fn rawtext_error(tree: &StaticTree) -> Option<(String, String)> {
         if node.kind != StaticNodeKind::Element || node.ns != ViewNs::Html {
             continue;
         }
-        let tag = node.tag.to_ascii_lowercase();
+        let tag = lowercase_tag(&node.tag);
         if tag == "plaintext" {
             let opaque = node.children.iter().any(|&child| {
                 tree.nodes[child as usize].kind != StaticNodeKind::Marker
@@ -216,7 +225,7 @@ fn rawtext_error(tree: &StaticTree) -> Option<(String, String)> {
                     "render the text in a normal element instead".to_string(),
                 ));
             }
-        } else if RAWTEXT_TAGS.contains(&tag.as_str()) {
+        } else if RAWTEXT_TAGS.contains(&tag.as_ref()) {
             for &child in &node.children {
                 let child = &tree.nodes[child as usize];
                 if child.kind == StaticNodeKind::Text && closing_delimiter(&child.text, &tag) {
@@ -264,7 +273,7 @@ fn col_error(tree: &StaticTree) -> Option<(String, String)> {
             let parent = &tree.nodes[parent as usize];
             if parent.kind == StaticNodeKind::Element
                 && parent.ns == ViewNs::Html
-                && COL_SECTIONS.contains(&parent.tag.to_ascii_lowercase().as_str())
+                && COL_SECTIONS.contains(&lowercase_tag(&parent.tag).as_ref())
             {
                 return Some((
                     format!(
@@ -300,8 +309,8 @@ fn needs_parse(tree: &StaticTree) -> bool {
 
 fn scan_node<'t>(tree: &'t StaticTree, id: u32, ancestors: &mut Vec<&'t str>) -> bool {
     let node = &tree.nodes[id as usize];
-    let lower = node.tag.to_ascii_lowercase();
-    let tag = lower.as_str();
+    let lower = lowercase_tag(&node.tag);
+    let tag = lower.as_ref();
     if TABLE_TOPOLOGY.contains(&tag)
         || RAWTEXT_TOPOLOGY.contains(&tag)
         || FOREIGN_TOPOLOGY.contains(&tag)
@@ -314,7 +323,7 @@ fn scan_node<'t>(tree: &'t StaticTree, id: u32, ancestors: &mut Vec<&'t str>) ->
         for &child in &node.children {
             let child = &tree.nodes[child as usize];
             if child.kind == StaticNodeKind::Element
-                && P_CLOSERS.contains(&child.tag.to_ascii_lowercase().as_str())
+                && P_CLOSERS.contains(&lowercase_tag(&child.tag).as_ref())
             {
                 return true;
             }
@@ -324,7 +333,7 @@ fn scan_node<'t>(tree: &'t StaticTree, id: u32, ancestors: &mut Vec<&'t str>) ->
         for &child in &node.children {
             let child = &tree.nodes[child as usize];
             if child.kind == StaticNodeKind::Element
-                && matches!(child.tag.to_ascii_lowercase().as_str(), "option" | "optgroup")
+                && matches!(lowercase_tag(&child.tag).as_ref(), "option" | "optgroup")
             {
                 return true;
             }
@@ -607,13 +616,13 @@ fn expected_ns(tree: &StaticTree, sid: u32) -> ViewNs {
 fn is_rawtext_element(node: &StaticNode) -> bool {
     node.kind == StaticNodeKind::Element
         && node.ns == ViewNs::Html
-        && RAWTEXT_TAGS.contains(&node.tag.to_ascii_lowercase().as_str())
+        && RAWTEXT_TAGS.contains(&lowercase_tag(&node.tag).as_ref())
 }
 
 fn is_rcdata_element(node: &StaticNode) -> bool {
     node.kind == StaticNodeKind::Element
         && node.ns == ViewNs::Html
-        && RCDATA_TAGS.contains(&node.tag.to_ascii_lowercase().as_str())
+        && RCDATA_TAGS.contains(&lowercase_tag(&node.tag).as_ref())
 }
 
 fn parsed_text_equal(static_text: &str, parsed: &str, parent: &StaticNode) -> bool {

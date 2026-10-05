@@ -258,9 +258,6 @@ pub fn write_attr<'a>(
                 let name = ast.string(name);
                 return ctx.call(RUNTIME_MODULE, "setBoolAttribute", [node, name, value]);
             }
-            if name == "class" {
-                return ctx.call(RUNTIME_MODULE, "className", [node, value]);
-            }
             if name == "style" {
                 return style_write(ctx, node, value, previous);
             }
