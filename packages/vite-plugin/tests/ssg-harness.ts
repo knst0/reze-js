@@ -107,7 +107,14 @@ export function serveDist(distDir: string): Promise<StaticOrigin> {
       return;
     }
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    const pathname = url.pathname;
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      res.writeHead(400, { "content-type": "text/plain" });
+      res.end("bad path");
+      return;
+    }
     if (pathname.includes("\0") || pathname.split("/").includes("..")) {
       res.writeHead(400, { "content-type": "text/plain" });
       res.end("bad path");

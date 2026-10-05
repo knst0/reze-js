@@ -2,7 +2,7 @@ import { $computed, $signal, asyncComponent, effect, type JSX } from "reze-js";
 import { defineRoute, defineRoutes, useNavigate } from "@rezejs/router";
 import type { RouteProps } from "@rezejs/router";
 
-import { logoUrl } from "./assets";
+import { logoUrl, inlineLogo, emittedLogo, metaLogo, inlineMetaLogo } from "./assets";
 import { readHits } from "./counter-state";
 
 function Home() {
@@ -300,6 +300,10 @@ export const routes = defineRoutes([
     component: () => (
       <article>
         <img id="asset-img" src={logoUrl} alt="asset" />
+        <img id="asset-inline" src={inlineLogo} alt="inline" />
+        <img id="asset-emitted" src={emittedLogo} alt="emitted" />
+        <img id="asset-meta" src={metaLogo} alt="meta" />
+        <img id="asset-inline-meta" src={inlineMetaLogo} alt="inline meta" />
       </article>
     ),
   }),

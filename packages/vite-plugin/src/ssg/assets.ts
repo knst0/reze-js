@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { canonicalModuleId } from "../module-identity";
 
 export interface BundleAsset {
   type: "asset";
@@ -28,40 +28,15 @@ export interface ClientRegistry {
   chunkFileForModule(absFile: string): string | undefined;
   staticClosure(seedChunks: readonly string[]): { js: string[]; css: string[] };
 }
-const MimeByExtension: Record<string, string> = {
-  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-  ".svg": "image/svg+xml", ".webp": "image/webp", ".avif": "image/avif",
-  ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf",
-  ".mp4": "video/mp4", ".webm": "video/webm", ".mp3": "audio/mpeg",
-};
-
-export function assetMime(file: string): string | undefined {
-  const dot = file.lastIndexOf(".");
-  return dot < 0 ? undefined : MimeByExtension[file.slice(dot).toLowerCase()];
+export interface ClientAssetInputs {
+  files: Map<string, { id: string; postfix: string }>;
+  inlined: Map<string, string>;
+  publicFiles: Map<string, string>;
 }
 
-export function decideAssetImport(options: {
-  file: string;
-  query: string;
-  assetsInclude: (id: string) => boolean;
-  inlineLimit: number;
-}): "raw" | "inline" | "passthrough" | "lookup" {
-  if (!options.assetsInclude(options.file)) return "passthrough";
-  if (/(?:^|&)raw(?:&|$)/.test(options.query)) return "raw";
-  if (/(?:^|&)inline(?:&|$)/.test(options.query)) return "inline";
-  let size = -1;
-  try {
-    size = statSync(options.file).size;
-  } catch {
-    return "lookup";
-  }
-  return size >= 0 && size < options.inlineLimit ? "inline" : "lookup";
-}
-
-export function buildClientRegistry(outputs: readonly BundleOutput[], root: string): ClientRegistry {
-  const normalizedRoot = root.replace(/\\/g, "/").replace(/\/+$/, "");
+export function buildClientRegistry(outputs: readonly BundleOutput[], root: string, inputs?: ClientAssetInputs): ClientRegistry {
   const assets = new Map<string, string>();
-  const canonical: { id: string; file: string }[] = [];
+  const ambiguous = new Set<string>();
   const chunks: BundleChunk[] = [];
   for (const output of outputs) {
     if (output.type === "chunk") {
@@ -69,11 +44,25 @@ export function buildClientRegistry(outputs: readonly BundleOutput[], root: stri
       continue;
     }
     for (const original of output.originalFileNames ?? (output.originalFileName === undefined ? [] : [output.originalFileName])) {
-      const absolute = original.replace(/\\/g, "/");
-      const relative = absolute.startsWith(`${normalizedRoot}/`) ? absolute.slice(normalizedRoot.length + 1) : absolute.replace(/^\.\//, "");
-      assets.set(relative, output.fileName);
-      assets.set(`${normalizedRoot}/${relative}`, output.fileName);
-      canonical.push({ id: relative, file: output.fileName });
+      const id = canonicalModuleId(original, root);
+      if (assets.has(id) && assets.get(id) !== output.fileName) ambiguous.add(id);
+      assets.set(id, output.fileName);
+    }
+  }
+  const assetFile = (id: string): string => {
+    const key = canonicalModuleId(id, root);
+    if (ambiguous.has(key)) throw new Error(`[reze] asset ${JSON.stringify(key)} has ambiguous client outputs`);
+    const file = assets.get(key);
+    if (file === undefined) throw new Error(`[reze] asset ${JSON.stringify(key)} has no client output to link against`);
+    return file;
+  };
+  const canonical: { id: string; file: string }[] = [];
+  if (inputs === undefined) {
+    for (const id of assets.keys()) canonical.push({ id, file: assetFile(id) });
+  } else {
+    for (const [id, source] of inputs.files) {
+      const file = inputs.inlined.get(id) ?? inputs.publicFiles.get(id) ?? encodeURI(assetFile(source.id)) + source.postfix;
+      canonical.push({ id, file });
     }
   }
   const chunkByFile = new Map<string, BundleChunk>();
@@ -83,11 +72,7 @@ export function buildClientRegistry(outputs: readonly BundleOutput[], root: stri
     for (const id of chunk.moduleIds) chunkByModule.set(id.replace(/\\/g, "/"), chunk);
   }
   return {
-    assetFile(id: string): string {
-      const direct = assets.get(id) ?? assets.get(id.replace(/\\/g, "/"));
-      if (direct !== undefined) return direct;
-      throw new Error(`[reze] asset ${JSON.stringify(id)} has no client output to link against`);
-    },
+    assetFile,
     assetEntries(): { id: string; file: string }[] {
       return [...canonical];
     },

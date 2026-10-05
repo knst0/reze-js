@@ -888,6 +888,12 @@ importers:
       '@rezejs/compiler':
         specifier: workspace:^
         version: link:../compiler
+      '@rollup/pluginutils':
+        specifier: ^5.4.0
+        version: 5.4.0(rollup@4.63.5)
+      magic-string:
+        specifier: ^0.30.21
+        version: 0.30.21
       parse5:
         specifier: ^7.3.0
         version: 7.3.0

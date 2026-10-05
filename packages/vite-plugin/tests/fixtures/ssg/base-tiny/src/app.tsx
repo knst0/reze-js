@@ -1,6 +1,9 @@
 import type { JSX } from "reze-js";
 import { defineRoute, defineRoutes, useLocation, useNavigate } from "@rezejs/router";
 
+import logo from "./logo café.svg?no-inline";
+import logo2x from "./logo café@2x.svg?no-inline";
+import publicLogo from "/brand.svg";
 import "./styles.css";
 
 export const routes = defineRoutes([
@@ -15,6 +18,8 @@ export default function Shell(props: { children: JSX.Element }) {
     <>
       <p id="tiny-path" ref={node => node.setAttribute("data-hydrated", "")}>{location().pathname}</p>
       <button id="tiny-go-home" type="button" onClick={() => navigate("/")}>home</button>
+      <img id="tiny-logo" src={new URL("./logo%20café.svg?no-inline", import.meta.url).href} srcset={`${logo} 1x, ${logo2x} 2x`} alt="logo" />
+      <img id="tiny-public" src={publicLogo} alt="public logo" />
       <main>{props.children}</main>
     </>
   );

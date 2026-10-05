@@ -8,7 +8,7 @@ import type { Environment, Plugin } from "vite";
 import { canonicalModuleId } from "./module-identity";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
 import { SsgClientId, SsgHtmlAdapterId, SsgRedirectId, SsgViewId } from "./ssg/adapter";
-import { HtmlEnv, createSsgPlugin, createSsgShared, includePredicate, transformHtmlAsset } from "./ssg/ssg";
+import { HtmlEnv, createSsgPlugin, createSsgShared } from "./ssg/ssg";
 import type { SsgShared } from "./ssg/ssg";
 import type { SsgOptions } from "./ssg/options";
 export interface Options {
@@ -241,10 +241,6 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
       root = config.root ?? "";
       shared.root = root;
       shared.isServe = isServe;
-      const rawLimit: unknown = config.build.assetsInlineLimit;
-      shared.limit = rawLimit === false ? -1 : (typeof rawLimit === "number" ? rawLimit : 4096);
-      const assetsInclude: unknown = "assetsInclude" in config ? config.assetsInclude : undefined;
-      shared.include = includePredicate(assetsInclude);
     },
     async resolveId(id, importer, options) {
       if (!RuntimeEntry.test(id)) return;
@@ -306,11 +302,7 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
           diagnostics: errors,
         });
       }
-      let outCode = result.code!;
-      if (ssgTarget === "html") {
-        outCode = transformHtmlAsset(outCode, file, shared.root, shared.include, shared.limit) ?? outCode;
-      }
-      return { code: outCode, map: result.map ?? null };
+      return { code: result.code!, map: result.map ?? null };
     },
     configureServer(server) {
       if (profileDir === undefined) return;

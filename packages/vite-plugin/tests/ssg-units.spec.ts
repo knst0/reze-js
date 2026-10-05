@@ -5,7 +5,7 @@ import { parse } from "parse5";
 import type { DefaultTreeAdapterMap } from "parse5";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
-import { buildClientRegistry, decideAssetImport } from "../src/ssg/assets";
+import { buildClientRegistry } from "../src/ssg/assets";
 import { resolveAppMode } from "../src/ssg/export-graph";
 import { resolvePathsCallbacks, resolveSsgOptions } from "../src/ssg/options";
 import { bootstrapScriptSrc, buildPage, buildRedirectPage, countRootIds, readHeadDefaults, validateTemplate } from "../src/ssg/template";
@@ -172,20 +172,6 @@ test("asset links respect absolute, origin and relative bases", () => {
   expect(joinBase("./", "assets/a.js", 2)).toBe("../../assets/a.js");
 });
 
-test("asset imports decide between raw, inline and registry lookup", () => {
-  const small = join(dir, "small.png");
-  const big = join(dir, "big.png");
-  writeFileSync(small, "x".repeat(10));
-  writeFileSync(big, "x".repeat(10_000));
-  const include = (id: string) => id.endsWith(".png");
-  expect(decideAssetImport({ file: small, query: "", assetsInclude: include, inlineLimit: 4096 })).toBe("inline");
-  expect(decideAssetImport({ file: big, query: "", assetsInclude: include, inlineLimit: 4096 })).toBe("lookup");
-  expect(decideAssetImport({ file: big, query: "raw", assetsInclude: include, inlineLimit: 4096 })).toBe("raw");
-  expect(decideAssetImport({ file: big, query: "inline", assetsInclude: include, inlineLimit: 4096 })).toBe("inline");
-  expect(decideAssetImport({ file: join(dir, "note.txt"), query: "", assetsInclude: include, inlineLimit: 4096 })).toBe("passthrough");
-  expect(decideAssetImport({ file: join(dir, "gone.png"), query: "", assetsInclude: include, inlineLimit: 4096 })).toBe("lookup");
-});
-
 test("the client registry maps canonical assets and selects page closures", () => {
   const registry = buildClientRegistry([
     { type: "asset", fileName: "assets/a-1.png", originalFileName: "src/a.png" },
@@ -215,4 +201,11 @@ test("the client registry maps canonical assets and selects page closures", () =
   expect(closure.js).toEqual(["assets/view-1.js", "assets/route-1.js", "assets/shared-1.js"]);
   expect(closure.css).toEqual(["assets/view-1.css", "assets/route-1.css"]);
   expect(registry.chunkFileForModule("/root/src/routes/post.tsx")).toBe("assets/route-1.js");
+});
+
+test("ambiguous asset outputs fail instead of selecting the last file", () => {
+  expect(() => buildClientRegistry([
+    { type: "asset", fileName: "assets/first.svg", originalFileNames: ["src/logo.svg"] },
+    { type: "asset", fileName: "assets/second.svg", originalFileNames: ["src/logo.svg"] },
+  ], "/root")).toThrow(/asset "src\/logo.svg" has ambiguous client outputs/);
 });

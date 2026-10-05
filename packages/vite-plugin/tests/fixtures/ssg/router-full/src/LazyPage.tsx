@@ -1,3 +1,5 @@
+import "./lazy.css";
+
 export const route = {
   meta: { title: "Lazy" },
   info: { tag: "lazy-info-canary" },

@@ -259,7 +259,7 @@ beforeAll(async () => {
       await buildSsgFixture({
         fixtureDir: fixture("mdx-post"),
         outDir: dist("mdx"),
-        plugins: [mdxPlugin, ...(await reze({ fileRoutes: true, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"], ssg: { entry: "src/app.tsx" } }))],
+        plugins: [mdxPlugin, ...(await reze({ fileRoutes: { types: false }, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"], ssg: { entry: "src/app.tsx" } }))],
       })
     ).distDir,
   );
@@ -293,6 +293,31 @@ describe("preboot html, metadata, assets and lazy execution", () => {
     expect(logo.status).toBe(200);
     expect(logo.headers.get("content-type")).toContain("image/svg+xml");
     expect(html).toContain('data-reze-state="app"');
+  });
+
+  test.each(ENGINES)("client-owned inline and emitted URLs load before and after hydration on %s", async engine => {
+    const { page, errors, close } = await openPage(browsers.get(engine)!, `${pages.router}/assets/`, {
+      beforeHydration: async page => {
+        await page.waitForFunction(`document.readyState !== "loading"`);
+        const sources = await page.locator("article img").evaluateAll(images => images.map(image => image.getAttribute("src")));
+        expect(sources[0]).toMatch(/^data:image\/svg\+xml,/);
+        expect(sources[1]).toBe(sources[0]);
+        expect(sources[2]).toMatch(/^\/assets\/logo-[^/]+\.svg$/);
+        expect(sources[3]).toBe(sources[2]);
+        expect(sources[4]).toBe(sources[0]);
+        await waitFor(page, `[...document.querySelectorAll("article img")].every(image => image.complete && image.naturalWidth === 6)`);
+        await page.evaluate(`window.__assetSnapshot = [...document.querySelectorAll("article img")].map(node => ({ node, src: node.src }))`);
+      },
+    });
+    try {
+      expect(await page.evaluate(`window.__assetSnapshot.every(({ node, src }) => node === document.getElementById(node.id) && node.src === src && node.naturalWidth === 6)`)).toBe(true);
+      await page.click('nav a[href="/about"]');
+      await waitFor(page, `document.getElementById("about-title") !== null`);
+      expect(await page.evaluate(`window.__assetSnapshot !== undefined`)).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
   });
 
   test("router pages render layouts, settled preloads and merged head without js", async () => {
@@ -341,6 +366,25 @@ describe("preboot html, metadata, assets and lazy execution", () => {
     const lazy = await fetchHtml(pages.router, "/lazy/");
     expect(lazy.html).toContain("lazy loaded");
     expect(lazy.html).not.toContain("lazy-info-canary");
+    expect(lazyChunk!.css).toHaveLength(1);
+    for (const file of lazyChunk!.css!) {
+      expect(stylesheetHrefs(html)).not.toContain(`/${file}`);
+      expect(stylesheetHrefs(lazy.html)).toContain(`/${file}`);
+    }
+    expect(ghostChunk!.css).toHaveLength(1);
+    for (const file of ghostChunk!.css!) {
+      expect(stylesheetHrefs(html)).not.toContain(`/${file}`);
+      expect(stylesheetHrefs(lazy.html)).not.toContain(`/${file}`);
+    }
+  });
+
+  test.each(ENGINES)("executed lazy route CSS applies without JavaScript on %s", async engine => {
+    const { page, close } = await openPage(browsers.get(engine)!, `${pages.router}/lazy/`, { javaScript: false });
+    try {
+      expect(await page.locator("#lazy-title").evaluate(node => getComputedStyle(node).color)).toBe("rgb(17, 34, 51)");
+    } finally {
+      await close();
+    }
   });
 
   test("route info stays code-owned and never enters the payload", async () => {
@@ -762,9 +806,9 @@ describe("routing, enumeration, base and redirects", () => {
     expect(scripts).toHaveLength(1);
     expect(styles).toHaveLength(1);
     const files = new Set(listBuiltFiles(directory));
-    for (const url of [...scripts, ...styles, ...modulePreloads(html)]) {
+    for (const url of [...scripts, ...styles, ...modulePreloads(html), imgSrc(html, "tiny-logo"), imgSrc(html, "tiny-public")]) {
       expect(url.startsWith(base)).toBe(true);
-      expect(files.has(url.slice(base.length))).toBe(true);
+      expect(files.has(decodeURIComponent(url.slice(base.length)))).toBe(true);
     }
   });
 
@@ -777,11 +821,20 @@ describe("routing, enumeration, base and redirects", () => {
       [OUT, "/a/b", "/tiny-relative-never"],
     ] as const) {
       const origin = await serve(directory);
-      const { page, errors, close } = await openPage(browser, `${origin}${prefix}${pathname}`);
+      const { page, errors, close } = await openPage(browser, `${origin}${prefix}${pathname}`, {
+        beforeHydration: async page => {
+          await page.waitForFunction(`document.readyState !== "loading"`);
+          expect(await page.getAttribute("#tiny-logo", "srcset")).toMatch(/logo%20caf%C3%A9-[^ ]+\.svg 1x, .* 2x$/);
+          await waitFor(page, `[...document.querySelectorAll("img")].every(image => image.complete && image.naturalWidth === 6)`);
+          await page.evaluate(`window.__tinyImages = [...document.querySelectorAll("img")]`);
+        },
+      });
       try {
         await waitFor(page, `document.querySelector("#tiny-path[data-hydrated]") !== null`);
+        await waitFor(page, `[...document.querySelectorAll("img")].every(image => image.complete && image.naturalWidth === 6)`);
         expect(await page.textContent("#tiny-path")).toBe(pathname);
         expect(await page.evaluate(`getComputedStyle(document.querySelector("main")).color`)).toBe("rgb(51, 51, 51)");
+        expect(await page.evaluate(`window.__tinyImages.every(node => node === document.getElementById(node.id) && node.naturalWidth === 6)`)).toBe(true);
         await page.evaluate(`globalThis.__tinyRoot = document.getElementById("app")`);
         await page.click("#tiny-go-home");
         await waitFor(page, `document.querySelector("#tiny-home") !== null`);

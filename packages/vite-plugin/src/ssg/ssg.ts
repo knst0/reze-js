@@ -4,11 +4,12 @@ import { version as viteVersion } from "vite";
 
 import type { EnvironmentOptions, Plugin } from "vite";
 
-import { canonicalModuleId, createModuleRegistry } from "../module-identity";
+import { createModuleRegistry } from "../module-identity";
 import type { ModuleRegistry } from "../module-identity";
 import type { FileRoutesOptions } from "../routes";
-import { buildClientRegistry, decideAssetImport } from "./assets";
-import type { BundleOutput, ClientRegistry } from "./assets";
+import { buildClientRegistry } from "./assets";
+import type { BundleOutput, ClientAssetInputs, ClientRegistry } from "./assets";
+import { createAssetPlugins } from "./asset-plugin";
 import { SsgClientId, SsgClientRequest, SsgHtmlAdapterId, SsgRedirectId, SsgViewId, clientBootSource, devBootSource, htmlAdapterSource, redirectModuleSource, viewSource, workerEntrySource } from "./adapter";
 import { resolveAppMode } from "./export-graph";
 import type { AppMode } from "./export-graph";
@@ -24,8 +25,6 @@ export interface SsgShared {
   enabled: boolean;
   root: string;
   isServe: boolean;
-  include: (id: string) => boolean;
-  limit: number;
   registry: ModuleRegistry;
   moduleFiles: Map<string, string>;
 }
@@ -35,8 +34,6 @@ export function createSsgShared(): SsgShared {
     enabled: false,
     root: "",
     isServe: false,
-    include: (id) => /\.(?:png|jpe?g|gif|svg|webp|avif|woff2?|ttf|otf|mp4|webm|mp3|wav|ogg)$/i.test(id),
-    limit: 4096,
     registry: createModuleRegistry(),
     moduleFiles: new Map(),
   };
@@ -92,6 +89,7 @@ export function createSsgPlugin(input: SsgOptions, shared: SsgShared, fileRoutes
   let mode: AppMode | undefined;
   let entryAbs = "";
   const state: CapturedState = { outputs: [], templateHtml: "", templateFile: "", redirectFile: "", htmlChunks: [] };
+  const assets: ClientAssetInputs = { files: new Map(), inlined: new Map(), publicFiles: new Map() };
   let redirectRef: string | undefined;
 
   const virtuals: Plugin = {
@@ -149,7 +147,7 @@ export function createSsgPlugin(input: SsgOptions, shared: SsgShared, fileRoutes
           if (options === undefined || mode === undefined || state.outputs.length === 0 || state.htmlChunks.length === 0 || state.templateHtml === "") {
             throw new Error("[reze] SSG build did not produce both the executable HTML graph and client template");
           }
-          await runSsgBuild({ root, base, outDir, publicDir, options, mode, captured: state, moduleFiles: shared.moduleFiles, modules: shared.registry.ids() });
+          await runSsgBuild({ root, base, outDir, publicDir, options, mode, captured: state, assets, moduleFiles: shared.moduleFiles, modules: shared.registry.ids() });
         },
       };
     },
@@ -173,10 +171,6 @@ export function createSsgPlugin(input: SsgOptions, shared: SsgShared, fileRoutes
       isServe = config.command === "serve";
       shared.root = root;
       shared.isServe = isServe;
-      const rawLimit: unknown = config.build.assetsInlineLimit;
-      shared.limit = rawLimit === false ? -1 : (typeof rawLimit === "number" ? rawLimit : 4096);
-      const assetsInclude: unknown = "assetsInclude" in config ? config.assetsInclude : undefined;
-      shared.include = includePredicate(assetsInclude);
       options = resolveSsgOptions(input, root);
       entryAbs = toPosixAbsolute(root, options.entry);
       if (!existsSync(entryAbs)) {
@@ -244,7 +238,7 @@ export function createSsgPlugin(input: SsgOptions, shared: SsgShared, fileRoutes
       },
     },
   };
-  return [virtuals, coordinator];
+  return [virtuals, coordinator, ...createAssetPlugins(HtmlEnv, assets)];
 }
 
 function checkBundlerInput(value: unknown, key: string): void {
@@ -323,19 +317,6 @@ function captureOutput(value: unknown): { output: BundleOutput; templateHtml?: s
   return undefined;
 }
 
-export function includePredicate(assetsInclude: unknown): (id: string) => boolean {
-  if (assetsInclude === undefined) {
-    return (id) => /\.(?:png|jpe?g|gif|svg|webp|avif|woff2?|ttf|otf|mp4|webm|mp3|wav|ogg)$/i.test(id);
-  }
-  const list = Array.isArray(assetsInclude) ? assetsInclude : [assetsInclude];
-  const tests = list.map((entry) => {
-    if (typeof entry === "string") return (id: string) => id.includes(entry);
-    if (entry instanceof RegExp) return (id: string) => entry.test(id);
-    return (_id: string) => false;
-  });
-  return (id) => tests.some((test) => test(id));
-}
-
 function resolveImport(spec: string, importer: string, root: string): string | undefined {
   if (spec === "virtual:reze-routes") return "virtual:reze-routes";
   if (!spec.startsWith("./") && !spec.startsWith("../") && !spec.startsWith("/")) return undefined;
@@ -346,39 +327,6 @@ function resolveImport(spec: string, importer: string, root: string): string | u
   return undefined;
 }
 
-// Rewrites emitted-file asset references in the HTML environment to canonical
-// registry lookups. Runs on compiled output so compiler diagnostics keep
-// their source positions. Inline and raw assets keep Vite's deterministic
-// output in both environments.
-export function transformHtmlAsset(code: string, id: string, root: string, include: (file: string) => boolean, limit: number): string | undefined {
-  const file = id.replace(/[?#].*$/, "");
-  const dir = file.slice(0, file.lastIndexOf("/"));
-  let helper = false;
-  const rewritten = code
-    .replace(/import\s+([A-Za-z_$][\w$]*)\s+from\s*("|')([^"']+)\2\s*;?/g, (match, local: string, _quote: string, spec: string) => {
-      if (!spec.startsWith("./") && !spec.startsWith("../") && !spec.startsWith("/")) return match;
-      const queryIndex = spec.indexOf("?");
-      const specPath = queryIndex < 0 ? spec : spec.slice(0, queryIndex);
-      const query = queryIndex < 0 ? "" : spec.slice(queryIndex + 1);
-      const assetFile = (specPath.startsWith("/") ? join(root, specPath.slice(1)) : join(dir, specPath)).replace(/\\/g, "/");
-      if (decideAssetImport({ file: assetFile, query, assetsInclude: include, inlineLimit: limit }) !== "lookup") return match;
-      helper = true;
-      return `const ${local} = htmlAsset(${JSON.stringify(canonicalModuleId(assetFile, root))});`;
-    })
-    .replace(/new\s+URL\(\s*("|')([^"']+)\1\s*,\s*import\.meta\.url\s*\)/g, (match, _quote: string, spec: string) => {
-      if (!spec.startsWith("./") && !spec.startsWith("../")) return match;
-      const assetFile = join(dir, spec).replace(/\\/g, "/");
-      if (!existsSync(assetFile) || !include(assetFile)) return match;
-      helper = true;
-      return `htmlAsset(${JSON.stringify(canonicalModuleId(assetFile, root))})`;
-    });
-  if (!helper || rewritten === code) return undefined;
-  if (!rewritten.includes('from "reze-js/internal/html"')) {
-    return `import { htmlAsset } from "reze-js/internal/html";\n${rewritten}`;
-  }
-  return rewritten;
-}
-
 interface SsgBuildInput {
   root: string;
   base: string;
@@ -387,6 +335,7 @@ interface SsgBuildInput {
   options: ResolvedSsgOptions;
   mode: AppMode;
   captured: CapturedState;
+  assets: ClientAssetInputs;
   moduleFiles: ReadonlyMap<string, string>;
   modules: readonly string[];
 }
@@ -422,7 +371,7 @@ function assertPage(url: string, page: RenderResult): void {
 
 async function runSsgBuild(input: SsgBuildInput): Promise<void> {
   const { options, mode, captured } = input;
-  const registry = buildClientRegistry(captured.outputs, input.root);
+  const registry = buildClientRegistry(captured.outputs, input.root, input.assets);
   const buildId = registry.entryChunk(SsgClientId).fileName;
   bootstrapScriptSrc(captured.templateHtml, buildId);
   if (countRootIds(captured.templateHtml, options.rootId) !== 1) {
@@ -489,7 +438,7 @@ function pageAssetUrls(registry: ClientRegistry, base: string, url: string): Rec
   const depth = pageDepth(url);
   const out: Record<string, string> = {};
   for (const entry of registry.assetEntries()) {
-    out[entry.id] = joinBase(base, entry.file, depth);
+    out[entry.id] = entry.file.startsWith("data:") ? entry.file : joinBase(base, entry.file, depth);
   }
   return out;
 }
