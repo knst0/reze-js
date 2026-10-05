@@ -11,6 +11,8 @@ This is a compilation requirement, not an optional optimization. Compiler syntax
 
 The compiler parses and prints JavaScript through Oxc. Reactive syntax, props, and control flow are normalized before a shared view representation is lowered for the selected target. Source maps point back to the input supplied to the compiler, so upstream JSX preprocessors can compose their maps.
 
+The frontend checks its rewrite plans before rebuilding semantic information. Plain JSX without normalization work reuses the first pass's scopes and node facts.
+
 Static template strings are shared when doing so reduces emitted code size. Each use still creates its own DOM nodes. Compiler-only imports are removed after lowering; ordinary calls and re-exports retain the imports they use. Generated variable names and formatting are not a public API.
 
 Browser parser normalization also happens at compile time. Table structure, raw-text elements, and HTML/SVG/MathML boundaries use the same layout for client rendering and hydration. Ordinary trees bypass the HTML parser; lowercase tag names are inspected without allocating normalized copies.

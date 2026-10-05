@@ -25,6 +25,10 @@ pub struct Plan {
 }
 
 impl Plan {
+    pub fn is_empty(&self) -> bool {
+        self.fors.is_empty()
+    }
+
     fn entry(&self, start: u32, end: u32) -> Option<&ForPlan> {
         self.fors.iter().find(|plan| plan.for_span == (start, end))
     }
@@ -159,7 +163,7 @@ pub fn apply<'a>(
     helpers: &mut HelperImports<'a>,
     reports: &mut Vec<Report>,
 ) -> bool {
-    if plan.fors.is_empty() {
+    if plan.is_empty() {
         return false;
     }
     let mut rewrite = Pass {

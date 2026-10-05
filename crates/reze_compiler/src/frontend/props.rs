@@ -36,6 +36,12 @@ pub struct Plan {
     reads: HashMap<ReferenceId, ReadPlan>,
 }
 
+impl Plan {
+    pub fn is_empty(&self) -> bool {
+        self.components.is_empty() && self.calls.is_empty()
+    }
+}
+
 #[derive(Clone)]
 struct ComponentPlan {
     param: u32,
@@ -148,7 +154,7 @@ pub fn apply<'a>(
     namer: &mut Namer<'a>,
     helpers: &mut HelperImports<'a>,
 ) -> bool {
-    if plan.components.is_empty() && plan.calls.is_empty() {
+    if plan.is_empty() {
         return false;
     }
     let mut rewrite = Rewrite {

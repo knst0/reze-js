@@ -96,6 +96,17 @@ pub fn normalize<'a>(
         props_plan = props::collect(program, &scoping, &nodes, &mut reports);
         async_plan = async_component::collect(program, &scoping, &nodes, &mut async_reports);
         selector_plan = selector::collect(program, &scoping, &nodes, &pre, &mut reports);
+        if syntax.dollar.is_empty() && syntax.namespaces.is_empty()
+            && props_plan.is_empty() && async_plan.is_empty() && selector_plan.is_empty()
+        {
+            reports.extend(async_reports);
+            dsl::scan(program, &scoping, &pre, source, &mut reports);
+            let facts = analysis::collect(program, &scoping, &nodes, &mut reports);
+            drop(nodes);
+            return FrontendOutput {
+                program, scoping, facts, reports, namer, helpers, content_changed: false,
+            };
+        }
         first_scoping = scoping;
     }
     let outcome = imports::apply(allocator, program, &syntax, &mut namer);
