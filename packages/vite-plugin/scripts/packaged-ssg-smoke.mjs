@@ -156,7 +156,7 @@ async function checkTypes(project) {
     target: "esnext", module: "esnext", moduleResolution: "bundler", strict: true, noEmit: true,
   }, include: ["consumer.ts"] }));
   const source = `import reze, { type SsgOptions } from "@rezejs/vite-plugin";
-import { defineRoute, type DataOf } from "@rezejs/router";
+import { defineRoute, defineRoutes, type DataOf } from "@rezejs/router";
 import { $signal, hydrate, type JSX } from "reze-js";
 import { signal } from "@rezejs/signals";
 export const post = defineRoute({
@@ -167,6 +167,7 @@ export const post = defineRoute({
   component: ({ data }) => data.title,
 });
 export const data: DataOf<{ route: typeof post }> = { id: "a", title: "Post" };
+export const pending = defineRoutes([defineRoute({ path: "/pending", preload: () => Promise.withResolvers<never>().promise, component: () => "pending" })]);
 export const config: SsgOptions = { entry: "src/app.tsx", selector: "#app", paths: { "/blog/:id": [{ id: "a" }] } };
 export const plugins = reze({ ssg: config });
 export const count = signal(0);

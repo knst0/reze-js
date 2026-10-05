@@ -64,6 +64,8 @@ const Router = createRouter({ routes: table, paths: buildPaths(table) });
 When `defineRoute` receives a `preload`, its return type retains that loader and
 its data type. `DataOf<{ route: typeof route }>` extracts the settled data;
 `component`, `meta`, and `redirect` receive that same awaited type.
+The resulting definition also composes with `defineRoutes` when the loader
+returns `Promise<never>` (for example, a loader that always throws).
 
 ## Hooks
 
