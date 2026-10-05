@@ -138,6 +138,8 @@ Without `ssg`, the build is a client-rendered application: for browser-history r
 
 With `ssg`, every page is its own static file, so serve the files directly with no fallback rewrite: rewriting an unknown path to another page's HTML would hydrate the wrong route. Unmatched URLs genuinely return 404; add a catch-all route when they should render a page instead. Match Vite's `base` and the browser history base when hosting under a subdirectory.
 
+Configure the host's slash redirects to match `ssg.trailingSlash`. With `"always"`, `/guide` must redirect to `/guide/`; with `"never"`, serve the page at `/guide`. The hydration payload is bound to its canonical pathname, so serving a page at a different URL without redirecting is an error.
+
 ### Packaged consumer smoke
 
 `packages/vite-plugin/scripts/packaged-ssg-smoke.mjs` checks real tarballs outside the workspace. Local runs stage the host's native target through `napi create-npm-dirs`, `artifacts`, and `pre-publish --skip-optional-publish --no-gh-release`; `pnpm pack` resolves workspace dependencies for the JavaScript packages. The script installs into an empty temporary project with no workspace aliases or `NAPI_RS_NATIVE_LIBRARY_PATH`, checks exported types with external TypeScript, and builds and hydrates the fixtures through the selected Vite versions. Browser checks cover preboot content, retained nodes, dirty input preservation, and working interactions.
