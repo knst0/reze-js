@@ -3,15 +3,16 @@ use oxc_span::SPAN;
 use oxc_str::Ident;
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
-use super::native::{Bindings, NativeTarget, bindings, schedule};
 use super::EmitContext;
+use super::native::{Bindings, NativeTarget, bindings, schedule};
 use crate::RUNTIME_MODULE;
 use crate::ast::Ast;
 use crate::html::is_identifier_name;
-use crate::ir::layout::{needs_text_nodes, path_steps, serialize_client_static, PathStep};
+use crate::ir::layout::{PathStep, needs_text_nodes, path_steps, serialize_client_static};
 use crate::ir::view::{
-    Anchor, AssignTarget, Attr, AttrTarget, ElementView, EventHandler, EventKind, ExprRef, InsertOp,
-    LateProp, LinkProp, MemberKey, Namespace, RefOp, RefTarget, SpreadSegment, StaticNodeKind,
+    Anchor, AssignTarget, Attr, AttrTarget, ElementView, EventHandler, EventKind, ExprRef,
+    InsertOp, LateProp, LinkProp, MemberKey, Namespace, RefOp, RefTarget, SpreadSegment,
+    StaticNodeKind,
 };
 
 pub struct ClientTarget<'a> {
@@ -94,20 +95,13 @@ impl<'a> NativeTarget<'a> for ClientTarget<'a> {
         ast.assign(ast.member(node, "value"), ast.ident(value))
     }
 
-    fn effect(
-        &mut self,
-        ctx: &mut EmitContext<'a, '_>,
-        callback: Expression<'a>,
-    ) -> Statement<'a> {
+    fn effect(&mut self, ctx: &mut EmitContext<'a, '_>, callback: Expression<'a>) -> Statement<'a> {
         let ast = Ast::new(ctx.allocator);
         ast.stmt(ctx.call(RUNTIME_MODULE, "renderEffect", [callback]))
     }
 }
 
-pub fn emit<'a>(
-    ctx: &mut EmitContext<'a, '_>,
-    element: &ElementView,
-) -> Expression<'a> {
+pub fn emit<'a>(ctx: &mut EmitContext<'a, '_>, element: &ElementView) -> Expression<'a> {
     let ast = Ast::new(ctx.allocator);
     let root = template(ctx, element);
     let mut out: Vec<Statement<'a>> = Vec::new();
@@ -132,28 +126,34 @@ pub fn emit<'a>(
     ast.call(ast.block_arrow([], body), [])
 }
 
-pub fn template<'a>(
-    ctx: &mut EmitContext<'a, '_>,
-    element: &ElementView,
-) -> Expression<'a> {
+pub fn template<'a>(ctx: &mut EmitContext<'a, '_>, element: &ElementView) -> Expression<'a> {
     let ast = Ast::new(ctx.allocator);
-    let patches = element.statics.nodes.iter().enumerate()
+    let patches = element
+        .statics
+        .nodes
+        .iter()
+        .enumerate()
         .filter(|(_, node)| needs_text_nodes(&element.statics, node))
         .map(|(index, node)| {
-            let path = ast.array(path_steps(&element.statics, 0, index as u32).iter().map(|step| match step {
-                PathStep::Index(index) => ast.number(f64::from(*index)),
-                PathStep::Content => ast.string("c"),
-            }));
+            let path = ast.array(path_steps(&element.statics, 0, index as u32).iter().map(
+                |step| match step {
+                    PathStep::Index(index) => ast.number(f64::from(*index)),
+                    PathStep::Content => ast.string("c"),
+                },
+            ));
             let children = ast.array(node.children.iter().map(|&id| {
                 let child = &element.statics.nodes[id as usize];
                 match child.kind {
                     StaticNodeKind::Text => ast.string(&child.text),
                     StaticNodeKind::Marker => ast.null(),
-                    StaticNodeKind::Element => unreachable!("normalized raw text contains no elements"),
+                    StaticNodeKind::Element => {
+                        unreachable!("normalized raw text contains no elements")
+                    }
                 }
             }));
             ast.object([ast.prop("path", path), ast.prop("children", children)])
-        }).collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
     let html = if patches.is_empty() {
         crate::ir::layout::serialize_static(&element.statics)
     } else {
@@ -193,32 +193,35 @@ pub fn accessor<'a>(
     use crate::ir::layout::{PathStep, path_steps};
 
     let ast = Ast::new(ctx.allocator);
-    if let Some(parent) = element.statics.nodes[node as usize].parent {
+    let mut current = node;
+    let (origin, mut base) = 'origin: loop {
+        if current != node
+            && let Some(name) = bindings.names[current as usize]
+        {
+            break (current, ast.ident(name));
+        }
+        let parent = element.statics.nodes[current as usize]
+            .parent
+            .expect("every accessed node has a named ancestor");
         let siblings = &element.statics.nodes[parent as usize].children;
-        let index = siblings.iter().position(|&sibling| sibling == node)
+        let index = siblings
+            .iter()
+            .position(|&sibling| sibling == current)
             .expect("static children contain every node");
         for (distance, &sibling) in siblings[..index].iter().rev().take(2).enumerate() {
-            if sibling < node && let Some(name) = bindings.names[sibling as usize] {
+            if sibling < node
+                && let Some(name) = bindings.names[sibling as usize]
+            {
                 let mut value = ast.ident(name);
                 for _ in 0..=distance {
                     value = ast.member(value, "nextSibling");
                 }
-                return value;
+                break 'origin (current, value);
             }
-        }
-    }
-    let mut current = node;
-    let ancestor = loop {
-        let parent = element.statics.nodes[current as usize]
-            .parent
-            .expect("every accessed node has a named ancestor");
-        if let Some(name) = bindings.names[parent as usize] {
-            break (parent, name);
         }
         current = parent;
     };
-    let mut base = ast.ident(ancestor.1);
-    for step in path_steps(&element.statics, ancestor.0, node) {
+    for step in path_steps(&element.statics, origin, node) {
         match step {
             PathStep::Index(index) if index > 2 => {
                 base = ast.index(ast.member(base, "childNodes"), ast.number(index as f64));
@@ -379,12 +382,9 @@ pub fn write_ref<'a>(
         RefOp::Assign(AssignTarget::Identifier(name)) => {
             let slot = ctx.intern(name);
             let check = is_function(&ast, ast.ident(slot));
-            let use_call =
-                ctx.call(RUNTIME_MODULE, "use", [ast.ident(slot), ast.ident(node_name)]);
-            let write = ctx.assign_ref(
-                &AssignTarget::Identifier(name.clone()),
-                ast.ident(node_name),
-            );
+            let use_call = ctx.call(RUNTIME_MODULE, "use", [ast.ident(slot), ast.ident(node_name)]);
+            let write =
+                ctx.assign_ref(&AssignTarget::Identifier(name.clone()), ast.ident(node_name));
             vec![ast.stmt(ast.conditional(check, use_call, write))]
         }
         RefOp::Assign(AssignTarget::Member { object, key }) => {
@@ -437,8 +437,7 @@ pub fn write_ref<'a>(
                         key_name,
                         Some(ctx.expr(*key)),
                     ));
-                    let read =
-                        ast.index(member_receiver(&ast, object_name), ast.ident(key_name));
+                    let read = ast.index(member_receiver(&ast, object_name), ast.ident(key_name));
                     let write = ast.assign(
                         ast.index(member_receiver(&ast, object_name), ast.ident(key_name)),
                         ast.ident(node_name),
@@ -456,8 +455,7 @@ pub fn write_ref<'a>(
         RefOp::Expr(value) => {
             let slot = ctx.fresh("_r$");
             let check = is_function(&ast, ast.ident(slot));
-            let use_call =
-                ctx.call(RUNTIME_MODULE, "use", [ast.ident(slot), ast.ident(node_name)]);
+            let use_call = ctx.call(RUNTIME_MODULE, "use", [ast.ident(slot), ast.ident(node_name)]);
             vec![
                 ast.declaration(VariableDeclarationKind::Const, slot, Some(ctx.expr(*value))),
                 ast.stmt(Expression::new_logical_expression(
@@ -528,11 +526,7 @@ pub fn write_link<'a>(
     href: Option<Expression<'a>>,
 ) -> Statement<'a> {
     let ast = Ast::new(ctx.allocator);
-    let source = ctx
-        .options
-        .links
-        .as_deref()
-        .expect("link elements require the user links module");
+    let source = ctx.options.links.as_deref().expect("link elements require the user links module");
     match href {
         Some(href) => ast.stmt(ctx.call(source, "link", [node, href])),
         None => ast.stmt(ctx.call(source, "link", [node])),

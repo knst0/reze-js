@@ -15,7 +15,7 @@ The frontend checks its rewrite plans before rebuilding semantic information. Pl
 
 Static template strings are shared when doing so reduces emitted code size. Each use still creates its own DOM nodes. Compiler-only imports are removed after lowering; ordinary calls and re-exports retain the imports they use. Generated variable names and formatting are not a public API.
 
-Browser parser normalization also happens at compile time. Table structure, raw-text elements, and HTML/SVG/MathML boundaries use the same layout for client rendering and hydration. Ordinary trees bypass the HTML parser; lowercase tag names are inspected without allocating normalized copies.
+Browser parser normalization also happens at compile time. Table structure, raw-text elements, and HTML/SVG/MathML boundaries use the same layout for client rendering and hydration. Ordinary trees bypass the HTML parser; lowercase tag names are inspected without allocating normalized copies. Static node accessors reuse captured siblings along ancestor paths instead of walking from the root again.
 
 Known string-valued classes use a direct attribute update. They do not pull the object/array class-merging helper or its per-element bookkeeping into an ordinary client bundle. JSX returned directly by a function or concise arrow is lowered into that function's body rather than adding a per-call wrapper closure.
 
@@ -126,9 +126,7 @@ import reze, { DEFAULT_ROUTE_EXTENSIONS } from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [
-    reze({ extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"] }),
-  ],
+  plugins: [reze({ extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"] })],
 });
 ```
 
@@ -141,24 +139,20 @@ Build tools can call the native compiler without the Vite plugin:
 ```ts
 import { compile } from "@rezejs/compiler";
 
-const result = compile(
-  "export const App = () => <main>Hello</main>;",
-  "src/App.tsx",
-  { target: "client", sourceMap: true },
-);
+const result = compile("export const App = () => <main>Hello</main>;", "src/App.tsx", { target: "client", sourceMap: true });
 ```
 
 `compile(source, filename, options?)` returns `null` when the module needs no transformation. Otherwise it returns `code`, an optional source-map JSON string in `map`, and `diagnostics`. Compilation errors return diagnostics without `code`; check their severity before passing output to the next transform.
 
-| Option | Contract |
-| --- | --- |
-| `target` | `"client"` by default; `"hydrate"` and `"html"` select the other backends. |
-| `moduleId` | A nonempty, stable module identity required by `"hydrate"` and `"html"`. Ordinary client compilation only needs `filename`. |
-| `sourceMap` | Generate a version 3 source map; enabled by default. |
-| `debugNames` | Include names for profiling; disabled by default. |
-| `hot` | Generate component hot-update registration; disabled by default. |
-| `links` | Module exporting the router link helper for compiler-managed native anchors. |
-| `profile` | Optional profiling facts; mismatched source hashes or schema versions are ignored. |
+| Option       | Contract                                                                                                                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `target`     | `"client"` by default; `"hydrate"` and `"html"` select the other backends.                                                  |
+| `moduleId`   | A nonempty, stable module identity required by `"hydrate"` and `"html"`. Ordinary client compilation only needs `filename`. |
+| `sourceMap`  | Generate a version 3 source map; enabled by default.                                                                        |
+| `debugNames` | Include names for profiling; disabled by default.                                                                           |
+| `hot`        | Generate component hot-update registration; disabled by default.                                                            |
+| `links`      | Module exporting the router link helper for compiler-managed native anchors.                                                |
+| `profile`    | Optional profiling facts; mismatched source hashes or schema versions are ignored.                                          |
 
 All targets produce code, not a precomputed HTML string. `"client"` creates browser DOM, `"hydrate"` binds existing page DOM, and `"html"` produces executable code for the build-time HTML runtime. The HTML target is not browser code or a public request-time rendering API.
 
@@ -170,14 +164,14 @@ Site identities use the first 16 lowercase hexadecimal characters of BLAKE3 over
 
 Diagnostics include a bracketed code, source location, and repair information. Errors stop the transform; warnings are reported through Vite. Fix the cause instead of bypassing the transform.
 
-| Code | Meaning | Correction |
-| --- | --- | --- |
-| `SIGNAL_NOT_DECLARED` | Compiler syntax has no supported local declaration. | Initialize one named variable with `let` or `const`. |
-| `SIGNAL_EXPORTED` | A rewritten reactive binding is exported. | Export a getter or use the ordinary runtime API. |
-| `COMPUTED_FUNCTION` | `$computed` received an inline function. | Pass the expression directly. |
-| `COMPUTED_WRITTEN` | Derived state is being assigned. | Update its source signals. |
-| `CONTROL_FLOW_AS_VALUE` | An intrinsic is used outside a JSX tag. | Render the tag inside an ordinary component. |
-| `CONTROL_FLOW_ATTRIBUTE` | An intrinsic received an unsupported attribute. | Remove it or use the documented attribute. |
+| Code                     | Meaning                                             | Correction                                           |
+| ------------------------ | --------------------------------------------------- | ---------------------------------------------------- |
+| `SIGNAL_NOT_DECLARED`    | Compiler syntax has no supported local declaration. | Initialize one named variable with `let` or `const`. |
+| `SIGNAL_EXPORTED`        | A rewritten reactive binding is exported.           | Export a getter or use the ordinary runtime API.     |
+| `COMPUTED_FUNCTION`      | `$computed` received an inline function.            | Pass the expression directly.                        |
+| `COMPUTED_WRITTEN`       | Derived state is being assigned.                    | Update its source signals.                           |
+| `CONTROL_FLOW_AS_VALUE`  | An intrinsic is used outside a JSX tag.             | Render the tag inside an ordinary component.         |
+| `CONTROL_FLOW_ATTRIBUTE` | An intrinsic received an unsupported attribute.     | Remove it or use the documented attribute.           |
 
 To capture all diagnostic severities, including informational diagnostics:
 
