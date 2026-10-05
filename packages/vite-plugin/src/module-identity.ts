@@ -1,4 +1,5 @@
 import { blake3 } from "@noble/hashes/blake3";
+import { existsSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
 
 const moduleSeparator = new Uint8Array(1);
@@ -27,7 +28,7 @@ function splitId(rawId: string): { path: string; suffix: string } {
   return { path: beforeHash.slice(0, question), suffix: (query === "" ? "" : `?${query}`) + fragment };
 }
 
-/** External linked files require the owning package name and directory when no node_modules boundary exists. */
+/** External linked files use their nearest named package unless an explicit owner is supplied. */
 export function canonicalModuleId(rawId: string, root: string, options?: CanonicalIdOptions): string {
   const { path, suffix } = splitId(rawId);
   if (path.startsWith("\0")) {
@@ -49,6 +50,22 @@ export function canonicalModuleId(rawId: string, root: string, options?: Canonic
   const boundary = "/node_modules/";
   const vendorIndex = file.lastIndexOf(boundary);
   if (vendorIndex >= 0) return file.slice(vendorIndex + boundary.length) + suffix;
+  if (options === undefined) {
+    let directory = posix.dirname(file);
+    for (;;) {
+      const manifest = posix.join(directory, "package.json");
+      if (existsSync(manifest)) {
+        const metadata: unknown = JSON.parse(readFileSync(manifest, "utf8"));
+        if (typeof metadata === "object" && metadata !== null && "name" in metadata
+          && typeof metadata.name === "string" && metadata.name !== "") {
+          return `${metadata.name}/${posix.relative(directory, file)}${suffix}`;
+        }
+      }
+      const parent = posix.dirname(directory);
+      if (parent === directory || /^[A-Za-z]:$/.test(directory)) break;
+      directory = parent;
+    }
+  }
   throw new Error(`[reze] Cannot identify the owning package of external module ${JSON.stringify(rawId)}`);
 }
 

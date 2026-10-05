@@ -167,7 +167,7 @@ export function createSsgPlugin(input: SsgOptions, shared: SsgShared, fileRoutes
       root = config.root;
       base = config.base;
       outDir = resolve(root, config.build.outDir);
-      publicDir = resolve(root, config.publicDir);
+      publicDir = config.publicDir;
       isServe = config.command === "serve";
       shared.root = root;
       shared.isServe = isServe;

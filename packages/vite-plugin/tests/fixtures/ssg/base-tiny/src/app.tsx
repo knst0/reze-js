@@ -1,6 +1,7 @@
 import type { JSX } from "reze-js";
 import { defineRoute, defineRoutes, useLocation, useNavigate } from "@rezejs/router";
 
+import { PackageBadge } from "../../linked-ui/src";
 import logo from "./logo café.svg?no-inline";
 import logo2x from "./logo café@2x.svg?no-inline";
 import publicLogo from "/brand.svg";
@@ -20,6 +21,7 @@ export default function Shell(props: { children: JSX.Element }) {
       <button id="tiny-go-home" type="button" onClick={() => navigate("/")}>home</button>
       <img id="tiny-logo" src={new URL("./logo%20café.svg?no-inline", import.meta.url).href} srcset={`${logo} 1x, ${logo2x} 2x`} alt="logo" />
       <img id="tiny-public" src={publicLogo} alt="public logo" />
+      <PackageBadge />
       <main>{props.children}</main>
     </>
   );

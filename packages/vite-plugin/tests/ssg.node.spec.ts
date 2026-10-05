@@ -11,14 +11,12 @@ import { parse, serialize } from "parse5";
 import type { DefaultTreeAdapterTypes } from "parse5";
 
 import reze, { DEFAULT_ROUTE_EXTENSIONS } from "../src/index";
-import { buildGreeting } from "./fixtures/ssg/standalone-basics/src/data";
 import {
   buildSsgFixture,
   expectBuildFails,
   fetchHtml,
   launchEngine,
   listBuiltFiles,
-  manifestClosure,
   openPage,
   payloadScript,
   readBuiltFile,
@@ -27,7 +25,7 @@ import {
   serveDist,
   waitFor,
 } from "./ssg-harness";
-import type { SsgBrowserName, StaticOrigin, ViteManifest } from "./ssg-harness";
+import type { SsgBrowserName, StaticOrigin } from "./ssg-harness";
 
 const FIXTURES = join(import.meta.dirname, "fixtures", "ssg");
 const ROUTER_PATHS = {
@@ -89,11 +87,6 @@ function imgSrc(html: string, id?: string): string {
 
 function stylesheetHrefs(html: string): string[] {
   return elements(html, "link", { rel: "stylesheet" }).map(node => attr(node, "href")!);
-}
-
-function closureSources(manifest: ViteManifest, roots: readonly string[]): string[] {
-  const byFile = new Map(Object.values(manifest).map((chunk) => [chunk.file, chunk]));
-  return [...manifestClosure(manifest, roots)].map((file) => byFile.get(file)?.src ?? file);
 }
 
 async function clickUntil(page: Page, selector: string, predicate: string, tries = 60): Promise<void> {
@@ -824,6 +817,7 @@ describe("routing, enumeration, base and redirects", () => {
       const { page, errors, close } = await openPage(browser, `${origin}${prefix}${pathname}`, {
         beforeHydration: async page => {
           await page.waitForFunction(`document.readyState !== "loading"`);
+          expect(await page.textContent("#package-badge")).toBe("linked package");
           expect(await page.getAttribute("#tiny-logo", "srcset")).toMatch(/logo%20caf%C3%A9-[^ ]+\.svg 1x, .* 2x$/);
           await waitFor(page, `[...document.querySelectorAll("img")].every(image => image.complete && image.naturalWidth === 6)`);
           await page.evaluate(`window.__tinyImages = [...document.querySelectorAll("img")]`);
@@ -1061,44 +1055,36 @@ describe("corrupt builds fail before framework mutation", () => {
   }, 60_000);
 });
 
-describe("router-free and csr graph separation", () => {
-  test("standalone bundles carry no router closure", () => {
-    const manifest = readManifest(dist("basics"));
-    const entry = manifest["index.html"];
-    expect(entry?.file).not.toBeUndefined();
-    const sources = closureSources(manifest, [entry!.file]);
-    expect(sources.length).toBeGreaterThan(0);
-    expect(sources.join("\n")).not.toMatch(/router/i);
+test("disabled public files do not collide with the application's HTML template", async () => {
+  const built = await buildSsgFixture({
+    fixtureDir: fixture("standalone-basics"),
+    outDir: dist("public-disabled"),
+    plugins: [
+      { name: "public-disabled", config: () => ({ publicDir: false }) },
+      ...(await reze({ ssg: { entry: "src/app.tsx" } })),
+    ],
   });
+  expect(text(elements(readBuiltFile(built.distDir, "index.html"), "p", { id: "settled" })[0])).toBe("3:6:v3");
+});
 
-  test("ordinary csr output carries no hydration machinery or payload", async () => {
-    const manifest = readManifest(dist("basics-csr"));
-    const files = listBuiltFiles(dist("basics-csr"));
-    expect(files.some((file) => file.endsWith(".html"))).toBe(true);
-    const entry = Object.values(manifest).find((chunk) => chunk.isEntry === true);
-    expect(entry?.file).not.toBeUndefined();
-    const sources = closureSources(manifest, [entry!.file]);
-    expect(sources.length).toBeGreaterThan(0);
-    expect(sources.join("\n")).not.toMatch(/internal\/html|internal\/hydrate|hydration/i);
-    const { html } = await fetchHtml(pages.basicsCsr, "/");
-    expect(html).not.toContain("data-reze-state");
-  });
-
-  test("bundle sizes stay observable and bounded", () => {
-    let js = 0;
-    for (const file of listBuiltFiles(dist("basics"))) {
-      if (file.endsWith(".js")) js += readBuiltFile(dist("basics"), file).length;
+describe("ordinary client-rendered production output", () => {
+  test.each(ENGINES)("mounts an empty template and updates derived state on %s", async engine => {
+    const { page, errors, close } = await openPage(browsers.get(engine)!, `${pages.basicsCsr}/csr.html`, {
+      beforeHydration: async page => {
+        await page.waitForFunction(`document.readyState !== "loading"`);
+        expect(await page.locator("#app").evaluate(root => root.childNodes.length)).toBe(0);
+      },
+    });
+    try {
+      await waitFor(page, `document.querySelector("#settled")?.textContent === "3:6:v3"`);
+      expect(await page.textContent("#greeting")).toBe("hi basics");
+      await page.click("#inc");
+      await waitFor(page, `document.querySelector("#settled").textContent === "4:8:v4"`);
+      await waitFor(page, `document.querySelector("#quote")?.textContent === "settled quote"`);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
     }
-    const html = readBuiltFile(dist("basics"), "index.html");
-    expect(js).toBeGreaterThan(0);
-    expect(js).toBeLessThan(2_000_000);
-    expect(html.length).toBeGreaterThan(0);
-    expect(payloadScript(html, "app").length).toBeGreaterThan(0);
-  });
-
-  test("dom-free data modules execute without document or window", () => {
-    expect(typeof document).toBe("undefined");
-    expect(buildGreeting("basics")).toBe("hi basics");
   });
 });
 

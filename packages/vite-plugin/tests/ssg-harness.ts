@@ -201,21 +201,6 @@ export function readManifest(distDir: string): ViteManifest {
   return raw as ViteManifest;
 }
 
-export function manifestClosure(manifest: ViteManifest, roots: readonly string[]): Set<string> {
-  const byFile = new Map(Object.values(manifest).map((chunk) => [chunk.file, chunk]));
-  const seen = new Set<string>();
-  const queue = [...roots];
-  while (queue.length > 0) {
-    const file = queue.pop();
-    if (file === undefined || seen.has(file)) continue;
-    seen.add(file);
-    const chunk = byFile.get(file);
-    if (chunk === undefined) continue;
-    queue.push(...(chunk.imports ?? []), ...(chunk.dynamicImports ?? []));
-  }
-  return seen;
-}
-
 export function payloadScript(html: string, rootId: string): string {
   const marker = `data-reze-state="${rootId}"`;
   const scriptIndex = html.indexOf(marker);

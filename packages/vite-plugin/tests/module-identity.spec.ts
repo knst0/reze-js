@@ -36,6 +36,10 @@ test("external linked packages use their own package-relative identity", () => {
   })).toThrow("owning package");
 });
 
+test("an unowned drive never falls back to the process working directory", () => {
+  expect(() => canonicalModuleId("Q:/missing/source.tsx", "C:/app")).toThrow("owning package");
+});
+
 test("compiler site preimage matches the cross-language BLAKE3 contract", () => {
   expect(compilerInputHash("src/App.tsx", "export default 1;")).toBe("617ae233d41b19b1");
 });
