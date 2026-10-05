@@ -558,7 +558,7 @@ impl<'a> Rewrite<'_, '_, 'a> {
         if let Some(id) = rest
             && let Some(keys) = component.rest.as_ref().map(|plan| &plan.keys)
         {
-            let split = self.helpers.require(alloc, self.namer, "reze-js", "splitProps");
+            let split = self.helpers.require(alloc, self.namer, "reze-js/internal/dom", "splitProps");
             entries.push(rest_decl(alloc, id, props, split, keys));
         }
         for (index, default) in component.defaults.iter().enumerate() {
@@ -623,7 +623,7 @@ impl<'a> Rewrite<'_, '_, 'a> {
             PropsMethod::Split => "splitProps",
             PropsMethod::Omit => "omitProps",
         };
-        let alias = self.helpers.require(self.alloc, self.namer, "reze-js", export);
+        let alias = self.helpers.require(self.alloc, self.namer, "reze-js/internal/dom", export);
         call.callee = reference_expr(self.alloc, Span::new(callee.0, callee.1), alias);
         self.changed = true;
     }

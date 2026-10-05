@@ -85,18 +85,18 @@ Attribute values are plain values, not thunks. The compiler re-evaluates the att
 
 Props arrive as an object whose fields are getters when the caller passed a reactive expression. Reading `props.step` inside JSX subscribes that binding; reading it in the body does not make the body re-run. `undefined` counts as absent when props merge, so a caller passing `label={undefined}` falls back to the default the component declared.
 
-Three helpers combine and divide props without losing reactivity:
+The `$props` compiler syntax combines and divides props without losing reactivity:
 
 ```tsx
-import { $signal, mergeProps, omitProps, splitProps } from "reze-js";
+import { $props, $signal } from "reze-js";
 
 function Button(props: { label?: string; kind?: string }) {
-  const merged = mergeProps({ label: "Save", kind: "primary" }, props);
+  const merged = $props.merge({ label: "Save", kind: "primary" }, props);
   return <button class={merged.kind}>{merged.label}</button>;
 }
 
 function Field(props: { label: string; kind: string; hint: string }) {
-  const [own, rest] = splitProps(props, ["label"]);
+  const [own, rest] = $props.splitByGroups(props, ["label"]);
   return (
     <label title={rest.hint}>
       {own.label}
@@ -106,7 +106,7 @@ function Field(props: { label: string; kind: string; hint: string }) {
 }
 
 function Plain(props: { label: string; kind: string }) {
-  const rest = omitProps(props, "kind");
+  const rest = $props.omit(props, "kind");
   return <button>{rest.label}</button>;
 }
 
@@ -116,7 +116,13 @@ export function Demo() {
 }
 ```
 
-Each key of the merged view reads the last source holding a non-`undefined` value, and getters stay reactive: setting `label` to `"Send"` shows `Send`, and setting it back to `undefined` restores `Save`. `splitProps` returns one lazy view per key group plus the remainder; `omitProps` returns the remainder without the listed keys. The compiler forms `$props.merge`, `$props.splitByGroups`, and `$props.omit` rewrite to the same behavior for object literals.
+Each key of the merged view reads the last source holding a non-`undefined` value, and getters stay reactive: setting `label` to `"Send"` shows `Send`, and setting it back to `undefined` restores `Save`. `$props.splitByGroups` returns one lazy view per key group plus the remainder; `$props.omit` returns the remainder without the listed keys. Calls over object literals with static keys dissolve into plain object literals; every other call compiles to the runtime `mergeProps`, `splitProps`, or `omitProps`.
+
+Import the runtime functions directly from `@rezejs/dom` only for a shape the compiler cannot see, such as a props object built at runtime:
+
+```tsx
+import { mergeProps } from "@rezejs/dom";
+```
 
 A spread whose expression reads reactive state is dynamic: it re-runs when what it reads changes and re-applies class, style, properties, and children. Attributes written after the spread win over the spread. Keys that disappear from the spread are removed from the element.
 

@@ -30,6 +30,10 @@
       "types": "./dist/internal/reactivity.d.ts",
       "import": "./dist/internal/reactivity.js"
     },
+    "./internal/dom": {
+      "types": "./dist/internal/dom.d.ts",
+      "import": "./dist/internal/dom.js"
+    },
     "./internal/html": {
       "types": "./dist/internal/html.d.ts",
       "import": "./dist/internal/html.js"

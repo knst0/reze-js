@@ -345,6 +345,6 @@ fn spread_value<'a>(ctx: &mut EmitContext<'a, '_>, spread: &SpreadSegment) -> Ex
     if values.len() == 1 && !has_dynamic_source {
         values.pop().expect("one props segment")
     } else {
-        ctx.call(crate::RUNTIME_MODULE, "mergeProps", values)
+        ctx.call("reze-js/internal/dom", "mergeProps", values)
     }
 }

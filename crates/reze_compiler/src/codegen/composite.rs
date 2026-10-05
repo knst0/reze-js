@@ -85,7 +85,7 @@ fn component_props<'a, 'm>(
                     }
                 }
             }
-            ctx.call(RUNTIME_MODULE, "mergeProps", args)
+            ctx.call("reze-js/internal/dom", "mergeProps", args)
         }
     }
 }
