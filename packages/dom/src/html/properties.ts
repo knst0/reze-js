@@ -27,11 +27,6 @@ export type HtmlStyleValue =
   | null
   | undefined;
 
-export interface HtmlSpreadOptions {
-  isSvg?: boolean;
-  hasChildren?: boolean;
-}
-
 const Whitespace = /\s/;
 const WhitespaceRun = /\s+/;
 const AttributeNamePattern = /^[^\s"'`>/=<]+$/;
@@ -490,24 +485,16 @@ function assignSpreadProp(
 }
 
 /**
- * Applies one spread segment with `spread.ts` routing and last-write-wins
- * order. Event listeners and `ref` are client work owned by the parent layer
- * and skipped here. `children` is returned for the parent helper to insert
- * unless `hasChildren` is set; keys applied by a previous call but absent now
- * are removed, mirroring the DOM spread effect. Removal tracking defaults to
- * the shared element map, but distinct spread bindings on one element must
- * pass their own map (like each CSR `spread` call owns its `applied`
- * closure) so one binding cannot remove another binding's keys.
+ * Does not read `children` or `ref`; their evaluation belongs to insertion and
+ * client activation. Each spread binding needs its own removal-tracking map.
  */
 export function applySpread(
   el: HtmlElement,
   props: unknown,
-  options?: HtmlSpreadOptions,
+  isSvg = el.ns !== "",
   site?: unknown,
   previous?: Map<string, unknown>,
-): { children: unknown; insertChildren: boolean } {
-  const isSvg = options?.isSvg ?? el.ns !== "";
-  const insertChildren = !(options?.hasChildren ?? false);
+): void {
   const source = (props ?? {}) as Record<string, unknown>;
   const prev = previous ?? el.spreadPrev;
   const seen = new Set<string>();
@@ -528,5 +515,4 @@ export function applySpread(
       prev.delete(name);
     }
   }
-  return { children: source["children"], insertChildren };
 }

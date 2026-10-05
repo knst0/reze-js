@@ -64,6 +64,8 @@ Each route file gets a lazy chunk. Adding or removing routes during development 
 
 `ssg` replaces client-only output with a two-target production build: the application executes against the HTML runtime to produce each page's HTML, and the browser hydrates that HTML instead of rendering from scratch. Development stays client-rendered: the dev server never executes pages at request time.
 
+Spread `children` follow the same lazy insertion semantics as client rendering. The attribute-update pass does not evaluate the `children` getter or build a second, unused child tree.
+
 ```ts
 import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";

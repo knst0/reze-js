@@ -11,6 +11,18 @@ async function Quote() {
   return <blockquote id="quote">{text}</blockquote>;
 }
 
+function SpreadChildren() {
+  let reads = 0;
+  const props = {
+    get children() {
+      reads += 1;
+      return <span>spread child</span>;
+    },
+  };
+  const content = <section {...props} />;
+  return <aside>{content}<output id="spread-reads">{reads}</output></aside>;
+}
+
 export default function App() {
   let base = $signal(3);
   let doubled = $computed(base * 2);
@@ -38,6 +50,7 @@ export default function App() {
         <Late />
       </Loading>
       <img id="logo" src={logoUrl} alt="dot" />
+      <SpreadChildren />
     </main>
   );
 }

@@ -276,6 +276,7 @@ describe("preboot html, metadata, assets and lazy execution", () => {
     expect(clean).toContain("late arrived");
     expect(clean).not.toContain("loading quote…");
     expect(clean).not.toContain("loading late…");
+    expect(text(elements(html, "output", { id: "spread-reads" })[0])).toBe("1");
     expect(titleOf(html)).toBe("Basics");
     expect(metaOf(html, "description")).toBe("Standalone basics fixture");
     expect(canonicalOf(html)).toBe("https://example.test/");
@@ -1078,6 +1079,7 @@ describe("ordinary client-rendered production output", () => {
     try {
       await waitFor(page, `document.querySelector("#settled")?.textContent === "3:6:v3"`);
       expect(await page.textContent("#greeting")).toBe("hi basics");
+      expect(await page.textContent("#spread-reads")).toBe("1");
       await page.click("#inc");
       await waitFor(page, `document.querySelector("#settled").textContent === "4:8:v4"`);
       await waitFor(page, `document.querySelector("#quote")?.textContent === "settled quote"`);

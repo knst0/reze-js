@@ -196,7 +196,7 @@ export function hSpread(node: HtmlElement, site: Site, props: Record<string, unk
   if (!hasChildren) insertion(node, () => props.children, site, -1, undefined);
   const previous = new Map<string, unknown>();
   renderEffect(() => {
-    applySpread(node, props, { isSvg, hasChildren: true }, site, previous);
+    applySpread(node, props, isSvg, site, previous);
   });
 }
 
