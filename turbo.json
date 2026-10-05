@@ -4,6 +4,18 @@
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "!benches/**", "!docs/**", "!examples/**"]
     },
+    "@rezejs/compiler#build": {
+      "dependsOn": [],
+      "cache": false,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/Cargo.toml",
+        "$TURBO_ROOT$/Cargo.lock",
+        "$TURBO_ROOT$/rust-toolchain.toml",
+        "$TURBO_ROOT$/crates/reze_compiler/**",
+        "$TURBO_ROOT$/crates/reze_compiler_napi/**"
+      ]
+    },
     "@rezejs/signals#build": {
       "dependsOn": []
     },

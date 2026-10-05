@@ -144,6 +144,8 @@ const result = compile("export const App = () => <main>Hello</main>;", "src/App.
 
 `compile(source, filename, options?)` returns `null` when the module needs no transformation. Otherwise it returns `code`, an optional source-map JSON string in `map`, and `diagnostics`. Compilation errors return diagnostics without `code`; check their severity before passing output to the next transform.
 
+In this repository, `pnpm build` always invokes NAPI/Cargo for the native compiler. Cargo handles incremental compilation; Turbo tracks both Rust crates, workspace manifests, and the toolchain without caching the platform-specific native task.
+
 | Option       | Contract                                                                                                                    |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------- |
 | `target`     | `"client"` by default; `"hydrate"` and `"html"` select the other backends.                                                  |
