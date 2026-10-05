@@ -1,0 +1,82 @@
+name: Docs
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to build the docs from (empty = the branch selected when running the workflow)"
+        required: false
+        type: string
+        default: ""
+      base:
+        description: "Vite base path ('/' for a custom domain, '/reze-js/' for the project page)"
+        required: false
+        type: string
+        default: "/"
+      cname:
+        description: "Custom domain written to the CNAME file (empty for the default github.io URL)"
+        required: false
+        type: string
+        default: "reze.js.knst.dev"
+
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      INPUT_BASE: ${{ inputs.base }}
+      INPUT_CNAME: ${{ inputs.cname }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build packages
+        run: pnpm build
+      - name: Resolve the docs base path
+        run: |
+          base="${INPUT_BASE:-/}"
+          case "$base" in /*) ;; *) base="/$base" ;; esac
+          case "$base" in */) ;; *) base="$base/" ;; esac
+          echo "DOCS_BASE=$base" >> "$GITHUB_ENV"
+      - name: Build the docs
+        run: pnpm --filter @rezejs/docs exec vite build --base "$DOCS_BASE"
+      - name: Prepare the Pages artifact
+        run: |
+          touch docs/dist/.nojekyll
+          if [ -n "$INPUT_CNAME" ]; then
+            printf '%s\n' "$INPUT_CNAME" > docs/dist/CNAME
+          fi
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
