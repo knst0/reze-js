@@ -6,7 +6,7 @@ import { ClaimIndex } from "./claim";
 import { currentExecution, moduleExecution } from "./execution";
 import { DirtyForms } from "./forms";
 import { ClaimPlan, type PlanHandle, type RangePlan } from "./plan";
-import { HydrationError, parsePayload, type HydrationPayload } from "./protocol";
+import { createOwnerTokens, HydrationError, parsePayload, type HydrationPayload } from "./protocol";
 import { HydrationReplay } from "./replay";
 import { CommitStaging } from "./staging";
 import type { FrameDecoder } from "./codec";
@@ -29,7 +29,7 @@ export class HydrationSession extends HydrationReplay {
   private released = false;
 
   constructor(readonly element: Element, payload: HydrationPayload, decoder: FrameDecoder, readonly base: string) {
-    const index = new ClaimIndex(element, payload.layout);
+    const index = new ClaimIndex(element, payload.layout, createOwnerTokens(payload.owners));
     super(payload, decoder);
     this.claims = new ClaimPlan(index);
     this.staging = new CommitStaging(this);

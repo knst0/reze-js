@@ -66,6 +66,8 @@ Each route file gets a lazy chunk. Adding or removing routes during development 
 
 Spread `children` follow the same lazy insertion semantics as client rendering. The attribute-update pass does not evaluate the `children` getter or build a second, unused child tree.
 
+HTML markers and transferred owner references use short page-local tokens. Hydration restores the logical owner paths before checking the layout and replaying async work; these transport tokens are not application IDs or public state.
+
 ```ts
 import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";

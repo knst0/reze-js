@@ -105,8 +105,41 @@ export interface HydrationPayload {
   readonly layout: readonly LayoutNode[];
 }
 
-export function serializePayload(payload: HydrationPayload): string {
-  return JSON.stringify(payload).replace(/[<>&\u2028\u2029]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
+export function createOwnerTokens(owners: readonly OwnerRecord[]): ReadonlyMap<string, string> {
+  const tokens = new Map<string, string>();
+  for (let index = 0; index < owners.length; index++) tokens.set(owners[index]!.id, index.toString(36));
+  return tokens;
+}
+
+function ownerToken(tokens: ReadonlyMap<string, string>, id: string): string {
+  const token = tokens.get(id);
+  if (token === undefined) throw new HydrationError(`unknown transport owner ${id}`);
+  return token;
+}
+
+function compactLayout(node: LayoutNode, tokens: ReadonlyMap<string, string>): LayoutNode {
+  if (node.kind === "text" || node.kind === "marker") return node;
+  const children = node.children.map(child => compactLayout(child, tokens));
+  if (node.kind === "range") {
+    return { ...node, token: ownerToken(tokens, node.token), ownerId: ownerToken(tokens, node.ownerId), children };
+  }
+  return { ...node, ...(node.token === undefined ? {} : { token: ownerToken(tokens, node.token) }), children };
+}
+
+export function serializePayload(payload: HydrationPayload, tokens = createOwnerTokens(payload.owners)): string {
+  const compact = {
+    ...payload,
+    owners: payload.owners.map(owner => owner.parentId === undefined ? owner : {
+      id: owner.id.slice(owner.parentId.length + 1),
+      parentId: ownerToken(tokens, owner.parentId),
+      retired: owner.retired,
+    }),
+    resources: payload.resources.map(resource => ({ ...resource, ownerId: ownerToken(tokens, resource.ownerId) })),
+    awaitSlots: payload.awaitSlots.map(slot => ({ ...slot, ownerId: ownerToken(tokens, slot.ownerId) })),
+    handoffs: payload.handoffs.map(handoff => ({ ...handoff, ownerId: ownerToken(tokens, handoff.ownerId) })),
+    layout: payload.layout.map(node => compactLayout(node, tokens)),
+  };
+  return JSON.stringify(compact).replace(/[<>&\u2028\u2029]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
 
 export class HydrationError extends Error {
@@ -128,7 +161,45 @@ export function parsePayload(text: string): { payload: HydrationPayload; decoder
   } catch {
     throw new HydrationError("hydration state is not valid JSON");
   }
+  const data = record(input, "payload");
+  requireCondition(data.version === 1, "unsupported hydration protocol version");
+  const ids: string[] = [];
+  for (const raw of arrayValue(data.owners, "owners")) {
+    const owner = record(raw, "owner");
+    const key = tokenValue(owner.id, "owner key");
+    if (Object.hasOwn(owner, "parentId")) {
+      const parent = expandOwnerToken(owner.parentId, ids);
+      owner.parentId = parent;
+      owner.id = `${parent}.${key}`;
+    }
+    ids.push(owner.id as string);
+  }
+  for (const key of ["resources", "awaitSlots", "handoffs"]) {
+    for (const raw of arrayValue(data[key], key)) {
+      const item = record(raw, key);
+      item.ownerId = expandOwnerToken(item.ownerId, ids);
+    }
+  }
+  expandLayoutTokens(data.layout, ids);
   return validatePayload(input);
+}
+
+function expandOwnerToken(value: unknown, ids: readonly string[]): string {
+  const token = textValue(value, "owner token");
+  const index = Number.parseInt(token, 36);
+  requireCondition(Number.isSafeInteger(index) && index >= 0 && index < ids.length
+    && index.toString(36) === token, `invalid owner token ${token}`);
+  return ids[index]!;
+}
+
+function expandLayoutTokens(input: unknown, ids: readonly string[]): void {
+  for (const raw of arrayValue(input, "layout")) {
+    const node = record(raw, "layout node");
+    if (node.kind !== "element" && node.kind !== "range") continue;
+    if (Object.hasOwn(node, "token")) node.token = expandOwnerToken(node.token, ids);
+    if (node.kind === "range") node.ownerId = expandOwnerToken(node.ownerId, ids);
+    expandLayoutTokens(node.children, ids);
+  }
 }
 
 export function validatePayload(input: unknown): { payload: HydrationPayload; decoder: FrameDecoder } {

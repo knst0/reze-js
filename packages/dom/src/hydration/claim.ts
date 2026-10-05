@@ -76,6 +76,7 @@ export class ClaimIndex {
   constructor(
     readonly root: Element,
     public layout: readonly LayoutNode[],
+    readonly ownerTokens: ReadonlyMap<string, string>,
     readonly options: ClaimOptions = {},
   ) {
     let cursor: Node | null = root.firstChild;
@@ -91,7 +92,7 @@ export class ClaimIndex {
   }
 
   validate(): void {
-    const current = new ClaimIndex(this.root, this.layout, this.options);
+    const current = new ClaimIndex(this.root, this.layout, this.ownerTokens, this.options);
     if (current.contexts.length !== this.contexts.length || current.contexts.some((node, index) => node !== this.contexts[index])) {
       throw this.error("portal transport context changed during preparation");
     }
@@ -109,6 +110,12 @@ export class ClaimIndex {
         throw this.error("claimed node identity changed during preparation");
       }
     }
+  }
+
+  private token(id: string): string {
+    const token = this.ownerTokens.get(id);
+    if (token === undefined) throw this.error(`missing transport owner ${id}`);
+    return token;
   }
 
   unwrapPortals(): void {
@@ -155,9 +162,9 @@ export class ClaimIndex {
         continue;
       }
       if (expected.kind === "range") {
-        const start = this.comment(cursor, `rz:1:${expected.token}:start`);
+        const start = this.comment(cursor, `rz:1:${this.token(expected.token)}:start`);
         cursor = this.scan(expected.children, parent, start.nextSibling, root);
-        const end = this.comment(cursor, `rz:1:${expected.token}:end`);
+        const end = this.comment(cursor, `rz:1:${this.token(expected.token)}:end`);
         const claimed: ClaimedRange = { start, end, layout: expected };
         if (this.ranges.has(expected.token)) throw this.error(`duplicate range ${expected.token}`);
         this.ranges.set(expected.token, claimed);
@@ -190,7 +197,7 @@ export class ClaimIndex {
       }
       let owner = root;
       if (expected.token !== undefined) {
-        if (element.getAttribute("data-rz") !== expected.token || this.roots.has(expected.token)) {
+        if (element.getAttribute("data-rz") !== this.token(expected.token) || this.roots.has(expected.token)) {
           throw this.error(`invalid native root ${expected.token}`);
         }
         owner = { element, layout: expected, statics: new Map() };
@@ -225,13 +232,13 @@ export class ClaimIndex {
 
   private bodyPortal(layout: Extract<LayoutNode, { kind: "range" }>): PortalPosition {
     if (layout.placement === "inert") {
-      const templates = this.root.ownerDocument.querySelectorAll<HTMLTemplateElement>(`template[data-reze-portal="${layout.token}"]`);
+      const templates = this.root.ownerDocument.querySelectorAll<HTMLTemplateElement>(`template[data-reze-portal="${this.token(layout.token)}"]`);
       if (templates.length !== 1) throw this.error(`missing or duplicate inert portal container ${layout.token}`);
       const parent = templates[0]!.content;
       return { parent, start: parent.firstChild };
     }
     const body = this.root.ownerDocument.body;
-    const marker = `rz:1:${layout.token}:start`;
+    const marker = `rz:1:${this.token(layout.token)}:start`;
     let found: Node | null = null;
     for (let node = body.firstChild; node !== null; node = node.nextSibling) {
       if (node.nodeType !== 8 || (node as Comment).data !== marker) continue;

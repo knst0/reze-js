@@ -11,6 +11,6 @@ function transportNode(node: HtmlNode): HtmlNode {
   return wrapper;
 }
 
-export function serializePortalNodes(nodes: readonly HtmlNode[]): string {
-  return serializeNodes(nodes.map(transportNode));
+export function serializePortalNodes(nodes: readonly HtmlNode[], ownerTokens?: ReadonlyMap<string, string>): string {
+  return serializeNodes(nodes.map(transportNode), ownerTokens);
 }

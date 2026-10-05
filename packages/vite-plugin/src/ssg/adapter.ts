@@ -65,18 +65,14 @@ render(() => SsgView(), root);
 `;
 }
 
-// The adapter dynamic-imports the view and entry after the HtmlSession and
-// the asset registry exist, so module initializers run under the page scope
-// with asset lookups available. The router import stays inside the router
-// branch so standalone apps never bundle it.
 export function htmlAdapterSource(options: { mode: AppMode; entrySpecifier: string }): string {
   const entry = JSON.stringify(options.entrySpecifier);
   const viewId = JSON.stringify(SsgViewId);
-  const prelude = `function portalEntry(session, portal) {
+  const prelude = `function portalEntry(session, portal, tokens) {
   const token = portal.node.token;
   if (typeof token !== "string" || token === "") throw new Error("[reze] portal node has no token for hydration claim");
   if (!session.ranges.has(token)) throw new Error("[reze] portal token is unknown to the session: " + JSON.stringify(token));
-  return { placement: portal.placement, token, html: serializePortalNodes([portal.node]) };
+  return { placement: portal.placement, token: tokens.get(token), html: serializePortalNodes([portal.node], tokens) };
 }
 async function finishRender(session, tree, input, metadata) {
   await session.settle();
@@ -84,17 +80,17 @@ async function finishRender(session, tree, input, metadata) {
   const nodes = [];
   for (const portal of session.portals) {
     if (portal.instance.retired) continue;
-    portals.push(portalEntry(session, portal));
+    portals.push(portal);
     nodes.push(portal.node);
   }
   const layout = describeNodes([tree, ...nodes], { resolver: { rangeInfo: (range) => session.ranges.get(range.token) } });
   const payload = session.snapshot(layout);
+  const tokens = createOwnerTokens(payload.owners);
   return {
     status: "render",
-    html: serializeNodes([tree]),
-    portals,
-    layout,
-    payload: serializePayload(payload),
+    html: serializeNodes([tree], tokens),
+    portals: portals.map((portal) => portalEntry(session, portal, tokens)),
+    payload: serializePayload(payload, tokens),
     modules: payload.modules,
     metadata,
   };
@@ -110,7 +106,7 @@ function createSession(input) {
   });
 }`;
   if (options.mode.kind === "standalone") {
-    return `import { HtmlSession, describeNodes, hMount, installHtmlAssets, serializeNodes, serializePortalNodes, serializePayload } from "reze-js/internal/html";
+    return `import { HtmlSession, createOwnerTokens, describeNodes, hMount, installHtmlAssets, serializeNodes, serializePortalNodes, serializePayload } from "reze-js/internal/html";
 ${prelude}
 export function discover() {
   return { mode: "standalone", descriptors: [], urls: [{ url: "/", leafId: "root", params: {} }] };
@@ -129,7 +125,7 @@ export async function renderPage(input) {
 }
 `;
   }
-  return `import { HtmlSession, describeNodes, hMount, installHtmlAssets, serializeNodes, serializePortalNodes, serializePayload } from "reze-js/internal/html";
+  return `import { HtmlSession, createOwnerTokens, describeNodes, hMount, installHtmlAssets, serializeNodes, serializePortalNodes, serializePayload } from "reze-js/internal/html";
 import * as routerSsg from "@rezejs/router/internal/ssg";
 ${prelude}
 function redirectPage(pathname, base, redirect) {

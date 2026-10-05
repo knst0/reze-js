@@ -977,7 +977,7 @@ describe("worker isolation, cleanup and timeouts", () => {
 describe("corrupt builds fail before framework mutation", () => {
   test.each(ENGINES)("incompatible payloads preserve nodes and leave listeners detached on %s", async (engine) => {
     const browser = browsers.get(engine)!;
-    for (const kind of ["version", "pathname"] as const) {
+    for (const kind of ["version", "pathname", "owner-token", "layout-token"] as const) {
       const name = `corrupt-${kind}-${engine}`;
       const mutated = join(OUT, name);
       const relative = kind === "pathname";
@@ -986,7 +986,9 @@ describe("corrupt builds fail before framework mutation", () => {
       const html = readFileSync(file, "utf8");
       const original = payloadScript(html, "app");
       const payload = JSON.parse(original);
-      payload[kind] = relative ? "/other/" : 2;
+      if (kind === "owner-token") payload.owners[1].parentId = "1";
+      else if (kind === "layout-token") payload.layout[0].token = "00";
+      else payload[kind] = relative ? "/other/" : 2;
       writeFileSync(file, html.replace(original, JSON.stringify(payload).replace(/</g, "\\u003c")));
       const origin = await serve(relative ? OUT : mutated);
       const { page, errors, close } = await openPage(browser, relative ? `${origin}/${name}/a/b/` : `${origin}/`, {

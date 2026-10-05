@@ -16,6 +16,7 @@ import {
 
 export interface HtmlSerializeOptions {
   token?: string;
+  ownerTokens?: ReadonlyMap<string, string>;
 }
 
 /** Session binding for one range record: owner identity, flow kind, portal placement. */
@@ -538,12 +539,22 @@ function checkElementShape(el: HtmlElement): void {
   }
 }
 
+function transportToken(token: string, tokens: ReadonlyMap<string, string> | undefined, site?: unknown): string {
+  if (tokens === undefined) return token;
+  const compact = tokens.get(token);
+  if (compact === undefined || !isValidToken(compact)) {
+    throw new HtmlRecordError(`Missing or invalid transport token for "${token}"`, formatSite(site), site);
+  }
+  return compact;
+}
+
 function emitElement(
   el: HtmlElement,
   out: string[],
   rootToken: string | undefined,
   isRoot: boolean,
   selectedOptions: Set<HtmlElement> | undefined,
+  tokens: ReadonlyMap<string, string> | undefined,
 ): void {
   const token = resolveElementToken(el, rootToken, isRoot);
   checkElementShape(el);
@@ -551,7 +562,7 @@ function emitElement(
   const lower = el.ns === "" ? el.tag.toLowerCase() : "";
   const selectValue = el.ns === "" && lower === "select" && el.hasSelectValue ? el.selectValue : undefined;
   const forced = selectValue !== undefined ? matchSelectOption(el, selectValue) : undefined;
-  emitAttributes(el, out, token, selectedOptions);
+  emitAttributes(el, out, token === undefined ? undefined : transportToken(token, tokens, el.meta.site), selectedOptions);
   out.push(">");
   if (isVoidTag(el.tag, el.ns)) {
     return;
@@ -594,7 +605,7 @@ function emitElement(
   }
   const nested = lower === "select" ? forced : selectedOptions;
   for (const kid of kids) {
-    emitChild(kid, out, undefined, false, nested);
+    emitChild(kid, out, undefined, false, nested, tokens);
   }
   out.push("</", el.tag, ">");
 }
@@ -622,18 +633,19 @@ function emitChild(
   rootToken: string | undefined,
   isRoot: boolean,
   selectedOptions: Set<HtmlElement> | undefined,
+  tokens: ReadonlyMap<string, string> | undefined,
 ): void {
   if (node.kind === "synthetic") {
     out.push("<", node.tag, ">");
     for (const kid of node.children) {
-      emitChild(kid, out, undefined, false, selectedOptions);
+      emitChild(kid, out, undefined, false, selectedOptions, tokens);
     }
     out.push("</", node.tag, ">");
     return;
   }
   if (node.kind === "element") {
     const fresh = node.ns === "" && node.tag.toLowerCase() === "select";
-    emitElement(node, out, rootToken, isRoot, fresh ? undefined : selectedOptions);
+    emitElement(node, out, rootToken, isRoot, fresh ? undefined : selectedOptions, tokens);
     return;
   }
   if (node.kind === "text") {
@@ -645,10 +657,10 @@ function emitChild(
     return;
   }
   if (node.kind === "normalized") {
-    emitRange(node.source, node.children, out, selectedOptions);
+    emitRange(node.source, node.children, out, selectedOptions, tokens);
     return;
   }
-  emitRange(node, node.children, out, selectedOptions);
+  emitRange(node, node.children, out, selectedOptions, tokens);
 }
 
 function emitRange(
@@ -656,6 +668,7 @@ function emitRange(
   children: readonly EmitChild[],
   out: string[],
   selectedOptions: Set<HtmlElement> | undefined,
+  tokens: ReadonlyMap<string, string> | undefined,
 ): void {
   if (!isValidToken(range.token)) {
     throw new HtmlRecordError(
@@ -664,11 +677,12 @@ function emitRange(
       range.meta.site,
     );
   }
-  out.push("<!--rz:1:", range.token, ":start-->");
+  const token = transportToken(range.token, tokens, range.meta.site);
+  out.push("<!--rz:1:", token, ":start-->");
   for (const kid of children) {
-    emitChild(kid, out, undefined, false, selectedOptions);
+    emitChild(kid, out, undefined, false, selectedOptions, tokens);
   }
-  out.push("<!--rz:1:", range.token, ":end-->");
+  out.push("<!--rz:1:", token, ":end-->");
 }
 
 /**
@@ -680,15 +694,15 @@ function emitRange(
  */
 export function serializeToString(root: HtmlElement, options?: HtmlSerializeOptions): string {
   const out: string[] = [];
-  emitElement(root, out, options?.token, true, undefined);
+  emitElement(root, out, options?.token, true, undefined, options?.ownerTokens);
   return out.join("");
 }
 
 /** Serializes sibling nodes without a root token for assembler fragments. */
-export function serializeNodes(nodes: readonly HtmlNode[]): string {
+export function serializeNodes(nodes: readonly HtmlNode[], ownerTokens?: ReadonlyMap<string, string>): string {
   const out: string[] = [];
   for (const node of nodes) {
-    emitChild(node, out, undefined, false, undefined);
+    emitChild(node, out, undefined, false, undefined, ownerTokens);
   }
   return out.join("");
 }
