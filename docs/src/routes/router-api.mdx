@@ -163,6 +163,6 @@ export default function PostPage(props: RoutePropsFor<"/blog/:id">) {
 }
 ```
 
-`RouteProps` carries `params`, `location`, `data`, and `children`. `preload` receives `{ params, location, intent }` with intent `"initial" | "navigate" | "preload"`. `DataOf<M>` is the awaited `preload` return; `ParamsFor<P>`, `DataFor<P>`, `RoutePropsFor<P>`, `HrefFor<H>`, `RoutePattern`, and `RoutePath` read the registration, falling back to loose types without the plugin. `useMatch` is the public way to match a pattern; the matching helpers behind it are internal.
+`RouteProps` carries `params`, `location`, `data`, and `children`. `preload` receives `{ params, location, intent }` with intent `"initial" | "navigate" | "preload"`. Type the `route` export with `satisfies RouteConfigFor<P, D = unknown>`: `P` is the leaf pattern, `D` the data `preload` returns, and `meta` and `redirect` callbacks receive it. `DataOf<M>` is the awaited `preload` return; `ParamsFor<P>`, `DataFor<P>`, `RoutePropsFor<P>`, `HrefFor<H>`, `RoutePattern`, and `RoutePath` read the registration, falling back to loose types without the plugin. `useMatch` is the public way to match a pattern; the matching helpers behind it are internal.
 
 See [routing](/routing) for the guide, [installation](/installation) for setup, and the [compiler](/compiler) for anchor claiming.

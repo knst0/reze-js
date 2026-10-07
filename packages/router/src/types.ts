@@ -166,8 +166,12 @@ export type DataFor<P extends RoutePattern> = Register extends { routes: infer R
 /** Component props for leaf `P`: params and data follow the route, no manual generics. */
 export type RoutePropsFor<P extends RoutePattern> = RouteProps<ParamsFor<P>, DataFor<P>>;
 
-/** A file route's `route` export for leaf `P`: preload params follow the pattern, the return stays author-declared. */
-export interface RouteConfigFor<P extends RoutePattern, D> {
+/**
+ * A file route's `route` export for leaf `P`, written `export const route = { … } satisfies RouteConfigFor<P, D>`:
+ * preload params follow the pattern, the return stays author-declared, and `D` defaults to `unknown` for modules
+ * without data.
+ */
+export interface RouteConfigFor<P extends RoutePattern, D = unknown> {
   preload?: (args: PreloadArgs<ParamsFor<P>>) => D;
   meta?: PageMetadata | ((args: RouteResolvedArgs<ParamsFor<P>, D>) => Awaitable<PageMetadata>);
   redirect?: RouteRedirect | ((args: RouteResolvedArgs<ParamsFor<P>, D>) => Awaitable<RouteRedirect | undefined>);

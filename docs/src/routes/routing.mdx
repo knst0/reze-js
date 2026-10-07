@@ -180,7 +180,14 @@ export default function PostPage(props: RoutePropsFor<"/blog/:id">) {
 `route.meta` sets the page head from the settled preload data: a literal object or a callback returning one. Entries merge root-to-leaf with the last defined field winning; fields missing from the new branch fall back to the template baseline instead of lingering from the previous page. Static builds write the merged head into each page's HTML, and client navigation applies the same fields to the document. Markdown and MDX pages export `route.meta` explicitly; frontmatter is not read into it.
 
 ```tsx
+import type { RouteConfigFor } from "@rezejs/router";
+
+interface Post {
+  title: string;
+}
+
 export const route = {
+  preload: ({ params }) => ({ title: `Post ${params.id}` }),
   meta: ({ data }) => ({ title: data.title }),
 } satisfies RouteConfigFor<"/blog/:id", Post>;
 ```
@@ -188,8 +195,12 @@ export const route = {
 `route.redirect` leaves the page before it renders. A literal object short-circuits the navigation before `preload` runs; a callback receives the settled data and runs after it. A module with only a redirect and no component renders nothing:
 
 ```tsx
-export const route = { redirect: { to: "/installation", replace: true } };
+import type { RouteConfigFor } from "@rezejs/router";
+
+export const route = { redirect: { to: "/installation", replace: true } } satisfies RouteConfigFor<"/">;
 ```
+
+End every `route` export with `satisfies RouteConfigFor<pattern, Data>`. The check types the `preload` parameters from the pattern, types the `data` that `meta` and `redirect` callbacks receive from `Data`, and rejects unknown keys and wrong shapes such as a misspelled `preload` or a non-string `redirect.to`. `Data` defaults to `unknown` for modules without a `preload`.
 
 Static builds resolve redirect chains at build time and fail on loops or missing targets.
 
