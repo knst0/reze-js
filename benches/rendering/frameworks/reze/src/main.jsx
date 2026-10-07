@@ -1,5 +1,5 @@
-import { For, render, selector } from "reze-js";
 import { signal } from "@rezejs/signals";
+import { For, render, selector } from "reze-js";
 
 const adjectives = [
   "pretty",

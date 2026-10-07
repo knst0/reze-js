@@ -558,7 +558,8 @@ impl<'a> Rewrite<'_, '_, 'a> {
         if let Some(id) = rest
             && let Some(keys) = component.rest.as_ref().map(|plan| &plan.keys)
         {
-            let split = self.helpers.require(alloc, self.namer, "reze-js/internal/dom", "splitProps");
+            let split =
+                self.helpers.require(alloc, self.namer, "reze-js/internal/dom", "splitProps");
             entries.push(rest_decl(alloc, id, props, split, keys));
         }
         for (index, default) in component.defaults.iter().enumerate() {

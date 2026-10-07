@@ -7,9 +7,8 @@ export let moduleCatchValue;
 
 function moduleResource(name, prefix = "") {
   return makeModuleResource(() => {
-    const phase = typeof document === "undefined"
-      ? "seed"
-      : document.querySelector(`#module-${name}[data-hydrated]`) === null ? "early" : "live";
+    const phase =
+      typeof document === "undefined" ? "seed" : document.querySelector(`#module-${name}[data-hydrated]`) === null ? "early" : "live";
     if (typeof document !== "undefined") moduleRuns.push(`${name}:${phase}`);
     return Promise.resolve(`${prefix}${phase}`);
   });

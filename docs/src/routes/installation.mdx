@@ -105,7 +105,9 @@ export function Counter(props: { step: number }) {
 
   return (
     <section>
-      <p>Count: <output>{count}</output></p>
+      <p>
+        Count: <output>{count}</output>
+      </p>
       <p>Doubled: {doubled}</p>
       <button onClick={() => (count -= props.step)}>Decrease</button>
       <button onClick={() => (count = 0)} disabled={count === 0}>

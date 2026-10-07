@@ -16,7 +16,8 @@ const components: Record<string, MDXComponent> = {
   em: (props) => <em {...props} />,
   strong: (props) => <strong class="font-semibold" {...props} />,
   del: (props) => <del class="line-through" {...props} />,
-  code: (props) => ("data-sh-language" in props ? <code {...props} /> : <code class="rounded bg-accent/20 px-1 py-0.5 text-sm" {...props} />),
+  code: (props) =>
+    "data-sh-language" in props ? <code {...props} /> : <code class="rounded bg-accent/20 px-1 py-0.5 text-sm" {...props} />,
   pre: (props) => <pre class="mb-4 overflow-x-auto rounded-3xl bg-bg-surface py-5 px-6 text-sm whitespace-pre" {...props} />,
   table: (props) => <table class="mb-4 w-full text-left text-sm" {...props} />,
   thead: (props) => <thead {...props} />,
