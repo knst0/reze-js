@@ -80,3 +80,10 @@ test("production bundles drop the profile channel even when a session can instal
     /profileHook\.|profileCreated|profileReran|profileWrote|profileDisposed|profileComponent|startProfileSession|"rerun"/,
   );
 });
+
+test("production bundles drop the fixed render binding's change check", async () => {
+  const render = fileURLToPath(new URL("../src/render.ts", import.meta.url));
+  const fixed = `export { fixedRenderEffect } from ${JSON.stringify(render)};`;
+  expect(await bundle("signal", "development", fixed)).toMatch(/A compiled binding read/);
+  expect(await bundle("signal", "production", fixed)).not.toMatch(/A compiled binding read|rerunChecked|warnedFixed/);
+});
