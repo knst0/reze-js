@@ -74,6 +74,7 @@ const total = computed((prev = 0) => prev + count());
   reading a computed while it evaluates warns and returns the stale value.
 - A throw in the getter propagates to the reader; under `catchError` it goes
   to the handler and the computed keeps its previous value.
+- `options.name` is the name profiling shows; ignored in production builds.
 
 ```tsx
 import { $computed, $signal } from "reze-js";
@@ -210,6 +211,8 @@ See [Reactivity](/reactivity) for complete `$action` and `action` examples.
   makes are kept on success and undone on failure. Only store writes are
   journaled; signal writes stay immediate. In development, calling an action
   while a computed or render binding runs throws.
+- `options.name` is the name profiling shows for `pending` and `error`;
+  ignored in production builds.
 - `interface Action<Args, R> { (...args: Args): Promise<R>; readonly pending: number; readonly error: unknown }` —
   the promise rejects with what the run threw after its writes are undone;
   `pending` counts runs in flight (tracked); `error` holds the latest failure,
@@ -268,6 +271,8 @@ catchError(
   a context that is also its own provider component:
   `<Theme value="dark">children</Theme>`. Without a default, reading outside a
   provider throws `ContextNotFoundError`.
+- `interface Context<T> extends ContextKey<T> { readonly hasDefault: boolean; <C>(props: { value: T; children: C }): C }` —
+  what `createContext` returns; the `value` prop is read once.
 - `provideContext<T, R>(context: ContextKey<T>, value: T, fn: () => R): R` —
   runs `fn` untracked under a new owner providing `value`; visible to anything
   created inside, now or later. Lives as long as the current owner.
@@ -291,6 +296,14 @@ catchError(
   what it read changes, passing the previous result. A binding that read
   nothing reactive and created nothing is dropped immediately. Marked pure in
   development: writing stores or calling actions inside throws.
+- `fixedRenderEffect(fn: () => void): void` (from `@rezejs/signals/render`,
+  re-exported by `reze-js`) — `renderEffect` for a binding that reads the same
+  reactive values on every run; the compiler emits it for bindings whose reads
+  are unconditional. The first run tracks. In production, reruns skip tracking
+  entirely, so a rerun that would read a different set of values misses
+  updates. In development, reruns track and warn once, printing the binding,
+  when the read set changes. Do not read signals inside `toString`, `valueOf`,
+  or getters of values you bind to attributes or text.
 
 ## Related pages
 

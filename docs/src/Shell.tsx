@@ -48,6 +48,7 @@ export function Shell(props: { children: JSX.Element }) {
               <NavLink href={paths.components()}>Components and JSX</NavLink>
               <NavLink href={paths.reactivity()}>Reactivity</NavLink>
               <NavLink href={paths.lifecycle()}>Lifecycle and cleanup</NavLink>
+              <NavLink href={paths["familiar-patterns"]()}>Familiar patterns</NavLink>
             </NavGroup>
             <h2>Building applications</h2>
             <NavGroup>

@@ -115,6 +115,16 @@ These tags are compiled into control-flow helpers. Use them as JSX tags: do not 
 
 The [interface guide](/building-interfaces) explains conditional rendering, lists, boundaries, and portals.
 
+## Compiled bindings
+
+An attribute, class toggle, or text expression that reads reactive values compiles into an effect that rewrites only what it owns. Bindings with the same dependencies share one effect.
+
+When every reactive read of an effect happens on every run, the compiler emits `fixedRenderEffect` instead of `renderEffect`. A read counts when it is a direct call of a signal or computed getter in an operand of arithmetic, comparison, unary, or template expressions, or in the test of a conditional or the left side of `&&`, `||`, and `??`. A getter read in a branch of `? :` or on the right of a logical operator is conditional. Member access, optional chains, calls of other functions, and `props.x` reads are opaque. One conditional or opaque member keeps the whole group on `renderEffect`. The first run tracks; in production builds later runs do not, so they skip the bookkeeping that re-tracking costs.
+
+This makes one rule part of the contract: **a value bound to an attribute or text must not read signals inside its `toString`, `valueOf`, or getters.** Coercion happens inside the binding, and a read there would be missed in production. Development builds track every run and warn once, printing the binding, when its reads change. Only the client target uses `fixedRenderEffect`.
+
+A child expression of a known number or string kind is written straight to a text node instead of going through the general insert. A `$signal` or `signal` has a known kind when it starts from a number or string literal and every write is a call of its setter with a value of the same kind, such as `count += 1` or `name = name + "!"`. A write that takes a value from elsewhere, such as `count += props.step`, an updater with a parameter, or a setter passed as a value, leaves the kind unknown and the child uses the general path. The result is the same text; the general path also accepts nodes and arrays.
+
 ## Transformation scope
 
 By default, the Vite plugin processes `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`, excluding files in `node_modules`. It compiles the client environment and, when SSG is enabled, the build-time HTML environment.
@@ -166,14 +176,18 @@ Site identities use the first 16 lowercase hexadecimal characters of BLAKE3 over
 
 Diagnostics include a bracketed code, source location, and repair information. Errors stop the transform; warnings are reported through Vite. Fix the cause instead of bypassing the transform.
 
-| Code                     | Meaning                                             | Correction                                           |
-| ------------------------ | --------------------------------------------------- | ---------------------------------------------------- |
-| `SIGNAL_NOT_DECLARED`    | Compiler syntax has no supported local declaration. | Initialize one named variable with `let` or `const`. |
-| `SIGNAL_EXPORTED`        | A rewritten reactive binding is exported.           | Export a getter or use the ordinary runtime API.     |
-| `COMPUTED_FUNCTION`      | `$computed` received an inline function.            | Pass the expression directly.                        |
-| `COMPUTED_WRITTEN`       | Derived state is being assigned.                    | Update its source signals.                           |
-| `CONTROL_FLOW_AS_VALUE`  | An intrinsic is used outside a JSX tag.             | Render the tag inside an ordinary component.         |
-| `CONTROL_FLOW_ATTRIBUTE` | An intrinsic received an unsupported attribute.     | Remove it or use the documented attribute.           |
+| Code                     | Meaning                                                                                   | Correction                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `SIGNAL_NOT_DECLARED`    | Compiler syntax has no supported local declaration.                                       | Initialize one named variable with `let` or `const`. |
+| `SIGNAL_EXPORTED`        | A rewritten reactive binding is exported.                                                 | Export a getter or use the ordinary runtime API.     |
+| `COMPUTED_FUNCTION`      | `$computed` received an inline function.                                                  | Pass the expression directly.                        |
+| `COMPUTED_WRITTEN`       | Derived state is being assigned.                                                          | Update its source signals.                           |
+| `CONTROL_FLOW_AS_VALUE`  | An intrinsic is used outside a JSX tag.                                                   | Render the tag inside an ordinary component.         |
+| `CONTROL_FLOW_ATTRIBUTE` | An intrinsic received an unsupported attribute.                                           | Remove it or use the documented attribute.           |
+| `PROPS_DESTRUCTURED`     | Props are destructured in a form the compiler cannot rewrite, so each value is read once. | Take `props` and read `props.x` where it is used.    |
+| `KEY_ON_ELEMENT`         | `key` on a native element does nothing.                                                   | Remove it; key rows with `<For keyed>`.              |
+| `UNKNOWN_ATTRIBUTE`      | An attribute name is not a known HTML attribute.                                          | Use the suggested name, such as `class`.             |
+| `EVENT_NAME_LOWERCASE`   | A lowercase `onclick` received a function.                                                | Use `onClick`.                                       |
 
 To capture all diagnostic severities, including informational diagnostics:
 

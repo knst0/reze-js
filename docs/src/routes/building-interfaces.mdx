@@ -11,7 +11,7 @@ Component execution, props, and children are described in [components](/componen
 
 ## Events and user input
 
-Listeners use camel-case names such as `onClick` and `onInput`. A lowercase `onclick` is an HTML attribute, not a listener.
+Listeners use camel-case names such as `onClick` and `onInput`. A lowercase `onclick={handler}` still attaches a listener, but the compiler reports `EVENT_NAME_LOWERCASE` and suggests `onClick`; only a string literal `onclick="..."` renders as an HTML attribute.
 
 ```tsx
 import { $signal } from "reze-js";
@@ -297,6 +297,31 @@ export function Dialog() {
 ```
 
 The `<b>` renders inside `target` while the surrounding `<div>` renders in place. A reactive `mount` moves the same nodes when it changes; omitting `mount` or passing `null` selects the body. Children stay reactive after a move, components inside stay alive, and a delegated event inside the portal still reaches its handler. Toggling a portal accumulates nothing in the mount, and disposing its owner removes its nodes. An error thrown while building portal children reaches the `Errored` around the tag.
+
+## Loading and errors
+
+`Loading` shows its `fallback` until everything built below it has finished its first load, then shows the children for good. An async component (an `async function` component, see [lifecycle](/lifecycle)) or an `asyncComputed` read below it counts as a load. Later reloads keep the current content; a `Show` or `Match` that switches sides keeps the old side on screen until the new side has loaded. `Errored` shows its children, and when anything built inside throws, including a rejected load, it disposes them and shows `fallback(error, reset)`. Calling `reset` builds the children again.
+
+```tsx
+import { Errored, Loading } from "reze-js";
+
+async function User(props: { id: number }) {
+  const user = await fetch(`/api/users/${props.id}`).then((response) => response.json());
+  return <b>{user.name}</b>;
+}
+
+export function Profile(props: { id: number }) {
+  return (
+    <Errored fallback={(error, reset) => <button onClick={reset}>Retry</button>}>
+      <Loading fallback={<i>loading</i>}>
+        <User id={props.id} />
+      </Loading>
+    </Errored>
+  );
+}
+```
+
+The `fallback` of `Loading` is never waited for, so an async component inside it does not block it. An error thrown by the `fallback` of `Errored` goes to the next handler outward.
 
 ## Constraints and pitfalls
 

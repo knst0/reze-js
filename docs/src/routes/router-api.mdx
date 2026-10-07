@@ -88,7 +88,7 @@ export function Meta() {
 }
 ```
 
-Each hook returns a reactive getter, so call the result to read the current value, as in `location()` and `params()`. The snippet names every return for reference. `useLocation()` returns the reactive location: `pathname`, `search`, `hash`, `query` (repeated keys map to every value in order), and history `state`. `useParams()` returns the deepest match's params merged across layouts; `useParams("/blog/:id")` narrows them to a registered pattern. `useNavigate()` returns `navigate(to, options)`: a route path resolved against the current location, a same-origin absolute URL, or a history delta. Options are `{ replace, state, scroll }` with scroll defaulting to true. `useSearchParams()` returns the query and a setter that merges into the pending location, deletes `null`/`undefined` keys, writes one entry per array item, and defaults to `{ scroll: false }`. `useMatch(() => pattern)` matches one pattern against the current pathname; a trailing `/*` makes it a prefix match. `useIsRouting()` is true while chunks load. `useCurrentMatches()` returns `{ path, params, data, info }` per level.
+Each hook returns a reactive getter, so call the result to read the current value, as in `location()` and `params()`. The snippet names every return for reference. `useLocation()` returns the reactive location: `pathname`, `search`, `hash`, `query` (repeated keys map to every value in order), and history `state`. `useParams()` returns the deepest match's params merged across layouts; `useParams("/blog/:id")` narrows them to a registered pattern. `useNavigate()` returns `navigate(to, options)`: a route path resolved against the current location, a same-origin absolute URL, or a history delta. Options are `{ replace, state, scroll }` with scroll defaulting to true. `useSearchParams()` returns the query and a setter that merges into the pending location, deletes `null`/`undefined` keys, writes one entry per non-nullish array item, and defaults to `{ scroll: false }`. `useMatch(() => pattern)` matches one pattern against the current pathname; a trailing `/*` makes it a prefix match. `useIsRouting()` is true while chunks load. `useCurrentMatches()` returns `{ path, params, data, info }` per level.
 
 ```tsx
 import { useBeforeLeave } from "@rezejs/router";
@@ -143,7 +143,7 @@ export default defineConfig({
 });
 ```
 
-`reze({ fileRoutes: true })` uses `@rezejs/router/fs` defaults; an options object overrides them. `dir` is relative to the Vite root. `types` selects the generated declaration file, `false` disables it. `links` claims native anchors. `history: "hash"` types `#/path` hrefs. `extensions` defaults to the top-level `extensions` or script extensions; listing a non-script extension needs a preprocessor running before this plugin, see preprocessing in [installation](/installation). The plugin serves `virtual:reze-routes` with one lazy chunk per route file and triggers a full reload when the tree changes.
+`reze({ fileRoutes: true })` uses `@rezejs/router/fs` defaults; an options object overrides them. `dir` is relative to the Vite root. `types` selects the generated declaration file, `false` disables it. `links` claims native anchors. `history: "hash"` types `#/path` hrefs. `extensions` defaults to the top-level `extensions` or script extensions; listing a non-script extension needs a preprocessor running before this plugin, see [Vite plugin](/vite-plugin). The plugin serves `virtual:reze-routes` with one lazy chunk per route file and triggers a full reload when the tree changes.
 
 The generated `.d.ts` registers leaf patterns with params and preload data, the `paths` builders, every href shape, and `base`, which drives the typed `Href`, `useParams(from)`, and builder calls. Route files export the component as default and data as `route`:
 
@@ -163,6 +163,6 @@ export default function PostPage(props: RoutePropsFor<"/blog/:id">) {
 }
 ```
 
-`RouteProps` carries `params`, `location`, `data`, and `children`. `preload` receives `{ params, location, intent }` with intent `"initial" | "navigate" | "preload"`. `DataOf<M>` is the awaited `preload` return; `ParamsFor<P>`, `DataFor<P>`, `RoutePropsFor<P>`, `HrefFor<H>`, `RoutePattern`, and `RoutePath` read the registration, falling back to loose types without the plugin. `matchPath(pattern, pathname)` (returning `{ params, path } | undefined`) backs `useMatch`; `pathKey` normalizes for comparison.
+`RouteProps` carries `params`, `location`, `data`, and `children`. `preload` receives `{ params, location, intent }` with intent `"initial" | "navigate" | "preload"`. `DataOf<M>` is the awaited `preload` return; `ParamsFor<P>`, `DataFor<P>`, `RoutePropsFor<P>`, `HrefFor<H>`, `RoutePattern`, and `RoutePath` read the registration, falling back to loose types without the plugin. `useMatch` is the public way to match a pattern; the matching helpers behind it are internal.
 
 See [routing](/routing) for the guide, [installation](/installation) for setup, and the [compiler](/compiler) for anchor claiming.

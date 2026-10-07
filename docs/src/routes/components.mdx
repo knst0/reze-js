@@ -31,15 +31,15 @@ export function Counter(props: { step: number }) {
 
 ## Execution
 
-`createComponent` calls the component once, untracked, so reads in the body never re-run the caller. A component that renders `<b>{props.n}</b>` builds the `<b>` one time; when `props.n` changes, only the text binding re-evaluates. Destructuring in the parameter list stays reactive for the same reason, including defaults and rest:
+`createComponent` calls the component once, untracked, so reads in the body never re-run the caller. A component that renders `<b>{props.n}</b>` builds the `<b>` one time; when `props.n` changes, only the text binding re-evaluates. Take `props` as the one parameter and read its fields where the values are used:
 
 ```tsx
 import { $signal } from "reze-js";
 
-function Link({ href, label = "home", ...rest }: { href: string; label?: string; title?: string }) {
+function Link(props: { href: string; label?: string; title?: string }) {
   return (
-    <a href={href} {...rest}>
-      {label}
+    <a href={props.href} title={props.title}>
+      {props.label ?? "home"}
     </a>
   );
 }
@@ -51,23 +51,21 @@ export function Nav() {
 }
 ```
 
-`Link` renders once. Changing `href` or `title` updates the `href` attribute and the spread without rebuilding the anchor. The same rule applies to local `$signal` reads: the body never re-runs for sources it reads. Reactive behavior of the declarations themselves is described in [reactivity](/reactivity), and disposal of what a component built is described in [lifecycle](/lifecycle).
+`Link` renders once. Changing `href` or `title` updates the `href` and `title` attributes without rebuilding the anchor. The same rule applies to local `$signal` reads: the body never re-runs for sources it reads. Reading a prop into a variable in the body takes a snapshot that never updates. A destructured parameter list is also supported, in the forms the compiler can rewrite, but it has edges that lose updates; see [familiar patterns](/familiar-patterns). Reactive behavior of the declarations themselves is described in [reactivity](/reactivity), and disposal of what a component built is described in [lifecycle](/lifecycle).
 
 ## Supported JSX
 
 Elements, fragments, arrays, and getters compose in order between static siblings:
 
 ```tsx
-import { $signal } from "reze-js";
+import { $signal, For } from "reze-js";
 
 export function List() {
   let items = $signal(["x", "y"]);
   return (
     <ul>
       <li>first</li>
-      {items.map((name) => (
-        <li>{name}</li>
-      ))}
+      <For each={items}>{(name) => <li>{name}</li>}</For>
       <>
         <li>middle</li>
       </>
@@ -77,9 +75,9 @@ export function List() {
 }
 ```
 
-Setting `items` to `["z"]` replaces the two mapped rows in place and leaves the `first`, `middle`, and `last` rows alone. A text run such as `doubled: {n * 2}` owns a single text node and rewrites it in place. A conditional written with `? :` or `&&` rebuilds its branch only when the test truthiness flips; while the test stays truthy the branch keeps its nodes and updates its bindings in place. The branch forms are detailed in [building interfaces](/building-interfaces).
+Setting `items` to `["z"]` removes the two rows and builds one in their place, and leaves the `first`, `middle`, and `last` rows alone. A text run such as `doubled: {n * 2}` owns a single text node and rewrites it in place. A conditional written with `? :` or `&&` rebuilds its branch only when the test truthiness flips; while the test stays truthy the branch keeps its nodes and updates its bindings in place. The branch forms are detailed in [building interfaces](/building-interfaces). A list written as `{items.map(...)}` also works, but it rebuilds every row on each change; see [familiar patterns](/familiar-patterns).
 
-Attribute values are plain values, not thunks. The compiler re-evaluates the attribute expression in an effect, so a bare function would reach the DOM. Functions are valid only as `children` and as event handlers. A lowercase `onclick` is an HTML attribute; a listener is the camel-case `onClick` or the `on:` form described in [building interfaces](/building-interfaces).
+Attribute values are plain values, not thunks. The compiler re-evaluates the attribute expression in an effect, so a bare function would reach the DOM. Functions are valid as `children`, as event handlers, and as `ref` callbacks. A listener is the camel-case `onClick` or the `on:` form described in [building interfaces](/building-interfaces); a lowercase `onclick={handler}` still attaches the listener, but the compiler reports it and suggests `onClick`, and only a string literal `onclick="..."` renders as an HTML attribute.
 
 ## Props
 
@@ -196,7 +194,7 @@ export function Picker() {
 
 Switching `picked` from `Bold` to `Italic` disposes the `<b>` tree and builds `<i>`; setting it to `false` renders nothing. While the choice stays the same, prop updates flow through without rebuilding: setting `label` to `"b"` rewrites the text in place. Switching on an unrelated signal does not rebuild either.
 
-Every call to `dynamic` creates a new component, so call it once per owner: hoist the call to module scope when the choice does not depend on local state, and when it closes over local state call it once in the component body, which runs once, so each instance gets its own component. A component kept in a signal is set with `setter(() => Component)`, since a bare function would be read as an updater. `dynamic` accepts components only; returning a tag-name string at runtime throws and directs the reader to `dynamicElement` for that case.
+Every call to `dynamic` creates a new component, so call it once per owner: hoist the call to module scope when the choice does not depend on local state, and when it closes over local state call it once in the component body, which runs once, so each instance gets its own component. A component kept in a signal is set with `setter(() => Component)`, since a bare function would be read as an updater. `dynamic` accepts components only; returning a tag-name string at runtime throws, and development builds name `dynamicElement` as the way to render a tag name chosen at runtime.
 
 ## Constraints and pitfalls
 

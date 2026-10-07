@@ -10,12 +10,13 @@ declare module "virtual:reze-routes/register" {
   import type { HrefFor } from "@rezejs/router";
   module "@rezejs/router" {
     interface Register {
-      paths: "/" | "/building-interfaces" | "/compiler" | "/components" | "/installation" | "/lifecycle" | "/reactivity" | "/router-api" | "/routing" | "/signals-api" | "/vite-plugin";
+      paths: "/" | "/building-interfaces" | "/compiler" | "/components" | "/familiar-patterns" | "/installation" | "/lifecycle" | "/reactivity" | "/router-api" | "/routing" | "/signals-api" | "/vite-plugin";
       base: "";
       routes: {
         "/building-interfaces": { params: {}; data: DataOf<import("./routes/building-interfaces.mdx")> };
         "/compiler": { params: {}; data: DataOf<import("./routes/compiler.mdx")> };
         "/components": { params: {}; data: DataOf<import("./routes/components.mdx")> };
+        "/familiar-patterns": { params: {}; data: DataOf<import("./routes/familiar-patterns.mdx")> };
         "/": { params: {}; data: DataOf<import("./routes/index")> };
         "/installation": { params: {}; data: DataOf<import("./routes/installation.mdx")> };
         "/lifecycle": { params: {}; data: DataOf<import("./routes/lifecycle.mdx")> };
@@ -25,7 +26,7 @@ declare module "virtual:reze-routes/register" {
         "/signals-api": { params: {}; data: DataOf<import("./routes/signals-api.mdx")> };
         "/vite-plugin": { params: {}; data: DataOf<import("./routes/vite-plugin.mdx")> };
       };
-      pathsTree: { readonly "building-interfaces": { (search?: SearchInit, hash?: string): HrefFor<"/building-interfaces"> }; readonly "compiler": { (search?: SearchInit, hash?: string): HrefFor<"/compiler"> }; readonly "components": { (search?: SearchInit, hash?: string): HrefFor<"/components"> }; readonly "index": { (search?: SearchInit, hash?: string): HrefFor<"/"> }; readonly "installation": { (search?: SearchInit, hash?: string): HrefFor<"/installation"> }; readonly "lifecycle": { (search?: SearchInit, hash?: string): HrefFor<"/lifecycle"> }; readonly "reactivity": { (search?: SearchInit, hash?: string): HrefFor<"/reactivity"> }; readonly "router-api": { (search?: SearchInit, hash?: string): HrefFor<"/router-api"> }; readonly "routing": { (search?: SearchInit, hash?: string): HrefFor<"/routing"> }; readonly "signals-api": { (search?: SearchInit, hash?: string): HrefFor<"/signals-api"> }; readonly "vite-plugin": { (search?: SearchInit, hash?: string): HrefFor<"/vite-plugin"> } };
+      pathsTree: { readonly "building-interfaces": { (search?: SearchInit, hash?: string): HrefFor<"/building-interfaces"> }; readonly "compiler": { (search?: SearchInit, hash?: string): HrefFor<"/compiler"> }; readonly "components": { (search?: SearchInit, hash?: string): HrefFor<"/components"> }; readonly "familiar-patterns": { (search?: SearchInit, hash?: string): HrefFor<"/familiar-patterns"> }; readonly "index": { (search?: SearchInit, hash?: string): HrefFor<"/"> }; readonly "installation": { (search?: SearchInit, hash?: string): HrefFor<"/installation"> }; readonly "lifecycle": { (search?: SearchInit, hash?: string): HrefFor<"/lifecycle"> }; readonly "reactivity": { (search?: SearchInit, hash?: string): HrefFor<"/reactivity"> }; readonly "router-api": { (search?: SearchInit, hash?: string): HrefFor<"/router-api"> }; readonly "routing": { (search?: SearchInit, hash?: string): HrefFor<"/routing"> }; readonly "signals-api": { (search?: SearchInit, hash?: string): HrefFor<"/signals-api"> }; readonly "vite-plugin": { (search?: SearchInit, hash?: string): HrefFor<"/vite-plugin"> } };
     }
   }
 }

@@ -173,11 +173,11 @@ export default function PostPage(props: RoutePropsFor<"/blog/:id">) {
 }
 ```
 
-`preload` runs with intent `"preload"` when a link to the route is hovered, focused, or touched, and again with `"navigate"` when the route is entered, so cache the fetch when it should not repeat. Its return value becomes the component's `props.data`. A hash-only change keeps the current data without re-running `preload`.
+`preload` runs with intent `"preload"` when a link to the route is hovered, focused, or touched, and again with `"navigate"` when the route is entered (`"initial"` on the first load and in static builds), so cache the fetch when it should not repeat. Its return value becomes the component's `props.data`. A hash-only change keeps the current data without re-running `preload`.
 
 ## Metadata and redirects
 
-`route.meta` sets the page head from the settled preload data: a literal object or a callback returning one. Entries merge root-to-leaf with the last defined field winning; fields missing from the new branch fall back to the template baseline instead of lingering from the previous page. Static builds write the merged head into each page's HTML, and client navigation applies the same fields to the document. Markdown pages derive `meta` from their frontmatter title and description.
+`route.meta` sets the page head from the settled preload data: a literal object or a callback returning one. Entries merge root-to-leaf with the last defined field winning; fields missing from the new branch fall back to the template baseline instead of lingering from the previous page. Static builds write the merged head into each page's HTML, and client navigation applies the same fields to the document. Markdown and MDX pages export `route.meta` explicitly; frontmatter is not read into it.
 
 ```tsx
 export const route = {
@@ -206,7 +206,7 @@ export function BackButton() {
 }
 ```
 
-`navigate("/about")` pushes by default; `navigate("/about", { replace: true })` replaces, `{ state }` attaches history state, `{ scroll: false }` keeps the scroll position. Passing a number moves through history (`navigate(-1)`). Absolute same-origin URLs resolve against the router; anything outside it, links with `target="_blank"`, `download`, `rel="external"`, modified clicks, or hrefs matching no route stay with the browser. Anchor attributes map onto navigation options: `replace` replaces, `noscroll` keeps scroll, `state` passes the raw string as history state.
+`navigate("/about")` pushes by default; `navigate("/about", { replace: true })` replaces, `{ state }` attaches history state, `{ scroll: false }` keeps the scroll position. Passing a number moves through history (`navigate(-1)`). Absolute same-origin URLs resolve against the router; anything outside it, links with a `target` other than `_self`, `download`, `rel="external"`, modified clicks, or hrefs matching no route stay with the browser. Anchor attributes map onto navigation options: `replace` replaces, `noscroll` keeps scroll, `state` passes the raw string as history state.
 
 ```tsx
 export function Actions() {
@@ -287,7 +287,7 @@ export function Filters() {
 }
 ```
 
-The setter merges into the current query: `null` or `undefined` deletes a key, an array writes one entry per item, and it builds on the pending location even mid-navigation.
+The setter merges into the current query: `null` or `undefined` deletes a key, an array writes one entry per non-nullish item, and it builds on the pending location even mid-navigation.
 
 Claimed anchors expose their state as attributes: `aria-current="page"` on the exact URL, `data-active` on the URL or its segment-prefix, `data-pending` while a navigation to exactly that pathname waits for chunks.
 
