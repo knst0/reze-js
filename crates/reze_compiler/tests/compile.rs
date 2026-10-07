@@ -142,3 +142,89 @@ fn attribute_and_flow_warnings_report_their_codes() {
     assert_eq!(out.diagnostics[4].code, Code::InlineEach);
     assert!(out.diagnostics.iter().all(|d| d.severity == Severity::Warn));
 }
+
+fn client_code_with_signals(attributes: &str) -> String {
+    let source = format!(
+        "import {{ $signal }} from \"reze-js\";\nexport function C() {{\n  let a = $signal(0);\n  let b = $signal(0);\n  return <div {attributes} onClick={{() => {{ a += 1; b += 1; }}}} />;\n}}"
+    );
+    output_for(&source, "test.tsx", &Options::default()).code
+}
+
+#[test]
+fn bindings_with_unconditional_reads_are_fixed() {
+    for attributes in [r#"title={a + "-" + b}"#, r#"class={a > 1 ? "x" : "y"}"#] {
+        let code = client_code_with_signals(attributes);
+        assert!(code.contains("fixedRenderEffect("), "{attributes}\n{code}");
+        assert!(!code.contains("_$renderEffect("), "{attributes}\n{code}");
+    }
+}
+
+#[test]
+fn bindings_with_conditional_or_opaque_reads_stay_dynamic() {
+    for attributes in [
+        r#"title={a > 1 ? b : "y"}"#,
+        r#"title={a.toString()}"#,
+        r#"title={a ?? b}"#,
+        r#"title={a > 0 && b}"#,
+    ] {
+        let code = client_code_with_signals(attributes);
+        assert!(code.contains("_$renderEffect("), "{attributes}\n{code}");
+        assert!(!code.contains("fixedRenderEffect("), "{attributes}\n{code}");
+    }
+}
+
+#[test]
+fn a_group_is_fixed_only_when_every_member_is() {
+    let code = client_code_with_signals(r#"title={a} data-x={a > 0 && a}"#);
+    assert!(code.contains("_$renderEffect("), "{code}");
+    assert!(!code.contains("fixedRenderEffect("), "{code}");
+}
+
+#[test]
+fn hydrate_bindings_are_never_fixed() {
+    let source = "import { $signal } from \"reze-js\";\nexport function C() {\n  let a = $signal(0);\n  let b = $signal(0);\n  return <div title={a + \"-\" + b} onClick={() => { a += 1; b += 1; }} />;\n}";
+    let options = Options {
+        target: reze_compiler::CompileTarget::Hydrate,
+        module_id: Some("m".into()),
+        ..Options::default()
+    };
+    let code = output_for(source, "test.tsx", &options).code;
+    assert!(!code.contains("fixedRenderEffect"), "{code}");
+}
+
+fn client_body(declarations: &str, view: &str) -> String {
+    let source = format!(
+        "import {{ $signal, signal }} from \"reze-js\";\nexport function C(props) {{\n  {declarations}\n  return {view};\n}}"
+    );
+    output_for(&source, "test.tsx", &Options::default()).code
+}
+
+#[test]
+fn a_child_read_of_a_signal_whose_every_write_keeps_its_kind_is_a_text_write() {
+    for (declarations, view) in [
+        ("let n = $signal(0);", "<p onClick={() => { n += 1; }}>{n}</p>"),
+        ("let n = $signal(0);", "<p onClick={() => { n++; }}>{n}</p>"),
+        (r#"let s = $signal("a");"#, r#"<p onClick={() => { s = s + "!"; }}>{s}</p>"#),
+        ("let n = $signal(0); let m = $signal(1);", "<p onClick={() => { n = m; m += n; }}>{n}{m}</p>"),
+    ] {
+        let code = client_body(declarations, view);
+        assert!(code.contains(".data ="), "{declarations} {view}\n{code}");
+        assert!(!code.contains("_$insert("), "{declarations} {view}\n{code}");
+    }
+}
+
+#[test]
+fn a_child_read_stays_an_insert_when_a_write_may_change_its_kind() {
+    for (declarations, view) in [
+        ("let n = $signal(0);", "<p onClick={() => { n += props.step; }}>{n}</p>"),
+        ("let n = $signal(0);", "<p onClick={() => { n = props.value; }}>{n}</p>"),
+        ("let n = $signal(0);", "<p onClick={() => { n &&= props.x; }}>{n}</p>"),
+        ("const [n, setN] = signal(0);", "<p onClick={() => setN((v) => v + 1)}>{n()}</p>"),
+        ("const [n, setN] = signal(0);", "<p onClick={props.on(setN)}>{n()}</p>"),
+        ("let n = $signal(0); let m = $signal(0);", "<p onClick={() => { n = m; m = props.x; }}>{n}</p>"),
+    ] {
+        let code = client_body(declarations, view);
+        assert!(code.contains("_$insert("), "{declarations} {view}\n{code}");
+        assert!(!code.contains(".data ="), "{declarations} {view}\n{code}");
+    }
+}

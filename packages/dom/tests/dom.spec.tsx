@@ -9,13 +9,13 @@ test("text and attribute bindings update in place", () => {
   const [name, setName] = signal("a");
   const { el } = mount(() => <p title={name()}>hi {name()}!</p>);
   const p = el.firstChild as HTMLElement;
-  const text = p.childNodes[1];
-  expect(el.innerHTML).toBe('<p title="a">hi a<!---->!</p>');
+  const text = p.firstChild;
+  expect(el.innerHTML).toBe('<p title="a">hi a!</p>');
   setName("b");
   tick();
-  expect(el.innerHTML).toBe('<p title="b">hi b<!---->!</p>');
+  expect(el.innerHTML).toBe('<p title="b">hi b!</p>');
   expect(el.firstChild).toBe(p);
-  expect(p.childNodes[1]).toBe(text);
+  expect(p.firstChild).toBe(text);
 });
 
 test("a write re-evaluates only the bindings reading that signal", () => {

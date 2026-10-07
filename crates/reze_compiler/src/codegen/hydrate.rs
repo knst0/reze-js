@@ -298,7 +298,12 @@ impl<'a> NativeTarget<'a> for Target<'a> {
         client::write_link(ctx, ast.ident(node), href)
     }
 
-    fn effect(&mut self, ctx: &mut EmitContext<'a, '_>, callback: Expression<'a>) -> Statement<'a> {
+    fn effect(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        callback: Expression<'a>,
+        _fixed: bool,
+    ) -> Statement<'a> {
         let ast = Ast::new(ctx.allocator);
         ast.stmt(ctx.call(HYDRATE, "prepareEffect", [callback, ast.ident(self.site)]))
     }

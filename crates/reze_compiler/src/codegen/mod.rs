@@ -253,15 +253,21 @@ impl<'a, 'm> EmitContext<'a, 'm> {
 
     fn text(&self, parts: &[TextPart]) -> Expression<'a> {
         let ast = Ast::new(self.allocator);
-        let mut value = ast.string("");
+        let mut value: Option<Expression<'a>> = None;
         for part in parts {
-            let next = match part {
-                TextPart::Static(text) => ast.string(text),
-                TextPart::Dynamic(dynamic) => self.expr(dynamic.expr),
+            let (next, is_string) = match part {
+                TextPart::Static(text) => (ast.string(text), true),
+                TextPart::Dynamic(dynamic) => {
+                    (self.expr(dynamic.expr), dynamic.kind == StaticKind::String)
+                }
             };
-            value = ast.binary(value, BinaryOperator::Addition, next);
+            value = Some(match value {
+                Some(value) => ast.binary(value, BinaryOperator::Addition, next),
+                None if is_string => next,
+                None => ast.binary(ast.string(""), BinaryOperator::Addition, next),
+            });
         }
-        value
+        value.unwrap_or_else(|| ast.string(""))
     }
 
     pub fn child(&mut self, child: &Child) -> Expression<'a> {

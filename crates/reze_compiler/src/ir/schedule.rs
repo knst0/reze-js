@@ -22,6 +22,7 @@ pub struct SchedMember {
 
 pub struct EffectGroup {
     pub deps: Vec<SymbolId>,
+    pub fixed: bool,
     pub members: Vec<SchedMember>,
 }
 

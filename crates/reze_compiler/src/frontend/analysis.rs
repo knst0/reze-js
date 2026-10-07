@@ -6,7 +6,7 @@ use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::{AstNodes, Scoping};
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::node::NodeId;
-use oxc_syntax::operator::BinaryOperator;
+use oxc_syntax::operator::{BinaryOperator, UnaryOperator};
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
@@ -89,6 +89,7 @@ pub struct SharedFacts {
     pub keyed: keyed::KeyedFacts,
     pub runtime_calls: HashMap<NodeId, RuntimeCallKind>,
     pub dynamic_tags: HashMap<NodeId, super::dynamic::DynamicTag>,
+    pub getter_kinds: HashMap<SymbolId, Kind>,
 }
 
 impl SharedFacts {
@@ -153,6 +154,135 @@ impl SharedFacts {
         refs.symbols.dedup();
         refs.symbols
     }
+
+    /// Whether every stable-getter read in `e` happens on every evaluation and nothing else in `e`
+    /// can read reactive state, so the reads of a binding over `e` never change between runs.
+    pub fn reads_unconditionally(&self, scoping: &Scoping, e: &Expression<'_>) -> bool {
+        self.fixed_reads(scoping, e, true)
+    }
+
+    fn fixed_reads(&self, scoping: &Scoping, e: &Expression<'_>, allows_reads: bool) -> bool {
+        match e.get_inner_expression() {
+            Expression::StringLiteral(_)
+            | Expression::NumericLiteral(_)
+            | Expression::BigIntLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NullLiteral(_)
+            | Expression::Identifier(_) => true,
+            Expression::TemplateLiteral(template) => template
+                .expressions
+                .iter()
+                .all(|part| self.fixed_reads(scoping, part, allows_reads)),
+            Expression::UnaryExpression(unary) => {
+                unary.operator != UnaryOperator::Delete
+                    && self.fixed_reads(scoping, &unary.argument, allows_reads)
+            }
+            Expression::BinaryExpression(binary) => {
+                !matches!(binary.operator, BinaryOperator::In | BinaryOperator::Instanceof)
+                    && self.fixed_reads(scoping, &binary.left, allows_reads)
+                    && self.fixed_reads(scoping, &binary.right, allows_reads)
+            }
+            Expression::ConditionalExpression(conditional) => {
+                self.fixed_reads(scoping, &conditional.test, allows_reads)
+                    && self.fixed_reads(scoping, &conditional.consequent, false)
+                    && self.fixed_reads(scoping, &conditional.alternate, false)
+            }
+            Expression::LogicalExpression(logical) => {
+                self.fixed_reads(scoping, &logical.left, allows_reads)
+                    && self.fixed_reads(scoping, &logical.right, false)
+            }
+            Expression::CallExpression(call) => {
+                if self.folded_read(call).is_some() {
+                    return true;
+                }
+                match &call.callee {
+                    Expression::Identifier(id) => {
+                        call.arguments.is_empty()
+                            && !call.optional
+                            && call.type_arguments.is_none()
+                            && self.is_stable_getter(scoping, id)
+                            && allows_reads
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// The primitive kind every evaluation of `e` produces, when the source alone proves it.
+    pub fn kind_of(&self, scoping: &Scoping, e: &Expression<'_>) -> Option<Kind> {
+        match e.without_parentheses() {
+            Expression::NumericLiteral(_) | Expression::BigIntLiteral(_) => Some(Kind::Numeric),
+            Expression::StringLiteral(_) | Expression::TemplateLiteral(_) => Some(Kind::String),
+            Expression::UnaryExpression(unary) => matches!(
+                unary.operator,
+                UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus | UnaryOperator::BitwiseNot
+            )
+            .then_some(Kind::Numeric),
+            Expression::BinaryExpression(binary) => self.binary_kind(scoping, binary),
+            Expression::ConditionalExpression(conditional) => {
+                let consequent = self.kind_of(scoping, &conditional.consequent)?;
+                (self.kind_of(scoping, &conditional.alternate)? == consequent).then_some(consequent)
+            }
+            Expression::CallExpression(call) => self.call_kind(scoping, call),
+            _ => None,
+        }
+    }
+
+    fn binary_kind(&self, scoping: &Scoping, binary: &BinaryExpression<'_>) -> Option<Kind> {
+        match binary.operator {
+            BinaryOperator::Subtraction
+            | BinaryOperator::Multiplication
+            | BinaryOperator::Division
+            | BinaryOperator::Remainder
+            | BinaryOperator::Exponential
+            | BinaryOperator::BitwiseOR
+            | BinaryOperator::BitwiseAnd
+            | BinaryOperator::BitwiseXOR
+            | BinaryOperator::ShiftLeft
+            | BinaryOperator::ShiftRight
+            | BinaryOperator::ShiftRightZeroFill => Some(Kind::Numeric),
+            BinaryOperator::Addition => {
+                match (self.kind_of(scoping, &binary.left), self.kind_of(scoping, &binary.right)) {
+                    (Some(Kind::String), _) | (_, Some(Kind::String)) => Some(Kind::String),
+                    (Some(Kind::Numeric), Some(Kind::Numeric)) => Some(Kind::Numeric),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn call_kind(&self, scoping: &Scoping, call: &CallExpression<'_>) -> Option<Kind> {
+        if call.optional {
+            return None;
+        }
+        if let Some((_, fold)) = self.folded_read(call) {
+            return fold.kind;
+        }
+        match &call.callee {
+            Expression::Identifier(id) => {
+                if Self::symbol(scoping, id).is_none() && id.reference_id.get().is_some() {
+                    return match id.name.as_str() {
+                        "String" => Some(Kind::String),
+                        "Number" => Some(Kind::Numeric),
+                        _ => None,
+                    };
+                }
+                if call.arguments.is_empty() && call.type_arguments.is_none() && self.is_stable_getter(scoping, id) {
+                    return self.getter_kinds.get(&Self::symbol(scoping, id)?).copied();
+                }
+                None
+            }
+            Expression::StaticMemberExpression(member)
+                if !member.optional && STRING_METHODS.contains(&member.property.name.as_str()) =>
+            {
+                Some(Kind::String)
+            }
+            _ => None,
+        }
+    }
 }
 
 struct StableGetterRefs<'a, 's> {
@@ -177,6 +307,84 @@ impl<'a> Visit<'a> for StableGetterRefs<'_, '_> {
     }
 }
 
+/// The value a setter call stores: the argument, or what a parameterless arrow returns, since the
+/// setter calls a function argument with the latest value.
+fn written_value<'e, 'a>(argument: &'e Argument<'a>) -> Option<&'e Expression<'a>> {
+    match argument.as_expression()?.without_parentheses() {
+        Expression::ArrowFunctionExpression(arrow)
+            if !arrow.r#async && arrow.params.items.is_empty() && arrow.params.rest.is_none() =>
+        {
+            arrow.get_expression()
+        }
+        value => Some(value),
+    }
+}
+
+struct SetterWrites<'a> {
+    facts: &'a SharedFacts,
+    scoping: &'a Scoping,
+    setters: HashMap<SymbolId, Kind>,
+    proven: HashMap<SymbolId, usize>,
+}
+
+impl<'a> Visit<'a> for SetterWrites<'_> {
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if let Expression::Identifier(id) = &it.callee
+            && let Some(symbol) = SharedFacts::symbol(self.scoping, id)
+            && let Some(&kind) = self.setters.get(&symbol)
+            && !it.optional
+            && let [argument] = it.arguments.as_slice()
+            && let Some(value) = written_value(argument)
+            && self.facts.kind_of(self.scoping, value) == Some(kind)
+        {
+            *self.proven.entry(symbol).or_insert(0) += 1;
+        }
+        walk::walk_call_expression(self, it);
+    }
+}
+
+/// Keeps the getters of written signals whose every write is a call of the setter with a value of the
+/// seed's kind. A write's kind may depend on getters of the same set, so the set shrinks to a fixed point.
+fn infer_getter_kinds(
+    program: &Program<'_>,
+    scoping: &Scoping,
+    facts: &mut SharedFacts,
+    written: &[(SymbolId, SymbolId, Kind)],
+) {
+    facts.getter_kinds = written
+        .iter()
+        .filter(|(getter, setter, _)| {
+            !scoping.symbol_is_mutated(*getter) && !scoping.symbol_is_mutated(*setter)
+        })
+        .map(|&(getter, _, kind)| (getter, kind))
+        .collect();
+    loop {
+        let mut writes = SetterWrites {
+            facts,
+            scoping,
+            setters: written
+                .iter()
+                .filter(|(getter, ..)| facts.getter_kinds.contains_key(getter))
+                .map(|&(_, setter, kind)| (setter, kind))
+                .collect(),
+            proven: HashMap::new(),
+        };
+        writes.visit_program(program);
+        let proven = writes.proven;
+        let before = facts.getter_kinds.len();
+        facts.getter_kinds.retain(|getter, _| {
+            written.iter().any(|&(g, setter, _)| {
+                g == *getter
+                    && proven.get(&setter).copied().unwrap_or(0)
+                        == scoping.get_resolved_reference_ids(setter).len()
+            })
+        });
+        if facts.getter_kinds.len() == before {
+            return;
+        }
+    }
+}
+
 pub fn collect(
     program: &Program<'_>,
     scoping: &Scoping,
@@ -197,6 +405,7 @@ pub fn collect(
         keyed: keyed::KeyedFacts::default(),
         runtime_calls,
         dynamic_tags,
+        getter_kinds: HashMap::new(),
     };
     collect_primitives(program, &mut facts);
     if facts.named.is_empty() && facts.namespaces.is_empty() {
@@ -219,6 +428,7 @@ pub fn collect(
     }
     let exported = exported_symbols(program, scoping);
     let mut folded_factories = HashSet::new();
+    let mut written = Vec::new();
     for signal in signals {
         let getter_refs = scoping.get_resolved_reference_ids(signal.getter);
         facts.getter_refs.extend(getter_refs);
@@ -228,6 +438,13 @@ pub fn collect(
             signal.setter.is_none_or(|s| scoping.get_resolved_reference_ids(s).is_empty());
         let is_only_called = getter_refs.iter().all(|r| called.contains(r));
         let is_awaited_value = getter_refs.iter().any(|&r| facts.asyncs.is_awaited_value(r));
+        if let (Some(setter), Some(kind)) = (signal.setter, signal.fold.kind)
+            && !exported.contains(&setter)
+            && !is_setter_unused
+            && !is_awaited_value
+        {
+            written.push((signal.getter, setter, kind));
+        }
         if !signal.is_foldable_shape
             || is_exported
             || !is_setter_unused
@@ -252,6 +469,7 @@ pub fn collect(
     {
         return facts;
     }
+    infer_getter_kinds(program, scoping, &mut facts, &written);
     for statement in &program.body {
         let Statement::ImportDeclaration(import) = statement else { continue };
         if import.import_kind.is_type() {

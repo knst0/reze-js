@@ -95,9 +95,15 @@ impl<'a> NativeTarget<'a> for ClientTarget<'a> {
         ast.assign(ast.member(node, "value"), ast.ident(value))
     }
 
-    fn effect(&mut self, ctx: &mut EmitContext<'a, '_>, callback: Expression<'a>) -> Statement<'a> {
+    fn effect(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        callback: Expression<'a>,
+        fixed: bool,
+    ) -> Statement<'a> {
         let ast = Ast::new(ctx.allocator);
-        ast.stmt(ctx.call(RUNTIME_MODULE, "renderEffect", [callback]))
+        let creator = if fixed { "fixedRenderEffect" } else { "renderEffect" };
+        ast.stmt(ctx.call(RUNTIME_MODULE, creator, [callback]))
     }
 }
 

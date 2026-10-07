@@ -122,7 +122,7 @@ impl Builder<'_> {
     }
 
     fn dynamic_of(&self, expr: ExprRef, mode: ValueMode) -> Dynamic {
-        Dynamic { expr, mode, deps: Vec::new(), kind: StaticKind::Unknown, getter: None }
+        Dynamic { expr, mode, deps: Vec::new(), kind: StaticKind::Unknown, getter: None, fixed: false }
     }
 
     fn tracked(&self, e: &Expression<'_>) -> Dynamic {
@@ -132,6 +132,7 @@ impl Builder<'_> {
             deps: self.dep_list(&[e]),
             kind: self.fold_kind(e).unwrap_or(StaticKind::Unknown),
             getter: None,
+            fixed: self.facts.reads_unconditionally(self.scoping, e),
         };
         if self.fold_boolean(e) {
             dynamic.kind = StaticKind::Boolean;
@@ -417,7 +418,7 @@ fn attr_name(a: &JSXAttribute<'_>) -> String {
 
 struct ElementState {
     view: ElementView,
-    binds: Vec<(usize, Vec<SymbolId>)>,
+    binds: Vec<(usize, Vec<SymbolId>, bool)>,
 }
 
 impl Builder<'_> {
@@ -1035,13 +1036,14 @@ impl Builder<'_> {
                 };
                 if self.fold_dynamic(value, false) {
                     let deps = self.dep_list(&[value]);
+                    let fixed = self.facts.reads_unconditionally(self.scoping, value);
                     state.view.props.push(ElementProp::Attr(Attr {
                         node,
                         target: AttrTarget::ClassToggle(token),
                         value: toggle,
                     }));
                     let index = state.view.props.len() - 1;
-                    state.binds.push((index, deps));
+                    state.binds.push((index, deps, fixed));
                 } else {
                     state.view.props.push(ElementProp::Attr(Attr {
                         node,
@@ -2226,81 +2228,10 @@ fn member_path(name: &JSXElementName<'_>) -> Option<Vec<String>> {
 
 impl Builder<'_> {
     fn fold_kind(&self, e: &Expression<'_>) -> Option<StaticKind> {
-        match e.without_parentheses() {
-            Expression::NumericLiteral(_) | Expression::BigIntLiteral(_) => {
-                Some(StaticKind::Numeric)
-            }
-            Expression::StringLiteral(_) | Expression::TemplateLiteral(_) => {
-                Some(StaticKind::String)
-            }
-            Expression::UnaryExpression(unary) => matches!(
-                unary.operator,
-                UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus | UnaryOperator::BitwiseNot
-            )
-            .then_some(StaticKind::Numeric),
-            Expression::BinaryExpression(binary) => self.binary_kind(binary),
-            Expression::ConditionalExpression(conditional) => {
-                let consequent = self.fold_kind(&conditional.consequent)?;
-                (self.fold_kind(&conditional.alternate)? == consequent).then_some(consequent)
-            }
-            Expression::CallExpression(call) => self.call_kind(call),
-            _ => None,
-        }
-    }
-
-    fn binary_kind(&self, binary: &BinaryExpression<'_>) -> Option<StaticKind> {
-        match binary.operator {
-            BinaryOperator::Subtraction
-            | BinaryOperator::Multiplication
-            | BinaryOperator::Division
-            | BinaryOperator::Remainder
-            | BinaryOperator::Exponential
-            | BinaryOperator::BitwiseOR
-            | BinaryOperator::BitwiseAnd
-            | BinaryOperator::BitwiseXOR
-            | BinaryOperator::ShiftLeft
-            | BinaryOperator::ShiftRight
-            | BinaryOperator::ShiftRightZeroFill => Some(StaticKind::Numeric),
-            BinaryOperator::Addition => {
-                match (self.fold_kind(&binary.left), self.fold_kind(&binary.right)) {
-                    (Some(StaticKind::String), _) | (_, Some(StaticKind::String)) => {
-                        Some(StaticKind::String)
-                    }
-                    (Some(StaticKind::Numeric), Some(StaticKind::Numeric)) => {
-                        Some(StaticKind::Numeric)
-                    }
-                    _ => None,
-                }
-            }
-            _ => None,
-        }
-    }
-
-    fn call_kind(&self, call: &CallExpression<'_>) -> Option<StaticKind> {
-        if call.optional {
-            return None;
-        }
-        if let Some((_, fold)) = self.facts.folded_read(call) {
-            return match fold.kind {
-                Some(crate::kind::Kind::Numeric) => Some(StaticKind::Numeric),
-                Some(crate::kind::Kind::String) => Some(StaticKind::String),
-                None => None,
-            };
-        }
-        match &call.callee {
-            Expression::Identifier(id) if self.is_global(id) => match id.name.as_str() {
-                "String" => Some(StaticKind::String),
-                "Number" => Some(StaticKind::Numeric),
-                _ => None,
-            },
-            Expression::StaticMemberExpression(member)
-                if !member.optional
-                    && crate::kind::STRING_METHODS.contains(&member.property.name.as_str()) =>
-            {
-                Some(StaticKind::String)
-            }
-            _ => None,
-        }
+        self.facts.kind_of(self.scoping, e).map(|kind| match kind {
+            crate::kind::Kind::Numeric => StaticKind::Numeric,
+            crate::kind::Kind::String => StaticKind::String,
+        })
     }
 
     fn is_global(&self, id: &IdentifierReference<'_>) -> bool {
@@ -2695,17 +2626,23 @@ impl Builder<'_> {
             }
             let member = SchedMember { kind: MemberKind::Prop, index };
             let mut deps = Vec::new();
-            let tracked = if explicit.peek().is_some_and(|(at, _)| *at == index) {
-                deps = explicit.next().expect("matching dependency registration").1;
+            let mut fixed = true;
+            let tracked = if explicit.peek().is_some_and(|(at, ..)| *at == index) {
+                let (_, explicit_deps, explicit_fixed) =
+                    explicit.next().expect("matching dependency registration");
+                deps = explicit_deps;
+                fixed = explicit_fixed;
                 true
             } else {
                 match prop {
-                    ElementProp::Attr(attr) => take_attr_tracking(&mut attr.value, &mut deps),
+                    ElementProp::Attr(attr) => {
+                        take_attr_tracking(&mut attr.value, &mut deps, &mut fixed)
+                    }
                     ElementProp::Spread(_) | ElementProp::Event(_) | ElementProp::Ref(_) => false,
                 }
             };
             if tracked {
-                add_effect_member(&mut groups, &mut known_groups, member, deps);
+                add_effect_member(&mut groups, &mut known_groups, member, deps, fixed);
             } else {
                 state.view.schedule.immediate.push(member);
             }
@@ -2716,8 +2653,9 @@ impl Builder<'_> {
         for (index, late) in state.view.late_values.iter_mut().enumerate() {
             let member = SchedMember { kind: MemberKind::Late, index };
             let mut deps = Vec::new();
-            if take_attr_tracking(&mut late.value, &mut deps) {
-                add_effect_member(&mut groups, &mut known_groups, member, deps);
+            let mut fixed = true;
+            if take_attr_tracking(&mut late.value, &mut deps, &mut fixed) {
+                add_effect_member(&mut groups, &mut known_groups, member, deps, fixed);
             } else {
                 state.view.schedule.post_children.push(member);
             }
@@ -2734,33 +2672,36 @@ fn add_effect_member(
     known: &mut HashMap<Vec<SymbolId>, usize>,
     member: SchedMember,
     mut deps: Vec<SymbolId>,
+    fixed: bool,
 ) {
     deps.sort_unstable();
     deps.dedup();
     let at = if deps.is_empty() {
         let at = groups.len();
-        groups.push(EffectGroup { deps: Vec::new(), members: Vec::new() });
+        groups.push(EffectGroup { deps: Vec::new(), fixed: true, members: Vec::new() });
         at
     } else {
         *known.entry(deps).or_insert_with(|| {
             let at = groups.len();
-            groups.push(EffectGroup { deps: Vec::new(), members: Vec::new() });
+            groups.push(EffectGroup { deps: Vec::new(), fixed: true, members: Vec::new() });
             at
         })
     };
+    groups[at].fixed &= fixed;
     groups[at].members.push(member);
 }
 
-fn take_attr_tracking(value: &mut AttrValue, deps: &mut Vec<SymbolId>) -> bool {
+fn take_attr_tracking(value: &mut AttrValue, deps: &mut Vec<SymbolId>, fixed: &mut bool) -> bool {
     match value {
         AttrValue::Dynamic(dynamic) => {
             deps.append(&mut dynamic.deps);
+            *fixed &= dynamic.fixed;
             dynamic.mode == ValueMode::Tracked
         }
         AttrValue::ClassParts(parts) => {
             let mut tracked = false;
             for part in parts {
-                tracked |= take_attr_tracking(part, deps);
+                tracked |= take_attr_tracking(part, deps, fixed);
             }
             tracked
         }
@@ -2769,6 +2710,7 @@ fn take_attr_tracking(value: &mut AttrValue, deps: &mut Vec<SymbolId>) -> bool {
             for part in parts {
                 if let TextPart::Dynamic(dynamic) = part {
                     deps.append(&mut dynamic.deps);
+                    *fixed &= dynamic.fixed;
                     tracked |= dynamic.mode == ValueMode::Tracked;
                 }
             }

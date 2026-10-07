@@ -83,7 +83,12 @@ pub trait NativeTarget<'a> {
         link: &LinkProp,
         href: Option<Expression<'a>>,
     ) -> Statement<'a>;
-    fn effect(&mut self, ctx: &mut EmitContext<'a, '_>, callback: Expression<'a>) -> Statement<'a>;
+    fn effect(
+        &mut self,
+        ctx: &mut EmitContext<'a, '_>,
+        callback: Expression<'a>,
+        fixed: bool,
+    ) -> Statement<'a>;
 }
 
 pub fn schedule<'a>(
@@ -107,11 +112,12 @@ pub fn schedule<'a>(
             element,
             target,
             element.schedule.effects.iter().flat_map(|group| group.members.iter().copied()),
+            element.schedule.effects.iter().all(|group| group.fixed),
             out,
         );
     } else {
         for group in &element.schedule.effects {
-            effect(ctx, element, target, group.members.iter().copied(), out);
+            effect(ctx, element, target, group.members.iter().copied(), group.fixed, out);
         }
     }
 }
@@ -138,7 +144,7 @@ fn immediate<'a, T: NativeTarget<'a>>(
         closed_spread_body(ctx, target, spread, out, &mut body);
         if !body.is_empty() {
             let callback = Ast::new(ctx.allocator).block_arrow([], body);
-            out.push(target.effect(ctx, callback));
+            out.push(target.effect(ctx, callback, false));
         }
         return;
     }
@@ -154,6 +160,7 @@ fn effect<'a>(
     element: &ElementView,
     target: &mut impl NativeTarget<'a>,
     members: impl IntoIterator<Item = SchedMember>,
+    fixed: bool,
     out: &mut Vec<Statement<'a>>,
 ) {
     let ast = Ast::new(ctx.allocator);
@@ -167,7 +174,7 @@ fn effect<'a>(
     }
     reads.extend(writes);
     let callback = ast.block_arrow([], reads);
-    out.push(target.effect(ctx, callback));
+    out.push(target.effect(ctx, callback, fixed));
 }
 
 fn closed_spread_body<'a>(

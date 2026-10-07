@@ -368,6 +368,7 @@ pub struct Dynamic {
     pub deps: Vec<SymbolId>,
     pub kind: StaticKind,
     pub getter: Option<GetterKind>,
+    pub fixed: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
