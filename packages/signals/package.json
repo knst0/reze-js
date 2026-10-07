@@ -92,6 +92,7 @@
   },
   "scripts": {
     "bench": "vitest bench --run",
+    "bench:accessor": "node benches/bundled.mjs benches/accessor.ts",
     "bench:codspeed": "node --import ../../benches/kit/production-env.mjs benches/codspeed.ts",
     "bench:update": "REZE_BENCH_UPDATE=1 vitest bench --run",
     "build": "tsdown",
