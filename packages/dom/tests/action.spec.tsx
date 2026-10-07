@@ -1,12 +1,12 @@
-import { action } from "@rezejs/signals";
+import { action as rawAction } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import * as R from "reze-js";
-import { $action, $action as act, $signal, effect, For, Show, store } from "reze-js";
+import { action, action as act, signal, effect, For, Show, store } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
 
-test("a compiled `$action` shows its store writes before the save settles, rolls back a failed one, and keeps parallel toggles apart", async () => {
+test("a compiled `action` shows its store writes before the save settles, rolls back a failed one, and keeps parallel toggles apart", async () => {
   const todos = store([
     { id: 1, done: false },
     { id: 2, done: false },
@@ -17,7 +17,7 @@ test("a compiled `$action` shows its store writes before the save settles, rolls
     saves.push(pending);
     return pending.promise;
   };
-  const toggle = $action(async (todo: { done: boolean }) => {
+  const toggle = action(async (todo: { done: boolean }) => {
     todo.done = !todo.done;
     await save();
   });
@@ -66,7 +66,7 @@ test("a compiled action awaits nested operands in order and returns the final va
     return x + y;
   };
   const box = store({ text: "pending" });
-  const load = $action(async () => {
+  const load = action(async () => {
     return await f(await g(), await await h());
   });
   const { el } = mount(() => {
@@ -94,9 +94,9 @@ test("a compiled action supports expression bodies, bare parameters, and destruc
     seen.push(args);
     return args.join("|");
   };
-  const save = $action(async (x: number) => await put(x));
-  const pick = $action((list: number[]) => ({ first: list[0] }));
-  const withDefaults = $action(async ({ id }: { id: number }, [first] = [0], ...rest: number[]) => await put(id, first, rest));
+  const save = action(async (x: number) => await put(x));
+  const pick = action((list: number[]) => ({ first: list[0] }));
+  const withDefaults = action(async ({ id }: { id: number }, [first] = [0], ...rest: number[]) => await put(id, first, rest));
   expect(await save(7)).toBe("7");
   expect(await pick([9])).toEqual({ first: 9 });
   expect(await withDefaults({ id: 5 }, [10], 20, 30)).toBe("5|10|20,30");
@@ -112,7 +112,7 @@ test("a compiled action routes rejections through catch and finally with balance
     return gate.promise;
   };
   const t = store({ value: 0, error: "", busy: false });
-  const save = $action(async (s: typeof t) => {
+  const save = action(async (s: typeof t) => {
     s.busy = true;
     try {
       s.value = await put();
@@ -158,9 +158,9 @@ test("a compiled action keeps synchronous nested writes in its run next to signa
   let pending!: () => number;
   let seen!: () => boolean;
   const { el } = mount(() => {
-    let saving = $signal(0);
+    let saving = signal(0);
     const items = store([{ seen: false }]);
-    const save = $action(async (list: typeof items) => {
+    const save = action(async (list: typeof items) => {
       saving += 1;
       list.forEach((item) => {
         item.seen = true;
@@ -191,12 +191,12 @@ test("a compiled action keeps synchronous nested writes in its run next to signa
 
 test("a compiled action works through namespace and alias imports without clobbering locals", async () => {
   const _a$ = 1;
-  const a = R.$action(async () => {
+  const a = R.action(async () => {
     await Promise.resolve();
     return _a$;
   });
   const b = act((value: number) => value + _a$);
-  const passthrough = action(() => _a$ + 5);
+  const passthrough = rawAction(() => _a$ + 5);
   await expect(a()).resolves.toBe(1);
   await expect(b(4)).resolves.toBe(5);
   await expect(passthrough()).resolves.toBe(6);
@@ -210,7 +210,7 @@ test("a compiled action inside an async component captures awaited state", async
   async function Card() {
     const data = await fetchUser();
     const user = store(data);
-    const rename = $action(async (name: string) => {
+    const rename = action(async (name: string) => {
       user.name = name;
       await saveUser();
     });
@@ -234,7 +234,7 @@ test("a compiled action inside an async component captures awaited state", async
 
 test("a compiled synchronous action writes at once and settles without awaiting", async () => {
   const state = store({ n: 0 });
-  const bump = $action((s: { n: number }) => {
+  const bump = action((s: { n: number }) => {
     s.n += 1;
   });
   const result = bump(state);

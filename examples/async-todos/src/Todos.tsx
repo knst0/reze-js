@@ -1,4 +1,5 @@
-import { $action, $computed, $signal, For, Loading, Show, store } from "reze-js";
+import { action, computed, For, Show, signal, store } from "reze-js";
+import { Loading } from "reze-js/internal/async";
 
 interface Todo {
   id: number;
@@ -39,15 +40,15 @@ export function Todos() {
 async function TodoList() {
   const initial = await fetchTodos();
   const todos = store(initial);
-  let draft = $signal("");
-  let isOffline = $signal(false);
+  let draft = signal("");
+  let isOffline = signal(false);
 
-  const toggle = $action(async (todo: Todo) => {
+  const toggle = action(async (todo: Todo) => {
     todo.done = !todo.done;
     await saveTodo(todo, isOffline);
   });
 
-  const add = $action(async (title: string) => {
+  const add = action(async (title: string) => {
     const fresh = { id: Math.max(0, ...todos.map((todo) => todo.id)) + 1, title, done: false };
     todos.push(fresh);
     await saveTodo(fresh, isOffline);
@@ -60,7 +61,7 @@ async function TodoList() {
     add(title).catch(ignore);
   };
 
-  const failure = $computed(toggle.error ?? add.error);
+  const failure = computed(toggle.error ?? add.error);
 
   return (
     <section class="todos">

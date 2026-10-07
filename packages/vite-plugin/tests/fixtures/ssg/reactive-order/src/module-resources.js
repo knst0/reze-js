@@ -1,4 +1,4 @@
-import { asyncComputed } from "reze-js";
+import { asyncComputed } from "reze-js/internal/async";
 
 const makeModuleResource = [asyncComputed][0];
 const moduleRuns = [];

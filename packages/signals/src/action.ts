@@ -5,7 +5,7 @@ import { type Key, setWriteHook, writeKey } from "./store";
 
 /**
  * One call of an action. Store writes made while it is current are speculative: visible at once,
- * kept when the call succeeds, undone when it fails. The compiler threads it through `$action`
+ * kept when the call succeeds, undone when it fails. The compiler threads it through `action`
  * bodies; hand-written actions call `resume` after every `await`.
  */
 export interface Run {
@@ -263,7 +263,7 @@ class ActionState<Args extends unknown[], R> {
 
 /**
  * Wraps `fn` into an action: each call runs `fn(run, ...args)` with `run` current, so store writes
- * it makes are speculative until the result settles. `$action` compiles to this.
+ * it makes are speculative until the result settles. `action` is compiler syntax, lowered per call.
  */
 export function action<Args extends unknown[], R>(
   fn: (run: Run, ...args: Args) => R | PromiseLike<R>,

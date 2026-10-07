@@ -1,6 +1,6 @@
 ---
 title: Reactivity
-description: Signals, computed values, stores, actions, and compiler macros.
+description: Signals, computed values, stores, and actions.
 ---
 
 # Reactivity
@@ -10,23 +10,21 @@ computed derives from other values; a store holds a mutable object tree. Reads
 inside a computation subscribe it, and writes re-run exactly the subscribers
 that read the changed value. Nothing re-renders.
 
-The two ways to spell signals are interchangeable. `$signal`, `$computed`, and
-`$action` are compiler sugar and the default in applications: they read and
-write like plain variables, and the compiler rewrites them into the runtime
-calls below. The runtime calls — `signal`, `computed`, `action` — live in
-`@rezejs/signals` and work without the compiler for hand-written code. The
-sugar throws `requires the reze compiler` if it ever runs uncompiled.
+Every value export of `reze-js` except `render` and `hydrate` is a declaration
+the compiler lowers; there is no runtime body to call directly. Importing from
+`reze-js` without compiling fails at module link time, which in practice means
+the file bypassed the Vite plugin — see [installation](/installation).
 
 ## Signals
 
-Declare a reactive variable with `$signal`. Reads look like variable reads;
+Declare a reactive variable with `signal`. Reads look like variable reads;
 writes look like assignments:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function Counter() {
-  let count = $signal(0);
+  let count = signal(0);
   return (
     <section>
       <output>{count}</output>
@@ -39,72 +37,52 @@ export function Counter() {
 }
 ```
 
-The compiler turns each read into a getter call and each write into a setter
-call, so the code above runs as if it used the `signal` runtime directly:
+Compound assignments (`+=`, `++`, `||=`, …) update the value in place. An
+assigned expression that reads other signals reads fresh values when the write
+lands:
 
 ```tsx
-import { signal } from "@rezejs/signals";
+import { signal } from "reze-js";
 
-export function Counter() {
-  const [count, setCount] = signal(0);
-  return (
-    <section>
-      <output>{count()}</output>
-      <button onClick={() => setCount(count() + 1)}>+1</button>
-      <button onClick={() => setCount(0)} disabled={count() === 0}>
-        reset
-      </button>
-    </section>
-  );
-}
-```
-
-Compound assignments (`+=`, `++`, `||=`, …) become read-then-write setter
-calls. An assigned expression that reads other signals is wrapped in an updater
-closure, so it reads fresh values when the write lands:
-
-```tsx
-import { $signal } from "reze-js";
-
-let base = $signal(2);
-let scaled = $signal(0);
+let base = signal(2);
+let scaled = signal(0);
 
 export function rescale(factor: number) {
   scaled = base * factor;
 }
 ```
 
-Sugar rules, enforced by the compiler:
+Declaration rules, enforced by the compiler:
 
 - Declare with `let` (or `const` for a value you never write) in the file that
-  uses the variable. The declaration cannot be exported or destructured.
+  uses the variable. The declaration cannot be exported or destructured. To
+  share state across modules, export a function that owns the state, or keep
+  the data in a `store` (below).
 - Reading the variable — including passing its value to a call such as
-  `pick(list)` — simply tracks. What is refused is using the `$signal`
+  `pick(list)` — simply tracks. What is refused is using the `signal`
   primitive itself as a value instead of calling it.
 - To store a function in a signal, assign the function itself; the compiler
   wraps right-hand sides that need it so the value is not mistaken for an
-  updater (hand-written `signal` needs the updater form explicitly — see
-  [Signals API](/signals-api)).
-- The second argument is the same options object `signal` takes
-  (`$signal("a", { equals: false })`).
+  updater.
+- The second argument is an options object (`signal("a", { equals: false })`).
 
-A write updates the value synchronously and schedules subscribers on a microtask automatically — handwritten `effect`s and framework bindings alike. `flush()` only forces queued subscribers to run synchronously, which is handy in tests (see [Lifecycle](/lifecycle)).
+A write updates the value synchronously and schedules subscribers on a microtask automatically — `effect`s and framework bindings alike. `flush()` only forces queued subscribers to run synchronously, which is handy in tests (see [Lifecycle](/lifecycle)).
 Writes compare with `Object.is` by default and skip notification when the value
 is equal; pass `{ equals: false }` to notify on every write, or a custom
 `equals(prev, next)` predicate.
 
 ## Computed values
 
-Derive with `$computed`. Pass the expression itself, not a function — the
+Derive with `computed`. Pass the expression itself, not a function — the
 compiler wraps it:
 
 ```tsx
-import { $computed, $signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
 export function Cart() {
-  let price = $signal(6);
-  let qty = $signal(2);
-  const total = $computed(price * qty);
+  let price = signal(6);
+  let qty = signal(2);
+  const total = computed(price * qty);
   return (
     <p>
       <button onClick={() => (qty += 1)}>Qty: {qty}</button>
@@ -114,10 +92,9 @@ export function Cart() {
 }
 ```
 
-This runs as `computed(() => price() * qty())`. A computed is lazy and cached:
-it recomputes on read after a dependency changed, and notifies its own readers
-only when the result differs by `Object.is`. The runtime getter also receives
-the previous value — `computed((prev = 0) => ...)` — for folding derivations.
+A computed is lazy and cached: it recomputes when read after a dependency
+changed, and notifies its own readers only when the result differs by
+`Object.is`.
 
 Limits, enforced by the compiler:
 
@@ -129,37 +106,11 @@ Limits, enforced by the compiler:
 
 Computed graphs must be acyclic: in development, reading a computed while it is
 being evaluated warns and returns the stale value. Computations created inside
-a computed getter are owned by it and disposed before each recomputation, so a
+a computed are owned by it and disposed before each recomputation, so a
 re-derivation never leaks its inner effects.
 
-For async derivations, use `asyncComputed` from the runtime (there is no `$`
-form). It runs now and re-runs on the next flush when a source read
-synchronously — or through `c.get` after an `await` — changes:
-
-```tsx
-import { signal } from "@rezejs/signals";
-import { asyncComputed } from "reze-js";
-
-const [userId, setUserId] = signal(1);
-
-const user = asyncComputed(async (c) => {
-  const id = c.get(userId);
-  const res = await fetch(`/users/${id}`);
-  return res.json();
-});
-
-export function Name() {
-  return <p>{user.isPending() ? "Loading…" : (user.value()?.name ?? "?")}</p>;
-}
-```
-
-`value()` holds the latest resolved value (`undefined` until the first run
-resolves, kept while a re-run is pending). `isPending()` and `error()` report
-state; a rejection or synchronous throw lands in `error()` and never rethrows.
-A settlement from a superseded run — or from after the owner was disposed — is
-dropped. Reads of `c.get` after the run was superseded or disposed are
-untracked. A tracked read of `value()` before the first run settles marks the
-nearest enclosing [boundary](/lifecycle) pending.
+For async work, use async function components and `action` (below); pending
+and error UI helpers are being redesigned.
 
 ## Stores
 
@@ -206,12 +157,11 @@ derive the value instead, or write from an event handler or an effect.
 ## Actions
 
 An action wraps an async (or sync) function whose store writes are speculative:
-visible at once, kept when the call succeeds, undone when it fails. `$action`
-compiles to the `action` runtime and threads the run context through every
-`await`:
+visible at once, kept when the call succeeds, undone when it fails. The
+compiler threads the run context through every `await`:
 
 ```tsx
-import { $action, For, Show, store } from "reze-js";
+import { action, For, Show, store } from "reze-js";
 
 interface Todo {
   id: number;
@@ -230,7 +180,7 @@ async function saveTodo(todo: Todo): Promise<Todo> {
 
 const todos = store<Todo[]>([{ id: 1, done: false }]);
 
-const toggle = $action(async (todo: Todo) => {
+const toggle = action(async (todo: Todo) => {
   todo.done = !todo.done;
   const saved = await saveTodo(todo);
   todo.updatedAt = saved.updatedAt;
@@ -267,51 +217,17 @@ above catches the rejection while `toggle.error` drives the failure message.
 next call; both are tracked, so the `Show` branches above update for free.
 Overlapping runs on one key stay isolated per run: a failure undoes only that
 run's layers. A synchronous action keeps its writes on return and undoes them
-on a throw. Using the `$action` primitive itself as a value instead of calling
+on a throw. Using the `action` primitive itself as a value instead of calling
 it is refused; the declared action is an ordinary value — export it and call it
 from event handlers or effects.
-
-Hand-written `action` takes the run explicitly and must `resume` after every
-await — which is exactly what `$action` generates:
-
-```tsx
-import { action, type Run } from "@rezejs/signals";
-
-interface Todo {
-  id: number;
-  done: boolean;
-  updatedAt?: number;
-}
-
-async function saveTodo(todo: Todo): Promise<Todo> {
-  const res = await fetch(`/todos/${todo.id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ done: todo.done }),
-  });
-  if (!res.ok) throw new Error(`save failed: ${res.status}`);
-  return res.json() as Promise<Todo>;
-}
-
-const toggle = action(async (run: Run, todo: Todo) => {
-  try {
-    todo.done = !todo.done;
-    const saved = run.resume(await run.suspend(saveTodo(todo)));
-    todo.updatedAt = saved.updatedAt;
-  } finally {
-    run.end();
-  }
-});
-```
 
 In development, calling an action while a computed or render binding runs
 throws; call it from an event handler or an effect.
 
 ## Related pages
 
-- [Signals API](/signals-api) — exact signatures and semantics for every
-  primitive, including the runtime forms of the sugar here.
-- [Lifecycle](/lifecycle) — effect scheduling, ownership and cleanup, context,
-  and async boundaries.
+- [Lifecycle](/lifecycle) — effect scheduling, ownership and cleanup, and
+  context.
 - [Components](/components) — how bindings subscribe in templates.
 - [Building interfaces](/building-interfaces) — putting signals, stores, and
   actions together in UI flows.

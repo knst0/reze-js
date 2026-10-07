@@ -261,10 +261,10 @@ While route chunks load, the previous view stays on screen and `useIsRouting()` 
 
 ```tsx
 import { useBeforeLeave } from "@rezejs/router";
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function Editor() {
-  let dirty = $signal(false);
+  let dirty = signal(false);
   useBeforeLeave((event) => {
     if (dirty) {
       event.preventDefault();

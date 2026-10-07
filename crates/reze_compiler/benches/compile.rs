@@ -28,18 +28,18 @@ const COMPONENT_PROPS: &str = r##"const a = <Card title="t" count={n()} static={
 const SHOW_COMPONENTS: &str = r##"import { Show } from "reze-js";
 const a = <div><Show when={a()} fallback={<B />}><C /></Show></div>;"##;
 
-const LOADING: &str = r##"import { Loading } from "reze-js";
+const LOADING: &str = r##"import { Loading } from "reze-js/internal/async";
 const a = <Loading fallback={<i>wait</i>}><User id={id()} /></Loading>;
 const b = <div><Loading><p>x</p>{y()}</Loading></div>;"##;
 
 const REPEAT: &str = r##"import { Repeat } from "reze-js";
-import { signal } from "@rezejs/signals";
-const [size] = signal(4);
-const [page, setPage] = signal(1);
-setPage(2);
+import { signal } from "reze-js";
+let size = signal(4);
+let page = signal(1);
+page = 2;
 const a = <div><Repeat count={3}>{() => <i />}</Repeat></div>;
-const b = <Repeat count={size()} fallback={<p>none</p>}>{(index) => <Card n={index} onPick={() => pick(index)} />}</Repeat>;
-const c = <Repeat count={page()} fallback={<p>none</p>}>{(index) => <li>{index}</li>}</Repeat>;
+const b = <Repeat count={size} fallback={<p>none</p>}>{(index) => <Card n={index} onPick={() => pick(index)} />}</Repeat>;
+const c = <Repeat count={page} fallback={<p>none</p>}>{(index) => <li>{index}</li>}</Repeat>;
 const d = <Repeat count={rows()}>{() => <i />}</Repeat>;
 const e = <Repeat count={0}>{() => <i />}</Repeat>;
 const f = <Repeat count={2.5}>{() => <i />}</Repeat>;"##;
@@ -52,32 +52,14 @@ const ASYNC_COMPONENT_STEPS: &str = r##"export const Card = async ({ id }: { id:
   return <Panel title={name}>{user.role}{posts.length}</Panel>;
 };"##;
 
-const COUNTER_MANUAL: &str = r##"import { Show } from "reze-js";
-import { computed, signal } from "@rezejs/signals";
+const COUNTER: &str = r##"import { computed, signal, Show } from "reze-js";
 export function Counter(props) {
-  const [count, setCount] = signal(0);
-  const doubled = computed(() => count() * 2);
-  return (
-    <section class="counter">
-      <output class={{ negative: count() < 0 }}>{count()}</output>
-      <p>doubled: {doubled()}</p>
-      <button onClick={() => setCount(count() - props.step)}>minus</button>
-      <button onClick={() => setCount(0)} disabled={count() === 0}>reset</button>
-      <button onClick={() => setCount(count() + props.step)}>plus</button>
-      <Show when={count() >= 10}><p class="note">a lot</p></Show>
-    </section>
-  );
-}"##;
-
-const COUNTER_DSL: &str = r##"import { $signal, Show } from "reze-js";
-import { computed } from "@rezejs/signals";
-export function Counter(props) {
-  let count = $signal(0);
-  const doubled = computed(() => count * 2);
+  let count = signal(0);
+  const doubled = computed(count * 2);
   return (
     <section class="counter">
       <output class={{ negative: count < 0 }}>{count}</output>
-      <p>doubled: {doubled()}</p>
+      <p>doubled: {doubled}</p>
       <button onClick={() => count -= props.step}>minus</button>
       <button onClick={() => count = 0} disabled={count === 0}>reset</button>
       <button onClick={() => count += props.step}>plus</button>
@@ -152,11 +134,6 @@ fn large_tree(bencher: divan::Bencher) {
 }
 
 #[divan::bench]
-fn counter_signal_tuple(bencher: divan::Bencher) {
-    bench_source(COUNTER_MANUAL, bencher);
-}
-
-#[divan::bench]
-fn counter_signal_syntax(bencher: divan::Bencher) {
-    bench_source(COUNTER_DSL, bencher);
+fn counter_signal(bencher: divan::Bencher) {
+    bench_source(COUNTER, bencher);
 }

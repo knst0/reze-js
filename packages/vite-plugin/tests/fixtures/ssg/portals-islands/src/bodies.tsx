@@ -1,7 +1,7 @@
-import { $signal, onCleanup } from "reze-js";
+import { onCleanup, signal } from "reze-js";
 
 export function ClockBody() {
-  let now = $signal(new Date(2026, 9, 4, 12, 0, 0));
+  let now = signal(new Date(2026, 9, 4, 12, 0, 0));
   const timer = setInterval(() => (now = new Date(2026, 9, 4, 12, 0, 1)), 500);
   onCleanup(() => clearInterval(timer));
   return (

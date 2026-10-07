@@ -8,8 +8,8 @@
  * Reze adaptations:
  * - Attribute values are plain values, not thunks: `FunctionMaybe<T>` is `T`.
  *   The compiler re-evaluates the attribute expression in an effect; passing a
- *   bare function would reach the DOM (SIGNAL_NOT_CALLED warns for signal
- *   getters). Functions are only valid as `children` and event handlers.
+ *   bare function would reach the DOM. Functions are only valid as `children`
+ *   and event handlers.
  * - No `$ServerOnly`/`$key`: there is no SSR frame morph to feed.
  * - `ref` holds one target, not an array.
  * - `class` uses the runtime `ClassValue`; `style` also accepts `null`.

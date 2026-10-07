@@ -38,18 +38,18 @@ fn only(source: &str, code: Code) -> Diagnostic {
 }
 
 fn module(body: &str) -> String {
-    format!("import {{ $action }} from \"reze-js\";\n{body}")
+    format!("import {{ action }} from \"reze-js\";\n{body}")
 }
 
 #[test]
 fn an_argument_that_is_not_a_function_literal_is_refused() {
     for argument in ["save", "make()", "", "...handlers"] {
-        let source = module(&format!("export const a = $action({argument});"));
+        let source = module(&format!("export const a = action({argument});"));
         let d = only(&source, Code::ActionArgument);
         assert_eq!(d.severity, Severity::Error);
     }
-    let d = only(&module("export const a = $action(save);"), Code::ActionArgument);
-    assert_eq!((d.start.line, d.start.column, d.end.column), (2, 25, 29));
+    let d = only(&module("export const a = action(save);"), Code::ActionArgument);
+    assert_eq!((d.start.line, d.start.column, d.end.column), (2, 24, 28));
 }
 
 #[test]
@@ -61,20 +61,20 @@ fn suspensions_the_compiler_cannot_resume_are_refused_but_nested_ones_are_not() 
         ("async function* () {}", "generator"),
     ] {
         let d =
-            only(&module(&format!("export const a = $action({body});")), Code::ActionUnsupported);
+            only(&module(&format!("export const a = action({body});")), Code::ActionUnsupported);
         assert_eq!(d.data["construct"], construct, "{body}");
     }
     let nested = module(
-        "export const a = $action(async (s) => { await drain(async () => { for await (const x of s) use(x); }); });",
+        "export const a = action(async (s) => { await drain(async () => { for await (const x of s) use(x); }); });",
     );
     compiled(&nested, &options());
 }
 
 #[test]
 fn syntax_used_as_a_value_is_not_called() {
-    only(&module("export const make = $action;"), Code::ActionNotCalled);
-    only(&module("register($action);"), Code::ActionNotCalled);
-    only("import * as R from \"reze-js\";\nexport const make = R.$action;", Code::ActionNotCalled);
+    only(&module("export const make = action;"), Code::ActionNotCalled);
+    only(&module("register(action);"), Code::ActionNotCalled);
+    only("import * as R from \"reze-js\";\nexport const make = R.action;", Code::ActionNotCalled);
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn a_member_write_in_a_function_that_runs_later_warns_and_one_in_a_sync_callback
         ("p.then(() => { list.forEach((x) => { x.v = 1; }); });", "a `.then` callback"),
     ] {
         let source =
-            module(&format!("export const a = $action(async (t, p, list) => {{ {nested} }});"));
+            module(&format!("export const a = action(async (t, p, list) => {{ {nested} }});"));
         let d = only(&source, Code::ActionNestedWrite);
         assert_eq!((d.severity, d.data["via"].as_str()), (Severity::Warn, via), "{nested}");
     }
@@ -96,14 +96,14 @@ fn a_member_write_in_a_function_that_runs_later_warns_and_one_in_a_sync_callback
         "list.forEach((x) => { x.v = 1; });",
         "t.v = await p;",
         "let n = 0; setTimeout(() => { n = 1; });",
-        "const inner = $action(async () => { await p; t.v = 1; });",
+        "const inner = action(async () => { await p; t.v = 1; });",
     ] {
         let source =
-            module(&format!("export const a = $action(async (t, p, list) => {{ {fine} }});"));
+            module(&format!("export const a = action(async (t, p, list) => {{ {fine} }});"));
         let (_, diagnostics) = output(&source, &options());
         assert!(diagnostics.iter().all(|d| d.code != Code::ActionNestedWrite), "{fine}");
     }
-    let outside = module("p.then((v) => { t.v = v; });\nexport const a = $action(() => {});");
+    let outside = module("p.then((v) => { t.v = v; });\nexport const a = action(() => {});");
     let (_, diagnostics) = output(&outside, &options());
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
 }

@@ -1,11 +1,11 @@
-import { $signal, island, Portal } from "reze-js";
+import { island, Portal, signal } from "reze-js";
 
 import { ClockBody, EagerBody, NeverBody } from "./bodies";
 import { Counter } from "./Counter";
 
 export default function App() {
-  let target = $signal<HTMLElement | null>(null);
-  let gone = $signal(false);
+  let target = signal<HTMLElement | null>(null);
+  let gone = signal(false);
   return (
     <main>
       <h1>portals</h1>

@@ -1,5 +1,6 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, mount, tick } from "@rezejs/testing-library";
+import { signal as sig } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -224,19 +225,19 @@ test("a multi-bind group evaluates every value before any target write", () => {
     log.push(`eval:${name}=${value}`);
     return value;
   };
-  const [first, setFirst] = signal("a");
-  const [second, setSecond] = signal("b");
+  let first = sig("a");
+  let second = sig("b");
   mount(() => (
     <div
       ref={(node) => traceProps(node as HTMLElement, log, "title", "tip")}
-      prop:title={seen("title", `${first()}:${second()}`)}
-      prop:tip={seen("tip", `${first()}-${second()}`)}
+      prop:title={seen("title", `${first}:${second}`)}
+      prop:tip={seen("tip", `${first}-${second}`)}
     />
   ));
   expect(log).toEqual(["eval:title=a:b", "eval:tip=a-b", "write:title=a:b", "write:tip=a-b"]);
   log.length = 0;
-  setFirst("x");
-  setSecond("y");
+  first = "x";
+  second = "y";
   tick();
   expect(log).toEqual(["eval:title=x:y", "eval:tip=x-y", "write:title=x:y", "write:tip=x-y"]);
 });

@@ -1,8 +1,8 @@
-import { $computed, $signal, Show } from "reze-js";
+import { computed, Show, signal } from "reze-js";
 
 export function Counter(props: { step: number }) {
-  let count = $signal(0);
-  const doubled = $computed(count * 2);
+  let count = signal(0);
+  const doubled = computed(count * 2);
   return (
     <section class="counter">
       <output class={{ negative: count < 0 }}>{count}</output>

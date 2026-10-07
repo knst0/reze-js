@@ -15,8 +15,9 @@ const packages = join(import.meta.dirname, "packages");
 export const sourceAliases = [
   { find: "@rezejs/router/fs", replacement: join(packages, "router", "src", "fs", "index.ts") },
   { find: "@rezejs/router", replacement: join(packages, "router", "src", "index.ts") },
+  { find: "reze-js/internal/runtime", replacement: join(packages, "reze-js", "src", "internal", "runtime.ts") },
+  { find: "reze-js/internal/async", replacement: join(packages, "reze-js", "src", "internal", "async.ts") },
   { find: "reze-js/internal/reactivity", replacement: join(packages, "reze-js", "src", "internal", "reactivity.ts") },
-  { find: "reze-js/internal/dom", replacement: join(packages, "reze-js", "src", "internal", "dom.ts") },
   { find: "reze-js", replacement: join(packages, "reze-js", "src", "index.ts") },
   { find: "@rezejs/dom/jsx-runtime", replacement: join(packages, "dom", "src", "jsx-runtime.ts") },
   { find: "@rezejs/dom", replacement: join(packages, "dom", "src", "index.ts") },

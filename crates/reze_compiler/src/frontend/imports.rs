@@ -2,51 +2,16 @@ use std::collections::{HashMap, HashSet};
 
 use oxc_allocator::{Allocator, Box as ArenaBox, Vec as ArenaVec};
 use oxc_ast::{ast::*, builder::AstBuilder};
+use oxc_ast_visit::{VisitMut, walk_mut};
+use oxc_semantic::Scoping;
 use oxc_span::Span;
 use oxc_str::{Ident, Str};
 use oxc_syntax::symbol::SymbolId;
 
 use super::Namer;
-
-pub(crate) fn allows(source: &str, imported: &str) -> bool {
-    match imported {
-        "$signal" | "$computed" | "$action" => {
-            matches!(source, "reze-js" | "@rezejs/signals")
-        }
-        "$props" => matches!(source, "reze-js" | "@rezejs/dom"),
-        "signal" | "computed" | "action" => {
-            matches!(source, "@rezejs/signals" | "reze-js/internal/reactivity")
-        }
-        "mergeProps" | "splitProps" | "omitProps" => {
-            matches!(source, "reze-js" | "@rezejs/dom")
-        }
-        "asyncComputed" | "createUniqueId" => matches!(source, "reze-js" | "@rezejs/signals"),
-        "asyncComponent" | "dynamic" | "dynamicElement" | "island" | "Show" | "For" | "Repeat"
-        | "Switch" | "Match" | "Loading" | "Errored" | "Portal" => {
-            matches!(source, "reze-js" | "@rezejs/dom")
-        }
-        _ => false,
-    }
-}
-pub(crate) fn runtime_home(runtime: &str) -> Option<&'static str> {
-    match runtime {
-        "signal" | "computed" | "action" => Some("reze-js/internal/reactivity"),
-        "effect" => Some("@rezejs/signals"),
-        "renderEffect" => Some("@rezejs/signals/render"),
-        "mergeProps" | "splitProps" | "omitProps" => Some("@rezejs/dom"),
-        _ => None,
-    }
-}
-
-pub(crate) fn home_of(source: &str) -> Option<&'static str> {
-    match source {
-        "reze-js" => Some("reze-js"),
-        "reze-js/internal/reactivity" => Some("reze-js/internal/reactivity"),
-        "@rezejs/dom" => Some("@rezejs/dom"),
-        "@rezejs/signals" => Some("@rezejs/signals"),
-        _ => None,
-    }
-}
+use super::analysis::Primitive;
+use crate::exports::{self, REACTIVITY, Role};
+use crate::imports::HelperImports;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Syntax {
@@ -56,17 +21,7 @@ pub enum Syntax {
 }
 
 impl Syntax {
-    const ALL: [Syntax; 3] = [Syntax::Signal, Syntax::Computed, Syntax::Action];
-
-    pub fn dollar(self) -> &'static str {
-        match self {
-            Syntax::Signal => "$signal",
-            Syntax::Computed => "$computed",
-            Syntax::Action => "$action",
-        }
-    }
-
-    pub fn runtime(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Syntax::Signal => "signal",
             Syntax::Computed => "computed",
@@ -74,31 +29,39 @@ impl Syntax {
         }
     }
 
-    pub fn from_dollar(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|p| p.dollar() == name)
+    pub const fn primitive(self) -> Primitive {
+        match self {
+            Syntax::Signal => Primitive::Signal,
+            Syntax::Computed => Primitive::Computed,
+            Syntax::Action => Primitive::Action,
+        }
     }
 }
 
-pub struct DollarImport {
+pub struct SyntaxImport {
     pub specifier: Span,
     pub symbol: SymbolId,
     pub syntax: Syntax,
+    pub is_unaliased: bool,
 }
 
 pub struct SyntaxImports {
-    pub dollar: Vec<DollarImport>,
+    pub declared: Vec<SyntaxImport>,
     pub namespaces: HashMap<SymbolId, &'static str>,
 }
 
 impl SyntaxImports {
     pub fn collect(program: &Program<'_>) -> Self {
-        let mut imports = SyntaxImports { dollar: Vec::new(), namespaces: HashMap::new() };
+        let mut imports = SyntaxImports { declared: Vec::new(), namespaces: HashMap::new() };
         for statement in &program.body {
             let Statement::ImportDeclaration(import) = statement else { continue };
             if import.import_kind.is_type() {
                 continue;
             }
-            let Some(home) = home_of(import.source.value.as_str()) else { continue };
+            let source = import.source.value.as_str();
+            let Some(module) = exports::module(source) else {
+                continue;
+            };
             for specifier in import.specifiers.iter().flatten() {
                 match specifier {
                     ImportDeclarationSpecifier::ImportSpecifier(named) => {
@@ -106,19 +69,17 @@ impl SyntaxImports {
                             continue;
                         }
                         let imported = named.imported.name();
-                        if !allows(home, imported.as_str()) {
-                            continue;
-                        }
-                        if let Some(syntax) = Syntax::from_dollar(imported.as_str()) {
-                            imports.dollar.push(DollarImport {
+                        if let Some(syntax) = exports::syntax_named(source, imported.as_str()) {
+                            imports.declared.push(SyntaxImport {
                                 specifier: named.span,
                                 symbol: named.local.symbol_id(),
                                 syntax,
+                                is_unaliased: named.local.name.as_str() == imported.as_str(),
                             });
                         }
                     }
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
-                        imports.namespaces.insert(namespace.local.symbol_id(), home);
+                        imports.namespaces.insert(namespace.local.symbol_id(), module);
                     }
                     ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
                 }
@@ -128,7 +89,7 @@ impl SyntaxImports {
     }
 
     pub fn syntax_of(&self, symbol: SymbolId) -> Option<Syntax> {
-        self.dollar.iter().find(|import| import.symbol == symbol).map(|import| import.syntax)
+        self.declared.iter().find(|import| import.symbol == symbol).map(|import| import.syntax)
     }
 }
 
@@ -138,6 +99,30 @@ pub(crate) struct ImportResult<'a> {
     pub locals: [Option<&'a str>; 3],
 }
 
+struct Relocation {
+    local: String,
+    home: &'static str,
+}
+
+type Moved<'a> = Vec<ArenaBox<'a, ImportSpecifier<'a>>>;
+
+pub(crate) fn has_lowerable(program: &Program<'_>) -> bool {
+    program.body.iter().any(|statement| {
+        let Statement::ImportDeclaration(import) = statement else { return false };
+        if import.import_kind.is_type() {
+            return false;
+        }
+        let source = import.source.value.as_str();
+        import.specifiers.iter().flatten().any(|specifier| {
+            let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else {
+                return false;
+            };
+            !named.import_kind.is_type()
+                && exports::lowered_home(source, named.imported.name().as_str()).is_some()
+        })
+    })
+}
+
 pub(crate) fn apply<'a>(
     allocator: &'a Allocator,
     program: &mut Program<'a>,
@@ -145,53 +130,71 @@ pub(crate) fn apply<'a>(
     namer: &mut Namer,
 ) -> ImportResult<'a> {
     let builder = AstBuilder::new(allocator);
-    let empty =
-        ImportResult { changed: false, targets: HashMap::new(), locals: [None, None, None] };
-    if syntax.dollar.is_empty() {
-        return empty;
-    }
-    let mut kept_spec: [Option<u32>; 3] = [None; 3];
-    let mut kept_local: [Option<String>; 3] = [None, None, None];
-    for import in &syntax.dollar {
+    let mut kept: [Option<(u32, String)>; 3] = [None, None, None];
+    for import in &syntax.declared {
         let index = import.syntax as usize;
-        if kept_spec[index].is_some() {
+        if kept[index].is_some() {
             continue;
         }
-        let local = namer.fresh(import.syntax.runtime());
-        kept_spec[index] = Some(import.specifier.start);
-        kept_local[index] = Some(local);
+        let local = if import.is_unaliased {
+            import.syntax.name().to_string()
+        } else {
+            namer.fresh(import.syntax.name())
+        };
+        kept[index] = Some((import.specifier.start, local));
     }
-    let dollar_starts: HashSet<u32> = syntax.dollar.iter().map(|i| i.specifier.start).collect();
-    let mut plan: HashMap<u32, (usize, String, String)> = HashMap::new();
-    for import in &syntax.dollar {
-        let index = import.syntax as usize;
-        if kept_spec[index] == Some(import.specifier.start) {
-            plan.insert(
-                import.specifier.start,
-                (
-                    index,
-                    import.syntax.runtime().to_string(),
-                    kept_local[index]
-                        .clone()
-                        .unwrap_or_else(|| import.syntax.runtime().to_string()),
-                ),
-            );
+    let mut plan: HashMap<u32, Option<Relocation>> = HashMap::new();
+    for import in &syntax.declared {
+        let relocation = match &kept[import.syntax as usize] {
+            Some((start, local)) if *start == import.specifier.start => {
+                Some(Relocation { local: local.clone(), home: REACTIVITY })
+            }
+            _ => None,
+        };
+        plan.insert(import.specifier.start, relocation);
+    }
+    for statement in &program.body {
+        let Statement::ImportDeclaration(import) = statement else { continue };
+        if import.import_kind.is_type() {
+            continue;
+        }
+        let source = import.source.value.as_str();
+        for specifier in import.specifiers.iter().flatten() {
+            let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else { continue };
+            if named.import_kind.is_type() || plan.contains_key(&named.span.start) {
+                continue;
+            }
+            if let Some(home) = exports::lowered_home(source, named.imported.name().as_str()) {
+                plan.insert(
+                    named.span.start,
+                    Some(Relocation { local: named.local.name.to_string(), home }),
+                );
+            }
         }
     }
+    if plan.is_empty() {
+        return ImportResult { changed: false, targets: HashMap::new(), locals: [None; 3] };
+    }
     let mut changed = false;
-    let mut buckets: HashMap<&'static str, Vec<ArenaBox<'a, ImportSpecifier<'a>>>> = HashMap::new();
+    let mut buckets: HashMap<&'static str, Moved<'a>> = HashMap::new();
     let mut home_decls: HashMap<&'static str, usize> = HashMap::new();
     let mut emptied: Vec<usize> = Vec::new();
     let mut insert_at: Option<usize> = None;
     for (index, statement) in program.body.iter_mut().enumerate() {
         let Statement::ImportDeclaration(import) = statement else { continue };
-        let source_home = home_of(import.source.value.as_str());
-        if let Some(home) = source_home {
+        let source_home = exports::module(import.source.value.as_str());
+        let is_type = import.import_kind.is_type();
+        let Some(specs) = import.specifiers.as_mut() else { continue };
+        if let Some(home) = source_home
+            && !is_type
+            && !specs
+                .iter()
+                .any(|spec| matches!(spec, ImportDeclarationSpecifier::ImportNamespaceSpecifier(_)))
+        {
             home_decls.entry(home).or_insert(index);
         }
-        let Some(specs) = import.specifiers.as_mut() else { continue };
         if !specs.iter().any(|spec| {
-            matches!(spec, ImportDeclarationSpecifier::ImportSpecifier(named) if dollar_starts.contains(&named.span.start))
+            matches!(spec, ImportDeclarationSpecifier::ImportSpecifier(named) if plan.contains_key(&named.span.start))
         }) {
             continue;
         }
@@ -202,27 +205,16 @@ pub(crate) fn apply<'a>(
         for spec in old {
             match spec {
                 ImportDeclarationSpecifier::ImportSpecifier(mut named)
-                    if dollar_starts.contains(&named.span.start) =>
+                    if plan.contains_key(&named.span.start) =>
                 {
-                    match plan.remove(&named.span.start) {
-                        Some((_, runtime, local)) => {
-                            let home = runtime_home(&runtime).unwrap_or("@rezejs/signals");
-                            set_imported(allocator, named.as_mut(), &runtime);
-                            if named.local.name.as_str() != local.as_str() {
-                                let text: &str = allocator.alloc_str(&local);
-                                named.local.name = Ident::from(text);
-                            }
-                            if source_home == Some(home) {
-                                specs.push(ImportDeclarationSpecifier::ImportSpecifier(named));
-                            } else {
-                                buckets.entry(home).or_default().push(named);
-                            }
-                            changed = true;
+                    if let Some(Some(relocation)) = plan.remove(&named.span.start) {
+                        if named.local.name.as_str() != relocation.local.as_str() {
+                            let text: &str = allocator.alloc_str(&relocation.local);
+                            named.local.name = Ident::from(text);
                         }
-                        None => {
-                            changed = true;
-                        }
+                        buckets.entry(relocation.home).or_default().push(named);
                     }
+                    changed = true;
                 }
                 other => specs.push(other),
             }
@@ -231,13 +223,11 @@ pub(crate) fn apply<'a>(
             emptied.push(index);
         }
     }
-    let mut ordered: Vec<(&'static str, Vec<ArenaBox<'a, ImportSpecifier<'a>>>)> =
-        buckets.into_iter().collect();
+    let mut ordered: Vec<(&'static str, Moved<'a>)> = buckets.into_iter().collect();
     ordered.sort_by(|a, b| a.0.cmp(b.0));
-    let mut brand_new: Vec<(&'static str, Vec<ArenaBox<'a, ImportSpecifier<'a>>>)> = Vec::new();
-    let mut appends: HashMap<usize, Vec<ArenaBox<'a, ImportSpecifier<'a>>>> = HashMap::new();
-    let mut repurposed: HashMap<usize, (&'static str, Vec<ArenaBox<'a, ImportSpecifier<'a>>>)> =
-        HashMap::new();
+    let mut brand_new: Vec<(&'static str, Moved<'a>)> = Vec::new();
+    let mut appends: HashMap<usize, Moved<'a>> = HashMap::new();
+    let mut repurposed: HashMap<usize, (&'static str, Moved<'a>)> = HashMap::new();
     for (home, nodes) in ordered {
         if let Some(&decl) = home_decls.get(home) {
             appends.entry(decl).or_default().extend(nodes);
@@ -247,14 +237,13 @@ pub(crate) fn apply<'a>(
             brand_new.push((home, nodes));
         }
     }
-    if !brand_new.is_empty() {
-        if let Some(at) = insert_at
-            && emptied.contains(&at)
-        {
-            let (home, nodes) = brand_new.remove(0);
-            emptied.retain(|&index| index != at);
-            repurposed.insert(at, (home, nodes));
-        }
+    if !brand_new.is_empty()
+        && let Some(at) = insert_at
+        && emptied.contains(&at)
+    {
+        let (home, nodes) = brand_new.remove(0);
+        emptied.retain(|&index| index != at);
+        repurposed.insert(at, (home, nodes));
     }
     for (index, statement) in program.body.iter_mut().enumerate() {
         if let Some(nodes) = appends.remove(&index)
@@ -283,9 +272,9 @@ pub(crate) fn apply<'a>(
     }
     let remove: HashSet<usize> = emptied.into_iter().collect();
     if !remove.is_empty() || !brand_new.is_empty() {
-        let mut kept = ArenaVec::new_in(&builder);
+        let mut kept_body = ArenaVec::new_in(&builder);
         let mut made: Vec<Statement<'a>> = Vec::new();
-        for (home, nodes) in std::mem::replace(&mut brand_new, Vec::new()) {
+        for (home, nodes) in std::mem::take(&mut brand_new) {
             let span = nodes.first().map(|node| node.span).unwrap_or(Span::empty(0));
             made.push(new_home_decl(allocator, span, home, nodes));
         }
@@ -294,52 +283,38 @@ pub(crate) fn apply<'a>(
             if remove.contains(&index) {
                 continue;
             }
-            kept.push(statement);
+            kept_body.push(statement);
             if Some(index) == insert_at {
                 for new in made.drain(..) {
-                    kept.push(new);
+                    kept_body.push(new);
                 }
             }
         }
         for new in made.drain(..) {
-            kept.push(new);
+            kept_body.push(new);
         }
-        program.body = kept;
+        program.body = kept_body;
     }
-    let mut arena_local: HashMap<usize, &'a str> = HashMap::new();
     let mut targets = HashMap::new();
-    for import in &syntax.dollar {
-        let index = import.syntax as usize;
-        let local = *arena_local.entry(index).or_insert_with(|| {
-            let text: &'a str = allocator
-                .alloc_str(kept_local[index].as_deref().unwrap_or(import.syntax.runtime()));
-            text
-        });
-        targets.insert(import.symbol, local);
+    let mut locals: [Option<&'a str>; 3] = [None; 3];
+    for (index, slot) in kept.iter().enumerate() {
+        if let Some((_, local)) = slot {
+            locals[index] = Some(allocator.alloc_str(local));
+        }
     }
-    let locals: [Option<&'a str>; 3] = [0, 1, 2].map(|i| arena_local.get(&i).copied());
+    for import in &syntax.declared {
+        if let Some(local) = locals[import.syntax as usize] {
+            targets.insert(import.symbol, local);
+        }
+    }
     ImportResult { changed, targets, locals }
-}
-
-fn set_imported<'a>(allocator: &'a Allocator, named: &mut ImportSpecifier<'a>, runtime: &str) {
-    let builder = AstBuilder::new(allocator);
-    let text: &'a str = allocator.alloc_str(runtime);
-    match &mut named.imported {
-        ModuleExportName::IdentifierName(name) => {
-            name.name = Ident::from(text);
-        }
-        _ => {
-            named.imported =
-                ModuleExportName::new_identifier_name(named.span, Ident::from(text), &builder);
-        }
-    }
 }
 
 fn new_home_decl<'a>(
     allocator: &'a Allocator,
     span: Span,
     home: &'static str,
-    nodes: Vec<ArenaBox<'a, ImportSpecifier<'a>>>,
+    nodes: Moved<'a>,
 ) -> Statement<'a> {
     let builder = AstBuilder::new(allocator);
     let mut specs = ArenaVec::new_in(&builder);
@@ -356,4 +331,58 @@ fn new_home_decl<'a>(
         ImportOrExportKind::Value,
         &builder,
     ))
+}
+
+struct NamespaceMembers<'x, 'a> {
+    allocator: &'a Allocator,
+    scoping: &'x Scoping,
+    namespaces: &'x HashMap<SymbolId, &'static str>,
+    namer: &'x mut Namer<'a>,
+    helpers: &'x mut HelperImports<'a>,
+    changed: bool,
+}
+
+impl<'a> VisitMut<'a> for NamespaceMembers<'_, 'a> {
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        if let Expression::StaticMemberExpression(member) = it
+            && !member.optional
+            && let Expression::Identifier(object) = &member.object
+            && let Some(reference) = object.reference_id.get()
+            && let Some(symbol) = self.scoping.get_reference(reference).symbol_id()
+            && self.namespaces.get(&symbol) == Some(&exports::PUBLIC)
+            && let Some(entry) = exports::lookup(exports::PUBLIC, member.property.name.as_str())
+            && matches!(entry.role, Role::Plain | Role::Call(_) | Role::Props(_))
+        {
+            let home = entry.lower_to.unwrap_or(exports::RUNTIME);
+            let alias = self.helpers.require(self.allocator, self.namer, home, entry.name);
+            let builder = AstBuilder::new(self.allocator);
+            *it = Expression::new_identifier(member.span, Ident::from(alias), &builder);
+            self.changed = true;
+            return;
+        }
+        walk_mut::walk_expression(self, it);
+    }
+}
+
+pub(crate) fn lower_namespace_members<'a>(
+    allocator: &'a Allocator,
+    program: &mut Program<'a>,
+    scoping: &Scoping,
+    syntax: &SyntaxImports,
+    namer: &mut Namer<'a>,
+    helpers: &mut HelperImports<'a>,
+) -> bool {
+    if !syntax.namespaces.values().any(|module| *module == exports::PUBLIC) {
+        return false;
+    }
+    let mut members = NamespaceMembers {
+        allocator,
+        scoping,
+        namespaces: &syntax.namespaces,
+        namer,
+        helpers,
+        changed: false,
+    };
+    members.visit_program(program);
+    members.changed
 }

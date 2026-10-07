@@ -689,9 +689,6 @@ importers:
       '@rezejs/router':
         specifier: workspace:*
         version: link:../packages/router
-      '@rezejs/signals':
-        specifier: workspace:*
-        version: link:../packages/signals
       reze-js:
         specifier: workspace:*
         version: link:../packages/reze-js

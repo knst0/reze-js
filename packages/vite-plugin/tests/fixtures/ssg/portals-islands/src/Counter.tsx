@@ -1,7 +1,7 @@
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function Counter(props: { step: number }) {
-  let count = $signal(0);
+  let count = signal(0);
   return (
     <section class="counter">
       <output id="counter-out">{count}</output>

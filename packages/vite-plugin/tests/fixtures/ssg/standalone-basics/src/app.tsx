@@ -1,4 +1,5 @@
-import { $computed, $signal, effect, lazy, Loading } from "reze-js";
+import { computed, effect, signal } from "reze-js";
+import { lazy, Loading } from "reze-js/internal/async";
 
 import { buildGreeting } from "./data";
 import logoUrl from "./logo.svg?url";
@@ -30,13 +31,13 @@ function SpreadChildren() {
 }
 
 export default function App() {
-  let base = $signal(3);
-  let doubled = $computed(base * 2);
-  let label = $signal("");
+  let base = signal(3);
+  let doubled = computed(base * 2);
+  let label = signal("");
   effect(() => {
     label = `v${base}`;
   });
-  let name = $signal("ada");
+  let name = signal("ada");
   return (
     <main>
       <h1>basics</h1>

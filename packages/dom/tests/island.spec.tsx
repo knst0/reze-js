@@ -1,5 +1,6 @@
 import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
-import { Errored, Loading, island, type JSX } from "reze-js";
+import { island, type JSX } from "reze-js";
+import { Errored, Loading } from "reze-js/internal/async";
 import { afterEach, expect, test, vi } from "vitest";
 
 afterEach(() => {
@@ -247,7 +248,9 @@ test("an interaction island loads on the first pointer event inside its shell", 
 test("a failed island load goes to the error boundary", async () => {
   const { el } = mount(() => (
     <Errored fallback={(error) => <em>{(error as Error).message}</em>}>
-      <Loading>{island("eager", () => Promise.reject(new Error("offline")), { name: "ann" })}</Loading>
+      <Loading>
+        {island("eager", () => Promise.reject<(props: { name: string }) => JSX.Element>(new Error("offline")), { name: "ann" })}
+      </Loading>
     </Errored>
   ));
   await settle();

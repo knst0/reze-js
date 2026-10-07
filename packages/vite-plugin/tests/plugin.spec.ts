@@ -44,7 +44,7 @@ test("Vite reports source locations and persists all diagnostic severities", asy
   writeFileSync(join(root, "src", "Warn.tsx"), "export function App(props){\nreturn <div children={props.children}>nested</div>;\n}");
   writeFileSync(
     join(root, "src", "Info.tsx"),
-    'import {$signal} from "reze-js"; export function App(){let count=$signal(1);return <p>{count}</p>}',
+    'import {signal} from "reze-js"; export function App(){let count=signal(1);return <p>{count}</p>}',
   );
   writeFileSync(join(root, "src", "Bad.tsx"), "export function Bad(){\nreturn <div>;\n}");
   const { vite, warnings } = await start({ diagnostics: { jsonl } });

@@ -3,9 +3,6 @@ export { asyncComputed, type AsyncComputed, type AsyncContext } from "./asyncCom
 export { boundary, isInBoundary, type Boundary } from "./boundary";
 export { computed, type ComputedOptions } from "./computed";
 export { getOwner, runWithOwner } from "./context";
-export { $action } from "./dollarAction";
-export { $computed } from "./dollarComputed";
-export { $signal } from "./dollarSignal";
 export { effect } from "./effect";
 export { effectScope } from "./effectScope";
 export { catchError } from "./error";

@@ -21,7 +21,6 @@ pub enum Primitive {
     Signal,
     Computed,
     Action,
-    Dynamic,
     Intrinsic(Intrinsic),
 }
 
@@ -49,26 +48,6 @@ impl Intrinsic {
             Intrinsic::Errored => "Errored",
             Intrinsic::Portal => "Portal",
         }
-    }
-}
-
-impl Primitive {
-    pub(crate) fn from_export(name: &str) -> Option<Primitive> {
-        Some(match name {
-            "signal" => Primitive::Signal,
-            "computed" => Primitive::Computed,
-            "action" => Primitive::Action,
-            "dynamic" | "dynamicElement" => Primitive::Dynamic,
-            "Show" => Primitive::Intrinsic(Intrinsic::Show),
-            "For" => Primitive::Intrinsic(Intrinsic::For),
-            "Repeat" => Primitive::Intrinsic(Intrinsic::Repeat),
-            "Switch" => Primitive::Intrinsic(Intrinsic::Switch),
-            "Match" => Primitive::Intrinsic(Intrinsic::Match),
-            "Loading" => Primitive::Intrinsic(Intrinsic::Loading),
-            "Errored" => Primitive::Intrinsic(Intrinsic::Errored),
-            "Portal" => Primitive::Intrinsic(Intrinsic::Portal),
-            _ => return None,
-        })
     }
 }
 
@@ -108,7 +87,7 @@ impl SharedFacts {
                 let Expression::Identifier(namespace) = &member.object else { return None };
                 let source = self.namespaces.get(&Self::symbol(scoping, namespace)?)?;
                 let name = member.property.name.as_str();
-                super::imports::allows(source, name).then(|| Primitive::from_export(name))?
+                crate::exports::primitive_named(source, name)
             }
             _ => None,
         }
@@ -270,7 +249,10 @@ impl SharedFacts {
                         _ => None,
                     };
                 }
-                if call.arguments.is_empty() && call.type_arguments.is_none() && self.is_stable_getter(scoping, id) {
+                if call.arguments.is_empty()
+                    && call.type_arguments.is_none()
+                    && self.is_stable_getter(scoping, id)
+                {
                     return self.getter_kinds.get(&Self::symbol(scoping, id)?).copied();
                 }
                 None
@@ -475,7 +457,7 @@ pub fn collect(
         if import.import_kind.is_type() {
             continue;
         }
-        if super::imports::home_of(import.source.value.as_str()).is_none() {
+        if crate::exports::module(import.source.value.as_str()).is_none() {
             continue;
         }
         let Some(specifiers) = &import.specifiers else { continue };
@@ -502,7 +484,7 @@ fn collect_primitives(program: &Program<'_>, facts: &mut SharedFacts) {
         if import.import_kind.is_type() {
             continue;
         }
-        let Some(home) = super::imports::home_of(import.source.value.as_str()) else { continue };
+        let Some(home) = crate::exports::module(import.source.value.as_str()) else { continue };
         for specifier in import.specifiers.iter().flatten() {
             match specifier {
                 ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
@@ -510,9 +492,7 @@ fn collect_primitives(program: &Program<'_>, facts: &mut SharedFacts) {
                         continue;
                     }
                     let name = specifier.imported.name();
-                    if let Some(primitive) = Primitive::from_export(name.as_str())
-                        && super::imports::allows(home, name.as_str())
-                    {
+                    if let Some(primitive) = crate::exports::primitive_named(home, name.as_str()) {
                         facts.named.insert(specifier.local.symbol_id(), primitive);
                     }
                 }
@@ -559,8 +539,7 @@ fn report_intrinsic_values(
                 continue;
             };
             if let Some(Primitive::Intrinsic(intrinsic)) =
-                Primitive::from_export(member.property.name.as_str())
-                && super::imports::allows(source, member.property.name.as_str())
+                crate::exports::primitive_named(source, member.property.name.as_str())
             {
                 reports.push(
                     Report::new(Code::ControlFlowAsValue, member.span)
@@ -640,7 +619,7 @@ impl Collector<'_, '_> {
                     self.scoping.get_reference(namespace.reference_id.get()?).symbol_id()?;
                 let source = self.namespaces.get(&symbol)?;
                 let name = member.property.name.as_str();
-                super::imports::allows(source, name).then(|| Primitive::from_export(name))?
+                crate::exports::primitive_named(source, name)
             }
             _ => None,
         }
@@ -1180,20 +1159,6 @@ pub enum RuntimeCallKind {
     Island,
 }
 
-impl RuntimeCallKind {
-    fn from_export(name: &str) -> Option<Self> {
-        Some(match name {
-            "asyncComputed" => Self::AsyncComputed,
-            "createUniqueId" => Self::UniqueId,
-            "asyncComponent" => Self::AsyncComponent,
-            "dynamic" => Self::Dynamic,
-            "dynamicElement" => Self::DynamicElement,
-            "island" => Self::Island,
-            _ => return None,
-        })
-    }
-}
-
 pub(crate) fn jsx_intrinsic(
     named: &HashMap<SymbolId, Primitive>,
     namespaces: &HashMap<SymbolId, &'static str>,
@@ -1210,7 +1175,7 @@ pub(crate) fn jsx_intrinsic(
             };
             let source = namespaces.get(&SharedFacts::symbol(scoping, namespace)?)?;
             let name = member.property.name.as_str();
-            super::imports::allows(source, name).then(|| Primitive::from_export(name))?
+            crate::exports::primitive_named(source, name)
         }
         _ => None,
     };
@@ -1245,7 +1210,7 @@ fn collect_runtime_calls(
         if import.import_kind.is_type() {
             continue;
         }
-        let Some(home) = super::imports::home_of(import.source.value.as_str()) else { continue };
+        let Some(home) = crate::exports::module(import.source.value.as_str()) else { continue };
         for specifier in import.specifiers.iter().flatten() {
             match specifier {
                 ImportDeclarationSpecifier::ImportSpecifier(named) => {
@@ -1253,10 +1218,10 @@ fn collect_runtime_calls(
                         continue;
                     }
                     let name = named.imported.name();
-                    let Some(kind) = RuntimeCallKind::from_export(name.as_str()) else { continue };
-                    if super::imports::allows(home, name.as_str()) {
-                        collector.factories.insert(named.local.symbol_id(), kind);
-                    }
+                    let Some(kind) = crate::exports::call_named(home, name.as_str()) else {
+                        continue;
+                    };
+                    collector.factories.insert(named.local.symbol_id(), kind);
                 }
                 ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
                     collector.namespaces.insert(namespace.local.symbol_id(), home);
@@ -1288,10 +1253,8 @@ impl<'a> Visit<'a> for RuntimeCallCollector<'_, '_> {
                     && let Some(source) = self.namespaces.get(&symbol)
                 {
                     let name = member.property.name.as_str();
-                    let kind = RuntimeCallKind::from_export(name);
-                    if let Some(kind) = kind
-                        && super::imports::allows(source, name)
-                    {
+                    let kind = crate::exports::call_named(source, name);
+                    if let Some(kind) = kind {
                         found = Some(kind);
                     }
                 }

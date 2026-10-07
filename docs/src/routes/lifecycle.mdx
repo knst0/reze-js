@@ -1,6 +1,6 @@
 ---
 title: Lifecycle
-description: Effects, ownership, cleanup, context, and error boundaries.
+description: Effects, ownership, cleanup, context, and error handling.
 ---
 
 # Lifecycle
@@ -8,8 +8,8 @@ description: Effects, ownership, cleanup, context, and error boundaries.
 Every computation in Reze — `effect`, `computed`, template bindings — records
 which signals and store keys it read, subscribes to them, and re-runs when
 they change. Ownership decides how long each computation lives and what cleans
-it up. This page covers scheduling, cleanup, owners, context, error handling,
-and async boundaries.
+it up. This page covers scheduling, cleanup, owners, context, and error
+handling.
 
 ## Effects and scheduling
 
@@ -17,17 +17,16 @@ and async boundaries.
 something it read changes. It returns a disposer:
 
 ```tsx
-import { signal } from "@rezejs/signals";
-import { effect } from "reze-js";
+import { effect, signal } from "reze-js";
 
-const [count, setCount] = signal(0);
+let count = signal(0);
 
 const dispose = effect(() => {
-  console.log("count is", count());
+  console.log("count is", count);
 });
 
-setCount(1);
-setCount(2);
+count = 1;
+count = 2;
 dispose();
 ```
 
@@ -40,18 +39,17 @@ Use `flush()` in tests — or anywhere you need settled state synchronously —
 after writing:
 
 ```tsx
-import { signal } from "@rezejs/signals";
-import { effect, flush } from "reze-js";
+import { effect, flush, signal } from "reze-js";
 
-const [a, setA] = signal(0);
+let a = signal(0);
 const seen: number[] = [];
 
 effect(() => {
-  seen.push(a());
+  seen.push(a);
 });
 
-setA(1);
-setA(2);
+a = 1;
+a = 2;
 flush();
 ```
 
@@ -62,13 +60,12 @@ when it is disposed. Cleanups of nested computations run before the outer
 cleanup, newest first:
 
 ```tsx
-import { signal } from "@rezejs/signals";
-import { effect, flush } from "reze-js";
+import { effect, flush, signal } from "reze-js";
 
-const [a, setA] = signal(0);
+let a = signal(0);
 
 effect(() => {
-  const value = a();
+  const value = a;
   effect(() => {
     console.log("inner", value);
     return () => console.log("inner cleanup");
@@ -78,7 +75,7 @@ effect(() => {
   };
 });
 
-setA(1);
+a = 1;
 flush();
 ```
 
@@ -93,14 +90,13 @@ For rare cases where code must re-run subscribers without changing a value,
 read and flushes synchronously:
 
 ```tsx
-import { signal } from "@rezejs/signals";
-import { effect, trigger } from "reze-js";
+import { effect, signal, trigger } from "reze-js";
 
-const [a, setA] = signal(0);
-effect(() => console.log(a()));
+let a = signal(0);
+effect(() => console.log(a));
 
 trigger(() => {
-  a();
+  console.log(a);
 });
 ```
 
@@ -136,25 +132,24 @@ creates owned by the current owner — hiding a read from the effect without
 detaching the cleanup:
 
 ```tsx
-import { signal } from "@rezejs/signals";
-import { effect, flush, onCleanup, root, untrack } from "reze-js";
+import { effect, flush, onCleanup, root, signal, untrack } from "reze-js";
 
-const [a, setA] = signal(0);
-const [b, setB] = signal(0);
+let a = signal(0);
+let b = signal(0);
 
 root(() => {
   effect(() => {
-    a();
+    a;
     untrack(() => {
-      b();
+      b;
       onCleanup(() => console.log("inner cleanup"));
     });
   });
 });
 
-setB(1);
+b = 1;
 flush();
-setA(1);
+a = 1;
 flush();
 ```
 
@@ -168,13 +163,12 @@ logs `"inner cleanup"` because the owner re-ran.
 one and returns its disposer. Reads inside never re-run the scope body itself:
 
 ```tsx
-import { signal } from "@rezejs/signals";
-import { effect, effectScope } from "reze-js";
+import { effect, effectScope, signal } from "reze-js";
 
-const [a, setA] = signal(0);
+let a = signal(0);
 
 const dispose = effectScope(() => {
-  effect(() => console.log(a()));
+  effect(() => console.log(a));
 });
 ```
 
@@ -220,9 +214,7 @@ After activation, changing `props.id` runs the real producer again. Reactive
 reads hidden inside the skipped awaited expression, such as
 `await loadUser(props.id)` or a signal read inside `loadUser()`, do not restore
 dependencies during initial hydration. Move those input reads into synchronous
-setup. Public `asyncComputed` has a different contract: its recorded state is
-replayed first, then its producer revalidates after activation to recover its
-dependencies. Initial route preloads are not repeated.
+setup. Initial route preloads are not repeated.
 
 Module-level resources use the same seeded-then-revalidate contract, including
 resources created through factories, getters, and class static initialization.
@@ -235,7 +227,7 @@ called while another root is preparing hydration. Its updates are not staged
 with that root. It retains the calling owner's context; its disposer releases
 the rendered tree and its execution scope.
 
-Managed `$action` awaits also preserve nested suspension order during hydration.
+Managed `action` awaits also preserve nested suspension order during hydration.
 Rejected promises restore their recorded error before `catch` and `finally`.
 If evaluating an awaited operand threw synchronously on the server, replay throws
 at that same point without calling the producer or adding a promise suspension.
@@ -271,8 +263,8 @@ export function Page() {
 ```
 
 The provided `value` is read once, when the provider renders — later writes to
-the expression are not picked up, so pass a signal getter or store for values
-that change. `provideContext(context, value, fn)` is the non-JSX form: it runs
+the expression are not picked up, so pass a `store`, or functions that read
+the state, for values that change. `provideContext(context, value, fn)` is the
 `fn` untracked under a new owner that provides `value`, living as long as the
 current owner.
 
@@ -287,66 +279,27 @@ error a handler itself throws propagates outward. The owner lives as long as
 the current one:
 
 ```tsx
-import { computed, signal } from "@rezejs/signals";
-import { catchError } from "reze-js";
+import { catchError, computed, signal } from "reze-js";
 
-const [divisor, setDivisor] = signal(1);
+let divisor = signal(1);
+
+function ratioOf(value: number) {
+  if (value === 0) throw new RangeError("zero");
+  return 100 / value;
+}
 
 catchError(
   () => {
-    const ratio = computed(() => {
-      if (divisor() === 0) throw new RangeError("zero");
-      return 100 / divisor();
-    });
-    queueMicrotask(() => console.log(ratio()));
+    const ratio = computed(ratioOf(divisor));
+    queueMicrotask(() => console.log(ratio));
   },
   (error) => console.error("caught", error),
 );
 ```
 
-## Async boundaries
-
-`boundary` groups first loads. It runs `fn` untracked under a new owner that
-lives as long as the current one and counts pending first settlements of
-`asyncComputed` read inside it — the nearest enclosing boundary counts each
-read. It returns the result and the boundary:
-
-```tsx
-import { signal } from "@rezejs/signals";
-import { Show, asyncComputed, boundary } from "reze-js";
-
-const [id, setId] = signal(1);
-
-const user = asyncComputed(async (c) => {
-  const current = c.get(id);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  return { name: `user ${current}` };
-});
-
-const [view, load] = boundary(() => <p>{user.value()?.name ?? "…"}</p>);
-
-export function Page() {
-  return (
-    <div>
-      <Show when={load.isPending()} fallback={view}>
-        <p>Loading…</p>
-      </Show>
-      <button onClick={() => setId(id() + 1)}>next</button>
-    </div>
-  );
-}
-```
-
-`isPending()` is tracked: read inside a binding, the binding updates when the
-count changes. A pending read clears when its reader re-runs or is disposed.
-`dispose()` disposes everything created inside the boundary, and
-`isInBoundary()` reports whether the current owner sits inside one.
-
 ## Related pages
 
 - [Reactivity](/reactivity) — signals, computed values, stores, and actions.
-- [Signals API](/signals-api) — exact signatures for `effect`, `root`,
-  `untrack`, `onCleanup`, contexts, boundaries, and the rest.
 - [Components](/components) — how component owners map to the UI tree.
-- [Building interfaces](/building-interfaces) — loading and error flows with
-  `Loading` and `Errored`, plus events, lists, and portals.
+- [Building interfaces](/building-interfaces) — async components, plus events,
+  lists, and portals.

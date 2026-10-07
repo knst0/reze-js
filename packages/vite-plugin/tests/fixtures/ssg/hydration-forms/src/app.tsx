@@ -1,4 +1,4 @@
-import { $signal, effect } from "reze-js";
+import { effect, signal } from "reze-js";
 
 type Flags = Record<string, unknown>;
 
@@ -12,11 +12,11 @@ async function Gate() {
 }
 
 export default function App() {
-  let name = $signal("server-name");
-  let choice = $signal("a");
-  let city = $signal("a");
-  let agreed = $signal(false);
-  let count = $signal(0);
+  let name = signal("server-name");
+  let choice = signal("a");
+  let city = signal("a");
+  let agreed = signal(false);
+  let count = signal(0);
   effect(() => {
     name = "prep-name";
     choice = "c";

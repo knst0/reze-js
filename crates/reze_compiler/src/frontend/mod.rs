@@ -96,8 +96,9 @@ pub fn normalize<'a>(
         props_plan = props::collect(program, &scoping, &nodes, &mut reports);
         async_plan = async_component::collect(program, &scoping, &nodes, &mut async_reports);
         selector_plan = selector::collect(program, &scoping, &nodes, &pre, &mut reports);
-        if syntax.dollar.is_empty()
+        if syntax.declared.is_empty()
             && syntax.namespaces.is_empty()
+            && !imports::has_lowerable(program)
             && props_plan.is_empty()
             && async_plan.is_empty()
             && selector_plan.is_empty()
@@ -118,8 +119,16 @@ pub fn normalize<'a>(
         }
         first_scoping = scoping;
     }
+    let mut content_changed = imports::lower_namespace_members(
+        allocator,
+        program,
+        &first_scoping,
+        &syntax,
+        &mut namer,
+        &mut helpers,
+    );
     let outcome = imports::apply(allocator, program, &syntax, &mut namer);
-    let mut content_changed = outcome.changed;
+    content_changed |= outcome.changed;
     let props_changed = props::apply(allocator, program, props_plan, &mut namer, &mut helpers);
     content_changed |= props_changed;
     let normalized =

@@ -12,11 +12,12 @@ use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
 
 use super::Namer;
-use super::analysis::{AsyncFacts, exported_symbols};
+use super::analysis::{AsyncFacts, Intrinsic, Primitive, exported_symbols};
 use super::dsl::PreScan;
-use super::imports::{Syntax, allows, home_of};
+use super::imports::Syntax;
 use super::pure::{is_foldable_signal_shape, is_meaningful};
 use crate::diagnostic::{Code, Report};
+use crate::exports;
 use crate::imports::HelperImports;
 
 #[derive(Default)]
@@ -45,18 +46,13 @@ struct Comparison {
     source_span: (u32, u32),
 }
 
-/// A reactive getter eligible as a selector source. `converts` tells whether
-/// bare reads of it become calls before the rewrite runs (`$signal`/
-/// `$computed` do through the DSL normalization; direct `signal()`/
-/// `computed()` getters never rewrite bare reads, so only hand-written calls
-/// qualify for them).
+/// A reactive getter eligible as a selector source: a `signal` or `computed` declaration, whose
+/// bare reads become calls during DSL normalization.
 struct Getter {
     symbol: SymbolId,
     name: String,
     signal: bool,
-    converts: bool,
     foldable_shape: bool,
-    setter: Option<SymbolId>,
 }
 
 pub fn collect(
@@ -68,7 +64,7 @@ pub fn collect(
 ) -> Plan {
     let imports = ImportView::scan(program);
     let mut getters: HashMap<SymbolId, Getter> = HashMap::new();
-    let mut declarators = Declarators { scoping, pre, imports: &imports, getters: &mut getters };
+    let mut declarators = Declarators { scoping, pre, getters: &mut getters };
     declarators.visit_program(program);
     let mut called = HashSet::new();
     let mut calls = Called { called: &mut called };
@@ -109,9 +105,6 @@ fn is_selectable(
     if !getter.signal || !getter.foldable_shape {
         return true;
     }
-    if getter.setter.is_some_and(|setter| !scoping.get_resolved_reference_ids(setter).is_empty()) {
-        return true;
-    }
     if exported.contains(&getter.symbol) {
         return true;
     }
@@ -119,11 +112,7 @@ fn is_selectable(
         if asyncs.is_awaited_value(reference) {
             return true;
         }
-        if getter.converts {
-            if !converted_call(nodes, scoping, reference, called) {
-                return true;
-            }
-        } else if !called.contains(&reference) {
+        if !converted_call(nodes, scoping, reference, called) {
             return true;
         }
     }
@@ -374,7 +363,8 @@ fn selector_name<'x, 'p, 'a>(
         source_span,
     });
     if row.helper.is_none() {
-        *row.helper = Some(row.helpers.require(row.alloc, row.namer, "reze-js", "selector"));
+        *row.helper =
+            Some(row.helpers.require(row.alloc, row.namer, crate::RUNTIME_MODULE, "selector"));
     }
     text
 }
@@ -555,47 +545,31 @@ fn as_row_function<'b, 'a>(expression: &'b mut Expression<'a>) -> Option<RowFunc
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ImportKind {
-    Signal,
-    Computed,
-    For,
+fn is_for_export(source: &str, name: &str) -> bool {
+    exports::primitive_named(source, name) == Some(Primitive::Intrinsic(Intrinsic::For))
 }
 
 struct ImportView {
-    named: HashMap<SymbolId, ImportKind>,
+    tags: HashSet<SymbolId>,
     namespaces: HashMap<SymbolId, &'static str>,
 }
 
-/// The imports a selector needs: `signal`/`computed` factories a source can
-/// be declared through, and the `For` tag itself, each by named import or by
-/// namespace home. This mirrors the `named`/`namespaces` maps of `analysis`
-/// restricted to the three names; `$signal`/`$computed` inits resolve
-/// through the DSL prescan instead.
 impl ImportView {
     fn scan(program: &Program<'_>) -> Self {
-        let mut view = ImportView { named: HashMap::new(), namespaces: HashMap::new() };
+        let mut view = ImportView { tags: HashSet::new(), namespaces: HashMap::new() };
         for statement in &program.body {
             let Statement::ImportDeclaration(import) = statement else { continue };
             if import.import_kind.is_type() {
                 continue;
             }
-            let Some(home) = home_of(import.source.value.as_str()) else { continue };
+            let Some(home) = exports::module(import.source.value.as_str()) else { continue };
             for specifier in import.specifiers.iter().flatten() {
                 match specifier {
                     ImportDeclarationSpecifier::ImportSpecifier(named) => {
-                        if named.import_kind.is_type() {
-                            continue;
-                        }
-                        let name = named.imported.name();
-                        let kind = match name.as_str() {
-                            "signal" => ImportKind::Signal,
-                            "computed" => ImportKind::Computed,
-                            "For" => ImportKind::For,
-                            _ => continue,
-                        };
-                        if allows(home, name.as_str()) {
-                            view.named.insert(named.local.symbol_id(), kind);
+                        if !named.import_kind.is_type()
+                            && is_for_export(home, named.imported.name().as_str())
+                        {
+                            view.tags.insert(named.local.symbol_id());
                         }
                     }
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
@@ -608,36 +582,13 @@ impl ImportView {
         view
     }
 
-    fn factory(&self, scoping: &Scoping, callee: &Expression<'_>) -> Option<bool> {
-        match callee.without_parentheses() {
-            Expression::Identifier(id) => {
-                match self.named.get(&scoping.get_reference(id.reference_id.get()?).symbol_id()?)? {
-                    ImportKind::Signal => Some(true),
-                    ImportKind::Computed => Some(false),
-                    ImportKind::For => None,
-                }
-            }
-            Expression::StaticMemberExpression(member) if !member.optional => {
-                let Expression::Identifier(namespace) = &member.object else { return None };
-                let symbol = scoping.get_reference(namespace.reference_id.get()?).symbol_id()?;
-                let source = self.namespaces.get(&symbol)?;
-                let name = member.property.name.as_str();
-                if !matches!(name, "signal" | "computed") || !allows(source, name) {
-                    return None;
-                }
-                Some(name == "signal")
-            }
-            _ => None,
-        }
-    }
-
     fn is_for(&self, scoping: &Scoping, name: &JSXElementName<'_>) -> bool {
         match name {
             JSXElementName::IdentifierReference(id) => id
                 .reference_id
                 .get()
                 .and_then(|r| scoping.get_reference(r).symbol_id())
-                .is_some_and(|symbol| self.named.get(&symbol) == Some(&ImportKind::For)),
+                .is_some_and(|symbol| self.tags.contains(&symbol)),
             JSXElementName::MemberExpression(member) => {
                 let JSXMemberExpressionObject::IdentifierReference(namespace) = &member.object
                 else {
@@ -648,8 +599,7 @@ impl ImportView {
                     .get()
                     .and_then(|r| scoping.get_reference(r).symbol_id())
                     .and_then(|symbol| self.namespaces.get(&symbol));
-                member.property.name.as_str() == "For"
-                    && source.is_some_and(|source| allows(source, "For"))
+                source.is_some_and(|source| is_for_export(source, member.property.name.as_str()))
             }
             _ => false,
         }
@@ -659,7 +609,6 @@ impl ImportView {
 struct Declarators<'s, 'p, 'g> {
     scoping: &'s Scoping,
     pre: &'p PreScan,
-    imports: &'p ImportView,
     getters: &'g mut HashMap<SymbolId, Getter>,
 }
 
@@ -669,32 +618,12 @@ impl Declarators<'_, '_, '_> {
         declarator: &VariableDeclarator<'_>,
         call: &CallExpression<'_>,
         signal: bool,
-        converts: bool,
     ) {
-        let (getter, setter) = match &declarator.id {
-            BindingPattern::BindingIdentifier(id) if !signal || converts => {
-                (Some(id.symbol_id()), None)
-            }
-            BindingPattern::ArrayPattern(pattern) if signal => {
-                let getter = match pattern.elements.first() {
-                    Some(Some(BindingPattern::BindingIdentifier(id))) => id.symbol_id(),
-                    _ => return,
-                };
-                let setter = match pattern.elements.get(1) {
-                    Some(Some(BindingPattern::BindingIdentifier(id))) => Some(id.symbol_id()),
-                    _ => None,
-                };
-                (Some(getter), setter)
-            }
-            _ => return,
-        };
-        let Some(getter) = getter else { return };
+        let BindingPattern::BindingIdentifier(id) = &declarator.id else { return };
+        let getter = id.symbol_id();
         let name = self.scoping.symbol_name(getter).to_string();
         let foldable_shape = signal && is_foldable_signal_shape(declarator, call);
-        self.getters.insert(
-            getter,
-            Getter { symbol: getter, name, signal, converts, foldable_shape, setter },
-        );
+        self.getters.insert(getter, Getter { symbol: getter, name, signal, foldable_shape });
     }
 }
 
@@ -702,15 +631,12 @@ impl<'a> Visit<'a> for Declarators<'_, '_, '_> {
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let Some(Expression::CallExpression(call)) =
             it.init.as_ref().map(Expression::without_parentheses)
+            && let Some(plan) = self.pre.decls.get(&it.span.start)
         {
-            if let Some(plan) = self.pre.decls.get(&it.span.start) {
-                match plan.primitive {
-                    Syntax::Signal => self.declare(it, call, true, true),
-                    Syntax::Computed => self.declare(it, call, false, true),
-                    Syntax::Action => {}
-                }
-            } else if let Some(signal) = self.imports.factory(self.scoping, &call.callee) {
-                self.declare(it, call, signal, false);
+            match plan.primitive {
+                Syntax::Signal => self.declare(it, call, true),
+                Syntax::Computed => self.declare(it, call, false),
+                Syntax::Action => {}
             }
         }
         walk::walk_variable_declarator(self, it);
@@ -942,11 +868,6 @@ impl Scan<'_, '_> {
         };
         let getter = self.getters.get(&symbol)?;
         if !self.selectable.contains(&symbol) {
-            return None;
-        }
-        if matches!(source_side.without_parentheses(), Expression::Identifier(_))
-            && !getter.converts
-        {
             return None;
         }
         if self.row_span.contains_inclusive(self.scoping.symbol_span(symbol)) {

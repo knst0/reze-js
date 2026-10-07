@@ -1,5 +1,5 @@
 import { cleanup, deferred, fire, mount, settle, tick } from "@rezejs/testing-library";
-import { Errored, lazy, Loading } from "reze-js";
+import { Errored, lazy, Loading } from "reze-js/internal/async";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);

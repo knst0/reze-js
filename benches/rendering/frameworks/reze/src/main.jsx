@@ -1,5 +1,4 @@
-import { signal } from "@rezejs/signals";
-import { For, render, selector } from "reze-js";
+import { For, render, selector, signal, store } from "reze-js";
 
 const adjectives = [
   "pretty",
@@ -38,10 +37,12 @@ let nextId = 1;
 function buildData(count) {
   const data = [];
   for (let i = 0; i < count; i++) {
-    const [label, setLabel] = signal(
-      `${adjectives[random(adjectives.length)]} ${colors[random(colors.length)]} ${nouns[random(nouns.length)]}`,
+    data.push(
+      store({
+        id: nextId++,
+        label: `${adjectives[random(adjectives.length)]} ${colors[random(colors.length)]} ${nouns[random(nouns.length)]}`,
+      }),
     );
-    data.push({ id: nextId++, label, setLabel });
   }
   return data;
 }
@@ -57,33 +58,30 @@ function Button(props) {
 }
 
 function App() {
-  const [data, setData] = signal([]);
-  const [selected, setSelected] = signal(null);
-  const isSelected = selector(selected);
-  const run = () => setData(buildData(1000));
-  const runLots = () => setData(buildData(10000));
-  const add = () => setData((d) => [...d, ...buildData(1000)]);
+  let data = signal([]);
+  let selected = signal(null);
+  const isSelected = selector(() => selected);
+  const run = () => (data = buildData(1000));
+  const runLots = () => (data = buildData(10000));
+  const add = () => (data = [...data, ...buildData(1000)]);
   const update = () => {
-    const d = data();
-    for (let i = 0; i < d.length; i += 10) d[i].setLabel((l) => l + " !!!");
+    for (let i = 0; i < data.length; i += 10) data[i].label += " !!!";
   };
-  const clear = () => setData([]);
+  const clear = () => (data = []);
   const swapRows = () => {
-    const list = data().slice();
+    const list = data.slice();
     if (list.length > 998) {
       const item = list[1];
       list[1] = list[998];
       list[998] = item;
-      setData(list);
+      data = list;
     }
   };
   const remove = (id) =>
-    setData((d) =>
-      d.toSpliced(
-        d.findIndex((row) => row.id === id),
-        1,
-      ),
-    );
+    (data = data.toSpliced(
+      data.findIndex((row) => row.id === id),
+      1,
+    ));
 
   return (
     <div class="container">
@@ -106,12 +104,12 @@ function App() {
       </div>
       <table class="table table-hover table-striped test-data">
         <tbody>
-          <For each={data()} keyed={(row) => row.id}>
+          <For each={data} keyed={(row) => row.id}>
             {(row) => (
               <tr class={isSelected(row().id) ? "danger" : ""}>
                 <td class="col-md-1">{row().id}</td>
                 <td class="col-md-4">
-                  <a onClick={() => setSelected(row().id)}>{row().label()}</a>
+                  <a onClick={() => (selected = row().id)}>{row().label}</a>
                 </td>
                 <td class="col-md-1">
                   <a onClick={() => remove(row().id)}>

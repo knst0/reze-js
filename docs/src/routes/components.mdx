@@ -8,10 +8,10 @@ description: Component execution, props, composition, JSX bindings, and DOM elem
 A component is a function that builds part of the interface. It runs once, reads its props through getters, and returns JSX. Updates happen inside the bindings the JSX created, not by running the component again.
 
 ```tsx
-import { $signal, Show } from "reze-js";
+import { Show, signal } from "reze-js";
 
 export function Counter(props: { step: number }) {
-  let count = $signal(0);
+  let count = signal(0);
   return (
     <section>
       <output>{count}</output>
@@ -34,7 +34,7 @@ export function Counter(props: { step: number }) {
 `createComponent` calls the component once, untracked, so reads in the body never re-run the caller. A component that renders `<b>{props.n}</b>` builds the `<b>` one time; when `props.n` changes, only the text binding re-evaluates. Take `props` as the one parameter and read its fields where the values are used:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 function Link(props: { href: string; label?: string; title?: string }) {
   return (
@@ -45,23 +45,23 @@ function Link(props: { href: string; label?: string; title?: string }) {
 }
 
 export function Nav() {
-  let href = $signal("/a");
-  let title = $signal("t1");
+  let href = signal("/a");
+  let title = signal("t1");
   return <Link href={href} title={title} />;
 }
 ```
 
-`Link` renders once. Changing `href` or `title` updates the `href` and `title` attributes without rebuilding the anchor. The same rule applies to local `$signal` reads: the body never re-runs for sources it reads. Reading a prop into a variable in the body takes a snapshot that never updates. A destructured parameter list is also supported, in the forms the compiler can rewrite, but it has edges that lose updates; see [familiar patterns](/familiar-patterns). Reactive behavior of the declarations themselves is described in [reactivity](/reactivity), and disposal of what a component built is described in [lifecycle](/lifecycle).
+`Link` renders once. Changing `href` or `title` updates the `href` and `title` attributes without rebuilding the anchor. The same rule applies to local `signal` reads: the body never re-runs for sources it reads. Reading a prop into a variable in the body takes a snapshot that never updates. A destructured parameter list is also supported, in the forms the compiler can rewrite, but it has edges that lose updates; see [familiar patterns](/familiar-patterns). Reactive behavior of the declarations themselves is described in [reactivity](/reactivity), and disposal of what a component built is described in [lifecycle](/lifecycle).
 
 ## Supported JSX
 
 Elements, fragments, arrays, and getters compose in order between static siblings:
 
 ```tsx
-import { $signal, For } from "reze-js";
+import { For, signal } from "reze-js";
 
 export function List() {
-  let items = $signal(["x", "y"]);
+  let items = signal(["x", "y"]);
   return (
     <ul>
       <li>first</li>
@@ -83,18 +83,18 @@ Attribute values are plain values, not thunks. The compiler re-evaluates the att
 
 Props arrive as an object whose fields are getters when the caller passed a reactive expression. Reading `props.step` inside JSX subscribes that binding; reading it in the body does not make the body re-run. `undefined` counts as absent when props merge, so a caller passing `label={undefined}` falls back to the default the component declared.
 
-The `$props` compiler syntax combines and divides props without losing reactivity:
+`mergeProps`, `splitProps`, and `omitProps` combine and divide props without losing reactivity:
 
 ```tsx
-import { $props, $signal } from "reze-js";
+import { mergeProps, omitProps, signal, splitProps } from "reze-js";
 
 function Button(props: { label?: string; kind?: string }) {
-  const merged = $props.merge({ label: "Save", kind: "primary" }, props);
+  const merged = mergeProps({ label: "Save", kind: "primary" }, props);
   return <button class={merged.kind}>{merged.label}</button>;
 }
 
 function Field(props: { label: string; kind: string; hint: string }) {
-  const [own, rest] = $props.splitByGroups(props, ["label"]);
+  const [own, rest] = splitProps(props, ["label"]);
   return (
     <label title={rest.hint}>
       {own.label}
@@ -104,23 +104,17 @@ function Field(props: { label: string; kind: string; hint: string }) {
 }
 
 function Plain(props: { label: string; kind: string }) {
-  const rest = $props.omit(props, "kind");
+  const rest = omitProps(props, "kind");
   return <button>{rest.label}</button>;
 }
 
 export function Demo() {
-  let label = $signal<string | undefined>(undefined);
+  let label = signal<string | undefined>(undefined);
   return <Button label={label} kind="ghost" />;
 }
 ```
 
-Each key of the merged view reads the last source holding a non-`undefined` value, and getters stay reactive: setting `label` to `"Send"` shows `Send`, and setting it back to `undefined` restores `Save`. `$props.splitByGroups` returns one lazy view per key group plus the remainder; `$props.omit` returns the remainder without the listed keys. Calls over object literals with static keys dissolve into plain object literals; every other call compiles to the runtime `mergeProps`, `splitProps`, or `omitProps`.
-
-Import the runtime functions directly from `@rezejs/dom` only for a shape the compiler cannot see, such as a props object built at runtime:
-
-```tsx
-import { mergeProps } from "@rezejs/dom";
-```
+Each key of the merged view reads the last source holding a non-`undefined` value, and getters stay reactive: setting `label` to `"Send"` shows `Send`, and setting it back to `undefined` restores `Save`. `splitProps` returns one lazy view per key group plus the remainder; `omitProps` returns the remainder without the listed keys. Calls over object literals with static keys dissolve into plain object literals; every other call compiles to the private runtime helper. Using any of the three as a value rather than calling it is refused.
 
 A spread whose expression reads reactive state is dynamic: it re-runs when what it reads changes and re-applies class, style, properties, and children. Attributes written after the spread win over the spread. Keys that disappear from the spread are removed from the element.
 
@@ -129,14 +123,14 @@ A spread whose expression reads reactive state is dynamic: it re-runs when what 
 Children are passed lazily, so content written between a component tags stays reactive without rebuilding the component:
 
 ```tsx
-import { $signal, type JSX } from "reze-js";
+import { signal, type JSX } from "reze-js";
 
 function Card(props: { children?: JSX.Element }) {
   return <section>{props.children}</section>;
 }
 
 export function Demo() {
-  let n = $signal(1);
+  let n = signal(1);
   return (
     <Card>
       count {n}
@@ -170,7 +164,7 @@ After mounting, `input` is the `<input>` element. The element-side `ref` forms a
 `dynamic` renders whichever component a source returns, and `dynamicElement` additionally renders tag names chosen at runtime in the namespace of the tag:
 
 ```tsx
-import { $signal, dynamic } from "reze-js";
+import { dynamic, signal } from "reze-js";
 
 function Bold(props: { label: string }) {
   return <b>{props.label}</b>;
@@ -181,8 +175,8 @@ function Italic(props: { label: string }) {
 }
 
 export function Picker() {
-  let picked = $signal<typeof Bold | false>(Bold);
-  let label = $signal("a");
+  let picked = signal<typeof Bold | false>(Bold);
+  let label = signal("a");
   const Picked = dynamic(() => picked);
   return (
     <p>
@@ -194,13 +188,13 @@ export function Picker() {
 
 Switching `picked` from `Bold` to `Italic` disposes the `<b>` tree and builds `<i>`; setting it to `false` renders nothing. While the choice stays the same, prop updates flow through without rebuilding: setting `label` to `"b"` rewrites the text in place. Switching on an unrelated signal does not rebuild either.
 
-Every call to `dynamic` creates a new component, so call it once per owner: hoist the call to module scope when the choice does not depend on local state, and when it closes over local state call it once in the component body, which runs once, so each instance gets its own component. A component kept in a signal is set with `setter(() => Component)`, since a bare function would be read as an updater. `dynamic` accepts components only; returning a tag-name string at runtime throws, and development builds name `dynamicElement` as the way to render a tag name chosen at runtime.
+Every call to `dynamic` creates a new component, so call it once per owner: hoist the call to module scope when the choice does not depend on local state, and when it closes over local state call it once in the component body, which runs once, so each instance gets its own component. A component kept in a signal is assigned directly — `picked = Italic` — since the compiler distinguishes the stored function from an updater. `dynamic` accepts components only; returning a tag-name string at runtime throws, and development builds name `dynamicElement` as the way to render a tag name chosen at runtime.
 
 ## Constraints and pitfalls
 
-`Show`, `For`, `Repeat`, `Switch`, `Match`, `Loading`, `Errored`, and `Portal` are compiler intrinsics. Every such tag compiles to direct runtime calls, and the imported binding only throws. Call one, pass one around, or re-export one, and that throw is what runs. Render each one as a tag, and give it the attributes it accepts: `Show` takes `when` and `fallback`, `For` takes `each`, `fallback`, and `keyed`, `Repeat` takes `count` and `fallback`, `Switch` takes `fallback` with `Match` children, `Match` takes `when`, `Loading` and `Errored` take `fallback`, and `Portal` takes `mount`. Anything else on those tags, spreads included, has no meaning.
+`Show`, `For`, `Repeat`, `Switch`, `Match`, and `Portal` are compiler intrinsics. Every such tag compiles to direct runtime calls, and the imported binding only throws. Call one, pass one around, or re-export one, and that throw is what runs. Render each one as a tag, and give it the attributes it accepts: `Show` takes `when` and `fallback`, `For` takes `each`, `fallback`, and `keyed`, `Repeat` takes `count` and `fallback`, `Switch` takes `fallback` with `Match` children, `Match` takes `when`, and `Portal` takes `mount`. Anything else on those tags, spreads included, has no meaning.
 
-Component bodies run once, so work that must repeat on prop changes belongs in a binding, a derived value from [reactivity](/reactivity), or an effect with cleanup from [lifecycle](/lifecycle). Reactive declarations are file-local compiler syntax; a `$signal` variable cannot be exported to another module and stay reactive.
+Component bodies run once, so work that must repeat on prop changes belongs in a binding, a derived value from [reactivity](/reactivity), or an effect with cleanup from [lifecycle](/lifecycle). Reactive declarations are file-local compiler syntax; a `signal` variable cannot be exported to another module and stay reactive.
 
 ## Related pages
 

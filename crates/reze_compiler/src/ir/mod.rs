@@ -122,7 +122,14 @@ impl Builder<'_> {
     }
 
     fn dynamic_of(&self, expr: ExprRef, mode: ValueMode) -> Dynamic {
-        Dynamic { expr, mode, deps: Vec::new(), kind: StaticKind::Unknown, getter: None, fixed: false }
+        Dynamic {
+            expr,
+            mode,
+            deps: Vec::new(),
+            kind: StaticKind::Unknown,
+            getter: None,
+            fixed: false,
+        }
     }
 
     fn tracked(&self, e: &Expression<'_>) -> Dynamic {
@@ -915,7 +922,6 @@ impl Builder<'_> {
                 && let Some(e) = c.expression.as_expression()
                 && self.fold_dynamic(e, false)
             {
-                self.check_signal_called(e);
                 let mut dynamic = self.tracked(e);
                 dynamic.getter = Some(self.getter_of(e));
                 link_href = Some(dynamic);
@@ -987,7 +993,6 @@ impl Builder<'_> {
         for a in sources {
             match self.native_value(a) {
                 Some(NativeValue::Expr(e)) => {
-                    self.check_signal_called(e);
                     values.push(NativeValue::Expr(e));
                 }
                 Some(value @ NativeValue::Str(_)) => values.push(value),
@@ -1198,22 +1203,6 @@ impl Builder<'_> {
 }
 
 impl Builder<'_> {
-    fn check_signal_called(&mut self, e: &Expression<'_>) {
-        let Expression::Identifier(id) = e.without_parentheses() else { return };
-        if !self.facts.is_getter(id) {
-            return;
-        }
-        self.report(
-            Report::new(Code::SignalNotCalled, id.span)
-                .arg("signal", id.name.as_str().to_string())
-                .fix(vec![crate::diagnostic::Edit {
-                    start: id.span.end,
-                    end: id.span.end,
-                    text: String::from("()"),
-                }]),
-        );
-    }
-
     fn attr_kind(
         &mut self,
         a: &JSXAttribute<'_>,
@@ -1307,9 +1296,6 @@ impl Builder<'_> {
             }
         }
         let kind = self.attr_kind(a, name, tag, state.view.statics.nodes[node as usize].ns);
-        if let NativeValue::Expr(e) = &value {
-            self.check_signal_called(e);
-        }
         if let (AttrKind::Style, NativeValue::Expr(e)) = (&kind, &value)
             && let Some(style) = self.fold_style(e)
         {

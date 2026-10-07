@@ -1,6 +1,6 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
-import { $props, effect, mergeProps, omitProps, render, type ClassValue, type JSX } from "reze-js";
+import { effect, mergeProps, omitProps, render, splitProps, type ClassValue, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -10,10 +10,10 @@ test("text and attribute bindings update in place", () => {
   const { el } = mount(() => <p title={name()}>hi {name()}!</p>);
   const p = el.firstChild as HTMLElement;
   const text = p.firstChild;
-  expect(el.innerHTML).toBe('<p title="a">hi a!</p>');
+  expect(el.innerHTML).toBe('<p title="a">hi a<!---->!</p>');
   setName("b");
   tick();
-  expect(el.innerHTML).toBe('<p title="b">hi b!</p>');
+  expect(el.innerHTML).toBe('<p title="b">hi b<!---->!</p>');
   expect(el.firstChild).toBe(p);
   expect(p.firstChild).toBe(text);
 });
@@ -32,7 +32,7 @@ test("a write re-evaluates only the bindings reading that signal", () => {
   const [a, setA] = signal(1);
   const [b] = signal(2);
   const { el } = mount(() => (
-    <p title={a() + bump("a")} data-b={b() + bump("b")}>
+    <p title={String(a() + bump("a"))} data-b={b() + bump("b")}>
       {a() + bump("a")}:{b() + bump("b")}
     </p>
   ));
@@ -376,7 +376,7 @@ test("stopPropagation stops delegated bubbling", () => {
 test("a [handler, data] pair calls handler(data, event), inline or from a variable", () => {
   const log: string[] = [];
   const pick = (id: number, e: Event) => log.push(`${e.type} ${id}`);
-  const pair = [pick, 2];
+  const pair: [typeof pick, number] = [pick, 2];
   const { el } = mount(() => (
     <p>
       <button onClick={[pick, 1]} />
@@ -753,9 +753,9 @@ test("render replaces existing content instead of adopting or duplicating it", (
   expect(el.innerHTML).toBe("");
 });
 
-test("$props.merge of literals passes the last defined value", () => {
+test("mergeProps of literals passes the last defined value", () => {
   function View() {
-    const merged = $props.merge({ 1: 2, ["label"]: "first" }, { ["label"]: "last", [2]: 3 }) as {
+    const merged = mergeProps({ 1: 2, ["label"]: "first" }, { ["label"]: "last", [2]: 3 }) as {
       1: number;
       2: number;
       label: string;
@@ -770,14 +770,14 @@ test("$props.merge of literals passes the last defined value", () => {
   expect(el.textContent).toBe("2:last:3");
 });
 
-test("$props.merge evaluates literal sources in order", () => {
+test("mergeProps evaluates literal sources in order", () => {
   const calls: string[] = [];
   const first = (name: string, value: number): number => {
     calls.push(name);
     return value;
   };
   function View() {
-    const merged = $props.merge({ a: first("first", 1) }, {}, { a: first("second", 2), 3: first("third", 3) }) as {
+    const merged = mergeProps({ a: first("first", 1) }, {}, { a: first("second", 2), 3: first("third", 3) }) as {
       3: number;
       a: number;
     };
@@ -792,10 +792,10 @@ test("$props.merge evaluates literal sources in order", () => {
   expect(el.innerHTML).toBe("<p>2:3</p>");
 });
 
-test("$props.merge keeps later getters live", () => {
+test("mergeProps keeps later getters live", () => {
   const [v, setV] = signal(1);
   function View() {
-    const merged = $props.merge(
+    const merged = mergeProps(
       { a: 0 },
       {
         get a() {
@@ -812,10 +812,10 @@ test("$props.merge keeps later getters live", () => {
   expect(el.innerHTML).toBe("<p>2</p>");
 });
 
-test("$props.splitByGroups and $props.omit divide literal props", () => {
+test("splitProps and omitProps divide literal props", () => {
   function View() {
-    const [picked, rest] = $props.splitByGroups({ x: 1, y: 2 }, ["x"]);
-    const kept = $props.omit({ x: 1, y: 2 }, "x");
+    const [picked, rest] = splitProps({ x: 1, y: 2 }, ["x"]);
+    const kept = omitProps({ x: 1, y: 2 }, "x") as { y: number };
     return (
       <p>
         {picked.x}:{rest.y}:{kept.y}
@@ -861,6 +861,7 @@ test("nested children win over the children attribute", () => {
   const [kids, setKids] = signal("attr");
   const fromAttr = mount(() => <div children={kids()} />);
   expect((fromAttr.el.firstChild as HTMLElement).innerHTML).toBe("attr");
+  // @ts-expect-error -- nested children intentionally override the attribute.
   const nested = mount(() => <div children={kids()}>nested</div>);
   expect((nested.el.firstChild as HTMLElement).innerHTML).toBe("nested");
   setKids("changed");
@@ -903,17 +904,17 @@ test("a track element stays void without swallowing its siblings", () => {
 });
 
 function freshTarget(key: string): unknown {
-  const merged = $props.merge({ [key]: 7 }, { [key]: new.target }) as Record<string, unknown>;
+  const merged = mergeProps({ [key]: 7 }, { [key]: new.target }) as Record<string, unknown>;
   return merged[key];
 }
 
-test("$props.merge preserves new.target across ordinary and constructor calls", () => {
+test("mergeProps preserves new.target across ordinary and constructor calls", () => {
   expect(freshTarget("label")).toBe(7);
   const constructed: unknown = Reflect.construct(freshTarget, ["label"]);
   expect(constructed).toBe(freshTarget);
 });
 
-test("$props.merge keeps method receivers", () => {
+test("mergeProps keeps method receivers", () => {
   function View() {
     const source = {
       name: "ann",
@@ -921,14 +922,14 @@ test("$props.merge keeps method receivers", () => {
         return `hi ${this.name}`;
       },
     };
-    const merged = $props.merge({ greet: () => "none" }, source) as { greet: () => string };
+    const merged = mergeProps({ greet: () => "none" }, source) as { greet: () => string };
     return <p>{merged.greet()}</p>;
   }
   const { el } = mount(() => <View />);
   expect(el.innerHTML).toBe("<p>hi ann</p>");
 });
 
-test("$props.merge keeps super method homes", () => {
+test("mergeProps keeps super method homes", () => {
   const base: { who: string } = { who: "base" };
   const child: { who: () => string } = {
     who(): string {
@@ -937,7 +938,7 @@ test("$props.merge keeps super method homes", () => {
   };
   Object.setPrototypeOf(child, base);
   function View() {
-    const merged = $props.merge({ who: "other" }, child) as { who: () => string };
+    const merged = mergeProps({ who: "other" }, child) as { who: () => string };
     return <p>{merged.who()}</p>;
   }
   const { el } = mount(() => <View />);

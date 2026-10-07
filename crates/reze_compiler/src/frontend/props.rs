@@ -14,16 +14,16 @@ use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 
 use super::Namer;
-use super::imports::{allows, home_of};
 use super::props_shape::{has_unnameable_type_read, is_literal_default, props_plan};
 use super::pure::{
     has_jsx, is_component_name, is_declared_component, merge_property_is_static, static_property,
 };
 use crate::diagnostic::{Code, Report};
+use crate::exports;
 use crate::imports::HelperImports;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum PropsMethod {
+pub(crate) enum PropsMethod {
     Merge,
     Split,
     Omit,
@@ -120,19 +120,15 @@ pub fn collect(
         if import.import_kind.is_type() {
             continue;
         }
-        let Some(home) = home_of(import.source.value.as_str()) else { continue };
-        if !allows(home, "$props") {
-            continue;
-        }
+        let source = import.source.value.as_str();
         for specifier in import.specifiers.iter().flatten() {
             let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else { continue };
             if named.import_kind.is_type() {
                 continue;
             }
-            if named.imported.name().as_str() != "$props" {
-                continue;
+            if let Some(method) = exports::props_named(source, named.imported.name().as_str()) {
+                symbols.push((named.local.symbol_id(), method));
             }
-            symbols.push(named.local.symbol_id());
         }
     }
     let mut plan = Plan::default();
@@ -174,7 +170,7 @@ pub fn apply<'a>(
 
 struct Collector<'s, 'r, 'p> {
     scoping: &'s Scoping,
-    symbols: &'s [SymbolId],
+    symbols: &'s [(SymbolId, PropsMethod)],
     used: Vec<Span>,
     misused: HashSet<SymbolId>,
     reports: &'r mut Vec<Report>,
@@ -310,40 +306,30 @@ impl<'a> Visit<'a> for Collector<'_, '_, '_> {
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
         let Some(reference) = it.reference_id.get() else { return };
         let Some(symbol) = self.scoping.get_reference(reference).symbol_id() else { return };
-        if self.symbols.contains(&symbol)
+        if self.symbols.iter().any(|(candidate, _)| *candidate == symbol)
             && !self
                 .used
                 .iter()
                 .any(|callee| callee.start <= it.span.start && it.span.end <= callee.end)
         {
             self.misused.insert(symbol);
-            self.reports.push(Report::new(Code::PropsAsValue, it.span));
+            let name = self.scoping.symbol_name(symbol).to_string();
+            self.reports.push(Report::new(Code::PropsAsValue, it.span).arg("name", name));
         }
     }
 }
 
 fn method_of(
     scoping: &Scoping,
-    symbols: &[SymbolId],
+    symbols: &[(SymbolId, PropsMethod)],
     callee: &Expression<'_>,
 ) -> Option<PropsMethod> {
-    let Expression::StaticMemberExpression(member) = callee.without_parentheses() else {
+    let Expression::Identifier(identifier) = callee.without_parentheses() else {
         return None;
     };
-    if member.optional {
-        return None;
-    }
-    let Expression::Identifier(object) = &member.object else { return None };
-    let symbol = object.reference_id.get().and_then(|id| scoping.get_reference(id).symbol_id())?;
-    if !symbols.contains(&symbol) {
-        return None;
-    }
-    match member.property.name.as_str() {
-        "merge" => Some(PropsMethod::Merge),
-        "splitByGroups" => Some(PropsMethod::Split),
-        "omit" => Some(PropsMethod::Omit),
-        _ => None,
-    }
+    let symbol =
+        identifier.reference_id.get().and_then(|id| scoping.get_reference(id).symbol_id())?;
+    symbols.iter().find(|(candidate, _)| *candidate == symbol).map(|(_, method)| *method)
 }
 
 fn merge_ok(call: &CallExpression<'_>) -> bool {
@@ -559,7 +545,7 @@ impl<'a> Rewrite<'_, '_, 'a> {
             && let Some(keys) = component.rest.as_ref().map(|plan| &plan.keys)
         {
             let split =
-                self.helpers.require(alloc, self.namer, "reze-js/internal/dom", "splitProps");
+                self.helpers.require(alloc, self.namer, crate::RUNTIME_MODULE, "splitProps");
             entries.push(rest_decl(alloc, id, props, split, keys));
         }
         for (index, default) in component.defaults.iter().enumerate() {
@@ -624,7 +610,7 @@ impl<'a> Rewrite<'_, '_, 'a> {
             PropsMethod::Split => "splitProps",
             PropsMethod::Omit => "omitProps",
         };
-        let alias = self.helpers.require(self.alloc, self.namer, "reze-js/internal/dom", export);
+        let alias = self.helpers.require(self.alloc, self.namer, crate::RUNTIME_MODULE, export);
         call.callee = reference_expr(self.alloc, Span::new(callee.0, callee.1), alias);
         self.changed = true;
     }

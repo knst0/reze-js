@@ -30,9 +30,13 @@
       "types": "./dist/internal/reactivity.d.ts",
       "import": "./dist/internal/reactivity.js"
     },
-    "./internal/dom": {
-      "types": "./dist/internal/dom.d.ts",
-      "import": "./dist/internal/dom.js"
+    "./internal/runtime": {
+      "types": "./dist/internal/runtime.d.ts",
+      "import": "./dist/internal/runtime.js"
+    },
+    "./internal/async": {
+      "types": "./dist/internal/async.d.ts",
+      "import": "./dist/internal/async.js"
     },
     "./internal/html": {
       "types": "./dist/internal/html.d.ts",

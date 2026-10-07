@@ -1,4 +1,5 @@
-import { flush, render, type JSX } from "reze-js";
+import { render, type JSX } from "reze-js";
+import { flush } from "reze-js/internal/runtime";
 
 export interface Mounted {
   el: HTMLElement;

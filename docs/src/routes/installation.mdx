@@ -48,7 +48,7 @@ export default defineConfig({
 });
 ```
 
-The plugin transforms Reze JSX and compiler syntax such as `$signal`. A TypeScript JSX setting alone does not perform this transformation.
+The plugin transforms Reze JSX and compiler syntax such as `signal`. A TypeScript JSX setting alone does not perform this transformation.
 
 Create `tsconfig.json`:
 
@@ -97,11 +97,11 @@ Create `index.html` in the project root:
 Create `src/Counter.tsx`:
 
 ```tsx
-import { $computed, $signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
 export function Counter(props: { step: number }) {
-  let count = $signal(0);
-  const doubled = $computed(count * 2);
+  let count = signal(0);
+  const doubled = computed(count * 2);
 
   return (
     <section>
@@ -119,7 +119,7 @@ export function Counter(props: { step: number }) {
 }
 ```
 
-`$signal` declares writable reactive state. `$computed` derives a value from an expression: do not wrap its argument in an arrow function. JSX bindings update when the values they read change.
+`signal` declares writable reactive state. `computed` derives a value from an expression: do not wrap its argument in an arrow function. JSX bindings update when the values they read change.
 
 Create `src/main.tsx`:
 
@@ -150,8 +150,8 @@ Type checking and bundling are separate commands. Vite writes the production app
 ## Troubleshooting
 
 - **JSX parse error:** check the `.tsx` extension and ensure `reze()` is installed in the Vite plugin list.
-- **Compiler syntax throws at runtime:** the file was not transformed. Check the plugin's file extensions and do not execute `$signal` source directly with Node.js.
+- **Missing export from `reze-js`:** the file was not transformed. Check the plugin's file extensions and do not execute `signal` source directly with Node.js.
 - **Nothing mounts:** ensure the HTML contains `id="app"` and loads `/src/main.tsx`.
-- **Reactive state cannot be exported:** export a getter function or use the ordinary `signal` API across module boundaries.
+- **Reactive state cannot be exported:** export a function that owns the state, or share a `store`; see [compiler](/compiler#declaration-and-module-boundaries).
 
 Next: [reactivity](/reactivity), [components and JSX](/components), and [the compiler](/compiler). For multiple screens, follow [routing](/routing).

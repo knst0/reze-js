@@ -1,5 +1,6 @@
-import { signal, signal as make } from "@rezejs/signals";
+import { signal as make } from "@rezejs/signals";
 import { cleanup, mount, tick } from "@rezejs/testing-library";
+import { signal } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 import { ExternalCounter, setExtCount } from "./fixtures/exported-signals";
@@ -79,7 +80,7 @@ test("shadowed globals keep their branches", () => {
 });
 
 test("shadowed template holes stay live", () => {
-  const [value, setValue] = signal("x");
+  const [value, setValue] = make("x");
   const { el } = mount(() => pairShaped("s", value));
   expect(el.innerHTML).toBe("<p>as:x</p>");
   setValue("y");
@@ -114,14 +115,16 @@ test("folded signals render their constants with correct truthiness", () => {
 });
 
 test("falsy logical-and renders its left value", () => {
-  const [zero] = make(0);
-  const { el } = mount(() => (
-    <p>
-      {1 - 1 && <b />}
-      {-0 && <b />}
-      {zero() && <b />}
-    </p>
-  ));
+  const { el } = mount(() => {
+    let zero = signal(0);
+    return (
+      <p>
+        {1 - 1 && <b />}
+        {-0 && <b />}
+        {zero && <b />}
+      </p>
+    );
+  });
   expect(el.innerHTML).toBe("<p>000</p>");
 });
 
@@ -164,7 +167,7 @@ test("locals colliding with runtime helper names keep working", () => {
   function _$insert(a: string, b: string): string {
     return `${a}+${b}`;
   }
-  const [n, setN] = signal(1);
+  const [n, setN] = make(1);
   const { el } = mount(() => <p title={_$template("t")}>{_$insert("v", String(n()))}</p>);
   expect(el.innerHTML).toBe('<p title="user:t">v+1</p>');
   setN(2);

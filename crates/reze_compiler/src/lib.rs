@@ -3,6 +3,7 @@
 mod ast;
 mod codegen;
 mod diagnostic;
+mod exports;
 mod frontend;
 mod html;
 mod imports;
@@ -21,7 +22,7 @@ pub use diagnostic::{
 use diagnostic::Report;
 
 /// The module compiled code imports runtime helpers from.
-pub const RUNTIME_MODULE: &str = "reze-js";
+pub const RUNTIME_MODULE: &str = exports::RUNTIME;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CompileTarget {

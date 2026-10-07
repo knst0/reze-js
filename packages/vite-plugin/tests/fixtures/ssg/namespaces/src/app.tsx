@@ -1,4 +1,4 @@
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 function Cells(props: { value: string }) {
   return (
@@ -19,9 +19,9 @@ function Options() {
 }
 
 export default function App() {
-  let city = $signal("b");
-  let note = $signal("first");
-  let raw = $signal("<b>trusted</b>");
+  let city = signal("b");
+  let note = signal("first");
+  let raw = signal("<b>trusted</b>");
   return (
     <main>
       <h1>namespaces</h1>

@@ -34,16 +34,16 @@ fn only(source: &str, code: Code) -> Diagnostic {
 
 #[test]
 fn a_call_outside_a_declaration_is_not_declared() {
-    let at = "import { $signal } from \"reze-js\";\nexport const view = <p>{$signal(0)}</p>;";
+    let at = "import { signal } from \"reze-js\";\nexport const view = <p>{signal(0)}</p>;";
     let d = only(at, Code::SignalNotDeclared);
     assert_eq!((d.start.line, d.start.column), (2, 24));
-    only("import { $signal } from \"reze-js\";\nvar a = $signal(0);", Code::SignalNotDeclared);
+    only("import { signal } from \"reze-js\";\nvar a = signal(0);", Code::SignalNotDeclared);
     only(
-        "import { $signal } from \"reze-js\";\nconst make = $signal;\nmake(0);",
+        "import { signal } from \"reze-js\";\nconst make = signal;\nmake(0);",
         Code::SignalNotDeclared,
     );
     only(
-        "import * as R from \"reze-js\";\nfunction f() { return R.$signal(0); }",
+        "import * as R from \"reze-js\";\nfunction f() { return R.signal(0); }",
         Code::SignalNotDeclared,
     );
 }
@@ -51,18 +51,18 @@ fn a_call_outside_a_declaration_is_not_declared() {
 #[test]
 fn a_destructured_declaration_is_a_pattern() {
     let d =
-        only("import { $signal } from \"reze-js\";\nlet [a] = $signal([0]);", Code::SignalPattern);
+        only("import { signal } from \"reze-js\";\nlet [a] = signal([0]);", Code::SignalPattern);
     assert_eq!((d.start.line, d.start.column), (2, 4));
 }
 
 #[test]
 fn an_exported_signal_is_refused_however_it_is_exported() {
     for export in [
-        "export let a = $signal(0);",
-        "let a = $signal(0);\nexport { a };",
-        "let a = $signal(0);\nexport default a;",
+        "export let a = signal(0);",
+        "let a = signal(0);\nexport { a };",
+        "let a = signal(0);\nexport default a;",
     ] {
-        let source = format!("import {{ $signal }} from \"reze-js\";\n{export}");
+        let source = format!("import {{ signal }} from \"reze-js\";\n{export}");
         only(&source, Code::SignalExported);
     }
 }
@@ -71,7 +71,7 @@ fn an_exported_signal_is_refused_however_it_is_exported() {
 fn a_write_the_language_performs_is_an_assign_pattern() {
     for write in ["[a] = list;", "({ a } = obj);", "for (a of list) {}", "for (a in obj) {}"] {
         let source = format!(
-            "import {{ $signal }} from \"reze-js\";\nlet a = $signal(0);\nexport function f(list, obj) {{\n  {write}\n}}"
+            "import {{ signal }} from \"reze-js\";\nlet a = signal(0);\nexport function f(list, obj) {{\n  {write}\n}}"
         );
         only(&source, Code::SignalAssignPattern);
     }
@@ -81,34 +81,34 @@ fn a_write_the_language_performs_is_an_assign_pattern() {
 fn an_update_inside_an_expression_is_refused_and_a_statement_is_not() {
     for update in ["use(a++);", "const b = --a;", "run(() => a++);", "const b = a++ + 1;"] {
         let source = format!(
-            "import {{ $signal }} from \"reze-js\";\nlet a = $signal(0);\nexport function f() {{\n  {update}\n}}"
+            "import {{ signal }} from \"reze-js\";\nlet a = signal(0);\nexport function f() {{\n  {update}\n}}"
         );
         only(&source, Code::SignalUpdateInExpression);
     }
-    let fine = "import { $signal } from \"reze-js\";\nlet a = $signal(0);\nexport function f(ok) {\n  a++;\n  ok && a--;\n  for (let i = 0; i < 2; i++, a++) {}\n}\nexport const v = <p>{a}</p>;";
+    let fine = "import { signal } from \"reze-js\";\nlet a = signal(0);\nexport function f(ok) {\n  a++;\n  ok && a--;\n  for (let i = 0; i < 2; i++, a++) {}\n}\nexport const v = <p>{a}</p>;";
     compiled(fine, &options());
 }
 
 #[test]
 fn first_pass_errors_replace_the_output() {
-    let source = "import { $signal } from \"reze-js\";\nlet [a] = $signal(0);\nexport const view = <p>{a}</p>;";
+    let source = "import { signal } from \"reze-js\";\nlet [a] = signal(0);\nexport const view = <p>{a}</p>;";
     assert!(errors(source).iter().all(|d| d.severity == Severity::Error));
 }
 
 #[test]
 fn reading_once_is_reported_only_for_top_level_initializers_of_a_component() {
-    let source = "import { $signal } from \"reze-js\";\nimport { computed } from \"@rezejs/signals\";\nlet count = $signal(0);\nexport function Counter() {\n  const copy = count;\n  const live = computed(() => count * 2);\n  const view = <b>{count}</b>;\n  const seeded = $signal(count);\n  const handler = () => { const inner = count; };\n  return view;\n}\nfunction helper() {\n  const plain = count;\n  return plain;\n}";
+    let source = "import { computed, signal } from \"reze-js\";\nlet count = signal(0);\nexport function Counter() {\n  const copy = count;\n  const live = computed(count * 2);\n  const view = <b>{count}</b>;\n  const seeded = signal(count);\n  const handler = () => { const inner = count; };\n  return view;\n}\nfunction helper() {\n  const plain = count;\n  return plain;\n}";
     let out = compile(source, "test.tsx", &options()).unwrap().unwrap();
     let once: Vec<_> = out.diagnostics.iter().filter(|d| d.code == Code::SignalReadOnce).collect();
     assert_eq!(once.len(), 1, "{once:?}");
-    assert_eq!(once[0].start.line, 5);
+    assert_eq!(once[0].start.line, 4);
     assert_eq!(once[0].severity, Severity::Warn);
     assert_eq!(once[0].data["variable"], "copy");
 }
 
 #[test]
 fn diagnostics_of_the_second_pass_point_into_the_original_source() {
-    let source = "import { $signal, For } from \"reze-js\";\n\nlet selected = $signal(0);\nexport const view = (\n  <For each={rows()}>{(row) => <li class={selected === row.id ? \"on\" : \"\"} onClick={() => selected = row.id} />}</For>\n);";
+    let source = "import { signal, For } from \"reze-js\";\n\nlet selected = signal(0);\nexport const view = (\n  <For each={rows()}>{(row) => <li class={selected === row.id ? \"on\" : \"\"} onClick={() => selected = row.id} />}</For>\n);";
     let out = compile(source, "test.tsx", &options()).unwrap().unwrap();
     let auto = out.diagnostics.iter().find(|d| d.code == Code::AutoSelector).expect("selector");
     let line = source.lines().nth(auto.start.line as usize - 1).unwrap();
@@ -118,11 +118,11 @@ fn diagnostics_of_the_second_pass_point_into_the_original_source() {
     );
     assert_eq!(auto.data["signal"], "selected");
 
-    let folded = "import { $signal } from \"reze-js\";\nlet title = $signal(\"x\");\nexport const v = <p>{title}</p>;";
+    let folded = "import { signal } from \"reze-js\";\nlet title = signal(\"x\");\nexport const v = <p>{title}</p>;";
     let out = compile(folded, "test.tsx", &options()).unwrap().unwrap();
     let info = out.diagnostics.iter().find(|d| d.code == Code::SignalFolded).expect("folded");
     assert_eq!((info.start.line, info.start.column), (2, 4));
-    assert_eq!((info.end.line, info.end.column), (2, 24));
+    assert_eq!((info.end.line, info.end.column), (2, 23));
 }
 
 fn mapped_position(out_code: &str, map: &SourceMap, needle: &str) -> (u32, u32) {
@@ -136,7 +136,7 @@ fn mapped_position(out_code: &str, map: &SourceMap, needle: &str) -> (u32, u32) 
 
 #[test]
 fn the_source_map_points_at_the_original_source() {
-    let source = "import { $signal } from \"reze-js\";\n\nlet count = $signal(0);\nexport function bump() {\n  count += 1;\n  return count;\n}\nexport const view = <p>{count}</p>;";
+    let source = "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport function bump() {\n  count += 1;\n  return count;\n}\nexport const view = <p>{count}</p>;";
     let out = compile(source, "test.tsx", &Options::default()).unwrap().unwrap();
     let json = out.map.expect("map");
     let map = SourceMap::from_json_string(&json).unwrap();
@@ -153,13 +153,14 @@ fn the_source_map_points_at_the_original_source() {
 
 #[test]
 fn a_module_without_jsx_still_comes_out_rewritten_with_a_map() {
-    let source = "import { $signal } from \"reze-js\";\nlet count = $signal(0);\nexport const read = () => count;\nexport const inc = () => { count++; };";
+    let source = "import { signal } from \"reze-js\";\nlet count = signal(0);\nexport const read = () => count;\nexport const inc = () => { count++; };";
     let out = compile(source, "test.ts", &Options::default()).unwrap().unwrap();
     let allocator = Allocator::default();
     let parsed = Parser::new(&allocator, &out.code, SourceType::ts()).parse();
     assert!(parsed.diagnostics.is_empty(), "{:?}\n{}", parsed.diagnostics, out.code);
-    assert!(!out.code.contains("$signal"), "{}", out.code);
+    assert!(!out.code.contains("from \"reze-js\""), "{}", out.code);
     assert!(out.code.contains("count()"), "{}", out.code);
+    assert!(out.code.contains("reze-js/internal/reactivity"), "{}", out.code);
     let json = out.map.expect("map");
     let map = SourceMap::from_json_string(&json).unwrap();
     let (line, _) = mapped_position(&out.code, &map, "export const read");
@@ -169,7 +170,7 @@ fn a_module_without_jsx_still_comes_out_rewritten_with_a_map() {
 #[test]
 fn a_file_that_mentions_the_name_without_importing_it_is_left_alone() {
     assert!(
-        compile("const $signal = 1; export const a = $signal;", "a.ts", &options())
+        compile("const signal = 1; export const a = signal;", "a.ts", &options())
             .unwrap()
             .is_none()
     );
@@ -177,7 +178,7 @@ fn a_file_that_mentions_the_name_without_importing_it_is_left_alone() {
 
 fn computed_module(body: &str) -> String {
     format!(
-        "import {{ $computed, $signal }} from \"reze-js\";\nlet count = $signal(0);\nconst d = $computed(count * 2);\n{body}"
+        "import {{ computed, signal }} from \"reze-js\";\nlet count = signal(0);\nconst d = computed(count * 2);\n{body}"
     )
 }
 
@@ -198,12 +199,12 @@ fn every_write_to_a_computed_is_refused() {
 
 #[test]
 fn a_function_literal_argument_is_refused_and_the_fix_unwraps_it() {
-    let source = "import { $computed, $signal } from \"reze-js\";\nlet count = $signal(0);\nconst d = $computed(() => ({ n: count }));\nexport const v = <p onClick={() => { count++; }}>{d.n}</p>;";
+    let source = "import { computed, signal } from \"reze-js\";\nlet count = signal(0);\nconst d = computed(() => ({ n: count }));\nexport const v = <p onClick={() => { count++; }}>{d.n}</p>;";
     let d = only(source, Code::ComputedFunction);
     let edit = &d.fixes[0].edits[0];
     let mut fixed = source.to_string();
     fixed.replace_range(edit.start as usize..edit.end as usize, &edit.text);
-    assert!(fixed.contains("$computed(({ n: count }))"), "{fixed}");
+    assert!(fixed.contains("computed(({ n: count }))"), "{fixed}");
     assert!(compiled(&fixed, &options()).contains("count()"), "{fixed}");
 
     for literal in [
@@ -213,7 +214,7 @@ fn a_function_literal_argument_is_refused_and_the_fix_unwraps_it() {
         "function () { return count; }",
     ] {
         let source = computed_module(&format!(
-            "const e = $computed({literal});\nexport const v = <p>{{e}}</p>;"
+            "const e = computed({literal});\nexport const v = <p>{{e}}</p>;"
         ));
         assert!(only(&source, Code::ComputedFunction).fixes.is_empty(), "{literal}");
     }
@@ -221,9 +222,9 @@ fn a_function_literal_argument_is_refused_and_the_fix_unwraps_it() {
 
 #[test]
 fn awaiting_inside_the_expression_is_refused_but_inside_a_nested_function_is_not() {
-    let source = "import { $computed } from \"reze-js\";\nexport async function load(id) {\n  const d = $computed(await fetchUser(id));\n  return d;\n}";
+    let source = "import { computed } from \"reze-js\";\nexport async function load(id) {\n  const d = computed(await fetchUser(id));\n  return d;\n}";
     only(source, Code::ComputedAwait);
-    let nested = "import { $computed } from \"reze-js\";\nexport function load(id) {\n  const d = $computed(pick(async () => await fetchUser(id)));\n  return d;\n}";
+    let nested = "import { computed } from \"reze-js\";\nexport function load(id) {\n  const d = computed(pick(async () => await fetchUser(id)));\n  return d;\n}";
     let code = compiled(nested, &options());
     assert!(code.contains("await fetchUser"), "{code}");
 }
@@ -231,24 +232,24 @@ fn awaiting_inside_the_expression_is_refused_but_inside_a_nested_function_is_not
 #[test]
 fn computed_declaration_errors_name_the_primitive() {
     let d = only(
-        "import { $computed } from \"reze-js\";\nexport const view = <p>{$computed(1)}</p>;",
+        "import { computed } from \"reze-js\";\nexport const view = <p>{computed(1)}</p>;",
         Code::SignalNotDeclared,
     );
-    assert_eq!(d.data["primitive"], "$computed");
-    assert!(d.message.contains("`$computed` is only valid"), "{}", d.message);
-    only("import { $computed } from \"reze-js\";\nvar a = $computed(1);", Code::SignalNotDeclared);
+    assert_eq!(d.data["primitive"], "computed");
+    assert!(d.message.contains("`computed` is only valid"), "{}", d.message);
+    only("import { computed } from \"reze-js\";\nvar a = computed(1);", Code::SignalNotDeclared);
     let d = only(
-        "import { $computed } from \"reze-js\";\nconst { a } = $computed({ a: 1 });",
+        "import { computed } from \"reze-js\";\nconst { a } = computed({ a: 1 });",
         Code::SignalPattern,
     );
-    assert_eq!(d.data["primitive"], "$computed");
+    assert_eq!(d.data["primitive"], "computed");
     let d = only(&computed_module("export { d };"), Code::SignalExported);
-    assert_eq!((d.data["signal"].as_str(), d.data["primitive"].as_str()), ("d", "$computed"));
+    assert_eq!((d.data["signal"].as_str(), d.data["primitive"].as_str()), ("d", "computed"));
 }
 
 #[test]
 fn reading_a_computed_once_warns_and_declaring_one_does_not() {
-    let source = "import { $computed, $signal, untrack } from \"reze-js\";\nlet count = $signal(0);\nexport function Counter() {\n  const doubled = $computed(count * 2);\n  const copy = doubled;\n  const seed = untrack(() => doubled);\n  return <p onClick={() => { count++; }}>{copy}{seed}</p>;\n}";
+    let source = "import { computed, signal, untrack } from \"reze-js\";\nlet count = signal(0);\nexport function Counter() {\n  const doubled = computed(count * 2);\n  const copy = doubled;\n  const seed = untrack(() => doubled);\n  return <p onClick={() => { count++; }}>{copy}{seed}</p>;\n}";
     let out = compile(source, "test.tsx", &options()).unwrap().unwrap();
     let once: Vec<_> = out.diagnostics.iter().filter(|d| d.code == Code::SignalReadOnce).collect();
     assert_eq!(once.len(), 1, "{once:?}");

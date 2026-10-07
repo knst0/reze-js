@@ -7,22 +7,22 @@ description: Patterns from other component frameworks that compile and run in Re
 
 Reze components run once and update through bindings. Code written for a framework that re-runs components still compiles in many cases, but some forms give up what the compiler provides, and a few lose updates without failing. This page lists the patterns that work, what each costs, and the form to prefer. Nothing here is deprecated; the [components](/components) page describes the recommended style.
 
-| Pattern                                  | Works                | Cost                                     | Prefer                               |
-| ---------------------------------------- | -------------------- | ---------------------------------------- | ------------------------------------ |
-| Destructured props in the parameter list | Yes, in listed forms | Other forms read the value once and warn | `props.x`, `$props.merge` defaults   |
-| `{items.map(...)}`                       | Yes                  | Every row is rebuilt on every change     | `<For each={items}>`                 |
-| `key={...}` on an element                | Ignored, warns       | Renders a useless attribute              | `<For keyed={...}>`                  |
-| `const copy = props.x` in the body       | Reads once           | `copy` never updates                     | Read `props.x` in JSX or `$computed` |
-| Mutating a signal's array or object      | No notification      | Nothing updates                          | Assign a new value, or use `store`   |
-| `className`                              | Ignored, warns       | The browser drops the unknown attribute  | `class`                              |
-| `useState`, `useEffect`, other hooks     | No such API          |                                          | `$signal`, `effect`, `$computed`     |
+| Pattern                                  | Works                | Cost                                     | Prefer                              |
+| ---------------------------------------- | -------------------- | ---------------------------------------- | ----------------------------------- |
+| Destructured props in the parameter list | Yes, in listed forms | Other forms read the value once and warn | `props.x`, `mergeProps` defaults    |
+| `{items.map(...)}`                       | Yes                  | Every row is rebuilt on every change     | `<For each={items}>`                |
+| `key={...}` on an element                | Ignored, warns       | Renders a useless attribute              | `<For keyed={...}>`                 |
+| `const copy = props.x` in the body       | Reads once           | `copy` never updates                     | Read `props.x` in JSX or `computed` |
+| Mutating a signal's array or object      | No notification      | Nothing updates                          | Assign a new value, or use `store`  |
+| `className`                              | Ignored, warns       | The browser drops the unknown attribute  | `class`                             |
+| `useState`, `useEffect`, other hooks     | No such API          |                                          | `signal`, `effect`, `computed`      |
 
 ## Destructured props
 
 A destructured parameter is rewritten into lazy reads of one props object, so each use reads the current value:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 function Link({ href, label = "home", ...rest }: { href: string; label?: string; title?: string }) {
   return (
@@ -33,7 +33,7 @@ function Link({ href, label = "home", ...rest }: { href: string; label?: string;
 }
 
 export function Nav() {
-  let href = $signal("/a");
+  let href = signal("/a");
   return <Link href={href} title="t" />;
 }
 ```
@@ -52,17 +52,17 @@ Forms the compiler cannot rewrite still compile, but each value is read once whe
 - `params`: more than one parameter.
 - `type`: a type-position read of a key that no qualified type name can spell.
 
-This is why plain `props` is the recommended form. Adding a default such as `= fallback()` to an otherwise working parameter list silently turns the whole component read-once, and the written form `props.name ?? fallback()` has no such edge. For defaults and splitting, use the `$props` syntax described in [components](/components#props).
+This is why plain `props` is the recommended form. Adding a default such as `= fallback()` to an otherwise working parameter list silently turns the whole component read-once, and the written form `props.name ?? fallback()` has no such edge. For defaults and splitting, use `mergeProps`, `splitProps`, and `omitProps` as described in [components](/components#props).
 
 ## Rendering lists with `map`
 
 An expression such as `{items.map((name) => <li>{name}</li>)}` is supported. It is a binding like any other: when `items` changes, the expression runs again and its result replaces the previous rows.
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function List() {
-  let items = $signal(["x", "y"]);
+  let items = signal(["x", "y"]);
   return (
     <ul>
       <li>first</li>
@@ -80,10 +80,10 @@ Setting `items` to `["x", "y", "z"]` keeps `first` and `last` but builds all thr
 `<For>` keeps a row for as long as its item exists, moves rows when the order changes, and disposes only the rows that went away:
 
 ```tsx
-import { $signal, For } from "reze-js";
+import { For, signal } from "reze-js";
 
 export function List() {
-  let items = $signal(["x", "y"]);
+  let items = signal(["x", "y"]);
   return (
     <ul>
       <For each={items}>{(name) => <li>{name}</li>}</For>
@@ -114,17 +114,17 @@ function Label(props: { text: string }) {
 When the caller changes `text`, the first part of the paragraph keeps the old value and the second follows. This is true of any read outside JSX or a derived value. Put the read in JSX, or derive it:
 
 ```tsx
-import { $computed } from "reze-js";
+import { computed } from "reze-js";
 
 function Label(props: { text: string }) {
-  const upper = $computed(props.text.toUpperCase());
+  const upper = computed(props.text.toUpperCase());
   return <p>{upper}</p>;
 }
 ```
 
 ## Mutating state in place
 
-A `$signal` or `signal` holding an array or object is notified when its value is replaced, not when the value is mutated. `items.push(x)` changes the array and nothing updates. Assign a new array, as in `items = [...items, x]`, or keep the data in a `store`, whose property writes and array methods notify readers. Both are described in [reactivity](/reactivity).
+A `signal` holding an array or object is notified when its value is replaced, not when the value is mutated. `items.push(x)` changes the array and nothing updates. Assign a new array, as in `items = [...items, x]`, or keep the data in a `store`, whose property writes and array methods notify readers. Both are described in [reactivity](/reactivity).
 
 ## Attribute names
 
@@ -132,14 +132,14 @@ Attribute names are the HTML ones. `className` is not an attribute: it renders a
 
 ## Hooks
 
-Reze has no hooks. The compiler syntax and runtime functions cover the same ground, and none of them is called again per render:
+Reze has no hooks. The declarations the compiler lowers cover the same ground, and none of them runs again per render:
 
 | Instead of   | Write                                                                 |
 | ------------ | --------------------------------------------------------------------- |
-| `useState`   | `let count = $signal(0)`                                              |
-| `useMemo`    | `const doubled = $computed(count * 2)`                                |
+| `useState`   | `let count = signal(0)`                                               |
+| `useMemo`    | `const doubled = computed(count * 2)`                                 |
 | `useEffect`  | `effect(() => { ... })` with `onCleanup`, see [lifecycle](/lifecycle) |
-| `useContext` | `useContext(Context)`, see the [signals API](/signals-api)            |
+| `useContext` | `useContext(Context)`, see [lifecycle](/lifecycle#context)            |
 
 ## Related pages
 

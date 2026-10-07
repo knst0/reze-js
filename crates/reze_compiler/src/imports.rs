@@ -46,7 +46,7 @@ impl<'a> HelperImports<'a> {
         let builder = AstBuilder::new(allocator);
         let mut declarations = ArenaVec::new_in(&builder);
         let mut pending = std::mem::take(&mut self.pending);
-        let facade = pending.remove_entry("reze-js");
+        let facade = pending.remove_entry(crate::RUNTIME_MODULE);
         for (source, bindings) in facade.into_iter().chain(pending) {
             let mut specs = ArenaVec::with_capacity_in(bindings.len(), &builder);
             for (export, alias) in bindings {

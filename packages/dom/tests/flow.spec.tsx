@@ -1,6 +1,7 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, mount, tick } from "@rezejs/testing-library";
 import { For, Match, onCleanup, Show, Switch } from "reze-js";
+import { signal as sig } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -392,28 +393,25 @@ test("a selection change re-runs only the two rows whose comparison flips", () =
   const spy = () => {
     runs++;
   };
-  const [rows, setRows] = signal([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-  const [selected, setSelected] = signal(1);
-  const { el } = mount(
-    () => <For each={rows()}>{(row) => <li class={(spy(), selected() === row.id) ? "on" : ""}>{row.id}</li>}</For>,
-    "ul",
-  );
+  let rows = sig([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+  let selected = sig(1);
+  const { el } = mount(() => <For each={rows}>{(row) => <li class={(spy(), selected === row.id) ? "on" : ""}>{row.id}</li>}</For>, "ul");
   const on = () => [...el.children].filter((li) => li.className === "on").map((li) => li.textContent);
   expect(runs).toBe(4);
   expect(on()).toEqual(["1"]);
-  setSelected(3);
+  selected = 3;
   tick();
   expect(runs).toBe(6);
   expect(on()).toEqual(["3"]);
-  setSelected(4);
+  selected = 4;
   tick();
   expect(runs).toBe(8);
   expect(on()).toEqual(["4"]);
-  setSelected(0);
+  selected = 0;
   tick();
   expect(runs).toBe(9);
   expect(on()).toEqual([]);
-  setRows([{ id: 0 }, ...rows()]);
+  rows = [{ id: 0 }, ...rows];
   tick();
   expect(runs).toBe(10);
   expect(on()).toEqual(["0"]);

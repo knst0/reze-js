@@ -1,6 +1,7 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
-import { Errored, onCleanup, Portal, provideContext, Show, useContext } from "reze-js";
+import { onCleanup, Portal, provideContext, Show, useContext } from "reze-js";
+import { Errored } from "reze-js/internal/async";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);

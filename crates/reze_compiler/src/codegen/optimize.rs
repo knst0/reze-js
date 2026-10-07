@@ -9,7 +9,7 @@ use oxc_syntax::symbol::SymbolId;
 
 use crate::RUNTIME_MODULE;
 use crate::ast::Ast;
-use crate::frontend::imports::{allows, home_of};
+use crate::exports::{self, Entry};
 
 use super::EmitContext;
 
@@ -93,7 +93,7 @@ pub(super) fn prune_imports(program: &mut Program<'_>, scoping: &Scoping) -> boo
     let mut changed = false;
     program.body.retain_mut(|statement| {
         let Statement::ImportDeclaration(import) = statement else { return true };
-        let Some(source) = home_of(import.source.value.as_str()) else { return true };
+        let Some(source) = exports::module(import.source.value.as_str()) else { return true };
         if import.import_kind.is_type() {
             return true;
         }
@@ -102,7 +102,8 @@ pub(super) fn prune_imports(program: &mut Program<'_>, scoping: &Scoping) -> boo
         specifiers.retain(|specifier| {
             let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else { return true };
             named.import_kind.is_type()
-                || !allows(source, named.imported.name().as_str())
+                || !exports::lookup(source, named.imported.name().as_str())
+                    .is_some_and(Entry::is_compiled_away)
                 || named
                     .local
                     .symbol_id

@@ -1,12 +1,13 @@
-import { signal } from "@rezejs/signals";
-import { $signal, Errored, For, Loading, Match, onCleanup, Show, Switch } from "reze-js";
+import { signal as runtimeSignal } from "@rezejs/signals";
+import { For, Match, onCleanup, Show, signal, Switch } from "reze-js";
+import { Errored, Loading } from "reze-js/internal/async";
 
 interface Row {
   id: string;
   label: string;
 }
 const removedIds: string[] = [];
-const [removedText, setRemovedText] = signal("");
+const [removedText, setRemovedText] = runtimeSignal("");
 
 function KeyedRow(props: { row: () => Row; index: () => number }) {
   const row = props.row();
@@ -37,13 +38,13 @@ async function Fallible(props: { fail: boolean }) {
 }
 
 export default function App() {
-  let rows = $signal<Row[]>([
+  let rows = signal<Row[]>([
     { id: "a", label: "alpha" },
     { id: "b", label: "beta" },
   ]);
-  let mode = $signal("one");
-  let shown = $signal(true);
-  let fail = $signal(false);
+  let mode = signal("one");
+  let shown = signal(true);
+  let fail = signal(false);
   return (
     <main>
       <h1>flows</h1>

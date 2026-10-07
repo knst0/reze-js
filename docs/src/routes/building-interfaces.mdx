@@ -14,10 +14,10 @@ Component execution, props, and children are described in [components](/componen
 Listeners use camel-case names such as `onClick` and `onInput`. A lowercase `onclick={handler}` still attaches a listener, but the compiler reports `EVENT_NAME_LOWERCASE` and suggests `onClick`; only a string literal `onclick="..."` renders as an HTML attribute.
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function Stepper(props: { step: number }) {
-  let count = $signal(0);
+  let count = signal(0);
   return (
     <div onClick={() => (count += props.step)}>
       <button>add {props.step}</button>
@@ -33,10 +33,10 @@ Eleven event types delegate through one document listener each: `click`, `input`
 A two-element array passes data without closing over it:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function Choices() {
-  let picked = $signal(0);
+  let picked = signal(0);
   const pick = (id: number) => (picked = id);
   return (
     <p>
@@ -55,11 +55,11 @@ For a delegated event, `[handler, data]` calls `handler(data, event)`. For a dir
 Write small conditions inline with `? :` or `&&`. The branch rebuilds only when the test truthiness flips; while truthy it keeps its nodes and updates bindings in place.
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function Panel() {
-  let open = $signal<string | null>("a");
-  let text = $signal("hello");
+  let open = signal<string | null>("a");
+  let text = signal("hello");
   return (
     <div>
       <span>head</span>
@@ -75,10 +75,10 @@ Changing `open` from `"a"` to `"b"` keeps the same `<p>` and rewrites its text w
 `Show` names the same behavior and exposes the tested value to its function child as a tracked getter:
 
 ```tsx
-import { $signal, Show } from "reze-js";
+import { Show, signal } from "reze-js";
 
 export function User() {
-  let name = $signal<string | undefined>("Ada");
+  let name = signal<string | undefined>("Ada");
   return (
     <Show when={name} fallback={<p>anonymous</p>}>
       {(value) => <p>hello {value()}</p>}
@@ -92,10 +92,10 @@ While `name` stays truthy, edits update the greeting in place and `value()` alwa
 `Switch` picks the first truthy `Match` and rebuilds only when that choice changes:
 
 ```tsx
-import { $signal, Match, Switch } from "reze-js";
+import { Match, Switch, signal } from "reze-js";
 
 export function Status() {
-  let code = $signal(200);
+  let code = signal(200);
   return (
     <Switch fallback={<p>unknown</p>}>
       <Match when={code === 200}>
@@ -116,7 +116,7 @@ A function child of `Match` receives its `when` as a tracked getter, mirroring `
 `For` renders one row per item. By default, or with `keyed={true}`, rows follow item identity and the child receives the item directly plus an index getter. With a `keyed` function, rows follow that key and the child receives both an item getter and an index getter. With `keyed={false}`, rows follow positions and the child receives an item getter plus a plain numeric index.
 
 ```tsx
-import { $signal, For } from "reze-js";
+import { For, signal } from "reze-js";
 
 interface Todo {
   id: number;
@@ -125,7 +125,7 @@ interface Todo {
 }
 
 export function Todos() {
-  let todos = $signal<Todo[]>([
+  let todos = signal<Todo[]>([
     { id: 1, title: "write", done: false },
     { id: 2, title: "review", done: false },
   ]);
@@ -150,10 +150,10 @@ Keep keys stable for the lifetime of a row. Use identity mode for stable objects
 `Repeat` renders a fixed count of rows indexed by position:
 
 ```tsx
-import { $signal, Repeat } from "reze-js";
+import { Repeat, signal } from "reze-js";
 
 export function Placeholders() {
-  let count = $signal(2);
+  let count = signal(2);
   return (
     <ul>
       <Repeat count={count} fallback={<li>none</li>}>
@@ -171,11 +171,11 @@ A `count` that is not a positive number renders zero rows; fractions truncate. A
 `class` accepts a string, a toggle object, or an array. `style` accepts a CSS string or an object of kebab-case properties.
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function Badge() {
-  let active = $signal(false);
-  let width = $signal(1);
+  let active = signal(false);
+  let width = signal(1);
   return (
     <p>
       <b class={["btn", { active: active }]} />
@@ -196,11 +196,11 @@ Three prefixes select the lower-level write. `bool:hidden={hidden}` toggles the 
 There is no two-way binding helper. Wire the current value plus the event that reports edits:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function Draft() {
-  let draft = $signal("");
-  let submitted = $signal("");
+  let draft = signal("");
+  let submitted = signal("");
   const submit = () => {
     const title = draft.trim();
     if (title === "") return;
@@ -278,10 +278,10 @@ After mounting, `canvas` is the `<div>` and `seen` holds the `<b>`. Ref callback
 `Portal` keeps its children in a different parent, defaulting to the document body. The children still belong to where the tag is written: reactivity, context, and error handling behave as if the content were inline.
 
 ```tsx
-import { $signal, Portal } from "reze-js";
+import { Portal, signal } from "reze-js";
 
 export function Dialog() {
-  let open = $signal(true);
+  let open = signal(true);
   let target!: HTMLElement;
   return (
     <div>
@@ -296,32 +296,7 @@ export function Dialog() {
 }
 ```
 
-The `<b>` renders inside `target` while the surrounding `<div>` renders in place. A reactive `mount` moves the same nodes when it changes; omitting `mount` or passing `null` selects the body. Children stay reactive after a move, components inside stay alive, and a delegated event inside the portal still reaches its handler. Toggling a portal accumulates nothing in the mount, and disposing its owner removes its nodes. An error thrown while building portal children reaches the `Errored` around the tag.
-
-## Loading and errors
-
-`Loading` shows its `fallback` until everything built below it has finished its first load, then shows the children for good. An async component (an `async function` component, see [lifecycle](/lifecycle)) or an `asyncComputed` read below it counts as a load. Later reloads keep the current content; a `Show` or `Match` that switches sides keeps the old side on screen until the new side has loaded. `Errored` shows its children, and when anything built inside throws, including a rejected load, it disposes them and shows `fallback(error, reset)`. Calling `reset` builds the children again.
-
-```tsx
-import { Errored, Loading } from "reze-js";
-
-async function User(props: { id: number }) {
-  const user = await fetch(`/api/users/${props.id}`).then((response) => response.json());
-  return <b>{user.name}</b>;
-}
-
-export function Profile(props: { id: number }) {
-  return (
-    <Errored fallback={(error, reset) => <button onClick={reset}>Retry</button>}>
-      <Loading fallback={<i>loading</i>}>
-        <User id={props.id} />
-      </Loading>
-    </Errored>
-  );
-}
-```
-
-The `fallback` of `Loading` is never waited for, so an async component inside it does not block it. An error thrown by the `fallback` of `Errored` goes to the next handler outward.
+The `<b>` renders inside `target` while the surrounding `<div>` renders in place. A reactive `mount` moves the same nodes when it changes; omitting `mount` or passing `null` selects the body. Children stay reactive after a move, components inside stay alive, and a delegated event inside the portal still reaches its handler. Toggling a portal accumulates nothing in the mount, and disposing its owner removes its nodes. An error thrown while building portal children reaches the surrounding `catchError`, as if the content were inline.
 
 ## Constraints and pitfalls
 

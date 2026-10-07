@@ -14,7 +14,7 @@ use oxc_allocator::{Allocator, Box as ArenaBox, Vec as ArenaVec};
 use oxc_ast_visit::{VisitMut, walk_mut};
 
 use super::Namer;
-use super::imports::{ImportResult, Syntax, SyntaxImports, allows};
+use super::imports::{ImportResult, Syntax, SyntaxImports};
 use super::pure::is_component_name;
 use crate::diagnostic::{Code, Edit, Report};
 pub struct DeclPlan {
@@ -40,7 +40,7 @@ pub fn prescan(
     namer: &mut Namer,
     reports: &mut Vec<Report>,
 ) -> PreScan {
-    if syntax.dollar.is_empty() && syntax.namespaces.is_empty() {
+    if syntax.declared.is_empty() && syntax.namespaces.is_empty() {
         return PreScan::default();
     }
     let mut declarations = Declarations {
@@ -85,7 +85,7 @@ pub fn prescan(
                 reports.push(
                     Report::new(Code::SignalExported, variable.declarator)
                         .arg("signal", scoping.symbol_name(*symbol))
-                        .arg("primitive", variable.primitive.dollar()),
+                        .arg("primitive", variable.primitive.name()),
                 );
             }
         }
@@ -141,7 +141,7 @@ fn callee_syntax(
 fn misused(primitive: Syntax, span: Span) -> Report {
     match primitive {
         Syntax::Action => Report::new(Code::ActionNotCalled, span),
-        _ => Report::new(Code::SignalNotDeclared, span).arg("primitive", primitive.dollar()),
+        _ => Report::new(Code::SignalNotDeclared, span).arg("primitive", primitive.name()),
     }
 }
 
@@ -159,7 +159,7 @@ impl Declarations<'_, '_, '_> {
         declarator: &VariableDeclarator<'_>,
     ) {
         let Some(init) = &declarator.init else { return };
-        let Some(call) = dollar_call(init) else { return };
+        let Some(call) = syntax_call(init) else { return };
         let Some(primitive) = callee_syntax(self.scoping, self.syntax, &call.callee) else {
             return;
         };
@@ -172,15 +172,14 @@ impl Declarations<'_, '_, '_> {
             VariableDeclarationKind::Let | VariableDeclarationKind::Const
         ) {
             self.reports.push(
-                Report::new(Code::SignalNotDeclared, call.span)
-                    .arg("primitive", primitive.dollar()),
+                Report::new(Code::SignalNotDeclared, call.span).arg("primitive", primitive.name()),
             );
             return;
         }
         let BindingPattern::BindingIdentifier(id) = &declarator.id else {
             self.reports.push(
                 Report::new(Code::SignalPattern, declarator.id.span())
-                    .arg("primitive", primitive.dollar()),
+                    .arg("primitive", primitive.name()),
             );
             return;
         };
@@ -205,7 +204,7 @@ impl Declarations<'_, '_, '_> {
     }
 }
 
-fn dollar_call<'e, 'a>(init: &'e Expression<'a>) -> Option<&'e CallExpression<'a>> {
+fn syntax_call<'e, 'a>(init: &'e Expression<'a>) -> Option<&'e CallExpression<'a>> {
     match init.without_parentheses() {
         Expression::CallExpression(call) => Some(call),
         _ => None,
@@ -224,11 +223,13 @@ fn namespace_member(
     if member.optional {
         return None;
     }
-    let primitive = Syntax::from_dollar(member.property.name.as_str())?;
+    let primitive = [Syntax::Signal, Syntax::Computed, Syntax::Action]
+        .into_iter()
+        .find(|syntax| syntax.name() == member.property.name.as_str())?;
     let Expression::Identifier(object) = &member.object else { return None };
     let symbol = symbol_of(scoping, object)?;
     let source = syntax.namespaces.get(&symbol)?;
-    allows(source, primitive.dollar()).then_some(primitive)
+    (crate::exports::syntax_named(source, primitive.name()) == Some(primitive)).then_some(primitive)
 }
 
 impl<'a> Visit<'a> for Declarations<'_, '_, '_> {
@@ -326,7 +327,7 @@ impl<'a> Visit<'a> for DeclCollect<'_> {
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let Some(plan) = self.pre.decls.get(&it.span.start)
             && let Some(init) = &it.init
-            && let Some(call) = dollar_call(init)
+            && let Some(call) = syntax_call(init)
             && self.pre.syntax_inits.contains(&(call.span.start, call.span.end))
         {
             let symbol = match plan.primitive {
@@ -650,7 +651,7 @@ impl<'a> Visit<'a> for Analyzer<'_, '_> {
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
         if let Some(plan) = self.pre.decls.get(&it.span.start)
             && let Some(init) = &it.init
-            && let Some(call) = dollar_call(init)
+            && let Some(call) = syntax_call(init)
         {
             let mut arguments = call.arguments.iter();
             if plan.primitive == Syntax::Computed

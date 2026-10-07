@@ -21,16 +21,22 @@ Known string-valued classes use a direct attribute update. They do not pull the 
 
 Framework runtime package entrypoints are dependencies, not compiler input. The Vite plugin leaves them uncompiled even when workspace links resolve outside `node_modules`.
 
-## Compiler syntax versus runtime APIs
+## The API shape
 
-Compiler syntax lets a reactive value look like a local variable:
+Everything imported from `reze-js` except `render` and `hydrate` is a type the
+compiler lowers; there is no runtime body behind it. An import that bypasses
+compilation fails at module link time ("does not provide an export named").
+The Vite plugin compiles every source module, so this only surfaces when a
+tool bypasses it.
+
+Reactive state looks like a local variable:
 
 ```tsx
-import { $computed, $signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
 export function Counter() {
-  let count = $signal(0);
-  const doubled = $computed(count * 2);
+  let count = signal(0);
+  const doubled = computed(count * 2);
 
   return (
     <button onClick={() => (count += 1)}>
@@ -40,35 +46,27 @@ export function Counter() {
 }
 ```
 
-The compiler rewrites reads and assignments of the declared binding. It also wraps the expression passed to `$computed` in a tracked computation. The equivalent public runtime model uses explicit getters and setters from `@rezejs/signals`:
+The compiler rewrites reads and assignments of the declared binding. It also wraps the expression passed to `computed` in a tracked computation.
 
-```tsx
-import { computed, signal } from "@rezejs/signals";
+Habits carried over from other frameworks are caught early:
 
-export function Counter() {
-  const [count, setCount] = signal(0);
-  const doubled = computed(() => count() * 2);
-
-  return (
-    <button onClick={() => setCount(count() + 1)}>
-      {count()} × 2 = {doubled()}
-    </button>
-  );
-}
-```
-
-This illustrates the API model, not an exact dump of generated code. The ordinary APIs work without rewriting their calls; JSX still needs compilation.
+| Habit                                 | Caught by                                   |
+| ------------------------------------- | ------------------------------------------- |
+| `count()` to read                     | TypeScript: `number` is not callable        |
+| `const [count, setCount] = signal(0)` | `SIGNAL_PATTERN` diagnostic with a fix      |
+| `computed(() => a * b)`               | `COMPUTED_FUNCTION` diagnostic with a fix   |
+| `signal.value`                        | TypeScript: no `value` on the declared type |
 
 ## Declaration and module boundaries
 
-Declare `$signal` and `$computed` with a single identifier in a `let` or `const` declaration. They cannot be used as arbitrary expressions, destructured declarations, or values passed to another function.
+Declare `signal` and `computed` with a single identifier in a `let` or `const` declaration. They cannot be used as arbitrary expressions, destructured declarations, or values passed to another function.
 
-The rewritten binding is local to the file that declares it. Do not export it directly. Export an explicit reading function instead:
+The rewritten binding is local to the file that declares it. Do not export it directly. Export a function that owns the state instead:
 
 ```ts
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-let count = $signal(0);
+let count = signal(0);
 
 export const readCount = () => count;
 
@@ -77,16 +75,14 @@ export function increment() {
 }
 ```
 
-Alternatively, export ordinary `signal` getters and setters from `@rezejs/signals`. A consumer must call the getter in a tracked computation or JSX binding to observe future changes. Passing `readCount()` to an ordinary function passes the current value, not a live subscription.
-
 Additional restrictions:
 
 - A computed binding is read-only; update its source state instead.
-- `$computed` accepts an expression, not an inline function literal. Use `$computed(calculate())` for a multi-statement calculation.
+- `computed` accepts an expression, not an inline function literal. Use `computed(calculate())` for a multi-statement calculation.
 - Write signals through direct assignments, not destructuring assignments or `for` loop heads.
 - Increment and decrement statements are supported, but `count++` inside a larger expression is rejected. Use `count += 1` or a block-bodied handler.
 
-See [reactivity](/reactivity) for the state model and async computations.
+See [reactivity](/reactivity) for the state model.
 
 ## JSX intrinsics
 
@@ -95,10 +91,10 @@ Native tags such as `button` describe DOM elements. Their TypeScript attributes 
 Reze also provides compiler-recognized control-flow tags:
 
 ```tsx
-import { $signal, Show } from "reze-js";
+import { Show, signal } from "reze-js";
 
 export function Disclosure() {
-  let open = $signal(false);
+  let open = signal(false);
 
   return (
     <section>
@@ -113,17 +109,17 @@ export function Disclosure() {
 
 These tags are compiled into control-flow helpers. Use them as JSX tags: do not call, alias as a runtime component value, or re-export the imported intrinsic. Their accepted attributes are fixed; arbitrary attributes and spreads are errors.
 
-The [interface guide](/building-interfaces) explains conditional rendering, lists, boundaries, and portals.
+The [interface guide](/building-interfaces) explains conditional rendering, lists, and portals.
 
 ## Compiled bindings
 
 An attribute, class toggle, or text expression that reads reactive values compiles into an effect that rewrites only what it owns. Bindings with the same dependencies share one effect.
 
-When every reactive read of an effect happens on every run, the compiler emits `fixedRenderEffect` instead of `renderEffect`. A read counts when it is a direct call of a signal or computed getter in an operand of arithmetic, comparison, unary, or template expressions, or in the test of a conditional or the left side of `&&`, `||`, and `??`. A getter read in a branch of `? :` or on the right of a logical operator is conditional. Member access, optional chains, calls of other functions, and `props.x` reads are opaque. One conditional or opaque member keeps the whole group on `renderEffect`. The first run tracks; in production builds later runs do not, so they skip the bookkeeping that re-tracking costs.
+When every reactive read of an effect happens on every run, the compiler emits `fixedRenderEffect` instead of `renderEffect`. A read counts when it is a direct read of a `signal` or `computed` binding in an operand of arithmetic, comparison, unary, or template expressions, or in the test of a conditional or the left side of `&&`, `||`, and `??`. A read in a branch of `? :` or on the right of a logical operator is conditional. Member access, optional chains, calls of other functions, and `props.x` reads are opaque. One conditional or opaque member keeps the whole group on `renderEffect`. The first run tracks; in production builds later runs do not, so they skip the bookkeeping that re-tracking costs.
 
 This makes one rule part of the contract: **a value bound to an attribute or text must not read signals inside its `toString`, `valueOf`, or getters.** Coercion happens inside the binding, and a read there would be missed in production. Development builds track every run and warn once, printing the binding, when its reads change. Only the client target uses `fixedRenderEffect`.
 
-A child expression of a known number or string kind is written straight to a text node instead of going through the general insert. A `$signal` or `signal` has a known kind when it starts from a number or string literal and every write is a call of its setter with a value of the same kind, such as `count += 1` or `name = name + "!"`. A write that takes a value from elsewhere, such as `count += props.step`, an updater with a parameter, or a setter passed as a value, leaves the kind unknown and the child uses the general path. The result is the same text; the general path also accepts nodes and arrays.
+A child expression of a known number or string kind is written straight to a text node instead of going through the general insert. A `signal` has a known kind when it starts from a number or string literal and every write assigns a value of the same kind, such as `count += 1` or `name = name + "!"`. A write that takes a value from elsewhere, such as `count += props.step`, or a use of the `signal` primitive itself as a value, leaves the kind unknown and the child uses the general path. The result is the same text; the general path also accepts nodes and arrays.
 
 ## Transformation scope
 
@@ -176,18 +172,17 @@ Site identities use the first 16 lowercase hexadecimal characters of BLAKE3 over
 
 Diagnostics include a bracketed code, source location, and repair information. Errors stop the transform; warnings are reported through Vite. Fix the cause instead of bypassing the transform.
 
-| Code                     | Meaning                                                                                   | Correction                                           |
-| ------------------------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `SIGNAL_NOT_DECLARED`    | Compiler syntax has no supported local declaration.                                       | Initialize one named variable with `let` or `const`. |
-| `SIGNAL_EXPORTED`        | A rewritten reactive binding is exported.                                                 | Export a getter or use the ordinary runtime API.     |
-| `COMPUTED_FUNCTION`      | `$computed` received an inline function.                                                  | Pass the expression directly.                        |
-| `COMPUTED_WRITTEN`       | Derived state is being assigned.                                                          | Update its source signals.                           |
-| `CONTROL_FLOW_AS_VALUE`  | An intrinsic is used outside a JSX tag.                                                   | Render the tag inside an ordinary component.         |
-| `CONTROL_FLOW_ATTRIBUTE` | An intrinsic received an unsupported attribute.                                           | Remove it or use the documented attribute.           |
-| `PROPS_DESTRUCTURED`     | Props are destructured in a form the compiler cannot rewrite, so each value is read once. | Take `props` and read `props.x` where it is used.    |
-| `KEY_ON_ELEMENT`         | `key` on a native element does nothing.                                                   | Remove it; key rows with `<For keyed>`.              |
-| `UNKNOWN_ATTRIBUTE`      | An attribute name is not a known HTML attribute.                                          | Use the suggested name, such as `class`.             |
-| `EVENT_NAME_LOWERCASE`   | A lowercase `onclick` received a function.                                                | Use `onClick`.                                       |
+| Code                     | Meaning                                                                                   | Correction                                                 |
+| ------------------------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `SIGNAL_NOT_DECLARED`    | Compiler syntax has no supported local declaration.                                       | Initialize one named variable with `let` or `const`.       |
+| `SIGNAL_EXPORTED`        | A rewritten reactive binding is exported.                                                 | Export a function that owns the state, or share a `store`. |
+| `COMPUTED_WRITTEN`       | Derived state is being assigned.                                                          | Update its source signals.                                 |
+| `CONTROL_FLOW_AS_VALUE`  | An intrinsic is used outside a JSX tag.                                                   | Render the tag inside an ordinary component.               |
+| `CONTROL_FLOW_ATTRIBUTE` | An intrinsic received an unsupported attribute.                                           | Remove it or use the documented attribute.                 |
+| `PROPS_DESTRUCTURED`     | Props are destructured in a form the compiler cannot rewrite, so each value is read once. | Take `props` and read `props.x` where it is used.          |
+| `KEY_ON_ELEMENT`         | `key` on a native element does nothing.                                                   | Remove it; key rows with `<For keyed>`.                    |
+| `UNKNOWN_ATTRIBUTE`      | An attribute name is not a known HTML attribute.                                          | Use the suggested name, such as `class`.                   |
+| `EVENT_NAME_LOWERCASE`   | A lowercase `onclick` received a function.                                                | Use `onClick`.                                             |
 
 To capture all diagnostic severities, including informational diagnostics:
 

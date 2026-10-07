@@ -1,7 +1,7 @@
-import { computed, signal, signal as rawSignal } from "@rezejs/signals";
+import { computed as rawComputed, signal as rawSignal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import * as R from "reze-js";
-import { $computed, $computed as derive, $signal, $signal as sig, effect, For, Show } from "reze-js";
+import { computed, computed as derive, signal, signal as sig, effect, For, Show, type JSX } from "reze-js";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -9,7 +9,7 @@ afterEach(cleanup);
 test("compiled signal assignments preserve expression results, precedence, and live DOM reads", () => {
   const results: number[] = [];
   const { el } = mount(() => {
-    let count = $signal(8);
+    let count = signal(8);
     return (
       <button
         onClick={() => {
@@ -42,7 +42,7 @@ test("compiled logical assignments skip unused operands and return the selected 
     return value;
   };
   const { el } = mount(() => {
-    let value = $signal<number | undefined>(0);
+    let value = signal<number | undefined>(0);
     return (
       <button
         onClick={() => {
@@ -71,7 +71,7 @@ test("compiled function-valued signals retain closures, shorthand values, and al
   let calls = 0;
   const { el } = mount(() => {
     let name = sig("first");
-    let handler = $signal<() => string>();
+    let handler = signal<() => string>();
     const saved = () => {
       calls++;
       return name;
@@ -93,9 +93,9 @@ test("compiled computed chains and namespace signals update effects and dispose 
   const observed: { count: number; area: number; label: string }[] = [];
   let increment: () => void;
   const { el, dispose } = mount(() => {
-    let count = R.$signal(2);
-    const area = $computed(count * count);
-    const label = R.$computed(`area:${area}`);
+    let count = R.signal(2);
+    const area = computed(count * count);
+    const label = R.computed(`area:${area}`);
     effect(() => {
       observed.push({ count, area, label });
     });
@@ -126,10 +126,10 @@ test("compiled signal reads and writes drive classes, text, and neighboring bind
   let readOther: () => number;
   let loopRuns = 0;
   const { el } = mount(() => {
-    let count = $signal(0);
+    let count = signal(0);
     let other = 1;
     other = 2;
-    for (let i = $signal(0); i < 2; i++) {
+    for (let i = signal(0); i < 2; i++) {
       loopRuns++;
     }
     readOther = () => other;
@@ -161,7 +161,7 @@ test("compiled signal assignments store templates, shorthands, and branch result
   let run: (a: number, b: number, list: number[]) => unknown[];
   let pickCalls = 0;
   const { el } = mount(() => {
-    let c = $signal<unknown>(0);
+    let c = signal<unknown>(0);
     const pick = (list: number[]): number => {
       pickCalls++;
       return list[0]!;
@@ -205,7 +205,7 @@ test("compiled signal assignments store templates, shorthands, and branch result
 test("compiled signal updates run in loop and short-circuit positions in order", () => {
   let run: (ok: boolean) => number[];
   const { el } = mount(() => {
-    let i = $signal(0);
+    let i = signal(0);
     run = (ok: boolean) => {
       const trace: number[] = [];
       for (i = 0; i < 3; i++) {
@@ -235,10 +235,10 @@ test("compiled namespace, merged, and cross-module signal imports share one grap
   let setB!: (v: number) => void;
   let bump!: () => void;
   const { el } = mount(() => {
-    let n = R.$signal(0);
+    let n = R.signal(0);
     const [b, setBRaw] = rawSignal(1);
     setB = setBRaw;
-    const sum = computed(() => n + b());
+    const sum = rawComputed(() => n + b());
     bump = () => {
       n += 1;
     };
@@ -255,9 +255,9 @@ test("compiled namespace, merged, and cross-module signal imports share one grap
 
 test("compiled never-written signals render stable values while written ones stay live", () => {
   const { el } = mount(() => {
-    let title = $signal("Reze");
-    const fixed = $signal(1);
-    let count = $signal(0);
+    let title = signal("Reze");
+    const fixed = signal(1);
+    let count = signal(0);
     return (
       <h1 onClick={() => (count += 1)}>
         {title}: {fixed} {count}
@@ -279,7 +279,7 @@ test("compiled signal closures and effects observe object, shorthand, and array 
   let inc!: () => void;
   let reset!: () => () => number;
   mount(() => {
-    let count = $signal(0);
+    let count = signal(0);
     effect(() => {
       seen.push([count, { count }, [count]]);
     });
@@ -311,12 +311,12 @@ test("compiled signal closures and effects observe object, shorthand, and array 
 });
 
 test("compiled signals drive attributes, styles, inputs, and component props", () => {
-  function Card(props: { size: number; children?: unknown }) {
+  function Card(props: { size: number; children?: JSX.Element }) {
     return <span data-size={props.size}>{props.children}</span>;
   }
   const { el } = mount(() => {
-    let size = $signal(2);
-    let text = $signal("a");
+    let size = signal(2);
+    let text = signal("a");
     return (
       <div>
         <div class={size > 1 ? "big" : ""} style={{ width: `${size * 10}px` }}>
@@ -351,9 +351,9 @@ test("compiled signals drive attributes, styles, inputs, and component props", (
 
 test("compiled signals drive list rows and conditional branches", () => {
   const { el } = mount(() => {
-    let rows = $signal([{ id: 1 }, { id: 2 }]);
-    let selected = $signal(0);
-    let open = $signal(false);
+    let rows = signal([{ id: 1 }, { id: 2 }]);
+    let selected = signal(0);
+    let open = signal(false);
     return (
       <ul>
         <For each={rows}>{(row) => <li class={selected === row.id ? "on" : ""} onClick={() => (selected = row.id)} />}</For>
@@ -384,9 +384,9 @@ test("compiled typed and JSX-free signals expose live values through plain funct
   let inc!: () => void;
   let read!: () => number;
   const { el } = mount(() => {
-    let count: number | undefined = $signal();
-    let list: string[] = $signal<string[]>([]);
-    let n = $signal(0);
+    let count: number | undefined = signal();
+    let list: string[] = signal<string[]>([]);
+    let n = signal(0);
     inc = () => {
       n += 1;
     };
@@ -411,12 +411,12 @@ test("compiled typed and JSX-free signals expose live values through plain funct
 test("compiled computed values update titles, handlers, shorthands, and derived objects", () => {
   const logged: unknown[] = [];
   const { el } = mount(() => {
-    let count = $signal(1);
-    const doubled = $computed(count * 2);
-    const area = $computed(count * count, { name: "area" });
-    const box = $computed({ count, area }, { name: `box${count}` });
-    let half: number = $computed(count / 2);
-    const label = $computed({ text: `x${doubled}` }, { name: "label" });
+    let count = signal(1);
+    const doubled = computed(count * 2);
+    const area = computed(count * count, { name: "area" });
+    const box = computed({ count, area }, { name: `box${count}` });
+    let half: number = computed(count / 2);
+    const label = computed({ text: `x${doubled}` }, { name: "label" });
     return (
       <button
         title={String(doubled)}
@@ -442,12 +442,12 @@ test("compiled computed values update titles, handlers, shorthands, and derived 
 test("compiled computed alias, namespace, and merged imports derive from shared sources", () => {
   let setA!: (v: number) => void;
   const { el } = mount(() => {
-    const [a, setARaw] = signal(1);
+    const [a, setARaw] = rawSignal(1);
     setA = setARaw;
-    const b = computed(() => a() + 1);
-    const c = $computed(a() + b());
+    const b = rawComputed(() => a() + 1);
+    const c = computed(a() + b());
     const d = derive(a() + 1);
-    const e = R.$computed(a() + 1);
+    const e = R.computed(a() + 1);
     return (
       <output>
         {c} {d} {e}
@@ -463,9 +463,9 @@ test("compiled computed alias, namespace, and merged imports derive from shared 
 test("compiled computed values drive list selection and conditional branches", () => {
   const rows = [{ id: 1 }, { id: 2 }, { id: 4 }];
   const { el } = mount(() => {
-    let picked = $signal(0);
-    const selected = $computed(picked + 1);
-    const big = $computed(picked > 3);
+    let picked = signal(0);
+    const selected = computed(picked + 1);
+    const big = computed(picked > 3);
     return (
       <ul>
         <For each={rows}>{(row) => <li class={selected === row.id ? "on" : ""} onClick={() => (picked = row.id)} />}</For>
@@ -486,10 +486,10 @@ test("compiled computed values drive list selection and conditional branches", (
 test("compiled signals and computed values survive async component awaits", async () => {
   const gate = Promise.withResolvers<string>();
   async function Card(props: { id: number }) {
-    let n = $signal(1);
-    const twice = $computed(n * 2);
+    let n = signal(1);
+    const twice = computed(n * 2);
     const user = await gate.promise;
-    const title = $computed(`${user}${props.id}:${n}`);
+    const title = computed(`${user}${props.id}:${n}`);
     return (
       <p title={title} onClick={() => (n += 1)}>
         {user}
@@ -515,8 +515,8 @@ test("compiled signals with equals:false notify on same values while defaults do
   const liveRuns: string[] = [];
   const plainRuns: string[] = [];
   mount(() => {
-    let name = $signal("a", { equals: false });
-    let plain = $signal("a");
+    let name = signal("a", { equals: false });
+    let plain = signal("a");
     effect(() => {
       liveRuns.push(name);
     });

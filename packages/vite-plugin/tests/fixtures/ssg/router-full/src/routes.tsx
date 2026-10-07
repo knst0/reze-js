@@ -1,12 +1,13 @@
 import { defineRoute, defineRoutes, useNavigate } from "@rezejs/router";
 import type { RouteProps } from "@rezejs/router";
-import { $computed, $signal, asyncComponent, effect, type JSX } from "reze-js";
+import { computed, effect, signal, type JSX } from "reze-js";
+import { asyncComponent } from "reze-js/internal/runtime";
 
 import { logoUrl, inlineLogo, emittedLogo, metaLogo, inlineMetaLogo } from "./assets";
 import { readHits } from "./counter-state";
 
 function Home() {
-  let n = $signal(0);
+  let n = signal(0);
   return (
     <article>
       <h1 id="home-title">home</h1>
@@ -62,8 +63,8 @@ function DocsLayout(props: { children: JSX.Element }) {
 }
 
 function CounterPage() {
-  let n = $signal(2);
-  let double = $computed(n * 2);
+  let n = signal(2);
+  let double = computed(n * 2);
   return (
     <article>
       <p id="counter-out">
@@ -77,11 +78,11 @@ function CounterPage() {
 }
 
 function EffectPage() {
-  let a = $signal(2);
-  let b = $signal(7);
-  let doubledA = $computed(a * 2);
-  let doubledB = $computed(b * 2);
-  let logged = $signal("");
+  let a = signal(2);
+  let b = signal(7);
+  let doubledA = computed(a * 2);
+  let doubledB = computed(b * 2);
+  let logged = signal("");
   effect(() => {
     logged = `${a}/${b}`;
   });

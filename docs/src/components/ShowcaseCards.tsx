@@ -1,12 +1,11 @@
-import { signal, type Getter, type Setter } from "@rezejs/signals";
-import { $action, $signal, createContext, For, Show, store, useContext } from "reze-js";
+import { action, createContext, For, Show, signal, store, useContext } from "reze-js";
 
-const ShowcaseContext = createContext<{ online: Getter<boolean>; setOnline: Setter<boolean> }>();
+const ShowcaseContext = createContext<{ online: () => boolean; setOnline: (value: boolean) => void }>();
 
 export function ShowcaseCards() {
-  let [online, setOnline] = signal(true);
-  let canPrev = $signal(false);
-  let canNext = $signal(false);
+  let online = signal(true);
+  let canPrev = signal(false);
+  let canNext = signal(false);
   let track: HTMLDivElement | undefined;
 
   const sync = () => {
@@ -43,7 +42,7 @@ export function ShowcaseCards() {
         ref={(el: HTMLDivElement) => attach(el)}
         class="showcase-track flex gap-4 overflow-x-auto overscroll-x-contain snap-x snap-mandatory pb-1"
       >
-        <ShowcaseContext value={{ online, setOnline }}>
+        <ShowcaseContext value={{ online: () => online, setOnline: (value) => (online = value) }}>
           <figure class="card showcase-first w-88 h-96 shrink-0 grid place-items-center snap-start">
             <Counter />
           </figure>
@@ -61,7 +60,7 @@ export function ShowcaseCards() {
 
 function Counter() {
   const context = useContext(ShowcaseContext);
-  let count = $signal(0);
+  let count = signal(0);
   return (
     <div class="flex items-center">
       <button type="button" class="btn" onClick={() => (count -= 1)} disabled={!context.online()}>
@@ -89,8 +88,8 @@ const initialTodoData: Todo[] = [
 function Todos() {
   const context = useContext(ShowcaseContext);
   const todos = store(initialTodoData);
-  let failed = $signal<Todo | undefined>(undefined);
-  const toggle = $action(async (todo: Todo) => {
+  let failed = signal<Todo | undefined>(undefined);
+  const toggle = action(async (todo: Todo) => {
     failed = undefined;
     todo.done = !todo.done;
     await sleep(700);
@@ -128,7 +127,7 @@ function Todos() {
           )}
         </For>
       </ul>
-      <button type="button" class="btn mt-auto" onClick={() => context.setOnline((prev) => !prev)}>
+      <button type="button" class="btn mt-auto" onClick={() => context.setOnline(!context.online())}>
         {context.online() ? "🛜 Online" : "📴 Offline"}
       </button>
     </div>
@@ -147,8 +146,8 @@ function buildRows(startId: number, revision: number): ListRow[] {
 }
 
 function ThousandRows() {
-  let rows = $signal<ListRow[]>([]);
-  let lastMs = $signal<number | undefined>(undefined);
+  let rows = signal<ListRow[]>([]);
+  let lastMs = signal<number | undefined>(undefined);
   let nextId = 1;
   let revision = 0;
 

@@ -1,6 +1,8 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
-import { asyncComponent, asyncComputed, catchError, effect, flush, Loading, onCleanup, root, Show } from "reze-js";
+import { catchError, effect, flush, onCleanup, root, Show } from "reze-js";
+import { asyncComputed, Loading } from "reze-js/internal/async";
+import { asyncComponent } from "reze-js/internal/runtime";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);

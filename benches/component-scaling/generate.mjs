@@ -46,10 +46,159 @@ const barsExpr = (seed, i, w = vocab(i)) =>
 const sortRows = (list, desc) => `${desc} ? ${list}.sort((a, b) => b.value - a.value) : ${list}.sort((a, b) => a.value - b.value)`;
 
 function signalJsx(flavor) {
-  const isReze = flavor === "reze";
-  const imports = isReze ? "reze-js" : "solid-js";
-  const signal = isReze ? "signal" : "createSignal";
-  const computed = isReze ? "computed" : "createMemo";
+  if (flavor === "reze") {
+    return {
+      StatCard: (i, w = vocab(i)) => `import { Show, computed, signal } from "reze-js";
+
+export function StatCard${i}(props) {
+  let open = signal(false);
+  let count = signal(props.seed);
+  const trend = computed(count > ${i % 50} ? "up" : "down");
+  return (
+    <article class={["card stat-${w.slug}", { up: trend === "up" }]}>
+      <header>
+        <h3>{props.title}</h3>
+        <button onClick={() => (open = !open)}>{open ? "Hide" : "Show"}</button>
+      </header>
+      <p class="value">{count}</p>
+      <p class="trend">${w.trend}: {trend}</p>
+      <Show when={open}>
+        <footer>
+          <button onClick={() => (count += 1)}>+1</button>
+          <button onClick={() => (count -= 1)}>-1</button>
+        </footer>
+      </Show>
+    </article>
+  );
+}
+`,
+      DataTable: (i, w = vocab(i)) => `import { For, computed, signal } from "reze-js";
+
+export function DataTable${i}(props) {
+  let desc = signal(false);
+  const rows = computed(
+    ${rowsExpr("props.seed", i)}.sort((a, b) => (desc ? b.value - a.value : a.value - b.value)),
+  );
+  return (
+    <section class="table table-${w.slug}">
+      <h3>{props.title}</h3>
+      <table>
+        <thead>
+          <tr>
+            <th onClick={() => (desc = !desc)}>Name {desc ? "▼" : "▲"}</th>
+            <th>${w.metric}</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <For each={rows} keyed={(row) => row.id}>
+            {(row) => (
+              <tr>
+                <td>{row().name}</td>
+                <td>{row().value}</td>
+                <td class={row().value > 50 ? "ok" : "warn"}>{row().value > 50 ? "OK" : "Low"}</td>
+              </tr>
+            )}
+          </For>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+`,
+      FilterForm: (i, w = vocab(i)) => `import { computed, signal } from "reze-js";
+
+export function FilterForm${i}(props) {
+  let query = signal("");
+  let category = signal("all");
+  let onlyActive = signal(false);
+  const summary = computed(category + ":" + query + (onlyActive ? " active" : ""));
+  return (
+    <form class="filter filter-${w.slug}" onSubmit={(e) => e.preventDefault()}>
+      <h3>{props.title}</h3>
+      <label>
+        ${w.search} <input value={query} onInput={(e) => (query = e.currentTarget.value)} />
+      </label>
+      <select value={category} onChange={(e) => (category = e.currentTarget.value)}>
+        <option value="all">All</option>
+${options(w, "        ")}      </select>
+      <label>
+        <input type="checkbox" checked={onlyActive} onChange={(e) => (onlyActive = e.currentTarget.checked)} /> ${w.toggle}
+      </label>
+      <output>{summary}</output>
+    </form>
+  );
+}
+`,
+      BarChart: (i, w = vocab(i)) => `import { For, Show, signal } from "reze-js";
+
+export function BarChart${i}(props) {
+  const bars = ${barsExpr("props.seed", i)};
+  let hovered = signal(-1);
+  return (
+    <figure class="chart chart-${w.slug}">
+      <figcaption>{props.title}</figcaption>
+      <div class="bars">
+        <For each={bars}>
+          {(bar, k) => (
+            <div
+              class={["bar", { active: hovered === k() }]}
+              style={{ height: bar.value + "%" }}
+              onMouseEnter={() => (hovered = k())}
+              onMouseLeave={() => (hovered = -1)}
+            />
+          )}
+        </For>
+      </div>
+      <Show when={hovered >= 0} fallback={<p class="tip muted">${w.hint}</p>}>
+        <p class="tip">
+          {bars[hovered].label}: {bars[hovered].value}
+        </p>
+      </Show>
+    </figure>
+  );
+}
+`,
+      TabsPanel: (i, w = vocab(i)) => `import { Match, Switch, signal } from "reze-js";
+
+export function TabsPanel${i}(props) {
+  let tab = signal("overview");
+  return (
+    <div class="tabs tabs-${w.slug}">
+      <nav>
+        <button class={{ active: tab === "overview" }} onClick={() => (tab = "overview")}>${w.tabs[0]}</button>
+        <button class={{ active: tab === "details" }} onClick={() => (tab = "details")}>${w.tabs[1]}</button>
+        <button class={{ active: tab === "logs" }} onClick={() => (tab = "logs")}>${w.tabs[2]}</button>
+      </nav>
+      <Switch
+        fallback={
+          <ul>
+            <li>${w.log1}</li>
+            <li>${w.log2}</li>
+          </ul>
+        }
+      >
+        <Match when={tab === "overview"}>
+          <p>${w.overview} {props.title}</p>
+        </Match>
+        <Match when={tab === "details"}>
+          <dl>
+            <dt>${w.seedLabel}</dt>
+            <dd>{props.seed}</dd>
+            <dt>${w.idLabel}</dt>
+            <dd>${i}</dd>
+          </dl>
+        </Match>
+      </Switch>
+    </div>
+  );
+}
+`,
+    };
+  }
+  const imports = "solid-js";
+  const signal = "createSignal";
+  const computed = "createMemo";
   const classes = (base, toggles) =>
     flavor === "solid-1"
       ? base
@@ -58,23 +207,13 @@ function signalJsx(flavor) {
       : base
         ? `class={["${base}", { ${toggles} }]}`
         : `class={{ ${toggles} }}`;
-  const item = (name) => (isReze ? `${name}()` : name);
-  const forKey = isReze ? " keyed={(row) => row.id}" : "";
-  const statCardHead = isReze
-    ? `import { Show } from "reze-js";\nimport { computed, signal } from "@rezejs/signals";`
-    : `import { ${computed}, ${signal}, Show } from "${imports}";`;
-  const dataTableHead = isReze
-    ? `import { For } from "reze-js";\nimport { computed, signal } from "@rezejs/signals";`
-    : `import { ${computed}, For, ${signal} } from "${imports}";`;
-  const filterFormHead = isReze
-    ? `import { computed, signal } from "@rezejs/signals";`
-    : `import { ${computed}, ${signal} } from "${imports}";`;
-  const barChartHead = isReze
-    ? `import { For, Show } from "reze-js";\nimport { signal } from "@rezejs/signals";`
-    : `import { For, Show, ${signal} } from "${imports}";`;
-  const tabsPanelHead = isReze
-    ? `import { Match, Switch } from "reze-js";\nimport { signal } from "@rezejs/signals";`
-    : `import { Match, ${signal}, Switch } from "${imports}";`;
+  const item = (name) => name;
+  const forKey = "";
+  const statCardHead = `import { ${computed}, ${signal}, Show } from "${imports}";`;
+  const dataTableHead = `import { ${computed}, For, ${signal} } from "${imports}";`;
+  const filterFormHead = `import { ${computed}, ${signal} } from "${imports}";`;
+  const barChartHead = `import { For, Show, ${signal} } from "${imports}";`;
+  const tabsPanelHead = `import { Match, ${signal}, Switch } from "${imports}";`;
 
   return {
     StatCard: (i, w = vocab(i)) => `${statCardHead}

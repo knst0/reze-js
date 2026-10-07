@@ -1,11 +1,11 @@
 import { useLinkState, type Href } from "@rezejs/router";
-import { $signal, type JSX } from "reze-js";
+import { signal, type JSX } from "reze-js";
 import { paths } from "virtual:reze-routes";
 
 import { useFluidHover } from "./hooks/useFluidHover";
 
 export function Shell(props: { children: JSX.Element }) {
-  let menuOpen = $signal(false);
+  let menuOpen = signal(false);
   return (
     <>
       <a
@@ -57,7 +57,6 @@ export function Shell(props: { children: JSX.Element }) {
             </NavGroup>
             <h2>Reference</h2>
             <NavGroup>
-              <NavLink href={paths["signals-api"]()}>Signals API</NavLink>
               <NavLink href={paths["router-api"]()}>Router API</NavLink>
               <NavLink href={paths["vite-plugin"]()}>Vite plugin</NavLink>
               <NavLink href={paths.compiler()}>Compiler</NavLink>

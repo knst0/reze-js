@@ -230,7 +230,7 @@ export const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Swi
 
 ## SIGNAL_NOT_DECLARED
 
-**`$signal` or `$computed` outside a variable declaration** · severity `error`
+**`signal` or `computed` outside a variable declaration** · severity `error`
 
 > `{primitive}` is only valid as the initializer of `let name = {primitive}(…)` or `const name = {primitive}(…)`. The compiler rewrites every use of that name, so it needs the declaration to see it.
 
@@ -238,30 +238,30 @@ export const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Swi
 
 Automatic fix: no
 
-`$signal(…)` and `$computed(…)` are compiler syntax, not functions: the declared variable becomes a getter (and, for a written `$signal`, a setter), and each read and write of it is rewritten. A call anywhere else, a `var` declaration, the syntax passed around as a value or re-exported has no variable to rewrite. `data.primitive` is the syntax used.
+`signal(…)` and `computed(…)` are compiler syntax, not functions: the declared variable becomes a getter (and, for a written `signal`, a setter), and each read and write of it is rewritten. A call anywhere else, a `var` declaration, the syntax passed around as a value or re-exported has no variable to rewrite. `data.primitive` is the syntax used.
 
-**Repair:** Declare the variable with `let name = $signal(…)` or `const name = $computed(…)` and use `name` where the value is needed. Use `signal(…)` or `computed(…)` when you need the getter as a value.
+**Repair:** Declare the variable with `let name = signal(…)` or `const name = computed(…)` and use `name` where the value is needed. To pass the current value around, read `name` where it is needed or wrap the read in a function: `() => name`.
 
 Before:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-export const view = <p>{$signal(0)}</p>;
+export const view = <p>{signal(0)}</p>;
 ```
 
 After:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-let count = $signal(0);
+let count = signal(0);
 export const view = <button onClick={() => (count += 1)}>{count}</button>;
 ```
 
 ## SIGNAL_PATTERN
 
-**`$signal` or `$computed` destructured** · severity `error`
+**`signal` or `computed` destructured** · severity `error`
 
 > `{primitive}(…)` initializes a destructuring pattern. A reactive variable is one name: declare `const name = {primitive}(…)`.
 
@@ -269,31 +269,31 @@ export const view = <button onClick={() => (count += 1)}>{count}</button>;
 
 Automatic fix: no
 
-The declared name is rewritten into a getter (and, for a written `$signal`, a setter), which needs exactly one identifier to rename. `data.primitive` is the syntax used.
+The declared name is rewritten into a getter (and, for a written `signal`, a setter), which needs exactly one identifier to rename. `data.primitive` is the syntax used.
 
-**Repair:** Declare one name per `$signal` or `$computed`, for example `let count = $signal(0)`, and read its fields where they are used. Use `signal(…)` to get the getter and setter as a tuple.
+**Repair:** Declare one name per `signal` or `computed`, for example `let count = signal(0)`, and read its fields where they are used. The `[get, set]` tuple of other libraries does not exist: assign to the variable to write it.
 
 Before:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-let [count] = $signal([0]);
+let [count] = signal([0]);
 export const view = <p>{count}</p>;
 ```
 
 After:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-let count = $signal([0]);
+let count = signal([0]);
 export const view = <p>{count}</p>;
 ```
 
 ## SIGNAL_EXPORTED
 
-**`$signal` or `$computed` exported** · severity `error`
+**`signal` or `computed` exported** · severity `error`
 
 > `{signal}` is a `{primitive}` and cannot be exported: an importing module cannot know it is reactive, so it would read a getter function or lose updates.
 
@@ -301,30 +301,30 @@ export const view = <p>{count}</p>;
 
 Automatic fix: no
 
-`$signal` and `$computed` variables exist only in the file that declares them; the compiler rewrites their uses there and nowhere else. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.
+`signal` and `computed` variables exist only in the file that declares them; the compiler rewrites their uses there and nowhere else. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.
 
-**Repair:** Keep the variable private and export a function that reads it, or export the getter of a plain `signal(…)` or `computed(…)`.
+**Repair:** Keep the variable private and export a function that reads it, or hold the shared state in a `store`.
 
 Before:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-export let count = $signal(0);
+export let count = signal(0);
 ```
 
 After:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-let count = $signal(0);
+let count = signal(0);
 export const readCount = () => count;
 ```
 
 ## SIGNAL_ASSIGN_PATTERN
 
-**`$signal` written through a pattern** · severity `error`
+**`signal` written through a pattern** · severity `error`
 
 > `{signal}` is written through a destructuring pattern or a `for` loop head, which the compiler cannot turn into a setter call. Assign with `{signal} = value`.
 
@@ -332,16 +332,16 @@ export const readCount = () => count;
 
 Automatic fix: no
 
-A write to a `$signal` becomes a setter call. In `[a] = list`, `({ a } = obj)` and `for (a of list)` the assignment is done by the language, not by an expression the compiler can replace. `data.signal` is the written variable.
+A write to a `signal` becomes a setter call. In `[a] = list`, `({ a } = obj)` and `for (a of list)` the assignment is done by the language, not by an expression the compiler can replace. `data.signal` is the written variable.
 
 **Repair:** Read the value into a temporary and assign it with `name = value` in a statement.
 
 Before:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-let count = $signal(0);
+let count = signal(0);
 export function pick(list) {
   [count] = list;
 }
@@ -351,9 +351,9 @@ export const view = <p>{count}</p>;
 After:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-let count = $signal(0);
+let count = signal(0);
 export function pick(list) {
   count = list[0];
 }
@@ -362,7 +362,7 @@ export const view = <p>{count}</p>;
 
 ## SIGNAL_UPDATE_IN_EXPRESSION
 
-**`++`/`--` on a `$signal` inside an expression** · severity `error`
+**`++`/`--` on a `signal` inside an expression** · severity `error`
 
 > `{signal}` is incremented or decremented as part of an expression. Use it as a statement, or write `{signal} += 1`, which is an expression with the new value.
 
@@ -377,161 +377,162 @@ Automatic fix: no
 Before:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-let count = $signal(0);
+let count = signal(0);
 export const view = <button onClick={() => count++}>{count}</button>;
 ```
 
 After:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
-let count = $signal(0);
+let count = signal(0);
 export const view = <button onClick={() => { count++; }}>{count}</button>;
 ```
 
 ## COMPUTED_WRITTEN
 
-**`$computed` written** · severity `error`
+**`computed` written** · severity `error`
 
-> `{computed}` is a `$computed` and cannot be written: its value is derived from what its expression reads. Write to those signals instead.
+> `{computed}` is a `computed` and cannot be written: its value is derived from what its expression reads. Write to those signals instead.
 
 `data` keys: `computed`
 
 Automatic fix: no
 
-A `$computed` compiles to a `computed` getter, which has no setter. Assignments, compound assignments, `++`/`--` and writes through a pattern or a `for` loop head are refused. `data.computed` is the written variable.
+A `computed` variable is a derived getter with no setter. Assignments, compound assignments, `++`/`--` and writes through a pattern or a `for` loop head are refused. `data.computed` is the written variable.
 
-**Repair:** Write the `$signal` the expression reads, or declare the variable with `$signal` when it is meant to be set directly.
+**Repair:** Write the `signal` the expression reads, or declare the variable with `signal` when it is meant to be set directly.
 
 Before:
 
 ```tsx
-import { $computed, $signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
-let count = $signal(0);
-const doubled = $computed(count * 2);
+let count = signal(0);
+const doubled = computed(count * 2);
 export const view = <button onClick={() => (doubled = 0)}>{doubled}</button>;
 ```
 
 After:
 
 ```tsx
-import { $computed, $signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
-let count = $signal(0);
-const doubled = $computed(count * 2);
+let count = signal(0);
+const doubled = computed(count * 2);
 export const view = <button onClick={() => (count = 0)}>{doubled}</button>;
 ```
 
 ## COMPUTED_FUNCTION
 
-**Function literal passed to `$computed`** · severity `error`
+**Function literal passed to `computed`** · severity `error`
 
-> `$computed` takes the expression itself and wraps it in a function, so a function literal here would make the derived value that function. Write `$computed(expression)` without `() =>`.
+> `computed` takes the expression itself and wraps it in a function, so a function literal here would make the derived value that function. Write `computed(expression)` without `() =>`.
 
 `data` keys: none
 
 Automatic fix: yes
 
-`const doubled = $computed(count * 2)` compiles to `computed(() => count() * 2)`. A function literal as the argument is refused rather than quietly deriving a function. A derived value that is a function comes from another expression: a call, a conditional or an identifier.
+`const doubled = computed(count * 2)` derives `doubled` from `count * 2`. A function literal as the argument is refused rather than quietly deriving a function. A derived value that is a function comes from another expression: a call, a conditional or an identifier.
 
-**Repair:** Apply the fix to remove `() =>`. For several statements, move them into a function and derive its call: `$computed(compute())`.
+**Repair:** Apply the fix to remove `() =>`. For several statements, move them into a function and derive its call: `computed(compute())`.
 
 Before:
 
 ```tsx
-import { $computed, $signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
-let count = $signal(0);
-const doubled = $computed(() => count * 2);
+let count = signal(0);
+const doubled = computed(() => count * 2);
 export const view = <button onClick={() => (count += 1)}>{doubled}</button>;
 ```
 
 After:
 
 ```tsx
-import { $computed, $signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
-let count = $signal(0);
-const doubled = $computed(count * 2);
+let count = signal(0);
+const doubled = computed(count * 2);
 export const view = <button onClick={() => (count += 1)}>{doubled}</button>;
 ```
 
 ## COMPUTED_AWAIT
 
-**`await` or `yield` in `$computed`** · severity `error`
+**`await` or `yield` in `computed`** · severity `error`
 
-> The expression of `$computed` awaits or yields, but it runs inside a synchronous getter where `await` and `yield` are not valid. Derive from a value that is already loaded, or use `asyncComputed`.
+> The expression of `computed` awaits or yields, but it is derived synchronously, where `await` and `yield` are not valid. Await the value in an async component and derive from the result.
 
 `data` keys: none
 
 Automatic fix: no
 
-`$computed(expression)` compiles to `computed(() => expression)`. The getter is an ordinary arrow function, so an `await` or `yield` outside a nested function cannot move into it.
+`computed(expression)` derives its value synchronously. An `await` or `yield` outside a nested function cannot move into it.
 
-**Repair:** Load the value with `asyncComputed(() => load(…))` and derive from its `value()`, or await it in an async component before the derivation.
+**Repair:** Await the value in an async component before the derivation, then derive from the loaded value.
 
 Before:
 
 ```tsx
-import { $computed, $signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
-let id = $signal(1);
-const label = $computed(await describe(id));
+let id = signal(1);
+const label = computed(await describe(id));
 export const view = <p onClick={() => (id += 1)}>{label}</p>;
 ```
 
 After:
 
 ```tsx
-import { $computed, $signal, asyncComputed } from "reze-js";
+import { computed } from "reze-js";
 
-let id = $signal(1);
-const described = asyncComputed(() => describe(id));
-const label = $computed(described.value() ?? "…");
-export const view = <p onClick={() => (id += 1)}>{label}</p>;
+export async function Label(props) {
+  const text = await describe(props.id);
+  const label = computed(text.toUpperCase());
+  return <p>{label}</p>;
+}
 ```
 
 ## ACTION_ARGUMENT
 
-**`$action` without a function literal** · severity `error`
+**`action` without a function literal** · severity `error`
 
-> `$action` needs its body written at the call, as an arrow function or function expression, so the compiler can keep the action current across each `await`. Write `$action(async (…) => { … })`.
+> `action` needs its body written at the call, as an arrow function or function expression, so the compiler can keep the action current across each `await`. Write `action(async (…) => { … })`.
 
 `data` keys: none
 
 Automatic fix: no
 
-`$action(fn)` compiles to `action(fn)` with `fn` rewritten: it takes the run as its first parameter, every `await` in its body resumes the run, and the body ends it. An identifier, a call or a missing argument hides the body from the compiler.
+`action(fn)` rewrites `fn`: every `await` in its body resumes the action and the body ends it. An identifier, a call or a missing argument hides the body from the compiler.
 
-**Repair:** Write the body in the call and call the existing function from it: `$action(async (todo) => { await save(todo); })`. To thread the run by hand, use `action((run, …) => …)`.
+**Repair:** Write the body in the call and call the existing function from it: `action(async (todo) => { await save(todo); })`.
 
 Before:
 
 ```tsx
-import { $action } from "reze-js";
+import { action } from "reze-js";
 
-export const save = $action(saveTodo);
+export const save = action(saveTodo);
 ```
 
 After:
 
 ```tsx
-import { $action } from "reze-js";
+import { action } from "reze-js";
 
-export const save = $action(async (todo) => {
+export const save = action(async (todo) => {
   await saveTodo(todo);
 });
 ```
 
 ## ACTION_UNSUPPORTED
 
-**`for await`, `await using` or a generator in `$action`** · severity `error`
+**`for await`, `await using` or a generator in `action`** · severity `error`
 
-> `{construct}` suspends the `$action` body where the compiler cannot resume the action, so writes after it would escape the action. Use a plain `await` instead.
+> `{construct}` suspends the `action` body where the compiler cannot resume the action, so writes after it would escape the action. Use a plain `await` instead.
 
 `data` keys: `construct`
 
@@ -544,9 +545,9 @@ The compiler resumes the action after each `await` expression. `for await` and `
 Before:
 
 ```tsx
-import { $action } from "reze-js";
+import { action } from "reze-js";
 
-export const load = $action(async (list) => {
+export const load = action(async (list) => {
   for await (const item of stream()) list.push(item);
 });
 ```
@@ -554,73 +555,73 @@ export const load = $action(async (list) => {
 After:
 
 ```tsx
-import { $action } from "reze-js";
+import { action } from "reze-js";
 
-export const load = $action(async (list) => {
+export const load = action(async (list) => {
   for (const item of await fetchAll()) list.push(item);
 });
 ```
 
 ## ACTION_NOT_CALLED
 
-**`$action` used as a value** · severity `error`
+**`action` used as a value** · severity `error`
 
-> `$action` is compiler syntax and has no runtime value, so this reference would throw. Call it with the body: `$action(async (…) => { … })`.
+> `action` is compiler syntax and has no runtime value, so this reference would fail. Call it with the body: `action(async (…) => { … })`.
 
 `data` keys: none
 
 Automatic fix: no
 
-Only a call `$action(fn)` is rewritten. Passing `$action` around, storing it or re-exporting it would reach the function that only throws.
+Only a call `action(fn)` is rewritten. Passing `action` around, storing it or re-exporting it leaves a reference to a function that does not exist at runtime.
 
-**Repair:** Call `$action` where the action is defined. To make actions from a function at runtime, use `action((run, …) => …)`.
+**Repair:** Call `action` where the action is defined.
 
 Before:
 
 ```tsx
-import { $action } from "reze-js";
+import { action } from "reze-js";
 
-export const make = $action;
+export const make = action;
 ```
 
 After:
 
 ```tsx
-import { $action } from "reze-js";
+import { action } from "reze-js";
 
-export const save = $action(async (todo) => {
+export const save = action(async (todo) => {
   await saveTodo(todo);
 });
 ```
 
 ## PROPS_AS_VALUE
 
-**`$props` used as a value** · severity `error`
+**`mergeProps`, `splitProps` or `omitProps` used as a value** · severity `error`
 
-> `$props` is compiler syntax and has no runtime value, so this reference would throw. Call `$props.merge(…)`, `$props.splitByGroups(…)` or `$props.omit(…)` instead.
+> `{name}` is compiler syntax and has no runtime value, so this reference would fail. Call it: `mergeProps(…)`, `splitProps(…)` or `omitProps(…)`.
 
-`data` keys: none
+`data` keys: `name`
 
 Automatic fix: no
 
-Only the three `$props` calls are rewritten: dissolvable merges become object literals, the rest compiles to direct `mergeProps`, `splitProps` and `omitProps` calls. Passing `$props` around, storing it, re-exporting it or calling another method would reach a binding with no value.
+Only calls of the three props helpers are rewritten: dissolvable calls become object literals, the rest compiles to direct runtime calls. Passing a helper around, storing it or re-exporting it leaves a reference to a function that does not exist at runtime. `data.name` is the helper.
 
-**Repair:** Call one of the three where the props are handled. To merge an unknown shape at runtime, import `mergeProps` directly.
+**Repair:** Call the helper where the props are handled.
 
 Before:
 
 ```tsx
-import { $props } from "reze-js";
+import { omitProps } from "reze-js";
 
-export const view = $props;
+export const view = omitProps;
 ```
 
 After:
 
 ```tsx
-import { $props } from "reze-js";
+import { omitProps } from "reze-js";
 
-export const view = $props.omit(props, "id");
+export const view = omitProps(props, "id");
 ```
 
 ## ISLAND_TRIGGER
@@ -891,38 +892,6 @@ After:
 export const view = <button onClick={() => save()} />;
 ```
 
-## SIGNAL_NOT_CALLED
-
-**Signal passed without calling it** · severity `warn`
-
-> `{signal}` is a signal getter passed without calling it, so the DOM receives the function and never updates. Call it: `{signal}()`.
-
-`data` keys: `signal`
-
-Automatic fix: yes
-
-A `signal` or `computed` getter is an attribute, property or style value without being called. The DOM receives the function itself, not the current value. Children and event handlers take functions legitimately and are not checked. `data.signal` is the getter.
-
-**Repair:** Apply the fix to call the getter. The call is tracked, so the attribute follows the signal.
-
-Before:
-
-```tsx
-import { signal } from "@rezejs/signals";
-
-const [count, setCount] = signal(0);
-export const view = <input value={count} onInput={() => setCount(1)} />;
-```
-
-After:
-
-```tsx
-import { signal } from "@rezejs/signals";
-
-const [count, setCount] = signal(0);
-export const view = <input value={count()} onInput={() => setCount(1)} />;
-```
-
 ## PROPS_DESTRUCTURED
 
 **Props destructured in a form that cannot be rewritten** · severity `warn`
@@ -988,7 +957,7 @@ export const view = <ul><For each={numbers}>{(n) => <li>{n}</li>}</For></ul>;
 
 **Async component in a form that cannot be compiled** · severity `warn`
 
-> `{component}` is an async component the compiler cannot rewrite ({reason}), so it stays an `async` function that returns a Promise and renders nothing. Reshape the awaits or move the work into an `asyncComputed`.
+> `{component}` is an async component the compiler cannot rewrite ({reason}), so it stays an `async` function that returns a Promise and renders nothing. Reshape the awaits so each one is a whole statement.
 
 `data` keys: `component`, `reason`
 
@@ -1022,25 +991,25 @@ export async function Card(props) {
 
 ## SIGNAL_READ_ONCE
 
-**`$signal` or `$computed` copied once in a component body** · severity `warn`
+**`signal` or `computed` copied once in a component body** · severity `warn`
 
-> `{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `$computed(…)`.
+> `{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `computed(…)`.
 
 `data` keys: `signal`, `variable`
 
 Automatic fix: no
 
-A component function runs once, so a `$signal` or `$computed` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `$computed`, `computed` and JSX are reactive and are not reported. `data.signal` is the variable read and `data.variable` the declared variable.
+A component function runs once, so a `signal` or `computed` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `computed` and JSX are reactive and are not reported. `data.signal` is the variable read and `data.variable` the declared variable.
 
-**Repair:** Move the read to where the value is used, or declare `const name = $computed(expression)` and read `name`. Mark an intended one-time read with `untrack(() => …)`.
+**Repair:** Move the read to where the value is used, or declare `const name = computed(expression)` and read `name`. Mark an intended one-time read with `untrack(() => …)`.
 
 Before:
 
 ```tsx
-import { $signal } from "reze-js";
+import { signal } from "reze-js";
 
 export function Counter() {
-  let count = $signal(0);
+  let count = signal(0);
   const doubled = count * 2;
   return <button onClick={() => (count += 1)}>{doubled}</button>;
 }
@@ -1049,35 +1018,35 @@ export function Counter() {
 After:
 
 ```tsx
-import { $computed, $signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
 export function Counter() {
-  let count = $signal(0);
-  const doubled = $computed(count * 2);
+  let count = signal(0);
+  const doubled = computed(count * 2);
   return <button onClick={() => (count += 1)}>{doubled}</button>;
 }
 ```
 
 ## ACTION_NESTED_WRITE
 
-**Write in a function of `$action` that runs later** · severity `warn`
+**Write in a function of `action` that runs later** · severity `warn`
 
-> This write is in {via} inside a `$action` body, which runs after the action moved on, so it is not undone when the action fails. Await the value and write it in the body.
+> This write is in {via} inside an `action` body, which runs after the action moved on, so it is not undone when the action fails. Await the value and write it in the body.
 
 `data` keys: `via`
 
 Automatic fix: no
 
-Only the `$action` body is kept inside the action across its `await`s; nested functions are not rewritten. A write to a member in an async function, or in a callback of `.then`, `.catch`, `.finally`, `setTimeout`, `setInterval`, `queueMicrotask`, `requestAnimationFrame` or `requestIdleCallback`, likely runs outside the action and is a real write. The compiler cannot tell a store from a plain object, so this is a heuristic. `data.via` is the enclosing function.
+Only the `action` body is kept inside the action across its `await`s; nested functions are not rewritten. A write to a member in an async function, or in a callback of `.then`, `.catch`, `.finally`, `setTimeout`, `setInterval`, `queueMicrotask`, `requestAnimationFrame` or `requestIdleCallback`, likely runs outside the action and is a real write. The compiler cannot tell a store from a plain object, so this is a heuristic. `data.via` is the enclosing function.
 
 **Repair:** Replace `.then((saved) => { todo.at = saved.at; })` with `const saved = await …; todo.at = saved.at;` in the body. A write outside the action on purpose can stay; move it out of the body to silence the warning.
 
 Before:
 
 ```tsx
-import { $action } from "reze-js";
+import { action } from "reze-js";
 
-export const save = $action(async (todo) => {
+export const save = action(async (todo) => {
   todo.done = true;
   api.save(todo).then((saved) => {
     todo.at = saved.at;
@@ -1088,9 +1057,9 @@ export const save = $action(async (todo) => {
 After:
 
 ```tsx
-import { $action } from "reze-js";
+import { action } from "reze-js";
 
-export const save = $action(async (todo) => {
+export const save = action(async (todo) => {
   todo.done = true;
   const saved = await api.save(todo);
   todo.at = saved.at;
@@ -1132,23 +1101,23 @@ export const view = <Counter island="visible" />;
 
 **Constant signal folded** · severity `info`
 
-> `{signal}` is never written and every read is a call, so it compiled to a plain constant.
+> `{signal}` is never written, so it compiled to a plain constant.
 
 `data` keys: `signal`
 
 Automatic fix: no
 
-The signal's setter is unused, its getter is only called, and neither is exported, so the signal became a constant: reads cost nothing and literal values render straight into the template. `data.signal` is the getter.
+The signal is never written and is not exported, so it became a constant: reads cost nothing and literal values render straight into the template. `data.signal` is the variable.
 
-**Repair:** Nothing to repair. Call the setter somewhere and the fold disappears.
+**Repair:** Nothing to repair. Write the variable somewhere and the fold disappears.
 
 Example:
 
 ```tsx
-import { signal } from "@rezejs/signals";
+import { signal } from "reze-js";
 
-const [title] = signal("Reze");
-export const view = <h1>{title()}</h1>;
+const title = signal("Reze");
+export const view = <h1>{title}</h1>;
 ```
 
 ## DEAD_BRANCH_REMOVED
@@ -1197,27 +1166,26 @@ export function Greeting({ name }) {
 
 **Row comparison compiled to a selector** · severity `info`
 
-> Each row compares `{signal}()` with its own key, so a change would re-run every row; the comparison now reads a selector created once for this `<For>`.
+> Each row compares `{signal}` with its own key, so a change would re-run every row; the comparison now reads a selector created once for this `<For>`.
 
 `data` keys: `signal`
 
 Automatic fix: no
 
-A `<For>` row compares a `signal`/`computed` declared outside the row with a key built from the row's parameters. One `selector` per `<For>` replaces the comparison, so a change re-runs only the rows whose result flips. `data.signal` is the getter.
+A `<For>` row compares a `signal`/`computed` declared outside the row with a key built from the row's parameters. One `selector` per `<For>` replaces the comparison, so a change re-runs only the rows whose result flips. `data.signal` is the variable.
 
 **Repair:** Nothing to repair. Compare inside a nested function, or with something that is not the row's key, and it stays a plain comparison.
 
 Example:
 
 ```tsx
-import { For } from "reze-js";
-import { signal } from "@rezejs/signals";
+import { For, signal } from "reze-js";
 
-const [selected, setSelected] = signal(0);
+let selected = signal(0);
 export const view = (
   <ul>
     <For each={rows()}>
-      {(row) => <li class={selected() === row.id ? "on" : ""} onClick={() => setSelected(row.id)} />}
+      {(row) => <li class={selected === row.id ? "on" : ""} onClick={() => (selected = row.id)} />}
     </For>
   </ul>
 );

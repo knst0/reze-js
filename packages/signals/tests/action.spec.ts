@@ -1,7 +1,7 @@
 import { settle } from "@rezejs/testing-library";
-import { expect, expectTypeOf, test, vi } from "vitest";
+import { expect, test, vi } from "vitest";
 
-import { $action, action, computed, effect, flush, store, type Action, type Run } from "../src";
+import { action, computed, effect, flush, store, type Action, type Run } from "../src";
 
 interface Todo {
   id: number;
@@ -13,7 +13,7 @@ function gate<T = void>(): PromiseWithResolvers<T> {
   return Promise.withResolvers<T>();
 }
 
-/** What `$action` compiles `async (wait) => { write(); await wait; after(); }` to. */
+/** What `action` compiles `async (wait) => { write(); await wait; after(); }` to. */
 function speculate(write: () => void, after: () => void = () => {}): Action<[wait: Promise<void>], void> {
   return action(async (run: Run, wait: Promise<void>) => {
     try {
@@ -304,17 +304,6 @@ test("calling an action while a computed runs throws in development", () => {
   const save = action(() => {});
   const derived = computed(() => save());
   expect(derived).toThrow("action was called while a computed");
-});
-
-test("`$action` without the compiler throws, and is typed as the action it compiles to", () => {
-  const types = () => {
-    const toggle = $action(async (todo: Todo) => {
-      todo.done = !todo.done;
-    });
-    expectTypeOf(toggle).toEqualTypeOf<Action<[todo: Todo], void>>();
-    expectTypeOf(toggle.pending).toEqualTypeOf<number>();
-  };
-  expect(types).toThrow("requires the reze compiler");
 });
 
 test.each([

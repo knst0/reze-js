@@ -202,8 +202,8 @@ async function checkTypes(project) {
   );
   const source = `import reze, { type SsgOptions } from "@rezejs/vite-plugin";
 import { defineRoute, defineRoutes, type DataOf } from "@rezejs/router";
-import { $signal, hydrate, type JSX } from "reze-js";
-import { signal } from "@rezejs/signals";
+import { hydrate, signal, type JSX } from "reze-js";
+import { signal as runtimeSignal } from "@rezejs/signals";
 export const post = defineRoute({
   path: "/blog/:id",
   preload: async ({ params }) => ({ id: params.id, title: "Post" }),
@@ -215,8 +215,8 @@ export const data: DataOf<{ route: typeof post }> = { id: "a", title: "Post" };
 export const pending = defineRoutes([defineRoute({ path: "/pending", preload: () => Promise.withResolvers<never>().promise, component: () => "pending" })]);
 export const config: SsgOptions = { entry: "src/app.tsx", selector: "#app", paths: { "/blog/:id": [{ id: "a" }] } };
 export const plugins = reze({ ssg: config });
-export const count = signal(0);
-export const dsl = $signal(0);
+export const count = runtimeSignal(0);
+export const dsl = signal(0);
 export const mount: (view: () => JSX.Element, root: Element) => Promise<() => void> = hydrate;
 `;
   await writeFile(join(project, "consumer.ts"), source);

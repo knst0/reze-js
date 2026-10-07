@@ -65,7 +65,8 @@ pub fn apply<'a>(
     if plan.entries.is_empty() {
         return false;
     }
-    let async_component = helpers.require(allocator, namer, "reze-js", "asyncComponent");
+    let async_component =
+        helpers.require(allocator, namer, crate::RUNTIME_MODULE, "asyncComponent");
     let mut rewrite = Rewrite {
         alloc: allocator,
         plan: &plan,

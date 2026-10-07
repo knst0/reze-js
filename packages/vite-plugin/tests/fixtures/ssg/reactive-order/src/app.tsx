@@ -1,5 +1,6 @@
-import { signal } from "@rezejs/signals";
-import { $action, $computed, $signal, Errored, Loading, render } from "reze-js";
+import { signal as runtimeSignal } from "@rezejs/signals";
+import { action, computed, render, signal } from "reze-js";
+import { Errored, Loading } from "reze-js/internal/async";
 
 import { ModuleClass, moduleBranchValue, moduleCatchValue, moduleGetter, moduleTrace } from "./module-resources.js";
 
@@ -9,7 +10,7 @@ let liveStarted = false;
 
 if (typeof document !== "undefined" && document.getElementById("live") !== null && !liveStarted) {
   liveStarted = true;
-  const [ticks, setTicks] = signal(0);
+  const [ticks, setTicks] = runtimeSignal(0);
   setInterval(() => setTicks((n) => n + 1), 50);
   render(() => <p id="live-count">{ticks()}</p>, document.getElementById("live")!);
 }
@@ -65,14 +66,14 @@ function failOperand(): never {
 }
 
 function NestedActions() {
-  let value = $signal(0);
-  let rejection = $signal("");
-  let syncRuns = $signal(0);
-  let syncTrace = $signal("");
-  const run = $action(async () => {
+  let value = signal(0);
+  let rejection = signal("");
+  let syncRuns = signal(0);
+  let syncTrace = signal("");
+  const run = action(async () => {
     value = await nestedInput((typeof document === "undefined" ? await nestedInput(2) : await nestedInput(9)) + (await nestedInput(3)));
   });
-  const recover = $action(async () => {
+  const recover = action(async () => {
     try {
       await nestedInput(await Promise.reject(new Error("nested rejection")));
     } catch (error) {
@@ -81,7 +82,7 @@ function NestedActions() {
       rejection += ":finally";
     }
   });
-  const sync = $action(async () => {
+  const sync = action(async () => {
     syncRuns += 1;
     syncTrace = "";
     queueMicrotask(() => (syncTrace += ":microtask"));
@@ -116,12 +117,12 @@ function NestedActions() {
 }
 
 export default function App() {
-  let count = $signal(2);
-  let step = $signal(7);
-  let derived = $computed(count * 2);
-  let other = $computed(step + 1);
-  let round = $signal(0);
-  let done = $signal(0);
+  let count = signal(2);
+  let step = signal(7);
+  let derived = computed(count * 2);
+  let other = computed(step + 1);
+  let round = signal(0);
+  let done = signal(0);
   const note = (): void => {
     done = done + 1;
   };
