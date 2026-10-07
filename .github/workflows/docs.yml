@@ -1,6 +1,11 @@
 name: Docs
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
     inputs:
       ref:
@@ -33,7 +38,7 @@ jobs:
       contents: read
     env:
       INPUT_BASE: ${{ inputs.base }}
-      INPUT_CNAME: ${{ inputs.cname }}
+      INPUT_CNAME: ${{ github.event_name == 'push' && 'reze.js.knst.dev' || inputs.cname }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
