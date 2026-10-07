@@ -265,21 +265,21 @@ export const view = <button onClick={() => (count += 1)}>{count}</button>;
 
 > `{primitive}(…)` initializes a destructuring pattern. A reactive variable is one name: declare `const name = {primitive}(…)`.
 
-`data` keys: `primitive`
+`data` keys: `name`, `primitive`
 
-Automatic fix: no
+Automatic fix: yes
 
 The declared name is rewritten into a getter (and, for a written `signal`, a setter), which needs exactly one identifier to rename. `data.primitive` is the syntax used.
 
-**Repair:** Declare one name per `signal` or `computed`, for example `let count = signal(0)`, and read its fields where they are used. The `[get, set]` tuple of other libraries does not exist: assign to the variable to write it.
+**Repair:** Apply the fix for the `[get, set]` tuple of other libraries: it declares one name, turns `name()` reads into `name` and `setName(value)` statements into `name = value`. Without a fix, declare one name per `signal` or `computed`, for example `let count = signal(0)`, and assign to it to write it.
 
 Before:
 
 ```tsx
 import { signal } from "reze-js";
 
-let [count] = signal([0]);
-export const view = <p>{count}</p>;
+const [count, setCount] = signal(0);
+export const view = <button onClick={() => setCount(count() + 1)}>{count()}</button>;
 ```
 
 After:
@@ -287,8 +287,8 @@ After:
 ```tsx
 import { signal } from "reze-js";
 
-let count = signal([0]);
-export const view = <p>{count}</p>;
+let count = signal(0);
+export const view = <button onClick={() => (count += 1)}>{count}</button>;
 ```
 
 ## SIGNAL_EXPORTED

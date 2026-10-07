@@ -55,6 +55,40 @@ fn a_destructured_declaration_is_a_pattern() {
     assert_eq!((d.start.line, d.start.column), (2, 4));
 }
 
+fn fixed(source: &str) -> Option<String> {
+    let d = only(source, Code::SignalPattern);
+    let fix = d.fixes.first()?;
+    let mut edits: Vec<_> = fix.edits.iter().collect();
+    edits.sort_by_key(|edit| std::cmp::Reverse(edit.start));
+    let mut text = source.to_string();
+    for edit in edits {
+        text.replace_range(edit.start as usize..edit.end as usize, &edit.text);
+    }
+    Some(text)
+}
+
+#[test]
+fn a_tuple_declaration_is_rewritten_to_one_variable_by_its_fix() {
+    let source = "import { signal } from \"reze-js\";\nconst [n, setN] = signal(0);\nexport const view = <button onClick={() => setN(n() + 1)}>{n()}</button>;";
+    assert_eq!(
+        fixed(source).as_deref(),
+        Some(
+            "import { signal } from \"reze-js\";\nlet n = signal(0);\nexport const view = <button onClick={() => n = n + 1}>{n}</button>;"
+        )
+    );
+}
+
+#[test]
+fn a_tuple_whose_setter_escapes_has_no_fix() {
+    for source in [
+        "import { signal } from \"reze-js\";\nconst [n, setN] = signal(0);\nexport const f = () => register(setN);",
+        "import { signal } from \"reze-js\";\nconst [n, setN] = signal(0);\nexport const f = () => setN((v) => v + 1);",
+        "import { signal } from \"reze-js\";\nconst [n] = signal(0);\nexport const f = () => register(n);",
+    ] {
+        assert_eq!(fixed(source), None, "{source}");
+    }
+}
+
 #[test]
 fn an_exported_signal_is_refused_however_it_is_exported() {
     for export in [

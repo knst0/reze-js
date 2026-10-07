@@ -7,6 +7,7 @@ use oxc_span::{GetSpan, SPAN, Span};
 use oxc_syntax::operator::{
     AssignmentOperator, BinaryOperator, LogicalOperator, UnaryOperator, UpdateOperator,
 };
+use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 
@@ -53,6 +54,7 @@ pub fn prescan(
         action_callees: HashSet::new(),
         reports: Vec::new(),
         in_for_init: false,
+        patterns: Vec::new(),
         has_action: false,
     };
     declarations.visit_program(program);
@@ -61,10 +63,12 @@ pub fn prescan(
         declarators,
         reports: decl_reports,
         action_callees,
+        patterns,
         has_action,
         ..
     } = declarations;
     reports.extend(decl_reports);
+    resolve_patterns(program, scoping, patterns, reports);
     let mut decls = HashMap::new();
     let mut by_symbol = HashMap::new();
     let mut inits = HashSet::new();
@@ -113,6 +117,168 @@ struct Declarator {
     keyword: Option<Span>,
 }
 
+struct PatternPlan {
+    pattern: Span,
+    name: String,
+    getter: SymbolId,
+    setter: Option<SymbolId>,
+    keyword: Option<Span>,
+}
+
+struct PendingPattern {
+    span: Span,
+    primitive: Syntax,
+    plan: Option<PatternPlan>,
+}
+
+fn pattern_plan(
+    declaration: &VariableDeclaration<'_>,
+    declarator: &VariableDeclarator<'_>,
+    primitive: Syntax,
+) -> Option<PatternPlan> {
+    let BindingPattern::ArrayPattern(pattern) = &declarator.id else { return None };
+    if pattern.rest.is_some() || pattern.elements.len() > 2 {
+        return None;
+    }
+    let Some(Some(BindingPattern::BindingIdentifier(getter))) = pattern.elements.first() else {
+        return None;
+    };
+    let setter = match pattern.elements.get(1) {
+        None => None,
+        Some(Some(BindingPattern::BindingIdentifier(setter))) if primitive == Syntax::Signal => {
+            Some(setter.symbol_id())
+        }
+        Some(_) => return None,
+    };
+    let keyword = (declaration.kind == VariableDeclarationKind::Const)
+        .then(|| {
+            (declaration.declarations.len() == 1).then(|| Span::sized(declaration.span.start, 5))
+        })
+        .flatten();
+    if declaration.kind == VariableDeclarationKind::Const && keyword.is_none() && setter.is_some() {
+        return None;
+    }
+    Some(PatternPlan {
+        pattern: declarator.id.span(),
+        name: getter.name.to_string(),
+        getter: getter.symbol_id(),
+        setter,
+        keyword,
+    })
+}
+
+struct CallSite {
+    call: Span,
+    is_optional: bool,
+    argument_count: usize,
+    sole_value_argument: Option<Span>,
+    is_statement: bool,
+}
+
+#[derive(Default)]
+struct CallSites {
+    calls: HashMap<ReferenceId, CallSite>,
+    statements: HashSet<u32>,
+}
+
+impl<'a> Visit<'a> for CallSites {
+    fn visit_expression_statement(&mut self, it: &ExpressionStatement<'a>) {
+        if let Expression::CallExpression(call) = it.expression.without_parentheses() {
+            self.statements.insert(call.span.start);
+        }
+        walk::walk_expression_statement(self, it);
+    }
+
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if let Expression::Identifier(callee) = &it.callee
+            && let Some(reference) = callee.reference_id.get()
+        {
+            let sole_value_argument = match it.arguments.as_slice() {
+                [argument] => argument
+                    .as_expression()
+                    .filter(|expression| {
+                        !matches!(
+                            expression.without_parentheses(),
+                            Expression::ArrowFunctionExpression(_)
+                                | Expression::FunctionExpression(_)
+                        )
+                    })
+                    .map(GetSpan::span),
+                _ => None,
+            };
+            self.calls.insert(
+                reference,
+                CallSite {
+                    call: it.span,
+                    is_optional: it.optional,
+                    argument_count: it.arguments.len(),
+                    sole_value_argument,
+                    is_statement: self.statements.contains(&it.span.start),
+                },
+            );
+        }
+        walk::walk_call_expression(self, it);
+    }
+}
+
+fn pattern_edits(plan: &PatternPlan, sites: &CallSites, scoping: &Scoping) -> Option<Vec<Edit>> {
+    let edit = |span: Span, text: String| Edit { start: span.start, end: span.end, text };
+    let mut edits = vec![edit(plan.pattern, plan.name.clone())];
+    for reference in scoping.get_resolved_reference_ids(plan.getter) {
+        let site = sites.calls.get(reference)?;
+        if site.argument_count != 0 || site.is_optional {
+            return None;
+        }
+        edits.push(edit(site.call, plan.name.clone()));
+    }
+    if let Some(setter) = plan.setter {
+        let references = scoping.get_resolved_reference_ids(setter);
+        for reference in references {
+            let site = sites.calls.get(reference)?;
+            let argument = site.sole_value_argument?;
+            if !site.is_statement || site.is_optional {
+                return None;
+            }
+            edits.push(edit(
+                Span::new(site.call.start, argument.start),
+                format!("{} = ", plan.name),
+            ));
+            edits.push(edit(Span::new(argument.end, site.call.end), String::new()));
+        }
+        if !references.is_empty()
+            && let Some(keyword) = plan.keyword
+        {
+            edits.push(edit(keyword, String::from("let")));
+        }
+    }
+    Some(edits)
+}
+
+fn resolve_patterns(
+    program: &Program<'_>,
+    scoping: &Scoping,
+    patterns: Vec<PendingPattern>,
+    reports: &mut Vec<Report>,
+) {
+    if patterns.is_empty() {
+        return;
+    }
+    let mut sites = CallSites::default();
+    sites.visit_program(program);
+    for pattern in patterns {
+        let name = pattern.plan.as_ref().map_or("name", |plan| plan.name.as_str());
+        let mut report = Report::new(Code::SignalPattern, pattern.span)
+            .arg("primitive", pattern.primitive.name())
+            .arg("name", name);
+        if let Some(plan) = &pattern.plan
+            && let Some(edits) = pattern_edits(plan, &sites, scoping)
+        {
+            report = report.fix(edits);
+        }
+        reports.push(report);
+    }
+}
+
 struct Declarations<'p, 's, 'a> {
     scoping: &'s Scoping,
     syntax: &'p SyntaxImports,
@@ -123,6 +289,7 @@ struct Declarations<'p, 's, 'a> {
     action_callees: HashSet<(u32, u32)>,
     reports: Vec<Report>,
     in_for_init: bool,
+    patterns: Vec<PendingPattern>,
     has_action: bool,
 }
 
@@ -177,10 +344,8 @@ impl Declarations<'_, '_, '_> {
             return;
         }
         let BindingPattern::BindingIdentifier(id) = &declarator.id else {
-            self.reports.push(
-                Report::new(Code::SignalPattern, declarator.id.span())
-                    .arg("primitive", primitive.name()),
-            );
+            let plan = pattern_plan(declaration, declarator, primitive);
+            self.patterns.push(PendingPattern { span: declarator.id.span(), primitive, plan });
             return;
         };
         let symbol = id.symbol_id();
