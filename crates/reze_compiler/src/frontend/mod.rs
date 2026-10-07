@@ -99,6 +99,7 @@ pub fn normalize<'a>(
         if syntax.declared.is_empty()
             && syntax.namespaces.is_empty()
             && !imports::has_lowerable(program)
+            && !imports::has_lowerable_reexport(program)
             && props_plan.is_empty()
             && async_plan.is_empty()
             && selector_plan.is_empty()
@@ -128,7 +129,8 @@ pub fn normalize<'a>(
         &mut helpers,
     );
     let outcome = imports::apply(allocator, program, &syntax, &mut namer);
-    content_changed |= outcome.changed;
+    let reexports_changed = imports::lower_reexports(allocator, program);
+    content_changed |= outcome.changed | reexports_changed;
     let props_changed = props::apply(allocator, program, props_plan, &mut namer, &mut helpers);
     content_changed |= props_changed;
     let normalized =

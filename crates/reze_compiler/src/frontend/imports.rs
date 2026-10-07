@@ -386,3 +386,70 @@ pub(crate) fn lower_namespace_members<'a>(
     members.visit_program(program);
     members.changed
 }
+
+fn reexport_home(source: &str, specifier: &ExportSpecifier<'_>) -> Option<&'static str> {
+    if source != exports::PUBLIC || specifier.export_kind.is_type() {
+        return None;
+    }
+    let entry = exports::lookup(exports::PUBLIC, specifier.local.name().as_str())?;
+    matches!(entry.role, Role::Plain | Role::Call(_) | Role::Props(_))
+        .then_some(entry.lower_to.unwrap_or(exports::RUNTIME))
+}
+
+pub(crate) fn has_lowerable_reexport(program: &Program<'_>) -> bool {
+    program.body.iter().any(|statement| {
+        let Statement::ExportFromDeclaration(export) = statement else { return false };
+        !export.export_kind.is_type()
+            && export
+                .specifiers
+                .iter()
+                .any(|specifier| reexport_home(export.source.value.as_str(), specifier).is_some())
+    })
+}
+
+pub(crate) fn lower_reexports<'a>(allocator: &'a Allocator, program: &mut Program<'a>) -> bool {
+    let builder = AstBuilder::new(allocator);
+    let mut changed = false;
+    let mut body = ArenaVec::with_capacity_in(program.body.len(), &builder);
+    for statement in std::mem::replace(&mut program.body, ArenaVec::new_in(&builder)) {
+        let Statement::ExportFromDeclaration(mut export) = statement else {
+            body.push(statement);
+            continue;
+        };
+        let source = export.source.value.as_str();
+        if export.export_kind.is_type()
+            || !export.specifiers.iter().any(|s| reexport_home(source, s).is_some())
+        {
+            body.push(Statement::ExportFromDeclaration(export));
+            continue;
+        }
+        changed = true;
+        let (moved, kept): (Vec<_>, Vec<_>) =
+            std::mem::replace(&mut export.specifiers, ArenaVec::new_in(&builder))
+                .into_iter()
+                .partition(|s| reexport_home(source, s).is_some());
+        let span = export.span;
+        let kind = export.export_kind;
+        let mut moved_specifiers = ArenaVec::with_capacity_in(moved.len(), &builder);
+        moved_specifiers.extend(moved);
+        let target = StringLiteral::new(span, Str::from(exports::RUNTIME), None, &builder);
+        if kept.is_empty() {
+            export.specifiers = moved_specifiers;
+            export.source = target;
+            body.push(Statement::ExportFromDeclaration(export));
+        } else {
+            export.specifiers.extend(kept);
+            body.push(Statement::ExportFromDeclaration(export));
+            body.push(Statement::ExportFromDeclaration(ExportFromDeclaration::boxed(
+                span,
+                moved_specifiers,
+                target,
+                kind,
+                None,
+                &builder,
+            )));
+        }
+    }
+    program.body = body;
+    changed
+}

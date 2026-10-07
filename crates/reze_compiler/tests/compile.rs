@@ -243,6 +243,17 @@ fn a_declared_plain_import_is_rewritten_to_the_runtime() {
 }
 
 #[test]
+fn a_declared_reexport_is_rewritten_to_the_runtime_and_keeps_real_exports() {
+    let source = "export { effect, render, type Getter } from \"reze-js\";";
+    let out = output_for(source, "test.tsx", &Options::default());
+    assert!(out.code.contains("effect } from \"reze-js/internal/runtime\""), "{}", out.code);
+    assert!(out.code.contains("render"), "{}", out.code);
+    assert!(out.code.contains("from \"reze-js\""), "{}", out.code);
+    let only = output_for("export { effect } from \"reze-js\";", "test.tsx", &Options::default());
+    assert!(!only.code.contains("from \"reze-js\""), "{}", only.code);
+}
+
+#[test]
 fn a_namespace_member_call_is_lowered_to_a_named_runtime_import() {
     let source = "import * as R from \"reze-js\";\nexport const f = () => { R.effect(() => {}); };";
     let out = output_for(source, "test.tsx", &Options::default());
