@@ -182,6 +182,15 @@ struct CallSites {
 }
 
 impl<'a> Visit<'a> for CallSites {
+    fn visit_arrow_function_expression(&mut self, it: &ArrowFunctionExpression<'a>) {
+        if let Some(Expression::CallExpression(call)) =
+            it.get_expression().map(Expression::without_parentheses)
+        {
+            self.statements.insert(call.span.start);
+        }
+        walk::walk_arrow_function_expression(self, it);
+    }
+
     fn visit_expression_statement(&mut self, it: &ExpressionStatement<'a>) {
         if let Expression::CallExpression(call) = it.expression.without_parentheses() {
             self.statements.insert(call.span.start);

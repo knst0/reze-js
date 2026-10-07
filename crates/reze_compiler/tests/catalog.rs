@@ -97,9 +97,16 @@ fn examples_are_true() {
 fn fixes_repair() {
     for entry in CATALOG {
         let Example::Pair { bad, .. } = entry.example else { continue };
-        for diagnostic in
-            diagnostics(bad).iter().filter(|d| d.code == entry.code && !d.fixes.is_empty())
-        {
+        let found: Vec<_> = diagnostics(bad)
+            .into_iter()
+            .filter(|d| d.code == entry.code && !d.fixes.is_empty())
+            .collect();
+        assert!(
+            entry.fix.is_none() || !found.is_empty(),
+            "{}: the bad example gets a fix",
+            entry.name
+        );
+        for diagnostic in &found {
             let fixed = apply(bad, diagnostic);
             assert!(
                 !has(&diagnostics(&fixed), entry.code),
