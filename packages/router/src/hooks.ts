@@ -1,4 +1,5 @@
-import { computed, onCleanup, useContext } from "@rezejs/signals";
+import { onCleanup, useContext } from "@rezejs/signals";
+import { computed } from "reze-js";
 
 import { matchPath, type PathMatch } from "./match";
 import { addLeaveListener, navigate, RouterContext, type RouterState } from "./navigation";
@@ -78,7 +79,8 @@ export function useSearchParams(): [() => Location["query"], (next: SearchInit, 
 /** Matches `pattern` against the current pathname; a trailing `/*` matches any deeper path too. */
 export function useMatch<P extends string>(pattern: () => P): () => PathMatchFor<P> | undefined {
   const state = useRouter();
-  return computed(() => matchPath(pattern(), state.location().pathname) as PathMatchFor<P> | undefined);
+  const match = computed(matchPath(pattern(), state.location().pathname) as PathMatchFor<P> | undefined);
+  return () => match;
 }
 
 /** `true` while a navigation waits for route modules to load. */
@@ -88,7 +90,8 @@ export function useIsRouting(): () => boolean {
 
 export function useCurrentMatches(): () => readonly RouteMatch[] {
   const state = useRouter();
-  return computed(() => state.matches().map(({ path, params, data, info }) => ({ path, params, data, info })));
+  const matches = computed(state.matches().map(({ path, params, data, info }) => ({ path, params, data, info })));
+  return () => matches;
 }
 
 /** Calls `listener` before each navigation away from the current path and before the document unloads, until the calling owner is disposed. */

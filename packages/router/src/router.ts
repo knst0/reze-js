@@ -1,5 +1,6 @@
 import { createComponent, type JSX } from "@rezejs/dom";
-import { computed, getOwner, onCleanup, provideContext, untrack } from "@rezejs/signals";
+import { getOwner, onCleanup, provideContext, untrack } from "@rezejs/signals";
+import { computed } from "reze-js";
 
 import { createBrowserHistory, type HistoryEntry, type RouterHistory } from "./history";
 import { installLinks } from "./links";
@@ -69,12 +70,15 @@ function renderLevel(state: RouterState, depth: number): JSX.Element {
   }
 }
 
+function outletKey(state: RouterState, depth: number): unknown {
+  const match = state.matches()[depth];
+  return match?.error === undefined ? match?.route : match;
+}
+
 function outlet(state: RouterState, depth: number): () => JSX.Element {
-  const key = computed((): unknown => {
-    const match = state.matches()[depth];
-    return match?.error === undefined ? match?.route : match;
-  });
-  return computed(() => (key() === undefined ? undefined : untrack(() => renderLevel(state, depth))));
+  const key = computed(outletKey(state, depth));
+  const view = computed(key === undefined ? undefined : untrack(() => renderLevel(state, depth)));
+  return () => view;
 }
 /**
  * Binds an already-settled SSG state to the router outlet without starting a navigation, installing listeners, or

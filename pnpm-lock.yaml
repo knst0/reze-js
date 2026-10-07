@@ -833,6 +833,9 @@ importers:
       '@rezejs/signals':
         specifier: workspace:^
         version: link:../signals
+      reze-js:
+        specifier: workspace:^
+        version: link:../reze-js
     devDependencies:
       '@codspeed/tinybench-plugin':
         specifier: ^5.7.1
@@ -843,9 +846,6 @@ importers:
       '@rezejs/testing-library':
         specifier: workspace:*
         version: link:../testing-library
-      reze-js:
-        specifier: workspace:*
-        version: link:../reze-js
       tinybench:
         specifier: ^6.2.0
         version: 6.2.0

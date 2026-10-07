@@ -1,6 +1,7 @@
 import { setAttribute } from "@rezejs/dom";
-import { computed, runWithOwner, selector, useContext } from "@rezejs/signals";
+import { computed as computedGetter, runWithOwner, selector, useContext } from "@rezejs/signals";
 import { renderEffect } from "@rezejs/signals/render";
+import { computed } from "reze-js";
 
 import { useRouter } from "./hooks";
 import { pathKey } from "./match";
@@ -24,7 +25,7 @@ export interface LinkState {
 
 function selectorsOf(state: RouterState): LinkSelectors {
   return (state.links ??= runWithOwner(state.owner, () => {
-    const currentKey = computed(() => pathKey(state.location().pathname));
+    const currentKey = computedGetter(() => pathKey(state.location().pathname));
     return { currentKey, isCurrent: selector(currentKey), isPrefixAt: [], isPending: selector(state.pendingKey) };
   }));
 }
@@ -91,7 +92,7 @@ function staticHref(el: Element): string | null {
 /** Compiler target for claimed `<a>`: binds `href` when given and keeps `aria-current`/`data-active`/`data-pending` current. */
 export function link(el: Element, href?: () => string): void {
   const state = useContext(RouterContext);
-  const value = href === undefined ? undefined : computed(href);
+  const value = href === undefined ? undefined : computedGetter(href);
   if (value !== undefined) renderEffect(() => writeHref(el, value()));
   if (state === undefined) return;
   const plain = value === undefined ? staticHref(el) : undefined;
@@ -106,10 +107,10 @@ export function link(el: Element, href?: () => string): void {
 /** The state `<a href>` gets as attributes, for links the compiler cannot claim (spread props, library components). */
 export function useLinkState(href: () => Href): LinkState {
   const state = useRouter();
-  const flags = computed(() => linkFlags(state, linkKey(state, href())));
+  const flags = computed(linkFlags(state, linkKey(state, href())));
   return {
-    current: () => (flags() & Current) !== 0,
-    active: () => (flags() & Active) !== 0,
-    pending: () => (flags() & Pending) !== 0,
+    current: () => (flags & Current) !== 0,
+    active: () => (flags & Active) !== 0,
+    pending: () => (flags & Pending) !== 0,
   };
 }

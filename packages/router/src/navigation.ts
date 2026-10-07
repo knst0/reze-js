@@ -1,4 +1,5 @@
-import { flush, signal, untrack, type ContextKey, type Getter, type Owner, type Setter } from "@rezejs/signals";
+import { flush, untrack, type ContextKey, type Getter, type Owner } from "@rezejs/signals";
+import { signal } from "reze-js";
 
 import type { HistoryEntry, RouterHistory } from "./history";
 import { decode, matchBranches, pathKey, type Branch, type BranchMatch, type CompiledRoute } from "./match";
@@ -56,14 +57,14 @@ export interface RouterState {
   target: HistoryEntry | undefined;
   targetLocation: Location | undefined;
   readonly location: Getter<Location>;
-  readonly setLocation: Setter<Location>;
+  readonly setLocation: (value: Location) => void;
   readonly matches: Getter<readonly ActiveMatch[]>;
-  readonly setMatches: Setter<readonly ActiveMatch[]>;
+  readonly setMatches: (value: readonly ActiveMatch[]) => void;
   readonly isRouting: Getter<boolean>;
-  readonly setIsRouting: Setter<boolean>;
+  readonly setIsRouting: (value: boolean) => void;
   /** `pathKey` of the pathname a navigation is loading route modules or awaiting data for. */
   readonly pendingKey: Getter<string | undefined>;
-  readonly setPendingKey: Setter<string | undefined>;
+  readonly setPendingKey: (value: string | undefined) => void;
   links: LinkSelectors | undefined;
   /** Route components being created; a navigation they start commits once they return. */
   renderDepth: number;
@@ -91,10 +92,10 @@ export interface RouterStateInit {
 
 /** Builds a `RouterState` for any environment; the caller sets `owner` inside the router component setup. */
 export function initRouterState(init: RouterStateInit): RouterState {
-  const [location, setLocation] = signal(parseLocation(init.history.get()));
-  const [matches, setMatches] = signal(NoMatches);
-  const [isRouting, setIsRouting] = signal(true);
-  const [pendingKey, setPendingKey] = signal<string | undefined>(undefined);
+  let location = signal(parseLocation(init.history.get()));
+  let matches = signal(NoMatches);
+  let isRouting = signal(true);
+  let pendingKey = signal<string | undefined>(undefined);
   const state: RouterState = {
     history: init.history,
     branches: init.branches,
@@ -107,14 +108,22 @@ export function initRouterState(init: RouterStateInit): RouterState {
     entry: undefined,
     target: undefined,
     targetLocation: undefined,
-    location,
-    setLocation,
-    matches,
-    setMatches,
-    isRouting,
-    setIsRouting,
-    pendingKey,
-    setPendingKey,
+    location: () => location,
+    setLocation: (value) => {
+      location = value;
+    },
+    matches: () => matches,
+    setMatches: (value) => {
+      matches = value;
+    },
+    isRouting: () => isRouting,
+    setIsRouting: (value) => {
+      isRouting = value;
+    },
+    pendingKey: () => pendingKey,
+    setPendingKey: (value) => {
+      pendingKey = value;
+    },
     links: undefined,
     renderDepth: 0,
     matchedPathname: undefined,

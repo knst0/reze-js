@@ -41,13 +41,13 @@
   },
   "dependencies": {
     "@rezejs/dom": "workspace:^",
-    "@rezejs/signals": "workspace:^"
+    "@rezejs/signals": "workspace:^",
+    "reze-js": "workspace:^"
   },
   "devDependencies": {
     "@codspeed/tinybench-plugin": "^5.7.1",
     "@rezejs/compiler": "workspace:*",
     "@rezejs/testing-library": "workspace:*",
-    "reze-js": "workspace:*",
     "tinybench": "^6.2.0",
     "vite": "^8.3.0"
   }

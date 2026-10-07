@@ -3,9 +3,11 @@ import { join } from "node:path";
 import { defineConfig } from "vitest/config";
 
 import { nodeSpecs, sourceAliases } from "../../vitest.shared";
+import { rezeCompiler } from "./tsdown.config.mjs";
 
 const root = join(import.meta.dirname, "..", "..");
 export default defineConfig({
+  plugins: [{ ...rezeCompiler, enforce: "pre" }],
   define: { __REZE_HTML__: "false", __REZE_HYDRATE__: "false" },
   test: {
     name: "@rezejs/router (node)",
