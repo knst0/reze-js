@@ -1065,6 +1065,85 @@ export async function Card(props) {
 Card.failure = (error, retry) => <button onClick={retry}>Retry</button>;
 ```
 
+## ABORT_SIGNAL_OUTSIDE_LOAD
+
+**`abortSignal()` outside the load of an async component** · severity `error`
+
+> `abortSignal()` must be called directly in the load of an async component, before its view. Call it where the awaited work starts.
+
+`data` keys: none
+
+Automatic fix: no
+
+Each run of an async component's load owns one AbortSignal. The signal aborts when a newer run supersedes that run, and when the component is disposed, even after the load has settled, so cleanup registered after an `await` still sees the abort. A call in the view or outside the component has no run to own, so the compiler refuses it instead of returning a signal that nothing aborts.
+
+**Repair:** Call `abortSignal()` before the first `await` of the component, and pass the signal to the awaited call.
+
+Before:
+
+```tsx
+import { abortSignal } from "reze-js";
+
+export async function Card(props) {
+  const id = props.id;
+  const user = await fetchUser(id);
+  const signal = abortSignal();
+  return <p>{user.name}</p>;
+}
+```
+
+After:
+
+```tsx
+import { abortSignal } from "reze-js";
+
+export async function Card(props) {
+  const id = props.id;
+  const signal = abortSignal();
+  const user = await fetchUser(id, signal);
+  return <p>{user.name}</p>;
+}
+```
+
+## IS_PENDING_OUTSIDE_VIEW
+
+**`isPending()` outside the view of an async component** · severity `error`
+
+> `isPending()` must be called in the view of an async component, after its last `await`. It reports whether a reload is in progress.
+
+`data` keys: none
+
+Automatic fix: no
+
+The view renders once the load has settled. `isPending()` is true while a reload is in progress and the previous value is still shown, and false during the first load. Reading it in the load would make the load depend on its own pending state, so the compiler refuses that call instead.
+
+**Repair:** Move the call into the view, after the last `await`, into the JSX that renders it.
+
+Before:
+
+```tsx
+import { isPending } from "reze-js";
+
+export async function Card(props) {
+  const id = props.id;
+  const busy = isPending();
+  const user = await fetchUser(id);
+  return <p>{busy ? "Refreshing" : user.name}</p>;
+}
+```
+
+After:
+
+```tsx
+import { isPending } from "reze-js";
+
+export async function Card(props) {
+  const id = props.id;
+  const user = await fetchUser(id);
+  return <p>{isPending() ? "Refreshing" : user.name}</p>;
+}
+```
+
 ## SIGNAL_READ_ONCE
 
 **`signal` or `computed` copied once in a component body** · severity `warn`

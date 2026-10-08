@@ -158,6 +158,39 @@ fn hoisted_props_read_before_await_compiles() {
 }
 
 #[test]
+fn abort_signal_and_pending_refusals_report_their_own_codes() {
+    for (source, code) in [
+        (
+            "import { abortSignal } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  const signal = abortSignal();\n  return <p>{user.name}</p>;\n}",
+            Code::AbortSignalOutsideLoad,
+        ),
+        (
+            "import { abortSignal } from \"reze-js\";\n\nexport function Card() {\n  const signal = abortSignal();\n  return <p>x</p>;\n}",
+            Code::AbortSignalOutsideLoad,
+        ),
+        (
+            "import { isPending } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const busy = isPending();\n  const user = await fetchUser(id);\n  return <p>{busy ? \"Refreshing\" : user.name}</p>;\n}",
+            Code::IsPendingOutsideView,
+        ),
+    ] {
+        let errs: Vec<_> =
+            errors(source).into_iter().filter(|d| d.severity == Severity::Error).collect();
+        assert_eq!(errs.len(), 1, "{source}");
+        assert_eq!(errs[0].code, code, "{source}");
+    }
+}
+
+#[test]
+fn abort_signal_and_pending_lower_to_the_load_context_and_the_view() {
+    let source = "import { abortSignal, isPending } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const signal = abortSignal();\n  const user = await fetchUser(id, signal);\n  return <p>{isPending() ? \"Refreshing\" : user.name}</p>;\n}";
+    let out = output_for(source, "test.tsx", &Options::default());
+    assert!(out.code.contains(".abortSignal()"), "{}", out.code);
+    assert!(!out.code.contains(" abortSignal()"), "{}", out.code);
+    assert!(!out.code.contains("isPending"), "{}", out.code);
+    assert!(out.diagnostics.iter().all(|d| d.severity != Severity::Error), "{:?}", out.diagnostics);
+}
+
+#[test]
 fn attribute_and_flow_warnings_report_their_codes() {
     let out = output_for(
         "import { For } from \"reze-js\";\nimport { signal } from \"reze-js\";\nlet n = signal(0);\nexport function bump() { n = 1; }\nfunction Greeting({ name = fallback() }) {\n  return <p key=\"k\" clas=\"x\" title={n} title=\"y\">{name}<For each={[1, 2]}>{(i) => i}</For></p>;\n}",

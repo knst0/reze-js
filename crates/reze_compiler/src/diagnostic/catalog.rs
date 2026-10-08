@@ -524,6 +524,32 @@ catalog! {
             good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\n\nCard.failure = (error, retry) => <button onClick={retry}>Retry</button>;\n",
         },
     }
+    AbortSignalOutsideLoad {
+        name: "ABORT_SIGNAL_OUTSIDE_LOAD",
+        severity: Error,
+        title: "`abortSignal()` outside the load of an async component",
+        message: "`abortSignal()` must be called directly in the load of an async component, before its view. Call it where the awaited work starts.",
+        explanation: "Each run of an async component's load owns one AbortSignal. The signal aborts when a newer run supersedes that run, and when the component is disposed, even after the load has settled, so cleanup registered after an `await` still sees the abort. A call in the view or outside the component has no run to own, so the compiler refuses it instead of returning a signal that nothing aborts.",
+        repair: "Call `abortSignal()` before the first `await` of the component, and pass the signal to the awaited call.",
+        fix: None,
+        example: Pair {
+            bad: "import { abortSignal } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  const signal = abortSignal();\n  return <p>{user.name}</p>;\n}\n",
+            good: "import { abortSignal } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const signal = abortSignal();\n  const user = await fetchUser(id, signal);\n  return <p>{user.name}</p>;\n}\n",
+        },
+    }
+    IsPendingOutsideView {
+        name: "IS_PENDING_OUTSIDE_VIEW",
+        severity: Error,
+        title: "`isPending()` outside the view of an async component",
+        message: "`isPending()` must be called in the view of an async component, after its last `await`. It reports whether a reload is in progress.",
+        explanation: "The view renders once the load has settled. `isPending()` is true while a reload is in progress and the previous value is still shown, and false during the first load. Reading it in the load would make the load depend on its own pending state, so the compiler refuses that call instead.",
+        repair: "Move the call into the view, after the last `await`, into the JSX that renders it.",
+        fix: None,
+        example: Pair {
+            bad: "import { isPending } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const busy = isPending();\n  const user = await fetchUser(id);\n  return <p>{busy ? \"Refreshing\" : user.name}</p>;\n}\n",
+            good: "import { isPending } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{isPending() ? \"Refreshing\" : user.name}</p>;\n}\n",
+        },
+    }
     SignalReadOnce {
         name: "SIGNAL_READ_ONCE",
         severity: Warn,

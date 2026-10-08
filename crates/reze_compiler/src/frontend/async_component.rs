@@ -32,6 +32,8 @@ struct Entry {
     context: bool,
     values: Vec<String>,
     reads: Vec<(ReferenceId, usize)>,
+    abort: Vec<ReferenceId>,
+    pending: Vec<ReferenceId>,
 }
 
 #[derive(Clone, Copy)]
@@ -66,7 +68,8 @@ pub fn collect(
     nodes: &AstNodes<'_>,
     reports: &mut Vec<Report>,
 ) -> Plan {
-    let facts = AsyncFacts::collect(program, scoping, nodes);
+    let mut facts = AsyncFacts::collect(program, scoping, nodes);
+    reports.extend(facts.take_reports());
     let mut plan = Plan::default();
     Collector { facts: &facts, reports, plan: &mut plan }.visit_program(program);
     plan
@@ -135,9 +138,11 @@ impl Collector<'_, '_, '_> {
                     head: (head.start, head.end),
                     first: (first.start, first.end),
                     last: (last.start, last.end),
-                    context: !found.tracked.is_empty(),
+                    context: !found.tracked.is_empty() || !found.abort.is_empty(),
                     values: found.values.clone(),
                     reads,
+                    abort: found.abort.clone(),
+                    pending: found.pending.clone(),
                 });
             }
         }
@@ -343,11 +348,33 @@ fn split_body<'a>(
             rest.push(statement);
         }
     }
-    let values: Option<&'a str> =
-        (!entry.values.is_empty()).then(|| alloc.alloc_str(&namer.fresh("_v$")));
+    let pending: Option<&'a str> =
+        (!entry.pending.is_empty()).then(|| alloc.alloc_str(&namer.fresh("_p$")));
+    let values: Option<&'a str> = (!entry.values.is_empty() || pending.is_some())
+        .then(|| alloc.alloc_str(&namer.fresh("_v$")));
     let mut rewrite = ReadRewrite { alloc, values, reads: &entry.reads };
     for statement in rest.iter_mut() {
         rewrite.visit_statement(statement);
+    }
+    if let Some(context) = context {
+        let mut claims = ClaimRewrite {
+            alloc,
+            claims: &entry.abort,
+            replacement: Replacement::Context(context),
+        };
+        for statement in load.iter_mut() {
+            claims.visit_statement(statement);
+        }
+    }
+    if let Some(pending) = pending {
+        let mut claims = ClaimRewrite {
+            alloc,
+            claims: &entry.pending,
+            replacement: Replacement::Pending(pending),
+        };
+        for statement in rest.iter_mut() {
+            claims.visit_statement(statement);
+        }
     }
     let mut elements = ArenaVec::new_in(&builder);
     for name in &entry.values {
@@ -356,8 +383,9 @@ fn split_body<'a>(
     }
     let array = Expression::new_array_expression(SPAN, elements, &builder);
     load.push(Statement::new_return_statement(SPAN, Some(array), &builder));
-    let load_arrow = loader(alloc, true, context, load);
-    let body_arrow = loader(alloc, false, values, rest);
+    let load_arrow = loader(alloc, true, context.as_slice(), load);
+    let body_params: Vec<&'a str> = values.into_iter().chain(pending).collect();
+    let body_arrow = loader(alloc, false, &body_params, rest);
     let mut arguments = ArenaVec::new_in(&builder);
     arguments.push(Argument::from(load_arrow));
     arguments.push(Argument::from(body_arrow));
@@ -456,9 +484,9 @@ fn wrap_views<'a>(
     call: Expression<'a>,
 ) -> Expression<'a> {
     let builder = AstBuilder::new(alloc);
-    let children = loader(alloc, false, None, returning(&builder, call));
+    let children = loader(alloc, false, &[], returning(&builder, call));
     let pending = match views.pending {
-        Some(value) => loader(alloc, false, None, returning(&builder, value)),
+        Some(value) => loader(alloc, false, &[], returning(&builder, value)),
         None => reference(alloc, SPAN, "undefined"),
     };
     let failure = views.failure.unwrap_or_else(|| reference(alloc, SPAN, "undefined"));
@@ -604,15 +632,64 @@ fn values_read<'a>(
     Expression::new_computed_member_expression(span, call, index_expr, false, &builder)
 }
 
+#[derive(Clone, Copy)]
+enum Replacement<'a> {
+    Context(&'a str),
+    Pending(&'a str),
+}
+
+impl<'a> Replacement<'a> {
+    fn expression(self, alloc: &'a Allocator, span: Span) -> Expression<'a> {
+        match self {
+            Replacement::Context(context) => {
+                let builder = AstBuilder::new(alloc);
+                let property = IdentifierName::new(SPAN, Ident::from("abortSignal"), &builder);
+                Expression::new_static_member_expression(
+                    span,
+                    reference(alloc, SPAN, context),
+                    property,
+                    false,
+                    &builder,
+                )
+            }
+            Replacement::Pending(pending) => reference(alloc, span, pending),
+        }
+    }
+}
+
+struct ClaimRewrite<'x, 'a> {
+    alloc: &'a Allocator,
+    claims: &'x [ReferenceId],
+    replacement: Replacement<'a>,
+}
+
+impl<'a> VisitMut<'a> for ClaimRewrite<'_, 'a> {
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        let hit = match it {
+            Expression::Identifier(id) => id
+                .reference_id
+                .get()
+                .filter(|reference| self.claims.contains(reference))
+                .map(|_| id.span),
+            _ => None,
+        };
+        if let Some(span) = hit {
+            *it = self.replacement.expression(self.alloc, span);
+            return;
+        }
+        walk_mut::walk_expression(self, it);
+    }
+}
+
 fn loader<'a>(
     alloc: &'a Allocator,
     is_async: bool,
-    param: Option<&'a str>,
+    names: &[&'a str],
     statements: ArenaVec<'a, Statement<'a>>,
 ) -> Expression<'a> {
     let builder = AstBuilder::new(alloc);
     let mut items = ArenaVec::new_in(&builder);
-    if let Some(name) = param {
+    for &name in names {
         let pattern = BindingPattern::new_binding_identifier(SPAN, Ident::from(name), &builder);
         items.push(FormalParameter::new(
             SPAN,

@@ -103,6 +103,8 @@ static TABLE: &[&[Entry]] = &[
     &call("createUniqueId", RuntimeCallKind::UniqueId),
     &[row(RUNTIME, "asyncComponent", Role::Call(RuntimeCallKind::AsyncComponent), None)],
     &[row(RUNTIME, "asyncViews", Role::Call(RuntimeCallKind::AsyncViews), None)],
+    &[row(PUBLIC, "abortSignal", Role::Primitive(Primitive::AbortSignal), None)],
+    &[row(PUBLIC, "isPending", Role::Primitive(Primitive::IsPending), None)],
     &[row(ASYNC, "asyncComputed", Role::Call(RuntimeCallKind::AsyncComputed), None)],
     &[intrinsic(PUBLIC, "Show", Intrinsic::Show)],
     &[intrinsic(PUBLIC, "For", Intrinsic::For)],

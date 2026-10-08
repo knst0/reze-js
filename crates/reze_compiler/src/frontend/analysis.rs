@@ -21,6 +21,8 @@ pub enum Primitive {
     Signal,
     Computed,
     Action,
+    AbortSignal,
+    IsPending,
     Intrinsic(Intrinsic),
 }
 
@@ -491,7 +493,8 @@ pub fn collect(
     facts
 }
 
-fn collect_primitives(program: &Program<'_>, facts: &mut SharedFacts) {
+fn named_primitives(program: &Program<'_>) -> HashMap<SymbolId, Primitive> {
+    let mut named = HashMap::new();
     for statement in &program.body {
         let Statement::ImportDeclaration(import) = statement else { continue };
         if import.import_kind.is_type() {
@@ -499,20 +502,32 @@ fn collect_primitives(program: &Program<'_>, facts: &mut SharedFacts) {
         }
         let Some(home) = crate::exports::module(import.source.value.as_str()) else { continue };
         for specifier in import.specifiers.iter().flatten() {
-            match specifier {
-                ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
-                    if specifier.import_kind.is_type() {
-                        continue;
-                    }
-                    let name = specifier.imported.name();
-                    if let Some(primitive) = crate::exports::primitive_named(home, name.as_str()) {
-                        facts.named.insert(specifier.local.symbol_id(), primitive);
-                    }
-                }
-                ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
-                    facts.namespaces.insert(specifier.local.symbol_id(), home);
-                }
-                ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
+            let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
+                continue;
+            };
+            if specifier.import_kind.is_type() {
+                continue;
+            }
+            let name = specifier.imported.name();
+            if let Some(primitive) = crate::exports::primitive_named(home, name.as_str()) {
+                named.insert(specifier.local.symbol_id(), primitive);
+            }
+        }
+    }
+    named
+}
+
+fn collect_primitives(program: &Program<'_>, facts: &mut SharedFacts) {
+    facts.named = named_primitives(program);
+    for statement in &program.body {
+        let Statement::ImportDeclaration(import) = statement else { continue };
+        if import.import_kind.is_type() {
+            continue;
+        }
+        let Some(home) = crate::exports::module(import.source.value.as_str()) else { continue };
+        for specifier in import.specifiers.iter().flatten() {
+            if let ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) = specifier {
+                facts.namespaces.insert(specifier.local.symbol_id(), home);
             }
         }
     }
@@ -971,19 +986,72 @@ pub struct AsyncPlan {
     pub last: usize,
     pub tracked: std::vec::Vec<Span>,
     pub values: std::vec::Vec<String>,
+    pub load: (u32, u32),
+    pub abort: std::vec::Vec<ReferenceId>,
+    pub pending: std::vec::Vec<ReferenceId>,
+}
+
+impl AsyncPlan {
+    fn place(&mut self, primitive: Primitive, span: Span, reference: ReferenceId) -> bool {
+        let in_load = self.load.0 <= span.start && span.end <= self.load.1;
+        let in_view = self.load.1 <= span.start;
+        match primitive {
+            Primitive::AbortSignal if in_load => self.abort.push(reference),
+            Primitive::IsPending if in_view => self.pending.push(reference),
+            _ => return false,
+        }
+        true
+    }
 }
 
 #[derive(Default)]
 pub struct AsyncFacts {
     plans: HashMap<u32, Result<AsyncPlan, Reject>>,
     reads: HashMap<ReferenceId, (u32, usize)>,
+    reports: Vec<Report>,
 }
 
 impl AsyncFacts {
     pub fn collect(program: &Program<'_>, scoping: &Scoping, nodes: &AstNodes<'_>) -> Self {
         let mut collector = AsyncCollector { scoping, nodes, facts: AsyncFacts::default() };
         collector.visit_program(program);
-        collector.facts
+        let mut facts = collector.facts;
+        facts.place_capabilities(program, scoping, nodes);
+        facts
+    }
+
+    pub fn take_reports(&mut self) -> Vec<Report> {
+        std::mem::take(&mut self.reports)
+    }
+
+    fn place_capabilities(
+        &mut self,
+        program: &Program<'_>,
+        scoping: &Scoping,
+        nodes: &AstNodes<'_>,
+    ) {
+        for (&symbol, &primitive) in &named_primitives(program) {
+            let code = match primitive {
+                Primitive::AbortSignal => Code::AbortSignalOutsideLoad,
+                Primitive::IsPending => Code::IsPendingOutsideView,
+                _ => continue,
+            };
+            for &reference in scoping.get_resolved_reference_ids(symbol) {
+                if scoping.get_reference(reference).flags().is_type_only() {
+                    continue;
+                }
+                let node = scoping.get_reference(reference).node_id();
+                let span = nodes.kind(node).span();
+                let Some(owner) = enclosing_plan(&self.plans, nodes, node) else {
+                    self.reports.push(Report::new(code, span));
+                    continue;
+                };
+                let Some(Ok(plan)) = self.plans.get_mut(&owner) else { continue };
+                if !is_bare_call(nodes, node, span) || !plan.place(primitive, span, reference) {
+                    self.reports.push(Report::new(code, span));
+                }
+            }
+        }
     }
 
     pub fn plan(&self, function_start: u32) -> Option<&Result<AsyncPlan, Reject>> {
@@ -1001,6 +1069,28 @@ impl AsyncFacts {
     pub fn read(&self, id: &IdentifierReference<'_>) -> Option<(u32, usize)> {
         id.reference_id.get().and_then(|r| self.reads.get(&r)).copied()
     }
+}
+
+fn enclosing_plan(
+    plans: &HashMap<u32, Result<AsyncPlan, Reject>>,
+    nodes: &AstNodes<'_>,
+    node: NodeId,
+) -> Option<u32> {
+    nodes.ancestor_kinds(node).find_map(|kind| {
+        let start = match kind {
+            AstKind::Function(function) => function.span.start,
+            AstKind::ArrowFunctionExpression(arrow) => arrow.span.start,
+            _ => return None,
+        };
+        plans.contains_key(&start).then_some(start)
+    })
+}
+
+fn is_bare_call(nodes: &AstNodes<'_>, node: NodeId, span: Span) -> bool {
+    matches!(
+        nodes.parent_kind(node),
+        AstKind::CallExpression(call) if call.arguments.is_empty() && call.callee.span() == span
+    )
 }
 
 struct AsyncCollector<'c, 's> {
@@ -1146,7 +1236,11 @@ fn plan(
         .into_iter()
         .filter_map(|(r, symbol)| positions.get(&symbol).map(|&index| (r, (function_start, index))))
         .collect();
-    Some(Ok((AsyncPlan { first, last, tracked, values }, reads)))
+    let load = (statements[0].span().start, statements[last].span().end);
+    Some(Ok((
+        AsyncPlan { first, last, tracked, values, load, abort: Vec::new(), pending: Vec::new() },
+        reads,
+    )))
 }
 
 fn props_symbols(params: &FormalParameters<'_>) -> std::vec::Vec<SymbolId> {
