@@ -1,5 +1,4 @@
 import { action, computed, For, Show, signal, store } from "reze-js";
-import { Loading } from "reze-js/internal/async";
 
 interface Todo {
   id: number;
@@ -29,15 +28,7 @@ async function saveTodo(todo: Todo, isOffline: boolean): Promise<void> {
 
 function ignore(): void {}
 
-export function Todos() {
-  return (
-    <Loading fallback={<p class="loading">Loading todos…</p>}>
-      <TodoList />
-    </Loading>
-  );
-}
-
-async function TodoList() {
+export async function Todos() {
   const initial = await fetchTodos();
   const todos = store(initial);
   let draft = signal("");
@@ -99,3 +90,5 @@ async function TodoList() {
     </section>
   );
 }
+
+Todos.pending = <p class="loading">Loading todos…</p>;
