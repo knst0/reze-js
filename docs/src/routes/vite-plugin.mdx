@@ -1,13 +1,17 @@
 ---
 title: Vite plugin
-description: Configure the Reze compiler, file routes, and diagnostics in Vite.
+description: Configure @rezejs/vite-plugin for the Reze compiler, library manifests, file routes, static site generation, and diagnostics.
 ---
 
 # Vite plugin
 
-`@rezejs/vite-plugin` integrates the Reze compiler with Vite client builds. Install it as a development dependency alongside Vite; application code imports from `reze-js`.
+`@rezejs/vite-plugin` runs the Reze compiler inside Vite. It compiles client and HTML builds and the development server. It also adds file routes, static site generation (SSG), and diagnostic output when you turn them on.
 
-```ts
+## Register the plugin
+
+Install `@rezejs/vite-plugin` and `vite` as development dependencies, as described in [installation](/installation). Then add `reze()` to `plugins` in `vite.config.ts`:
+
+```ts file=vite.config.ts
 import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";
 
@@ -16,163 +20,404 @@ export default defineConfig({
 });
 ```
 
-See [installation](/installation) for the complete project configuration.
+With no options, the plugin compiles files whose extension appears in `DEFAULT_ROUTE_EXTENSIONS`: `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`. It skips files under `node_modules` unless the file's package declares a `reze` export target. See [Libraries](#libraries).
+
+`reze()` returns one plugin when `fileRoutes` and `ssg` are unset. It returns an array of plugins when `ssg` is set, and a promise of an array when `fileRoutes` is set. Vite accepts nested arrays and promises in `plugins`, so you can pass the result directly.
 
 ## Options
 
-| Option        | Type                        | Behavior                                                                                                                                                            |
-| ------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `diagnostics` | `{ jsonl?: string }`        | Append all compiler diagnostics to this file as JSON lines. Parent directories are created when diagnostics are written.                                            |
-| `extensions`  | `string[]`                  | Replace the transformed file extensions. Omitted or empty lists use the defaults.                                                                                   |
-| `links`       | `string`                    | Name a module exporting `link` to handle compiled native anchors with `href`.                                                                                       |
-| `fileRoutes`  | `boolean` or options object | Enable generated file-system routes. Requires `@rezejs/router`.                                                                                                     |
-| `ssg`         | options object              | Pre-render the application to static HTML with hydration. See [static site generation](#static-site-generation).                                                    |
-| `profile`     | `{ dir: string }`           | Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. |
+Every option is optional. The table lists each option, its type, and its default.
 
-| `analyze` | `string[]` | Packages, or `scope/*` prefixes, whose source the plugin analyzes when they have no valid manifest. See [libraries](#libraries). |
-The exported `DEFAULT_ROUTE_EXTENSIONS` contains `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`. Leading dots are optional in custom extension entries. Files in `node_modules` are excluded from the compiler transform.
+| Option              | Type                                  | Default                    | Purpose                                                                                                                                                                                    |
+| ------------------- | ------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `analyze`           | `string[]`                            | Not set                    | Package names, or `scope/*` prefixes, whose source the compiler analyzes when no current manifest exists. See [Analyze packages without a manifest](#analyze-packages-without-a-manifest). |
+| `diagnostics.jsonl` | `string`                              | Not set                    | File that receives one JSON line per diagnostic. See [Write diagnostics to a file](#write-diagnostics-to-a-file).                                                                          |
+| `links`             | `string`                              | Not set                    | Module specifier that exports `link`. The compiler passes native `<a href>` elements with a routable `href` to it.                                                                         |
+| `extensions`        | `string[]`                            | `DEFAULT_ROUTE_EXTENSIONS` | Extensions the transform compiles. This value replaces the default list, so spread `DEFAULT_ROUTE_EXTENSIONS` to add an extension.                                                         |
+| `fileRoutes`        | `false`, `true`, or an options object | `false`                    | Generates routes from files in a directory. `true` uses every default. See [File routes](#file-routes).                                                                                    |
+| `ssg`               | Options object                        | Not set                    | Generates static HTML pages. See [Static site generation](#static-site-generation).                                                                                                        |
+| `profile.dir`       | `string`                              | Not set                    | Enables the development profiling endpoint `POST /__reze/profile`. Its request format and stored data are internal, so this page does not document them.                                   |
+
+Two behaviors affect which options take effect:
+
+- When `fileRoutes` is enabled and `fileRoutes.links` is not `false`, the plugin hands native `<a href>` elements to `@rezejs/router`. That replaces the top-level `links` value. Set `fileRoutes.links` to `false` to keep your own `links` module.
+- Route files use the `fileRoutes` extension list, not the top-level `extensions` default. See the `fileRoutes` table below.
 
 ## Libraries
 
-A library ships compiler facts so applications compile against its exports without reading its source. Declare a `reze` export condition that points at the library's source, and a `reze.manifest` path where the facts are written:
+A library that ships Reze source can publish a manifest of its module facts. A consumer's build reads the manifest instead of analyzing the library's source, so it can use the library's module facts across the package boundary.
+
+### Publish a manifest
+
+Give the library two things in `package.json`: a `reze` export condition that points at its source, and a `reze.manifest` path where the manifest file goes:
 
 ```json
 {
-  "exports": { ".": { "reze": "./src/index.ts", "default": "./dist/index.js" } },
-  "reze": { "manifest": "./reze.json" }
+  "name": "@acme/ui",
+  "type": "module",
+  "exports": {
+    ".": {
+      "reze": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "reze": {
+    "manifest": "reze.json"
+  }
 }
 ```
 
-`reze-manifest`, a bin of `@rezejs/vite-plugin`, writes the manifest. Run it in the package directory, for example from the build script. It analyzes every source file under the directories of the `reze` targets and writes `reze.json`, keyed by package-relative path. Files the compiler refuses are printed to stderr and left out, so importers treat them as opaque.
+The `reze.manifest` path is relative to the package root. The plugin scans the directory that contains each `reze` export target. It collects `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs` files, excluding `.d.ts` files and `node_modules`.
 
-An importer uses a manifest entry only when the entry's hash matches the source file's contents. A missing or stale entry makes the module opaque, unless its package is listed in `analyze`, in which case the plugin analyzes the source directly:
+Run the `reze-manifest` command from the library's root. It is installed with `@rezejs/vite-plugin`:
 
-```ts
-reze({ analyze: ["@acme/ui", "@acme/charts/*"] });
+```sh
+pnpm exec reze-manifest
 ```
 
-A stale manifest for a package not listed in `analyze` logs a warning once in dev. A package without a `reze` condition is never compiled, and its exports stay opaque.
+Pass a package directory to run it elsewhere: `reze-manifest <packageDir>`. The command writes the manifest and reports its result:
+
+- On success, it prints `reze-manifest: wrote N module(s) to <path>` to stdout, where `<path>` is the manifest location.
+- For each file it cannot compile, it prints `reze-manifest: skipped <file>: <codes>` to stderr, where `<codes>` lists the diagnostic codes.
+- On failure, it prints `reze-manifest: <message>` to stderr and exits with code 1. A missing `reze.manifest` field and a missing `reze` export condition are both failures.
+
+The manifest is a JSON object. Its keys are package-relative paths in sorted order, with two-space indentation and a trailing newline. Regenerate it after changing the library's source.
+
+### Analyze packages without a manifest
+
+A consumer uses one of three sources for each library module, in this order:
+
+1. The manifest entry, when its hash matches the current source of the file.
+2. Analysis on the fly, when the package name matches an entry in `analyze`.
+3. Nothing. The compiler treats the module as opaque and has no facts about its exports.
+
+`analyze` takes package names and `scope/*` prefixes. The `@acme/*` entry matches every package whose name starts with `@acme/`:
+
+```ts file=examples/analyze.config.ts
+import reze from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [reze({ analyze: ["@acme/ui", "@acme/*"] })],
+});
+```
+
+Use `analyze` for libraries that do not publish a manifest yet. Use a manifest for libraries you ship, so consumers do not need to analyze your source.
+
+### Stale manifests
+
+A manifest entry whose hash no longer matches the source is ignored. During `vite` dev, the plugin warns once per package:
+
+```text
+reze: manifest of "@acme/ui" is stale. Regenerate it with `reze-manifest` in that package, or add "@acme/ui" to reze({ analyze }).
+```
+
+Regenerate the manifest in the package, or add the package to `analyze`. The warning appears only in the development server.
 
 ## File routes
 
-```sh
-pnpm add @rezejs/router
-```
+Set `fileRoutes` to generate routes from files under a directory. This feature requires `@rezejs/router` to be installed. Without it, the plugin stops with `[reze] fileRoutes needs @rezejs/router to be installed`.
 
-```ts
+### Enable file routes
+
+Set `fileRoutes` to `true` for the defaults, or to an object to change them:
+
+```ts file=examples/file-routes.config.ts
 import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [reze({ fileRoutes: true })],
+  plugins: [
+    reze({
+      fileRoutes: {
+        dir: "src/routes",
+        history: "browser",
+        types: "src/routes.gen.d.ts",
+      },
+    }),
+  ],
 });
 ```
 
-With file routes enabled, `reze()` returns an awaitable plugin list accepted by Vite. It serves `virtual:reze-routes`, whose `routes` and `paths` exports are consumed by the application's router setup.
+The route conventions, such as layouts, parameters, route groups, and navigation, are documented in [routing](/routing). The plugin only generates the modules those conventions produce. The router API reference describes the exported values.
 
-| `fileRoutes` option | Default                                                   | Contract                                                                                                       |
-| ------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `dir`               | `"src/routes"`                                            | Route directory relative to Vite's root; it must exist.                                                        |
-| `types`             | `"src/routes.gen.d.ts"`                                   | Generated declaration file relative to Vite's root. Set to `false` to disable generation.                      |
-| `links`             | `true`                                                    | Claim native anchors for router navigation and active/pending attributes.                                      |
-| `history`           | `"browser"`                                               | Generate link types for browser or `"hash"` history. This does not construct the application's history object. |
-| `extensions`        | Top-level extensions, otherwise default script extensions | Select files discovered as routes.                                                                             |
+The `fileRoutes` options are:
 
-Keep the `history` option consistent with the history passed to `createRouter`. Browser link types account for Vite's `base`; hash link types use the hash prefix. The generated declarations are build output: change route files or configuration rather than editing declarations by hand.
+| Option       | Type                    | Default                                                 | Purpose                                                                                                                                               |
+| ------------ | ----------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dir`        | `string`                | `"src/routes"`                                          | Route directory, relative to the Vite `root`. A missing directory stops the build with `[reze-router] routes directory not found: <dir>`.             |
+| `types`      | `string` or `false`     | `"src/routes.gen.d.ts"`                                 | Path of the generated type file. `false` disables it. The plugin writes the file when the build starts and rewrites it only when its content changes. |
+| `links`      | `boolean`               | `true`                                                  | Passes native `<a href>` elements to `@rezejs/router`, which marks the active link. Set `false` to keep your own `links` module.                      |
+| `history`    | `"browser"` or `"hash"` | `"browser"`                                             | `"browser"` builds hrefs from the Vite `base`. `"hash"` prefixes hrefs with `#`. Static generation rejects hash routing.                              |
+| `extensions` | `string[]`              | Top-level `extensions`, or `.ts`, `.tsx`, `.js`, `.jsx` | Extensions that count as route files. When the top-level `extensions` option is set, this default is the top-level list.                              |
 
-Each route file gets a lazy chunk. Adding or removing routes during development regenerates the route module and triggers a full reload when its contents change.
+Route files whose names start with `_` or `.` are ignored, along with `.d.ts`, `.test.`, and `.spec.` files.
+
+### Generated modules
+
+The plugin provides the virtual module `virtual:reze-routes`. It exports:
+
+- `routes`, a table with one entry per route, each with an `id`, a `path`, a lazy `load` function, and optional `children`.
+- `paths`, builders that create hrefs for the routes.
+
+The generated type file declares `virtual:reze-routes` and `virtual:reze-routes/register`. It records each route's parameters and data, the shape of every leaf href, and the router `base`.
+
+The router reports conflicting files at build time. Two files for the same route fail with `[reze-router] duplicate route files for "<id>": <a>, <b>`. Two routes that match the same path fail with `[reze-router] routes "<a>" and "<b>" both match "<path>"`.
+
+### Dev server updates
+
+During `vite` dev, the plugin watches `dir`. Adding or removing a file or directory regenerates the route module and the types file. When the route module changes, the plugin invalidates it and sends a full reload to the browser. Regeneration errors go to the Vite logger as errors.
 
 ## Static site generation
 
-`ssg` replaces client-only output with a two-target production build: the application executes against the HTML runtime to produce each page's HTML, and the browser hydrates that HTML instead of rendering from scratch. Development stays client-rendered: the dev server never executes pages at request time.
+Set `ssg` to generate one HTML file per page at build time. Each page renders in its own worker with separate module state. The client bundle then hydrates each page.
 
-Spread `children` follow the same lazy insertion semantics as client rendering. The attribute-update pass does not evaluate the `children` getter or build a second, unused child tree.
+### Configure static generation
 
-HTML markers and transferred owner references use short page-local tokens. Hydration restores the logical owner paths before checking the layout and replaying async work; these transport tokens are not application IDs or public state.
+The minimum configuration needs an entry module. The other options have defaults:
 
-```ts
+```ts file=examples/static-site.config.ts
 import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [reze({ fileRoutes: true, ssg: { entry: "src/app.tsx" } })],
+  plugins: [
+    reze({
+      fileRoutes: true,
+      ssg: {
+        entry: "src/app.tsx",
+        template: "index.html",
+        selector: "#app",
+        trailingSlash: "always",
+        timeoutMs: 30000,
+        paths: {
+          "/todos/:id": [{ id: "1" }, { id: "2" }],
+          "/docs/*rest": async () => [{ rest: ["guide", "setup"] }],
+        },
+      },
+    }),
+  ],
 });
 ```
 
-The entry is a shared application module with one of two shapes. A router application exports the generated table, and optionally the typed builders and a shell around the matched branch:
+The `ssg` options are:
 
-```tsx
-export { paths, routes } from "virtual:reze-routes";
-export { Shell as default } from "./Shell";
+| Option          | Type                    | Default        | Purpose                                                                                                                                                      |
+| --------------- | ----------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `entry`         | `string`                | Required       | Module that renders the app. The path is relative to the Vite `root`. A missing file fails with `[reze] ssg.entry not found: "<entry>"`.                     |
+| `template`      | `string`                | `"index.html"` | HTML template for every page. It must contain exactly one `<script type="module" src="/@reze/ssg-client.js">` and one element whose `id` matches `selector`. |
+| `selector`      | `string`                | `"#app"`       | Mount element. The value must be `#` followed by an ASCII identifier. Other values fail with `[reze] ssg.selector must be "#" plus an ASCII identifier`.     |
+| `trailingSlash` | `"always"` or `"never"` | `"always"`     | URL form of generated pages. `"always"` uses `/todos/1/`, and `"never"` uses `/todos/1`. Output file names do not change.                                    |
+| `timeoutMs`     | `number`                | `30000`        | Render deadline for one page, in milliseconds. The value must be finite and greater than zero. See [Failures and timeouts](#failures-and-timeouts).          |
+| `paths`         | Object                  | `{}`           | Parameter values for dynamic routes. See [Map dynamic routes](#map-dynamic-routes).                                                                          |
+
+### Entry shapes
+
+The entry module decides how pages are enumerated. The plugin reads its exports:
+
+- **Router app.** The entry exports a named `routes` table. The plugin renders every leaf route in the table. A `default` export, when present, is the shell. The shell wraps the matched route on every page.
+- **Standalone app.** The entry exports only a `default` component. The plugin renders one page at `/`.
+
+A standalone app with a non-empty `paths` object fails with `[reze] ssg.paths needs a router app; a standalone entry renders only /`. An entry with neither export fails with ``[reze] SSG entry must export a named `routes` table (router app) or a default component (standalone app)``.
+
+A standalone entry looks like this:
+
+```tsx file=src/app.tsx
+export default function App() {
+  return (
+    <main>
+      <h1>Todos</h1>
+    </main>
+  );
+}
 ```
 
-Without routes, the default export is the whole page and serves exactly `/`; combining that shape with `ssg.paths` is an error. Detecting the shape reads the static export graph without executing the application; ambiguous or missing exports fail the build before any page renders.
+A router entry re-exports the generated table and can add a shell as its default export:
 
-| `ssg` option    | Default        | Contract                                                                                                                                         |
-| --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `entry`         | required       | Project-relative application module, as above.                                                                                                   |
-| `template`      | `"index.html"` | HTML template. It must contain exactly one `<script type="module" src="/@reze/ssg-client.js"></script>`; other scripts and styles are preserved. |
-| `selector`      | `"#app"`       | Mount selector: `#` plus an ASCII identifier. The mount root must carry that id.                                                                 |
-| `trailingSlash` | `"always"`     | `"always"` or `"never"`. Shapes canonical URLs; the static file layout is identical either way.                                                  |
-| `timeoutMs`     | `30000`        | Per-page deadline: a finite number above zero. Unsettled registered work fails the page instead of emitting a placeholder.                       |
-| `paths`         | `{}`           | Dynamic-leaf params: each pattern maps to param records or a one-shot callback returning them. Callbacks run once per production build.          |
+```tsx file=router-app/src/app.tsx
+import type { JSX } from "reze-js";
+import { routes } from "virtual:reze-routes";
 
-Static leaves are enumerated automatically; each dynamic leaf pattern needs its normalized key in `paths`. `[]` skips a dynamic leaf explicitly, unknown keys or unmatched URLs fail the build, and an empty page set is an error. `/` is written to `index.html`, `/a/b` to `a/b/index.html`. The input template is not published as a separate client-only shell: without a `/` page, no root `index.html` is emitted.
+export { routes };
 
-Pages render sequentially, each in a fresh worker and module graph, so module-level state never leaks between URLs. Redirects become static documents with a canonical link, a meta refresh, and a small redirect reader instead of the hydration bootstrap. Any page failure — uncaught route error, unsupported transfer value, timeout, asset miss, or protocol mismatch — fails the build with its pathname.
+export default function Shell(props: { children?: JSX.Element }) {
+  return <main>{props.children}</main>;
+}
+```
 
-Preprocessors and aliases apply to both targets from the same JSX input, so compiler site identities match between the HTML execution and the hydration binding. Static generation requires browser history; hash routing, library mode, `build.watch`, and explicit `--ssr` are rejected.
-Linked source packages outside the application root are identified by their nearest named `package.json`, so compiler sites and imported assets do not depend on the checkout's absolute path.
+### Map dynamic routes
 
-Asset URL imports and static `new URL("./image.svg", import.meta.url).href` expressions use the client build's asset registry during HTML execution. Vite owns `assetsInclude`, inlining decisions, `?inline`, and `?no-inline`; `?raw` imports remain text. Public assets and emitted URLs respect `base`, including nested pages with a relative base; `publicDir: false` disables public-file handling. Emitted filenames are URL-encoded so spaces and Unicode also work in `srcset`. Missing or ambiguous client assets fail the build rather than leaking worker filesystem URLs into HTML.
+Static routes need no entry in `paths`. Each dynamic route needs one key, which is the route pattern, such as `/todos/:id` or `/docs/*rest`. The value is either an array of parameter records or a callback, synchronous or asynchronous, that returns that array:
 
-Page stylesheets follow the initial app and executed route modules, including matched lazy routes. CSS belonging only to unvisited lazy routes is not added to the page.
+- A parameter value is a string or, for a splat such as `*rest`, a string array.
+- Optional parameters, such as `:id?`, may be omitted from a record.
+- An empty array produces no pages for that route.
 
-For route naming, layouts, navigation, and application setup, see [routing](/routing).
+The plugin stops with an error for these cases:
+
+- A dynamic route with no key: `[reze-router] ssg.paths is missing dynamic route "<pattern>"; map it to [] to skip the leaf`.
+- A static route with a key: `[reze-router] ssg.paths has an entry for static route "<pattern>"; remove it, static leaves enumerate once`.
+- A key that matches no route, or a parameter that the route does not declare.
+- A missing required parameter.
+- Two records that produce the same output, or the same URL after decoding.
+- A configuration that enumerates no pages at all.
+
+### Output layout
+
+Each page writes an `index.html` file inside a directory named after its URL. The output directory is Vite's `build.outDir`:
+
+| Page URL                  | File                      |
+| ------------------------- | ------------------------- |
+| `/`                       | `dist/index.html`         |
+| `/todos/1` or `/todos/1/` | `dist/todos/1/index.html` |
+
+The `trailingSlash` option changes only the URL form. With `"never"`, the page `/todos/1` still lives at `todos/1/index.html`, so the host must map `/todos/1` to that file. Generation fails when two pages collide after normalization, with `[reze] SSG outputs collide after normalization`.
+
+When `base` is set, page and asset URLs include it.
+
+### Redirects
+
+When a route redirects during rendering, the plugin writes a static document at the route's own URL. The document contains:
+
+- A canonical link to the target.
+- A `<meta http-equiv="refresh">` tag that sends the reader to the target.
+- A visible link to the target.
+- A JSON script with the target.
+
+A redirect target must be a generated page inside `base`, or an external `http:` or `https:` URL, or a protocol-relative `//` URL. Other schemes fail with `[reze] unsupported redirect target`. A target outside `base` fails with `[reze] redirect target ... is outside the SSG base`. A target that is not a generated page fails with `[reze] redirect target ... is not a generated SSG page`. Redirect cycles fail with `[reze] redirect cycle: ...`.
+
+### Build and dev behavior
+
+`vite build` runs three steps in order: it renders the HTML environment, then it builds the client, then it writes the pages. The client bundle hydrates each page.
+
+`vite` (dev) does not run generation. The development server serves the client-rendered app. The client mounts the app with `render` and does not execute the SSG entry.
+
+### Unsupported configurations
+
+The plugin stops with an error for these settings:
+
+- `build.watch`, with `[reze] ssg does not support build.watch`.
+- An explicit SSR build, with `build.ssr` set to `true` or a string. The error is `[reze] ssg does not support an explicit ssr build; it owns the HTML environment itself`.
+- Your own bundler inputs. `build.rollupOptions.input` and `build.rolldownOptions.input` fail with `[reze] ssg owns the bundler input; remove build.<key>.input from the config`.
+- `output.inlineDynamicImports`, which fails with `[reze] ssg needs preserved dynamic chunks; remove build.<key>.output.inlineDynamicImports`.
+- Hash routing, with `[reze] ssg does not support hash routing`.
+- Library mode, with `[reze] ssg does not support library mode`.
+
+A file in the `public` directory whose path matches a generated page also fails the build, with `[reze] SSG output ... collides with a public directory file`.
+
+### Failures and timeouts
+
+A render error stops the build and names the URL of the page: `[reze] SSG render of "<url>" failed: <message>`.
+
+Each page has `timeoutMs` to settle. A page that does not settle in time fails with an error naming its URL, such as `[reze] Scope "<url>" did not settle within <ms>ms`. The worker also has a watchdog that fires 5 seconds after `timeoutMs`. When it fires, it stops the worker with `[reze] SSG worker timed out after <timeoutMs>ms and was terminated`. The message names `timeoutMs`, but the watchdog waits 5 seconds longer than that value.
+
+A worker that exits unexpectedly fails with `[reze] SSG worker exited with code <code>`. A worker error fails with `[reze] SSG worker failed: <message>`.
+
+The plugin generates no 404 page. Configure your host to answer unknown paths.
 
 ## Preprocessors
 
-A preprocessor must produce JSX before Reze transforms the file. Adding an extension does not add its parser or preprocessor.
+The plugin compiles only the extensions in `extensions`. To compile another format, such as MDX, run its plugin before `reze()` and add its extension to the list. The preprocessor must emit JSX or TypeScript. The Reze transform then compiles that output.
 
-```ts
+The following fragment shows the wiring. It needs `@mdx-js/rollup`, which this docs project does not install:
+
+```ts fragment
+import mdx from "@mdx-js/rollup";
 import reze, { DEFAULT_ROUTE_EXTENSIONS } from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
 
-const plugin = reze({
-  extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"],
+export default defineConfig({
+  plugins: [
+    {
+      ...mdx({ jsx: true, jsxImportSource: "reze-js" }),
+      enforce: "pre",
+    },
+    reze({
+      extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"],
+    }),
+  ],
 });
 ```
 
-Use this configuration alongside the format's JSX-producing plugin. File-route discovery inherits the top-level extensions unless separately configured.
+Put the preprocessor before `reze()` in `plugins`. Both plugins use `enforce: "pre"`, so the array order decides which runs first.
 
 ## Diagnostics and source maps
 
-Compiler errors fail the transform. Warnings appear through Vite. The configured `jsonl` file also records informational diagnostics; repeated builds append new entries.
+### Write diagnostics to a file
 
-Source-map generation follows Vite: production uses `build.sourcemap`; development follows `dev.sourcemap`. Debug names are enabled outside production. Compiler HMR support is enabled when serving and `server.hmr` is not `false`.
+When `diagnostics.jsonl` is set, the plugin appends one JSON object per line for every diagnostic it reports, at every severity. Relative paths resolve from the process working directory. The plugin does not clear the file, so delete it before a run when you want that run's output only.
 
-See [compiler diagnostics](/compiler#diagnostics) for common errors and repairs.
+Each line is a diagnostic object. This example shows an `info` diagnostic that the compiler reports when a signal is never written:
+
+```json
+{
+  "code": "SIGNAL_FOLDED",
+  "severity": "info",
+  "message": "`count` is never written, so it compiled to a plain constant.",
+  "file": "/project/src/counter.tsx",
+  "start": { "line": 3, "column": 7 },
+  "end": { "line": 3, "column": 12 },
+  "path": [],
+  "labels": [],
+  "fixes": [],
+  "data": { "signal": "count" }
+}
+```
+
+The fields are:
+
+- `code`: the diagnostic code. The [compiler diagnostics](/compiler#diagnostics) section lists what each code means.
+- `severity`: `error`, `warn`, or `info`.
+- `message`: the diagnostic text.
+- `file`, `start`, and `end`: the source location. `start` and `end` have `line` and `column`.
+- `path`: an array of strings from the compiler.
+- `labels`: extra source ranges, each with `start`, `end`, and `message`.
+- `fixes`: suggested edits, each with a `title` and an `edits` array of `start`, `end`, and `text`.
+- `data`: string values the message refers to.
+
+Records can also include `docs` and `rendered`.
+
+Diagnostics printed by the plugin include a `repair guide:` line. It points to the compiler skill file for the code, in the form `node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md#<code>`, where `<code>` is the lowercase code. The plugin prints the line once per code in each run.
+
+### Source maps and hot updates
+
+Source maps follow the Vite settings for each mode:
+
+- In `vite build`, the plugin emits source maps when `build.sourcemap` is set.
+- In `vite` dev, the plugin emits source maps when `dev.sourcemap` is `true`, or when it is an object whose `js` property is not `false`.
+
+Outside production builds, the plugin passes `debugNames` to the compiler, which adds a `name` to each `signal`, `computed`, and `action` call for profiling.
+
+Hot module replacement is on in the development server unless `server.hmr` is `false`.
 
 ## Production hosting
 
-Run `vite build` and deploy the resulting `dist` directory to a static host. `vite preview` is for local inspection of that build.
+Serve the contents of `dist` as static files. The plugin's output has these properties, which your host must support:
 
-Without `ssg`, the build is a client-rendered application: for browser-history routing, configure the host to serve the HTML entry for application URLs that are not static files. Otherwise, opening a nested route directly can return a server 404 even when in-app navigation works.
+- Each generated page is an `index.html` inside a directory. A request for `/todos/1` must reach `todos/1/index.html`.
+- Hydration checks the page's URL. The client throws `hydration page pathname does not match payload` when the URL differs from the URL the page was generated for. Serve each page at its generated URL.
+- Generation emits no 404 page. Configure the host to answer unknown paths.
 
-With `ssg`, every page is its own static file, so serve the files directly with no fallback rewrite: rewriting an unknown path to another page's HTML would hydrate the wrong route. Unmatched URLs genuinely return 404; add a catch-all route when they should render a page instead. Match Vite's `base` and the browser history base when hosting under a subdirectory.
+## Optional: Run the packaged SSG smoke test
 
-Configure the host's slash redirects to match `ssg.trailingSlash`. With `"always"`, `/guide` must redirect to `/guide/`; with `"never"`, serve the page at `/guide`. The hydration payload is bound to its canonical pathname, so serving a page at a different URL without redirecting is an error.
-
-### Packaged consumer smoke
-
-`packages/vite-plugin/scripts/packaged-ssg-smoke.mjs` checks real tarballs outside the workspace. Local runs stage the host's native target through `napi create-npm-dirs`, `artifacts`, and `pre-publish --skip-optional-publish --no-gh-release`; `pnpm pack` resolves workspace dependencies for the JavaScript packages. The script installs into an empty temporary project with no workspace aliases or `NAPI_RS_NATIVE_LIBRARY_PATH`, checks exported types with external TypeScript, and builds and hydrates the fixtures through the selected Vite versions. Browser checks cover preboot content, retained nodes, dirty input preservation, and working interactions.
+Maintainers of the Reze packages can run `packages/vite-plugin/scripts/packaged-ssg-smoke.mjs` to check the plugin as it ships. The script packs real native and JavaScript tarballs, installs them outside the workspace, typechecks, builds, and hydrates the fixtures in a browser. Its help text describes the same steps.
 
 ```sh
-pnpm build
-pnpm exec playwright install --with-deps chromium firefox webkit
-node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --vite 8.0.0 --browsers chromium
-REZE_SSG_BROWSERS=chromium,firefox,webkit node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --vite 6.4.0,7.0.0,8.0.0
+node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --help
+node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --fixtures standalone-basics --browsers chromium
 ```
 
-`--fixtures` selects `standalone-basics`, `router-full`, and `mdx-post`; all three run by default. `--artifacts-dir packages/compiler` consumes an already staged compiler directory, including its platform packages, instead of rebuilding host staging. The release workflow uses this mode before publishing. Every supplied platform package is packed; only the host-compatible native binding is installed and executed. `--keep` retains the printed temporary directory for inspection.
+The flags are:
 
-The Reze plugin applies to the client and HTML build environments. Development and the default build are client-rendered; `ssg` adds build-time HTML execution with browser hydration.
+- `--vite <versions>`: Vite versions to test, separated by commas. The default is `6.4.0,7.0.0,8.0.0`. You can repeat the flag.
+- `--browsers <engines>`: browser engines, separated by commas: `chromium`, `firefox`, or `webkit`. The default comes from the `REZE_SSG_BROWSERS` environment variable, or `chromium` when it is unset. You can repeat the flag.
+- `--fixtures <names>`: fixtures to run, separated by commas. The default is all three: `standalone-basics`, `router-full`, and `mdx-post`. You can repeat the flag.
+- `--artifacts-dir <dir>`: a staged compiler package to use instead of building the compiler artifacts. The directory must contain `package.json`, `index.js`, `index.d.ts`, `skills`, and `npm`.
+- `--keep`: keep the scratch directory after the run. The default removes it.
+- `-h` or `--help`: print the help text.
+
+## Related pages
+
+- [Router API](/router-api) describes the router exports that the generated modules use.
+- [Compiler](/compiler) describes the compiler options that this plugin passes through.

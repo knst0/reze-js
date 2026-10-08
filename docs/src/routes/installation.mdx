@@ -1,15 +1,20 @@
 ---
 title: Getting started
-description: Install Reze, configure Vite, and build your first reactive component.
+description: Create a Reze app with Vite and TypeScript, render your first component, and run the dev server and production build.
 ---
 
 # Getting started
 
-Reze is a compiler-driven UI framework with fine-grained reactivity. Write components in JSX, keep state in signals, and let compiled bindings update the DOM when their dependencies change.
+This page creates a browser application with Reze, TypeScript, and Vite. You write a counter component, mount it with `render`, and run the development server and the production build. The last section lists the setup errors you are most likely to see and their fixes.
 
-This guide creates a browser application with TypeScript and Vite. Use a Node.js version supported by your installed Vite release and pnpm.
+## Requirements
+
+- Node.js `^20.19.0` or `>=22.12.0`, the range that Vite 8 supports.
+- pnpm.
 
 ## Create the project
+
+Run these commands to create the project folder and install its packages:
 
 ```sh
 mkdir my-reze-app
@@ -20,10 +25,13 @@ pnpm add -D @rezejs/vite-plugin vite typescript
 mkdir src
 ```
 
-Set `"type": "module"` in `package.json` and add these scripts:
+The `reze-js` package provides `render` and `hydrate` at runtime, and it declares the compiler syntax (`signal`, `computed`) for TypeScript. `@rezejs/vite-plugin` compiles Reze code in Vite. `typescript` provides the `tsc` command used for type checking.
+
+In `package.json`, add `"type": "module"` and the scripts below. Keep the other fields that `pnpm init` and `pnpm add` wrote. Vite loads `vite.config.ts` as an ES module, and the Vite plugin is ESM only, so the build fails without this field.
 
 ```json
 {
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -33,13 +41,11 @@ Set `"type": "module"` in `package.json` and add these scripts:
 }
 ```
 
-Keep the dependencies created by the installation commands.
-
 ## Configure Vite
 
-Create `vite.config.ts`:
+In `vite.config.ts` at the project root, add the Reze plugin to `plugins`:
 
-```ts
+```ts file=vite.config.ts
 import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";
 
@@ -48,9 +54,11 @@ export default defineConfig({
 });
 ```
 
-The plugin transforms Reze JSX and compiler syntax such as `signal`. A TypeScript JSX setting alone does not perform this transformation.
+The plugin compiles the JSX and compiler syntax in your modules. TypeScript's JSX settings do not compile `signal` or `computed`, so the plugin is required.
 
-Create `tsconfig.json`:
+## Configure TypeScript
+
+Create `tsconfig.json` at the project root:
 
 ```json
 {
@@ -71,11 +79,19 @@ Create `tsconfig.json`:
 }
 ```
 
-Use `.tsx` for files containing JSX. `jsx: "preserve"` leaves JSX available for the Reze compiler; `jsxImportSource` selects Reze's JSX types.
+Three of these options are required for Reze code to type-check:
 
-## Create the HTML entry
+- `jsx: "preserve"` leaves JSX for the Reze compiler. Without it, TypeScript reports `TS17004`.
+- `jsxImportSource: "reze-js"` selects the JSX types that Reze provides. Without it, TypeScript reports `TS7026` for each JSX element.
+- `types: ["vite/client"]` declares `import.meta.env` and side-effect imports of CSS files. Without it, TypeScript reports `TS2339` or `TS2882`.
 
-Create `index.html` in the project root:
+Removing `moduleResolution`, `strict`, or `verbatimModuleSyntax` did not change the diagnostics for the samples in this guide. The remaining options are the settings this guide uses.
+
+Files that contain JSX must use the `.tsx` extension. A `.ts` file with JSX fails to parse with `PARSE_ERROR`.
+
+## Create the HTML entry page
+
+Create `index.html` at the project root. It contains the element that `render` mounts into and the script that loads the entry module:
 
 ```html
 <!doctype html>
@@ -92,11 +108,13 @@ Create `index.html` in the project root:
 </html>
 ```
 
-## Write your first component
+The `id` must match the `id` passed to `getElementById` in `src/main.tsx`. The script path starts at the project root.
 
-Create `src/Counter.tsx`:
+## Write the Counter component
 
-```tsx
+Create `src/Counter.tsx` with a component that takes a `step` prop:
+
+```tsx file=src/Counter.tsx
 import { computed, signal } from "reze-js";
 
 export function Counter(props: { step: number }) {
@@ -119,11 +137,15 @@ export function Counter(props: { step: number }) {
 }
 ```
 
-`signal` declares writable reactive state. `computed` derives a value from an expression: do not wrap its argument in an arrow function. JSX bindings update when the values they read change.
+`signal` and `computed` are compiler syntax. The compiler lowers them to reactive state, and `reze-js` exports no runtime implementation for them. Assignments to `count`, such as `count -= props.step`, update every binding that reads `count`.
 
-Create `src/main.tsx`:
+`computed` takes the expression itself. Write `computed(count * 2)`, not an arrow function. For the update rules, see [Reactivity](/reactivity).
 
-```tsx
+## Mount the app with render
+
+Create `src/main.tsx`, which mounts `Counter` into the `app` element:
+
+```tsx file=src/main.tsx
 import { render } from "reze-js";
 
 import { Counter } from "./Counter";
@@ -131,13 +153,25 @@ import { Counter } from "./Counter";
 render(() => <Counter step={1} />, document.getElementById("app")!);
 ```
 
-## Run and build
+`render(code, element)` takes a function that returns JSX and the element to mount into. Before it inserts the result, `render` clears the element's existing content. It returns a function that disposes the app and empties the element.
+
+`getElementById` returns `null` when no element has the given `id`. In that case `render` throws, and the page stays blank. See [Troubleshoot setup](#troubleshoot-setup).
+
+## Run the app
+
+### Start the development server
+
+Run the dev server:
 
 ```sh
 pnpm dev
 ```
 
-Open the URL printed by Vite. The initial count and doubled value are `0`, and Reset is disabled. Increase changes them to `1` and `2`; Reset returns both to `0`.
+Open the URL that Vite prints, which is `http://localhost:5173/` by default. The page shows `Count: 0` and `Doubled: 0`, and Reset is disabled. Increase changes the count to `1` and the doubled value to `2`. Reset returns both to `0`. Decrease has no lower bound, so the count can go negative: after Increase and then two Decrease clicks, the page shows `Count: -1` and `Doubled: -2`.
+
+### Check, build, and preview the app
+
+Run these commands in order:
 
 ```sh
 pnpm check
@@ -145,13 +179,32 @@ pnpm build
 pnpm preview
 ```
 
-Type checking and bundling are separate commands. Vite writes the production application to `dist`; preview serves that output locally for inspection, not as a production hosting service.
+- `pnpm check` runs `tsc --noEmit`. It reports type errors and writes no files.
+- `pnpm build` writes the production app to `dist/`. A Reze compile error stops the build and prints the diagnostic.
+- `pnpm preview` serves `dist/` on your machine so you can check the production build. The page behaves the same as in the dev server.
 
-## Troubleshooting
+## Troubleshoot setup
 
-- **JSX parse error:** check the `.tsx` extension and ensure `reze()` is installed in the Vite plugin list.
-- **Missing export from `reze-js`:** the file was not transformed. Check the plugin's file extensions and do not execute `signal` source directly with Node.js.
-- **Nothing mounts:** ensure the HTML contains `id="app"` and loads `/src/main.tsx`.
-- **Reactive default export:** export the reactive binding by name, or export a function that reads it; see [compiler](/compiler#declaration-and-module-boundaries).
+Match the message you see to a row in the table:
 
-Next: [reactivity](/reactivity), [components and JSX](/components), and [the compiler](/compiler). For multiple screens, follow [routing](/routing).
+| Message                                                                                                                                         | Cause                                                                                           | Fix                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `Unexpected JSX expression` during `pnpm build`                                                                                                 | The `reze()` plugin is missing from `plugins`, so Vite parses JSX without the Reze compiler.    | Add `reze()` to `plugins` in `vite.config.ts`.                                                       |
+| `PARSE_ERROR` (reported by the Reze plugin) in a file with a `.ts` extension                                                                    | The file contains JSX but has the `.ts` extension.                                              | Rename the file to `.tsx`.                                                                           |
+| `"signal" is not exported by ... reze-js` (`MISSING_EXPORT`) during the build, or the browser error "does not provide an export named 'signal'" | The plugin did not compile the file. At runtime, `reze-js` exports only `render` and `hydrate`. | Add `reze()` to `plugins` in `vite.config.ts`.                                                       |
+| `SIGNAL_DEFAULT_EXPORT`                                                                                                                         | A file uses `export default` with a `signal`, such as `export default count`.                   | Export the signal by name, as in `export let count = signal(0)`, or export a function that reads it. |
+| `Cannot set properties of null (setting 'textContent')` in the browser console                                                                  | `document.getElementById("app")` returned `null`, so no element in `index.html` has that `id`.  | Make the `id` in `index.html` match the `id` in `src/main.tsx`.                                      |
+| Blank page, and a 404 response for the script in the browser network log                                                                        | The `src` in `index.html` does not match a file in the project.                                 | Set the script `src` to `/src/main.tsx`, and check that the file exists.                             |
+| `TS2339` for `import.meta.env`, or `TS2882` for a CSS import                                                                                    | The `types` array in `tsconfig.json` does not include `vite/client`.                            | Add `"types": ["vite/client"]`.                                                                      |
+| `TS17004`: Cannot use JSX unless the '--jsx' flag is provided                                                                                   | `jsx` is missing from `tsconfig.json`.                                                          | Add `"jsx": "preserve"`.                                                                             |
+| `TS7026`: JSX element implicitly has type 'any'                                                                                                 | `jsxImportSource` is missing from `tsconfig.json`.                                              | Add `"jsxImportSource": "reze-js"`.                                                                  |
+| "This package is ESM only but it was tried to load by `require`" while Vite loads `vite.config.ts`                                              | `package.json` does not set `"type": "module"`.                                                 | Add `"type": "module"` to `package.json`.                                                            |
+
+## Related pages
+
+- [Reactivity](/reactivity): `signal`, `computed`, `store`, and `action`.
+- [Components and JSX](/components): props, children, and supported JSX.
+- [Lifecycle and cleanup](/lifecycle): effects, scheduling, and cleanup.
+- [Routing](/routing): file routes and layouts for apps with several screens.
+- [The compiler](/compiler): what the compiler lowers and where module boundaries apply.
+- [Vite plugin](/vite-plugin): plugin options.

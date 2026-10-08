@@ -1,206 +1,347 @@
 ---
 title: The compiler
-description: Compile-time transformations, reactive bindings, optimization, and diagnostics.
+description: What the Reze compiler lowers, how it compiles bindings and constants, how it reports diagnostics, and the options you can set.
 ---
 
 # The compiler
 
-Reze's Vite plugin compiles JSX into DOM creation and reactive bindings. Work that can be determined from source is performed during compilation; the browser executes the resulting JavaScript and the runtime helpers it imports.
+The Reze compiler turns modules that contain JSX and compiler syntax into DOM creation code and reactive bindings. This page covers what the compiler lowers, what it decides for each module, how it groups bindings into effects, and how to read its diagnostics.
 
-This is a compilation requirement, not an optional optimization. Compiler syntax and control-flow tags are not ordinary runtime functions.
+## Compiler syntax and runtime functions
 
-The compiler parses and prints JavaScript through Oxc. Reactive syntax, props, and control flow are normalized before a shared view representation is lowered for the selected target. Source maps point back to the input supplied to the compiler, so upstream JSX preprocessors can compose their maps.
+The compiler recognizes a fixed set of names that you import from `reze-js`, and it rewrites each use into runtime code. The groups are:
 
-The frontend checks its rewrite plans before rebuilding semantic information. Plain JSX without normalization work reuses the first pass's scopes and node facts.
+- Reactive primitives: `signal`, `computed`, and `action`. The compiler lowers each one. [Reactivity](/reactivity) covers the declaration and update rules.
+- Async helpers: `abortSignal` and `isPending`. The compiler accepts `abortSignal()` only in the load of an async component and `isPending()` only in its view. [Building interfaces](/building-interfaces) covers async components.
+- Control-flow tags: `Show`, `For`, `Repeat`, `Switch`, `Match`, and `Portal`. The compiler compiles them as JSX tags, so they have no runtime value. See [Control-flow tags](#control-flow-tags) below.
+- Props helpers: `mergeProps`, `splitProps`, and `omitProps`. The compiler refuses them as values, so you call them. [Components](/components) covers props.
 
-Static template strings are shared when doing so reduces emitted code size. Each use still creates its own DOM nodes. Compiler-only imports are removed after lowering; ordinary calls and re-exports retain the imports they use. Generated variable names and formatting are not a public API.
+Other `reze-js` exports, such as `store` and `effect`, are runtime functions. The compiler rewrites their import source to the runtime module, which is private, so you import them from `reze-js` as usual. [Lifecycle](/lifecycle) covers `effect`, and [Reactivity](/reactivity) covers `store`. `render` and `hydrate` are the two value exports that mount an app.
 
-Browser parser normalization also happens at compile time. Table structure, raw-text elements, and HTML/SVG/MathML boundaries use the same layout for client rendering and hydration. Ordinary trees bypass the HTML parser; lowercase tag names are inspected without allocating normalized copies. Static node accessors reuse captured siblings along ancestor paths instead of walking from the root again.
+Do not import the lowered primitives from `reze-js/internal/reactivity`. That path is private compiler output. The compiler refuses such an import with `INTERNAL_REACTIVITY_IMPORT`:
 
-Known string-valued classes use a direct attribute update. They do not pull the object/array class-merging helper or its per-element bookkeeping into an ordinary client bundle. JSX returned directly by a function or concise arrow is lowered into that function's body rather than adding a per-call wrapper closure.
+```tsx expect=INTERNAL_REACTIVITY_IMPORT
+import { signal } from "reze-js/internal/reactivity";
 
-Framework runtime package entrypoints are dependencies, not compiler input. The Vite plugin leaves them uncompiled even when workspace links resolve outside `node_modules`.
+let count = signal(0);
 
-## The API shape
-
-Everything imported from `reze-js` except `render` and `hydrate` is a type the
-compiler lowers; there is no runtime body behind it. An import that bypasses
-compilation fails at module link time ("does not provide an export named").
-The Vite plugin compiles every source module, so this only surfaces when a
-tool bypasses it.
-
-Reactive state looks like a local variable:
-
-```tsx
-import { computed, signal } from "reze-js";
-
-export function Counter() {
-  let count = signal(0);
-  const doubled = computed(count * 2);
-
-  return (
-    <button onClick={() => (count += 1)}>
-      {count} × 2 = {doubled}
-    </button>
-  );
-}
-```
-
-The compiler rewrites reads and assignments of the declared binding. It also wraps the expression passed to `computed` in a tracked computation.
-
-Habits carried over from other frameworks are caught early:
-
-| Habit                                 | Caught by                                   |
-| ------------------------------------- | ------------------------------------------- |
-| `count()` to read                     | TypeScript: `number` is not callable        |
-| `const [count, setCount] = signal(0)` | `SIGNAL_PATTERN` diagnostic with a fix      |
-| `computed(() => a * b)`               | `COMPUTED_FUNCTION` diagnostic with a fix   |
-| `signal.value`                        | TypeScript: no `value` on the declared type |
-
-## Declaration and module boundaries
-
-Declare `signal` and `computed` with a single identifier in a `let` or `const` declaration. They cannot be used as arbitrary expressions, destructured declarations, or values passed to another function.
-
-A named export stays reactive: importing modules read it like local state but cannot assign it. Export a function that updates it so other modules can write it:
-
-```ts
-import { signal } from "reze-js";
-
-export let count = signal(0);
-
-export function increment() {
+export function bump() {
   count += 1;
 }
+
+export const view = <p>{count}</p>;
 ```
 
-Additional restrictions:
+## Module boundaries
 
-- A reactive binding cannot be the default export; export it by name instead.
-- `computed` accepts an expression, not an inline function literal. Use `computed(calculate())` for a multi-statement calculation.
-- Write signals through direct assignments, not destructuring assignments or `for` loop heads.
-- Increment and decrement statements are supported, but `count++` inside a larger expression is rejected. Use `count += 1` or a block-bodied handler.
+The compiler works on one module at a time. The output for a module depends on that module's source. Facts about imported modules change the output only when you pass them, which the Vite plugin does for you. [Vite plugin](/vite-plugin) describes the plugin options.
 
-See [reactivity](/reactivity) for the state model.
+The Vite plugin decides which imported modules have facts:
 
-## JSX intrinsics
+- A package in `node_modules` is opaque unless it ships a `reze.manifest` whose hashes match its files, or you list the package in the plugin's `analyze` option.
+- When a manifest is stale, the plugin warns once. Regenerate the manifest by running `reze-manifest` in that package, or add the package to `analyze`.
 
-Native tags such as `button` describe DOM elements. Their TypeScript attributes are described by Reze's `JSX.IntrinsicElements`. Component functions use their own props types.
+Each module has a canonical module ID. For application files, the ID is the POSIX path relative to the project root. For files in a package, the ID is the package name followed by the path inside the package. The `hydrate` and `html` targets key their output by module, so they need a nonempty module ID. Without one, the compiler reports `MISSING_MODULE_ID` and compiles nothing. The plugin rejects a second, different compiler input for the same ID, so the source of each module must match across the builds that share its output.
 
-Reze also provides compiler-recognized control-flow tags:
+## Control-flow tags
 
-```tsx
+Each control-flow tag accepts a fixed set of attributes, and it refuses spread attributes. The required attributes decide what the tag renders:
+
+- `<Show>` accepts `when` (required) and `fallback`.
+- `<For>` accepts `each` (required), `fallback`, and `keyed`. Its child is a row function.
+- `<Repeat>` accepts `count` (required) and `fallback`. Its child is a row function.
+- `<Switch>` accepts `fallback`. Its children must be `<Match>` tags.
+- `<Match>` accepts `when` (required). It must be a direct child of `<Switch>`.
+- `<Portal>` accepts `mount`.
+
+A tag with an attribute outside this list fails with `CONTROL_FLOW_ATTRIBUTE`:
+
+```tsx expect=CONTROL_FLOW_ATTRIBUTE
 import { Show, signal } from "reze-js";
 
-export function Disclosure() {
-  let open = signal(false);
+let open = signal(false);
 
-  return (
-    <section>
-      <button onClick={() => (open = !open)}>Toggle details</button>
-      <Show when={open} fallback={<p>Details are hidden.</p>}>
-        <p>Details are visible.</p>
-      </Show>
-    </section>
-  );
+export function toggle() {
+  open = !open;
 }
+
+export const view = (
+  <Show when={open} keyed>
+    <p>Open</p>
+  </Show>
+);
 ```
 
-These tags are compiled into control-flow helpers. Use them as JSX tags: do not call, alias as a runtime component value, or re-export the imported intrinsic. Their accepted attributes are fixed; arbitrary attributes and spreads are errors.
+A `<For>` whose child is not a row function fails with `CONTROL_FLOW_CHILDREN`:
 
-The [interface guide](/building-interfaces) explains conditional rendering, lists, and portals.
+```tsx expect=CONTROL_FLOW_CHILDREN
+import { For } from "reze-js";
+
+const items = [1, 2, 3];
+
+export const view = (
+  <ul>
+    <For each={items}>
+      <li>row</li>
+    </For>
+  </ul>
+);
+```
+
+A control-flow tag without its required attribute fails with `CONTROL_FLOW_MISSING`. The diagnostic reference below lists the other control-flow rules. [Building interfaces](/building-interfaces) shows conditions, lists, and portals in use.
 
 ## Compiled bindings
 
-An attribute, class toggle, or text expression that reads reactive values compiles into an effect that rewrites only what it owns. Bindings with the same dependencies share one effect.
+A binding is an attribute or text child that reads a signal. The compiler decides how each binding stays up to date, and it groups bindings that read the same signals.
 
-When every reactive read of an effect happens on every run, the compiler emits `fixedRenderEffect` instead of `renderEffect`. A read counts when it is a direct read of a `signal` or `computed` binding in an operand of arithmetic, comparison, unary, or template expressions, or in the test of a conditional or the left side of `&&`, `||`, and `??`. A read in a branch of `? :` or on the right of a logical operator is conditional. Member access, optional chains, calls of other functions, and `props.x` reads are opaque. One conditional or opaque member keeps the whole group on `renderEffect`. The first run tracks; in production builds later runs do not, so they skip the bookkeeping that re-tracking costs.
+### Fixed and reactive bindings
 
-This makes one rule part of the contract: **a value bound to an attribute or text must not read signals inside its `toString`, `valueOf`, or getters.** Coercion happens inside the binding, and a read there would be missed in production. Development builds track every run and warn once, printing the binding, when its reads change. Only the client target uses `fixedRenderEffect`.
+A binding is fixed when every signal read in it is one of these:
 
-A child expression of a known number or string kind is written straight to a text node instead of going through the general insert. A `signal` has a known kind when it starts from a number or string literal and every write assigns a value of the same kind, such as `count += 1` or `name = name + "!"`. A write that takes a value from elsewhere, such as `count += props.step`, or a use of the `signal` primitive itself as a value, leaves the kind unknown and the child uses the general path. The result is the same text; the general path also accepts nodes and arrays.
+- A value, or an operand of an arithmetic or comparison operator.
+- The test of a conditional expression.
+
+The compiler treats the following reads as reactive, and any binding that contains one is reactive:
+
+- A read in a conditional branch.
+- A member read on a signal value, such as `box.a`.
+- A prop read, such as `props.label`.
+
+The next sample has one fixed binding and one reactive binding:
+
+```tsx
+import { signal } from "reze-js";
+
+let count = signal(0);
+let flag = signal(true);
+
+export function bump() {
+  count += 1;
+  flag = !flag;
+}
+
+export const view = (
+  <div>
+    <p title={count > 1 ? "many" : "few"}>{count}</p>
+    <p class={flag ? "on" : String(count)}>status</p>
+  </div>
+);
+```
+
+The `title` binding and the text child read `count` only in fixed positions. The `class` binding reads `count` in a conditional branch, so it is reactive.
+
+A fixed binding keeps the dependencies it tracked on its first run. In a production build, the runtime does not track them again. In a development build, the runtime tracks them on every run. If the set of values read changes, the runtime warns once with `[rezejs] A compiled binding read a different set of reactive values`. Keep reads inside the binding expression. Do not read signals inside `toString`, `valueOf`, or getters of values bound to attributes.
+
+### Effect grouping
+
+Bindings that read the same set of signals share one effect. When any binding in the group is reactive, the whole group is reactive. Bindings with different signal sets get separate effects.
+
+```tsx
+import { signal } from "reze-js";
+
+let count = signal(0);
+
+export function bump() {
+  count += 1;
+}
+
+export const view = (
+  <p title={count > 1 ? "many" : "few"} class={count > 1 ? "big" : String(count)}>
+    x
+  </p>
+);
+```
+
+Both attributes read only `count`, so the compiler puts them in one effect. The `class` binding is reactive, so the whole effect is reactive. The `title` binding would be fixed if it stood alone.
+
+### Text bindings
+
+A text child that reads a signal takes one of two paths. When the compiler can tell that the signal holds a number or a string, it writes the text node directly. Otherwise, it inserts the value through the general insert path. The compiler infers the kind from the initial value and every write, so a write of an unknown value, such as `count += props.step`, makes the kind unknown.
+
+## Constant folding
+
+A `signal` that is never written in its module, and is not exported, folds into a constant. The compiler reports each fold as the `SIGNAL_FOLDED` info diagnostic and writes the value into the static template:
+
+```tsx expect=SIGNAL_FOLDED
+import { signal } from "reze-js";
+
+const title = signal("Reze");
+
+export const view = <h1>{title}</h1>;
+```
+
+Exported signals are never folded. A write anywhere in the module keeps the signal reactive.
+
+The compiler also removes a JSX branch whose condition is a literal, and it reports the removal as `DEAD_BRANCH_REMOVED`:
+
+```tsx expect=DEAD_BRANCH_REMOVED
+export const view = <div>{false && <b>debug</b>}</div>;
+```
 
 ## Transformation scope
 
-By default, the Vite plugin processes `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`, excluding files in `node_modules`. It compiles the client environment and, when SSG is enabled, the build-time HTML environment.
+By default, the Vite plugin compiles files with the extensions `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`. A nonempty `extensions` option replaces this list. The plugin skips files under `node_modules` unless the package declares the `reze` export condition.
 
-Preprocessors must emit JSX before Reze runs. Extend the default extensions when adding another source format:
+The compiler parses each file with the grammar its extension selects. JSX is valid in a `.tsx` file, but not in a `.ts` file. A `.ts` file with JSX fails with `PARSE_ERROR`, and nothing is compiled:
 
-```ts
-import reze, { DEFAULT_ROUTE_EXTENSIONS } from "@rezejs/vite-plugin";
-import { defineConfig } from "vite";
-
-export default defineConfig({
-  plugins: [reze({ extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"] })],
-});
+```ts expect=PARSE_ERROR,PARSE_ERROR
+export const view = <p>x</p>;
 ```
 
-This only enables the extension; an MDX-to-JSX preprocessor must also be configured to run first. A nonempty `extensions` list replaces the defaults rather than adding to them.
+## Use the direct API
 
-## Direct compiler API
-
-Build tools can call the native compiler without the Vite plugin:
+The `@rezejs/compiler` package exports `compile` and `analyze`. The Vite plugin calls these functions for you. Call them directly when you build your own tooling:
 
 ```ts
+import { readFile } from "node:fs/promises";
+
 import { compile } from "@rezejs/compiler";
 
-const result = compile("export const App = () => <main>Hello</main>;", "src/App.tsx", { target: "client", sourceMap: true });
+const source = await readFile("src/counter.tsx", "utf8");
+const result = compile(source, "src/counter.tsx", { target: "client" });
+for (const diagnostic of result.diagnostics) {
+  console.error(diagnostic.rendered);
+}
 ```
 
-`compile(source, filename, options?)` returns `null` when the module needs no transformation. Otherwise it returns `code`, an optional source-map JSON string in `map`, and `diagnostics`. Compilation errors return diagnostics without `code`; check their severity before passing output to the next transform.
+`compile(source, filename, options?)` accepts these options:
 
-In this repository, `pnpm build` always invokes NAPI/Cargo for the native compiler. Cargo handles incremental compilation; Turbo tracks both Rust crates, workspace manifests, and the toolchain without caching the platform-specific native task.
+| Option       | Default    | Meaning                                                                                                                                        |
+| ------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `target`     | `"client"` | Output to produce: `"client"`, `"hydrate"`, or `"html"`.                                                                                       |
+| `moduleId`   | none       | Canonical module ID. Required and nonempty for `hydrate` and `html`.                                                                           |
+| `sourceMap`  | `true`     | Produces a source map in `map`.                                                                                                                |
+| `debugNames` | `false`    | Passes `{ name }` to `signal`, `computed`, and `action` for profiling.                                                                         |
+| `hot`        | `false`    | Registers components for hot swapping through `import.meta.hot`.                                                                               |
+| `links`      | none       | Module that exports `link`. Native `<a href>` elements are passed to it.                                                                       |
+| `profile`    | none       | Profiling facts for this file, from the profile store. The Vite plugin supplies them.                                                          |
+| `facts`      | none       | Reactive facts of imported modules, keyed by import specifier, from `analyze`. Each entry must be for the exact source the import resolves to. |
 
-| Option       | Contract                                                                                                                    |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `target`     | `"client"` by default; `"hydrate"` and `"html"` select the other backends.                                                  |
-| `moduleId`   | A nonempty, stable module identity required by `"hydrate"` and `"html"`. Ordinary client compilation only needs `filename`. |
-| `sourceMap`  | Generate a version 3 source map; enabled by default.                                                                        |
-| `debugNames` | Include names for profiling; disabled by default.                                                                           |
-| `hot`        | Generate component hot-update registration; disabled by default.                                                            |
-| `links`      | Module exporting the router link helper for compiler-managed native anchors.                                                |
-| `profile`    | Optional profiling facts; mismatched source hashes or schema versions are ignored.                                          |
+The result always has `diagnostics`. `code` is absent when nothing in the file is rewritten. When the result has an error diagnostic, `code`, `map`, and `facts` are all absent.
 
-All targets produce code, not a precomputed HTML string. `"client"` creates browser DOM, `"hydrate"` binds existing page DOM, and `"html"` produces executable code for the build-time HTML runtime. The HTML target is not browser code or a public request-time rendering API.
-
-The HTML and hydration compilations of a module must use the same canonical `moduleId` and the same compiler input, including the output of JSX-producing preprocessors. Use POSIX project-relative paths, or a package name plus package-relative path for external packages; do not derive identity from an absolute machine path. Missing identity reports `MISSING_MODULE_ID`, even when the source otherwise needs no transformation.
-
-Site identities use the first 16 lowercase hexadecimal characters of BLAKE3 over the UTF-8 bytes of `moduleId + "\0" + compiler input`, followed by the site's base-36 ordinal. The build registry rejects differing inputs for one module identity and hash collisions between module identities.
+`analyze(source, filename)` returns `{ diagnostics, facts }`. The `facts` value describes each export, with its role, such as `function`, and how it reads reactive values. Pass the facts to `compile` for modules that import this one.
 
 ## Diagnostics
 
-Diagnostics include a bracketed code, source location, and repair information. Errors stop the transform; warnings are reported through Vite. Fix the cause instead of bypassing the transform.
+The compiler reports each problem with a stable code, such as `SIGNAL_READ_ONCE`. Each code belongs to one severity.
 
-| Code                     | Meaning                                                                                   | Correction                                                 |
-| ------------------------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `SIGNAL_NOT_DECLARED`    | Compiler syntax has no supported local declaration.                                       | Initialize one named variable with `let` or `const`.       |
-| `SIGNAL_DEFAULT_EXPORT`  | A reactive binding is the default export.                                                 | Export it by name, or export a function that reads it.     |
-| `COMPUTED_WRITTEN`       | Derived state is being assigned.                                                          | Update its source signals.                                 |
-| `CONTROL_FLOW_AS_VALUE`  | An intrinsic is used outside a JSX tag.                                                   | Render the tag inside an ordinary component.               |
-| `CONTROL_FLOW_ATTRIBUTE` | An intrinsic received an unsupported attribute.                                           | Remove it or use the documented attribute.                 |
-| `PROPS_DESTRUCTURED`     | Props are destructured in a form the compiler cannot rewrite, so each value is read once. | Take `props` and read `props.x` where it is used.          |
-| `KEY_ON_ELEMENT`         | `key` on a native element does nothing.                                                   | Remove it; key rows with `<For keyed>`.                    |
-| `UNKNOWN_ATTRIBUTE`      | An attribute name is not a known HTML attribute.                                          | Use the suggested name, such as `class`.                   |
-| `EVENT_NAME_LOWERCASE`   | A lowercase `onclick` received a function.                                                | Use `onClick`.                                             |
-| `ASYNC_PROPS_READ_IN_AWAIT` | A `props` read sits inside an awaited expression of an async component. | Hoist it into a `const` before the first `await`. |
-| `ASYNC_TRY_AROUND_AWAIT` | A `try` wraps an `await` in an async component. | Remove it; a rejected `await` renders `failure`. |
+### Severities
 
-To capture all diagnostic severities, including informational diagnostics:
+- `error` means the module is not compiled. The Vite plugin fails the build and prints the rendered text.
+- `warn` means the module compiles. The Vite plugin passes the warning to Vite's warning log.
+- `info` means the compiler made a change you may want to know about. The Vite plugin does not print it. It appears only in the JSON lines file described below.
+
+### Rendered output and fixes
+
+Each diagnostic has these fields:
+
+- `code`, `severity`, and `message`. The message starts with the code in brackets, such as `[SIGNAL_READ_ONCE]`.
+- `file`, `start`, and `end`. Each position has `offset`, which is a byte offset, `line`, which is 1-based, and `column`, which is 0-based and counts UTF-16 code units.
+- `path`, which lists the enclosing components and elements.
+- `fixes`, where each fix has a `title` and `edits`. Each edit replaces the bytes from `start` to `end` with `text`. Edits that are applied together remove the diagnostic.
+- `docs`, a repair guide URL anchored at the code.
+- `rendered`, which contains the message, the path, the location, a code frame, and the fixes.
+
+The Vite plugin reports fixes as part of the rendered text, but it does not apply them.
+
+### Repair guide and documentation links
+
+Each diagnostic's `docs` URL points to its section of the compiler's `SKILL.md` on GitHub. The file is generated from the diagnostic catalog, and each section explains the rule and the repair. The Vite plugin also prints the installed path of the repair guide, in the form `node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md#<code>`. It prints this line only the first time a code appears in a process.
+
+### Record diagnostics as JSON lines
+
+To keep every diagnostic, including the `info` ones, set the `diagnostics.jsonl` option of the Vite plugin. The plugin appends one JSON object per diagnostic to that file, and it creates the directory when it is missing:
 
 ```ts
 import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [reze({ diagnostics: { jsonl: "diagnostics.jsonl" } })],
+  plugins: [
+    reze({
+      diagnostics: { jsonl: "reze-diagnostics.jsonl" },
+    }),
+  ],
 });
 ```
 
-The file is appended to, not replaced. Entries include the code, severity, message, source locations, enclosing path, labels, fixes, and rendered explanation. The installed compiler includes a repair guide at `node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md`.
+### Diagnostic reference
 
-## Development and production
+The following tables list every diagnostic code with a short meaning. The repair guide has the full explanation and the repair for each code.
 
-The plugin enables debug names outside production and compiler HMR support when serving with Vite HMR enabled. Source maps follow Vite's source-map configuration.
+Errors:
 
-Use a production build when measuring shipped code. Generated output depends on the application and enabled features; architecture alone is not a bundle-size or speed measurement.
+| Code                          | Meaning                                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `PARSE_ERROR`                 | The parser rejects the file, so nothing is compiled.                                                       |
+| `PARSER_RELOCATION`           | The browser parses this markup differently than written, so the template would not match the rendered DOM. |
+| `CONTROL_FLOW_AS_VALUE`       | A control-flow tag is used as a value. It has no runtime value.                                            |
+| `CONTROL_FLOW_ATTRIBUTE`      | A control-flow tag has an attribute it does not accept, or a spread attribute.                             |
+| `CONTROL_FLOW_MISSING`        | A control-flow tag lacks the attribute that decides what it renders.                                       |
+| `CONTROL_FLOW_CHILDREN`       | A control-flow tag has children it cannot render.                                                          |
+| `MATCH_OUTSIDE_SWITCH`        | `<Match>` is not a direct child of `<Switch>`.                                                             |
+| `SIGNAL_NOT_DECLARED`         | `signal` or `computed` is used outside a variable declaration.                                             |
+| `SIGNAL_PATTERN`              | `signal` or `computed` initializes a destructuring pattern.                                                |
+| `SIGNAL_DEFAULT_EXPORT`       | `signal` or `computed` is the default export.                                                              |
+| `SIGNAL_ASSIGN_PATTERN`       | A `signal` is written through a destructuring pattern or a `for` loop head.                                |
+| `SIGNAL_UPDATE_IN_EXPRESSION` | `++` or `--` is applied to a `signal` inside an expression.                                                |
+| `COMPUTED_WRITTEN`            | A `computed` is written.                                                                                   |
+| `COMPUTED_FUNCTION`           | A function literal is passed to `computed`, which takes the expression itself.                             |
+| `ACTION_ARGUMENT`             | `action` is not called with a function literal.                                                            |
+| `ACTION_UNSUPPORTED`          | An `action` body contains `for await`, `await using`, or a generator.                                      |
+| `ACTION_NOT_CALLED`           | `action` is used as a value.                                                                               |
+| `PROPS_AS_VALUE`              | `mergeProps`, `splitProps`, or `omitProps` is used as a value.                                             |
+| `ISLAND_TRIGGER`              | The `island` attribute has a value that is not a trigger.                                                  |
+| `ISLAND_MEDIA_MISSING`        | `island="media"` lacks `islandMedia`.                                                                      |
+| `ISLAND_ON_ELEMENT`           | `island` is set on a native element.                                                                       |
+| `ISLAND_ORPHAN`               | An island companion attribute appears on a component without `island`.                                     |
+| `MISSING_MODULE_ID`           | A `hydrate` or `html` build has no `moduleId`.                                                             |
+| `ASYNC_COMPONENT_SHAPE`       | An async component has a form the compiler cannot rewrite.                                                 |
+| `ASYNC_VIEW_TARGET`           | A view is assigned to a name that is not an async component declared in the same block.                    |
+| `INTERNAL_REACTIVITY_IMPORT`  | A reactive primitive is imported from `reze-js/internal/reactivity`.                                       |
+| `ASYNC_PROPS_READ_IN_AWAIT`   | An async component reads its props inside an `await` operand.                                              |
+| `ASYNC_TRY_AROUND_AWAIT`      | An async component wraps an `await` in `try`.                                                              |
+| `ABORT_SIGNAL_OUTSIDE_LOAD`   | `abortSignal()` is called outside the load of an async component.                                          |
+| `IS_PENDING_OUTSIDE_VIEW`     | `isPending()` is called outside the view of an async component.                                            |
 
-Next: [Vite configuration](/vite-plugin), [reactivity](/reactivity), and [installation](/installation).
+Warnings:
+
+| Code                    | Meaning                                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `CHILDREN_PROP_IGNORED` | A `children` attribute is set next to nested children. The nested children win, so the attribute is never rendered.  |
+| `KEY_ON_ELEMENT`        | `key` is set on a native element, where it does nothing. Key list rows with the `keyed` attribute of `<For>`.        |
+| `DUPLICATE_ATTRIBUTE`   | The same attribute is set twice on one element, so the earlier value is dead code.                                   |
+| `UNKNOWN_ATTRIBUTE`     | The attribute is probably a typo. It renders as written, and the browser ignores it.                                 |
+| `EVENT_NAME_LOWERCASE`  | A lower-case event attribute receives a function, which never attaches a listener.                                   |
+| `PROPS_DESTRUCTURED`    | Props are destructured in a form the compiler cannot rewrite, so each value is read once and never updates.          |
+| `INLINE_EACH`           | `<For each>` receives an array literal, which is rebuilt on every evaluation.                                        |
+| `SIGNAL_READ_ONCE`      | A `signal` or `computed` is copied once in a component body, and the copy never updates.                             |
+| `ACTION_NESTED_WRITE`   | A write in a function inside `action` runs after the action moved on, so a failed action does not undo it.           |
+| `ISLAND_NOT_SPLIT`      | An island component is also used in a way that keeps it in the main chunk. Only its execution waits for the trigger. |
+
+Info:
+
+| Code                  | Meaning                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| `SIGNAL_FOLDED`       | A never-written signal compiled to a plain constant.                                         |
+| `DEAD_BRANCH_REMOVED` | A JSX branch has a literal condition, so it can never render, and the compiler removed it.   |
+| `PROPS_REWRITTEN`     | Destructured props became one props object, and each destructured name is a lazy read of it. |
+| `AUTO_SELECTOR`       | A `<For>` row compares a signal with its own key, and the comparison now reads a selector.   |
+
+## Development and production builds
+
+The Vite plugin chooses compiler options from your Vite configuration:
+
+- `debugNames` is on in development builds and off in production builds. Names appear in the output, which helps profiling.
+- `hot` is on when the dev server runs with hot module replacement. Components register for hot swapping.
+- `sourceMap` follows Vite's `build.sourcemap` in a build and `dev.sourcemap` in the dev server.
+
+Fixed bindings also run differently in the two modes. [Compiled bindings](#compiled-bindings) explains the difference.
+
+## Related pages
+
+- [Reactivity](/reactivity) covers `signal`, `computed`, `store`, and `action`.
+- [Components](/components) covers props and children.
+- [Building interfaces](/building-interfaces) covers conditions, lists, portals, and async components.
+- [Lifecycle](/lifecycle) covers `effect`, cleanup, and context.
+- [Vite plugin](/vite-plugin) covers the plugin options, `analyze`, `profile`, and static site generation.

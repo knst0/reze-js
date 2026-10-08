@@ -1,27 +1,27 @@
 ---
 title: Familiar patterns
-description: Patterns from other component frameworks that compile and run in Reze, what each one costs, and what to write instead.
+description: Patterns from other component frameworks that compile in Reze, what each one costs, and what to write instead.
 ---
 
 # Familiar patterns
 
-Reze components run once and update through bindings. Code written for a framework that re-runs components still compiles in many cases, but some forms give up what the compiler provides, and a few lose updates without failing. This page lists the patterns that work, what each costs, and the form to prefer. Nothing here is deprecated; the [components](/components) page describes the recommended style.
+Reze components run once. Their JavaScript XML (JSX) reads signals through bindings, so an update reruns only the binding that reads the changed value. Code written for a framework that reruns components often still compiles. Some of those forms give up updates, and a few stop updating without any diagnostic. This page covers each pattern, what it costs, and what to write instead.
 
-| Pattern                                  | Works                | Cost                                     | Prefer                              |
-| ---------------------------------------- | -------------------- | ---------------------------------------- | ----------------------------------- |
-| Destructured props in the parameter list | Yes, in listed forms | Other forms read the value once and warn | `props.x`, `mergeProps` defaults    |
-| `{items.map(...)}`                       | Yes                  | Every row is rebuilt on every change     | `<For each={items}>`                |
-| `key={...}` on an element                | Ignored, warns       | Renders a useless attribute              | `<For keyed={...}>`                 |
-| `const copy = props.x` in the body       | Reads once           | `copy` never updates                     | Read `props.x` in JSX or `computed` |
-| Mutating a signal's array or object      | No notification      | Nothing updates                          | Assign a new value, or use `store`  |
-| `className`                              | Ignored, warns       | The browser drops the unknown attribute  | `class`                             |
-| `useState`, `useEffect`, other hooks     | No such API          |                                          | `signal`, `effect`, `computed`      |
+| Pattern                            | Works                                    | Cost                                                            | Write instead                            |
+| ---------------------------------- | ---------------------------------------- | --------------------------------------------------------------- | ---------------------------------------- |
+| Destructured props                 | Yes, for plain names and simple defaults | A default that calls a function reads every prop once and warns | `props.x`, with `??` for fallbacks       |
+| `{items.map(...)}`                 | Yes                                      | Each change rebuilds every row and loses the row's DOM state    | `<For each={items}>`                     |
+| `key` on a native element          | Renders as an attribute and warns        | Does not key rows                                               | `<For>` with `keyed`                     |
+| `const copy = props.x` in the body | Yes                                      | `copy` keeps the value from the first run                       | Read `props.x` in JSX, or use `computed` |
+| Mutating an array in a `signal`    | Yes                                      | Nothing notifies, so the UI keeps the old data                  | Assign a new array, or use `store`       |
+| `className`                        | Renders as an attribute and warns        | The browser ignores the attribute                               | `class`                                  |
+| `useState`, `useEffect`, `useMemo` | Not exported                             | Not available                                                   | `signal`, `effect`, `computed`           |
 
 ## Destructured props
 
-A destructured parameter is rewritten into lazy reads of one props object, so each use reads the current value:
+The compiler rewrites a destructured parameter so each use reads the current prop. Changing a value that a child receives updates the child's output, and the child does not run again:
 
-```tsx
+```tsx expect=PROPS_REWRITTEN
 import { signal } from "reze-js";
 
 function Link({ href, label = "home", ...rest }: { href: string; label?: string; title?: string }) {
@@ -33,30 +33,56 @@ function Link({ href, label = "home", ...rest }: { href: string; label?: string;
 }
 
 export function Nav() {
-  let href = signal("/a");
-  return <Link href={href} title="t" />;
+  let target = signal("/a");
+  return (
+    <div>
+      <Link href={target} title="t" />
+      <button onClick={() => (target = "/b")}>go</button>
+    </div>
+  );
 }
 ```
 
-Changing `href` updates the attribute and `Link` does not run again. The compiler reports this rewrite as the informational `PROPS_REWRITTEN`. It covers property names, defaults that are literals or other side-effect-free expressions, nested patterns, and `...rest`.
+The rewrite covers plain names, defaults made of literals or other side-effect-free expressions, and `...rest`. The compiler reports it as the informational `PROPS_REWRITTEN`.
 
-Forms the compiler cannot rewrite still compile, but each value is read once when the component runs and never updates. The compiler reports `PROPS_DESTRUCTURED` with the reason:
+A default replaces only `undefined`. Passing `null` keeps `null`, which renders nothing. To replace `null` too, read the prop in the body with `??`:
 
-- `computed-key`: a computed key such as `{ [name]: value }`.
-- `default`: a default that calls a function or is otherwise not safe to run once, as in `{ name = fallback() }`.
-- `nested-default` and `nested-rest`: a default on a nested pattern, or a rest inside one.
-- `array-pattern`: an array pattern in the parameter.
-- `written`: a destructured name that the body assigns to.
+```tsx
+export function Link(props: { href: string; label?: string }) {
+  return <a href={props.href}>{props.label ?? "home"}</a>;
+}
+```
+
+The compiler reports `PROPS_DESTRUCTURED` as a warning when it cannot rewrite the parameter. Every value in that parameter is then read once, when the component runs, and never updates. The message names one of these reasons:
+
+- `default`: a default that is not a literal or side-effect-free expression, such as `label = fallback()`.
+- `computed-key`: a computed key, such as `{ [name]: value }`.
+- `nested-default`: a default on a nested pattern, such as `{ user: { name } = {} }`.
+- `nested-rest`: a rest element inside a nested pattern.
+- `array-pattern`: an array pattern as the parameter.
+- `written`: the body assigns to a destructured name.
 - `arguments`: the body uses `arguments`.
 - `generator`: the component is a generator.
-- `params`: more than one parameter.
-- `type`: a type-position read of a key that no qualified type name can spell.
+- `params`: the component has more than one parameter.
+- `type`: a type reads a destructured key that is not an identifier, such as `"data-id"`.
 
-This is why plain `props` is the recommended form. Adding a default such as `= fallback()` to an otherwise working parameter list silently turns the whole component read-once, and the written form `props.name ?? fallback()` has no such edge. For defaults and splitting, use `mergeProps`, `splitProps`, and `omitProps` as described in [components](/components#props).
+This sample adds a function call to the default, so the compiler reports `default`:
 
-## Rendering lists with `map`
+```tsx expect=PROPS_DESTRUCTURED
+function fallback() {
+  return "home";
+}
 
-An expression such as `{items.map((name) => <li>{name}</li>)}` is supported. It is a binding like any other: when `items` changes, the expression runs again and its result replaces the previous rows.
+export function Link({ href, label = fallback() }: { href: string; label?: string }) {
+  return <a href={href}>{label}</a>;
+}
+```
+
+The whole parameter becomes read-once, not only `label`. For defaults, splitting, and merging, use `mergeProps`, `splitProps`, and `omitProps`. The [props section of Components and JSX](/components) describes them.
+
+## Lists with `map`
+
+An expression such as `{items.map((name) => <li>{name}</li>)}` is a binding like any other. When `items` changes, `map` runs again and its result replaces every mapped row. Static siblings keep their nodes:
 
 ```tsx
 import { signal } from "reze-js";
@@ -64,20 +90,23 @@ import { signal } from "reze-js";
 export function List() {
   let items = signal(["x", "y"]);
   return (
-    <ul>
-      <li>first</li>
-      {items.map((name) => (
-        <li>{name}</li>
-      ))}
-      <li>last</li>
-    </ul>
+    <div>
+      <ul>
+        <li>first</li>
+        {items.map((name) => (
+          <li>{name}</li>
+        ))}
+        <li>last</li>
+      </ul>
+      <button onClick={() => (items = [...items, "z"])}>add</button>
+    </div>
   );
 }
 ```
 
-Setting `items` to `["x", "y", "z"]` keeps `first` and `last` but builds all three mapped rows again, including `x` and `y`. Rebuilt rows lose any DOM state their elements held, such as focus, selection, scroll, or a half-typed input, and dispose and recreate everything created inside them. `.filter(...).map(...)` and other chains behave the same way.
+After the click, `first` and `last` keep their nodes, and `x` and `y` are new nodes. Rebuilt rows lose any state their elements hold, such as typed input, focus, or scroll position. Cleanups registered with `onCleanup` inside a row run when the array changes. Chains such as `.filter(...).map(...)` rebuild rows the same way.
 
-`<For>` keeps a row for as long as its item exists, moves rows when the order changes, and disposes only the rows that went away:
+`<For>` keeps a row while its item stays in the list, moves the row's nodes when the order changes, and disposes only the rows that were removed:
 
 ```tsx
 import { For, signal } from "reze-js";
@@ -85,22 +114,59 @@ import { For, signal } from "reze-js";
 export function List() {
   let items = signal(["x", "y"]);
   return (
+    <div>
+      <ul>
+        <For each={items}>{(name) => <li>{name}</li>}</For>
+      </ul>
+      <button onClick={() => (items = [...items, "z"])}>add</button>
+    </div>
+  );
+}
+```
+
+Use `map` for lists whose rows hold no state. Use `<For>` for everything else. Pass `keyed` a function to match rows by a key instead of by item identity. The row then receives an item getter, and replacing an item with another object that has the same key keeps the row's nodes:
+
+```tsx
+import { For, signal } from "reze-js";
+
+type Todo = { id: number; text: string };
+
+export function Todos() {
+  let todos = signal<Todo[]>([{ id: 1, text: "a" }]);
+  return (
+    <div>
+      <ul>
+        <For each={todos} keyed={(todo) => todo.id}>
+          {(todo) => <li>{todo().text}</li>}
+        </For>
+      </ul>
+      <button onClick={() => (todos = [{ id: 1, text: "b" }])}>go</button>
+    </div>
+  );
+}
+```
+
+For more about row identity and the three `For` modes, see [Building interfaces](/building-interfaces).
+
+A `key` attribute on a native element does not key anything. The compiler reports `KEY_ON_ELEMENT` and renders `key` as an attribute:
+
+```tsx expect=KEY_ON_ELEMENT
+export function Rows() {
+  return (
     <ul>
-      <For each={items}>{(name) => <li>{name}</li>}</For>
+      <li key="a">a</li>
     </ul>
   );
 }
 ```
 
-Use `map` for short lists whose rows hold no state, or whose items are all replaced together anyway. Use `<For>` for everything else. Lists are described in [building interfaces](/building-interfaces#lists-and-identity).
+## Values read once in the body
 
-A `key` attribute on a native element is ignored: Reze has no virtual DOM to reconcile by key. The compiler reports `KEY_ON_ELEMENT` and renders the attribute as written. To key rows, give `<For>` a `keyed` function.
-
-## Reading once in the body
-
-The body of a component runs once, so a value read there is a snapshot:
+The body of a component runs once, so a value read there keeps its first value. This component copies `props.text` in the body, and the caller later changes it:
 
 ```tsx
+import { signal } from "reze-js";
+
 function Label(props: { text: string }) {
   const copy = props.text;
   return (
@@ -109,40 +175,102 @@ function Label(props: { text: string }) {
     </p>
   );
 }
-```
 
-When the caller changes `text`, the first part of the paragraph keeps the old value and the second follows. This is true of any read outside JSX or a derived value. Put the read in JSX, or derive it:
-
-```tsx
-import { computed } from "reze-js";
-
-function Label(props: { text: string }) {
-  const upper = computed(props.text.toUpperCase());
-  return <p>{upper}</p>;
+export function Parent() {
+  let text = signal("a");
+  return (
+    <div>
+      <Label text={text} />
+      <button onClick={() => (text = "b")}>go</button>
+    </div>
+  );
 }
 ```
 
-## Mutating state in place
+After the click, the paragraph reads `a / b`. The first part keeps the old value, and the JSX read follows the caller. Reads in JSX stay live, and so does a `computed` built from a prop:
 
-A `signal` holding an array or object is notified when its value is replaced, not when the value is mutated. `items.push(x)` changes the array and nothing updates. Assign a new array, as in `items = [...items, x]`, or keep the data in a `store`, whose property writes and array methods notify readers. Both are described in [reactivity](/reactivity).
+```tsx
+import { computed, signal } from "reze-js";
+
+function Upper(props: { text: string }) {
+  const upper = computed(props.text.toUpperCase());
+  return <p>{upper}</p>;
+}
+
+export function Parent() {
+  let text = signal("a");
+  return (
+    <div>
+      <Upper text={text} />
+      <button onClick={() => (text = "b")}>go</button>
+    </div>
+  );
+}
+```
+
+The paragraph reads `A` first and `B` after the click.
+
+## In-place mutation
+
+A `signal` notifies its readers when you assign a new value, not when you change the value it holds. `items.push(x)` changes the array without notifying anyone. A `store` tracks writes to its properties and array methods:
+
+```tsx
+import { signal, store } from "reze-js";
+
+export function Bag() {
+  let items = signal(["x"]);
+  let tags = store(["x"]);
+  return (
+    <div>
+      <p>{items.length}</p>
+      <p>{tags.length}</p>
+      <button onClick={() => items.push("y")}>push</button>
+      <button onClick={() => tags.push("y")}>push tag</button>
+      <button onClick={() => (items = [...items])}>copy</button>
+    </div>
+  );
+}
+```
+
+After `push` the first paragraph still reads `1`. After `copy` it reads `2`, because the assignment notifies. After `push tag` the second paragraph reads `2`, because `store` tracks the push. For `signal` and `store` in detail, see [Reactivity](/reactivity).
 
 ## Attribute names
 
-Attribute names are the HTML ones. `className` is not an attribute: it renders as written and the browser ignores it. The compiler reports `UNKNOWN_ATTRIBUTE` with a fix that renames it to `class`. A lowercase `onclick={handler}` attaches the listener but is reported with a suggestion to write `onClick`.
+Attribute names follow HTML. `className` is not an attribute, so the compiler renders it as written and reports `UNKNOWN_ATTRIBUTE`:
+
+```tsx expect=UNKNOWN_ATTRIBUTE
+export function Row() {
+  return <div className="row">x</div>;
+}
+```
+
+The rendered element has the attribute `classname`, and the browser ignores it. Write `class`.
+
+A lowercase event attribute such as `onclick={handler}` still attaches a listener in the compiled output, but the compiler reports it as `EVENT_NAME_LOWERCASE`. Write the camel-case name:
+
+```tsx expect=EVENT_NAME_LOWERCASE
+function handler() {}
+
+export function Action() {
+  return <button onclick={handler}>go</button>;
+}
+```
 
 ## Hooks
 
-Reze has no hooks. The declarations the compiler lowers cover the same ground, and none of them runs again per render:
+Reze exports no `useState`, `useEffect`, or `useMemo`. Declarations in a component body cover the same jobs, and each one runs when the component runs:
 
-| Instead of   | Write                                                                 |
-| ------------ | --------------------------------------------------------------------- |
-| `useState`   | `let count = signal(0)`                                               |
-| `useMemo`    | `const doubled = computed(count * 2)`                                 |
-| `useEffect`  | `effect(() => { ... })` with `onCleanup`, see [lifecycle](/lifecycle) |
-| `useContext` | `useContext(Context)`, see [lifecycle](/lifecycle#context)            |
+| Instead of                 | Write                                                                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useState(0)`              | `let count = signal(0)`                                                                                                                        |
+| `useMemo(() => count * 2)` | `const doubled = computed(count * 2)`                                                                                                          |
+| `useEffect(() => {...})`   | `effect(() => {...})`, which runs once on mount and again after the signals it reads change. See [Lifecycle](/lifecycle).                      |
+| `useContext(Ctx)`          | `useContext(Ctx)` is a plain function that reads the nearest provider above it. It does not depend on call order. See [Lifecycle](/lifecycle). |
 
 ## Related pages
 
-- [Components and JSX](/components) for the recommended style.
-- [Compiler](/compiler) for diagnostics and what gets compiled.
+- [Components and JSX](/components) for props, children, and the `props` helpers.
+- [Reactivity](/reactivity) for `signal`, `computed`, `effect`, and `store`.
+- [Lifecycle](/lifecycle) for effects, cleanup, and context.
 - [Building interfaces](/building-interfaces) for lists, conditions, and events.
+- [The compiler](/compiler) for diagnostics and what gets compiled.

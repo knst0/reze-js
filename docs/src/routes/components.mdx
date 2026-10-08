@@ -1,11 +1,13 @@
 ---
 title: Components and JSX
-description: Component execution, props, composition, JSX bindings, and DOM elements.
+description: Explains how components run, how props and children stay reactive, which JSX forms compile, and how dynamic components and control-flow tags work.
 ---
 
 # Components and JSX
 
-A component is a function that builds part of the interface. It runs once, reads its props through getters, and returns JSX. Updates happen inside the bindings the JSX created, not by running the component again.
+A component is a function that returns JSX and runs once. Each binding in the JSX updates one DOM attribute, property, or text node when the signal it reads changes, so the component itself does not run again. This page covers how components execute, how props and children behave, which JSX forms the compiler accepts, and how to choose a component at runtime.
+
+The `Counter` component below increments `count` by `props.step`, offers a reset button, and shows a message once `count` reaches 10 or more:
 
 ```tsx
 import { Show, signal } from "reze-js";
@@ -27,11 +29,11 @@ export function Counter(props: { step: number }) {
 }
 ```
 
-`Counter` runs once per use. Reading `count` or `props.step` inside the JSX creates a binding that updates its own text node or attribute later. Assigning `count` notifies exactly those bindings.
+Each use of `Counter` creates one instance, and that instance runs once. Reading `count` or `props.step` inside the JSX creates a binding, and assigning `count` updates only the bindings that read it.
 
-## Execution
+## Component execution
 
-`createComponent` calls the component once, untracked, so reads in the body never re-run the caller. A component that renders `<b>{props.n}</b>` builds the `<b>` one time; when `props.n` changes, only the text binding re-evaluates. Take `props` as the one parameter and read its fields where the values are used:
+The runtime calls a component once and does not track the reads in its body, so the body never re-runs. Reads inside JSX create bindings, and reads inside event handlers run when the handler runs. In the following example, `Link` runs once. Clicking either button updates an attribute of the same anchor:
 
 ```tsx
 import { signal } from "reze-js";
@@ -47,53 +49,88 @@ function Link(props: { href: string; label?: string; title?: string }) {
 export function Nav() {
   let href = signal("/a");
   let title = signal("t1");
-  return <Link href={href} title={title} />;
-}
-```
-
-`Link` renders once. Changing `href` or `title` updates the `href` and `title` attributes without rebuilding the anchor. The same rule applies to local `signal` reads: the body never re-runs for sources it reads. Reading a prop into a variable in the body takes a snapshot that never updates. A destructured parameter list is also supported, in the forms the compiler can rewrite, but it has edges that lose updates; see [familiar patterns](/familiar-patterns). Reactive behavior of the declarations themselves is described in [reactivity](/reactivity), and disposal of what a component built is described in [lifecycle](/lifecycle).
-
-## Supported JSX
-
-Elements, fragments, arrays, and getters compose in order between static siblings:
-
-```tsx
-import { For, signal } from "reze-js";
-
-export function List() {
-  let items = signal(["x", "y"]);
   return (
-    <ul>
-      <li>first</li>
-      <For each={items}>{(name) => <li>{name}</li>}</For>
-      <>
-        <li>middle</li>
-      </>
-      <li>last</li>
-    </ul>
+    <>
+      <button onClick={() => (href = "/b")}>Go to b</button>
+      <button onClick={() => (title = "t2")}>Retitle</button>
+      <Link href={href} title={title} />
+    </>
   );
 }
 ```
 
-Setting `items` to `["z"]` removes the two rows and builds one in their place, and leaves the `first`, `middle`, and `last` rows alone. A text run such as `doubled: {n * 2}` owns a single text node and rewrites it in place. A conditional written with `? :` or `&&` rebuilds its branch only when the test truthiness flips; while the test stays truthy the branch keeps its nodes and updates its bindings in place. The branch forms are detailed in [building interfaces](/building-interfaces). A list written as `{items.map(...)}` also works, but it rebuilds every row on each change; see [familiar patterns](/familiar-patterns).
+The compiler passes `href={href}` as a getter, so `props.href` reads the current value each time its binding runs. A signal copied into a variable at the top of the component body is different. The copy is read once and never updates, and the compiler reports it with `SIGNAL_READ_ONCE`:
 
-Attribute values are plain values, not thunks. The compiler re-evaluates the attribute expression in an effect, so a bare function would reach the DOM. Functions are valid as `children`, as event handlers, and as `ref` callbacks. A listener is the camel-case `onClick` or the `on:` form described in [building interfaces](/building-interfaces); a lowercase `onclick={handler}` still attaches the listener, but the compiler reports it and suggests `onClick`, and only a string literal `onclick="..."` renders as an HTML attribute.
+```tsx expect=SIGNAL_READ_ONCE
+import { signal } from "reze-js";
+
+export function Counter() {
+  let count = signal(0);
+  const doubled = count * 2;
+  return <button onClick={() => (count += 1)}>{doubled}</button>;
+}
+```
+
+Read the signal where the value is used, or declare a derived value. For more information about derived values, see [Reactivity](/reactivity).
 
 ## Props
 
-Props arrive as an object whose fields are getters when the caller passed a reactive expression. Reading `props.step` inside JSX subscribes that binding; reading it in the body does not make the body re-run. `undefined` counts as absent when props merge, so a caller passing `label={undefined}` falls back to the default the component declared.
+Props arrive as one object. A prop whose expression reads a signal is passed as a getter, so the component sees its current value wherever it reads the prop inside JSX.
 
-`mergeProps`, `splitProps`, and `omitProps` combine and divide props without losing reactivity:
+### Destructured props
+
+A component can destructure its only parameter. The compiler rewrites each name into a read of the props object at the place the name is used, so the names stay reactive. It reports `PROPS_REWRITTEN` at information level for each rewritten component, and the sample below lists that code. A default applies while the prop is `undefined`, and a rest element holds the remaining props:
+
+```tsx expect=PROPS_REWRITTEN
+import { signal } from "reze-js";
+
+function Link({ href, label = "home", ...rest }: { href: string; label?: string; title?: string }) {
+  return (
+    <a href={href} {...rest}>
+      {label}
+    </a>
+  );
+}
+
+export function Nav() {
+  let title = signal("t1");
+  return (
+    <>
+      <button onClick={() => (title = "t2")}>Retitle</button>
+      <Link href="/a" title={title} />
+    </>
+  );
+}
+```
+
+The compiler does not rewrite every pattern. A default that calls a function is one of the refused forms. Each name in a refused pattern is read once, and it never updates. The compiler reports it with `PROPS_DESTRUCTURED`, and the message names the reason. Other refused forms include computed keys, nested defaults, nested rest elements, array patterns, and reassigned names:
+
+```tsx expect=PROPS_DESTRUCTURED
+export function Greeting({ name = fallback() }) {
+  return <p>Hello {name}</p>;
+}
+```
+
+To avoid the refused form, take `props` as the parameter and read `props.name` where the value is used.
+
+### Props helpers
+
+`mergeProps`, `splitProps`, and `omitProps` combine and divide props. They are compiler syntax: a call with object literals and static keys becomes an object literal or an array of literals, and other calls compile to a runtime call. Call them directly; the compiler rejects a use as a value.
+
+The following example uses each helper:
 
 ```tsx
 import { mergeProps, omitProps, signal, splitProps } from "reze-js";
 
 function Button(props: { label?: string; kind?: string }) {
-  const merged = mergeProps({ label: "Save", kind: "primary" }, props);
+  const merged = mergeProps({ label: "Save", kind: "primary" }, props) as {
+    label: string;
+    kind: string;
+  };
   return <button class={merged.kind}>{merged.label}</button>;
 }
 
-function Field(props: { label: string; kind: string; hint: string }) {
+function Field(props: { label?: string; kind: string; hint: string }) {
   const [own, rest] = splitProps(props, ["label"]);
   return (
     <label title={rest.hint}>
@@ -103,24 +140,60 @@ function Field(props: { label: string; kind: string; hint: string }) {
   );
 }
 
-function Plain(props: { label: string; kind: string }) {
-  const rest = omitProps(props, "kind");
+function Plain(props: { label?: string; kind: string }) {
+  const rest = omitProps(props, "kind") as { label?: string };
   return <button>{rest.label}</button>;
 }
 
 export function Demo() {
   let label = signal<string | undefined>(undefined);
-  return <Button label={label} kind="ghost" />;
+  return (
+    <>
+      <button onClick={() => (label = "Send")}>Send</button>
+      <button onClick={() => (label = undefined)}>Reset</button>
+      <Button label={label} kind="ghost" />
+      <Field label={label} kind="ghost" hint="Email" />
+      <Plain label={label} kind="ghost" />
+    </>
+  );
 }
 ```
 
-Each key of the merged view reads the last source holding a non-`undefined` value, and getters stay reactive: setting `label` to `"Send"` shows `Send`, and setting it back to `undefined` restores `Save`. `splitProps` returns one lazy view per key group plus the remainder; `omitProps` returns the remainder without the listed keys. Calls over object literals with static keys dissolve into plain object literals; every other call compiles to the private runtime helper. Using any of the three as a value rather than calling it is refused.
+`mergeProps` gives each key the value of the last source that is not `undefined`. In `Button`, the caller's `kind` wins over the default `primary`, and clicking Reset shows `Save` again. The getters stay reactive. `splitProps` returns one view for each key group, plus one view for the keys left over. `omitProps` returns a view without the listed keys. The result of `mergeProps` and `omitProps` is typed as `Props`, a record of `unknown` values, so the example asserts a narrower type. The result of `splitProps` is typed from its input.
 
-A spread whose expression reads reactive state is dynamic: it re-runs when what it reads changes and re-applies class, style, properties, and children. Attributes written after the spread win over the spread. Keys that disappear from the spread are removed from the element.
+Using one of them as a value, without calling it, is an error reported as `PROPS_AS_VALUE`:
+
+```tsx expect=PROPS_AS_VALUE
+import { omitProps } from "reze-js";
+
+export const view = omitProps;
+```
+
+### Refs on components
+
+A `ref` on a component is not an ordinary prop. The component receives it as `props.ref`, and the component decides which element receives it. Forward the ref to an element, and the variable is assigned when that element mounts:
+
+```tsx
+function Field(props: { ref?: HTMLInputElement | ((el: HTMLInputElement) => void) }) {
+  return <input ref={props.ref} />;
+}
+
+export function Demo() {
+  let input!: HTMLInputElement;
+  return (
+    <>
+      <Field ref={input} />
+      <button onClick={() => input.focus()}>Focus</button>
+    </>
+  );
+}
+```
+
+A component that does not read `props.ref` leaves the variable unassigned. For refs on elements, see [Building interfaces](/building-interfaces).
 
 ## Children
 
-Children are passed lazily, so content written between a component tags stays reactive without rebuilding the component:
+Content between a component's tags arrives as `props.children`. The compiler passes it lazily, so a binding inside the children updates in place without rebuilding the component. The element nodes stay the same. In the following example, clicking the button changes the text to `count 2` and keeps the `<b>` element:
 
 ```tsx
 import { signal, type JSX } from "reze-js";
@@ -132,36 +205,48 @@ function Card(props: { children?: JSX.Element }) {
 export function Demo() {
   let n = signal(1);
   return (
-    <Card>
-      count {n}
-      <b />
-    </Card>
+    <>
+      <button onClick={() => (n += 1)}>Add one</button>
+      <Card>
+        count {n}
+        <b />
+      </Card>
+    </>
   );
 }
 ```
 
-Setting `n` to `2` rewrites the text to `count 2` and keeps the same `<b>` node. The same laziness applies to conditionals placed in children: `<Card>{ok ? <b /> : null}</Card>` swaps the `<b>` without rebuilding `Card`.
+## Supported JSX
 
-A `ref` placed on a component reaches whatever the component forwards it to:
+The compiler accepts elements, fragments, expressions as children, and attributes. A value that reads a signal becomes a binding. Elements, fragments, and text compose in document order.
+
+### Attribute values
+
+An attribute takes a plain value, not a function. The attribute types in the JSX namespace accept no function, so functions belong in `children`, in event handlers, and in `ref` callbacks. The following component updates the `class` and `title` attributes when the button changes `online`:
 
 ```tsx
-import type { JSX } from "reze-js";
+import { signal } from "reze-js";
 
-function Field(props: { ref?: HTMLInputElement | ((el: HTMLInputElement) => void) }) {
-  return <input ref={props.ref} />;
-}
-
-export function Demo() {
-  let input!: HTMLInputElement;
-  return <Field ref={input} />;
+export function Status() {
+  let online = signal(true);
+  return (
+    <>
+      <button onClick={() => (online = !online)}>Toggle</button>
+      <p class={online ? "on" : "off"} title={online ? "online" : "offline"}>
+        status
+      </p>
+    </>
+  );
 }
 ```
 
-After mounting, `input` is the `<input>` element. The element-side `ref` forms are described in [building interfaces](/building-interfaces).
+### Fragments and spreads
 
-## Choosing a component at runtime
+A fragment (`<>` and `</>`) groups siblings without adding a DOM node. A spread on a native element, such as `{...attrs}`, applies each key to the element, and it re-applies when the values it reads change. An attribute written after the spread wins over the spread. A key that disappears from the spread is removed from the element. A spread on a component merges into the component's props, as [Props helpers](#props-helpers) describes.
 
-`dynamic` renders whichever component a source returns, and `dynamicElement` additionally renders tag names chosen at runtime in the namespace of the tag:
+## Dynamic components
+
+`dynamic` takes a source function and returns a component. That component renders whichever component the source returns, and it re-evaluates the source when the signals it reads change. In the following example, the button assigns the component `Italic` to `picked`, and the next button assigns `false`:
 
 ```tsx
 import { dynamic, signal } from "reze-js";
@@ -179,25 +264,88 @@ export function Picker() {
   let label = signal("a");
   const Picked = dynamic(() => picked);
   return (
-    <p>
-      <Picked label={label} />
-    </p>
+    <>
+      <button onClick={() => (picked = Italic)}>Italic</button>
+      <button onClick={() => (picked = false)}>Hide</button>
+      <button onClick={() => (label = "b")}>Relabel</button>
+      <p>
+        <Picked label={label} />
+      </p>
+    </>
   );
 }
 ```
 
-Switching `picked` from `Bold` to `Italic` disposes the `<b>` tree and builds `<i>`; setting it to `false` renders nothing. While the choice stays the same, prop updates flow through without rebuilding: setting `label` to `"b"` rewrites the text in place. Switching on an unrelated signal does not rebuild either.
+A new source result disposes the nodes of the previous component and builds the new one. When the source returns the same component again, nothing is rebuilt, and the props stay live. Changing `label` rewrites the text of the current component in place. A falsy result, such as `false`, renders nothing.
 
-Every call to `dynamic` creates a new component, so call it once per owner: hoist the call to module scope when the choice does not depend on local state, and when it closes over local state call it once in the component body, which runs once, so each instance gets its own component. A component kept in a signal is assigned directly — `picked = Italic` — since the compiler distinguishes the stored function from an updater. `dynamic` accepts components only; returning a tag-name string at runtime throws, and development builds name `dynamicElement` as the way to render a tag name chosen at runtime.
+Assign the component itself to the signal, as `picked = Italic` does. Each call to `dynamic` returns a new component, so call it once per instance: at module scope, or in a component body, which runs once. Keep the call out of JSX and bindings.
 
-## Constraints and pitfalls
+### Tag names chosen at runtime
 
-`Show`, `For`, `Repeat`, `Switch`, `Match`, and `Portal` are compiler intrinsics. Every such tag compiles to direct runtime calls, and the imported binding only throws. Call one, pass one around, or re-export one, and that throw is what runs. Render each one as a tag, and give it the attributes it accepts: `Show` takes `when` and `fallback`, `For` takes `each`, `fallback`, and `keyed`, `Repeat` takes `count` and `fallback`, `Switch` takes `fallback` with `Match` children, `Match` takes `when`, and `Portal` takes `mount`. Anything else on those tags, spreads included, has no meaning.
+A string literal returned by the source is a tag name. The compiler turns it into an element in the matching namespace, so `dynamic(() => (round ? "circle" : "button"))` renders an SVG `circle` or an HTML `button`. A string that is not a literal at the call site throws when the source returns it, and development builds name `dynamicElement` in the message. Use `dynamicElement` for tag names that come from runtime values:
 
-Component bodies run once, so work that must repeat on prop changes belongs in a binding, a derived value from [reactivity](/reactivity), or an effect with cleanup from [lifecycle](/lifecycle). Reactive declarations are file-local compiler syntax; a named `export` of a `signal` stays reactive for importing modules, which can read it but not write it.
+```tsx
+import { dynamicElement, signal } from "reze-js";
+
+export function Heading() {
+  let level = signal("h2");
+  const Title = dynamicElement(() => level);
+  return (
+    <>
+      <button onClick={() => (level = "h3")}>Smaller</button>
+      <Title class="title">Results</Title>
+    </>
+  );
+}
+```
+
+`dynamicElement` renders the tag with the props and children it receives. A name of an SVG element gets the SVG namespace, `math` gets the MathML namespace, and other names get the HTML namespace. A falsy source result renders nothing.
+
+## Control-flow tags
+
+`Show`, `For`, `Repeat`, `Switch`, `Match`, and `Portal` are compiler intrinsics. Each tag compiles to direct runtime calls, so the imported function only throws if it is called. Use these names only as JSX tags. [Building interfaces](/building-interfaces) covers what each tag is used for.
+
+Each tag accepts a fixed set of attributes:
+
+- `Show` takes `when`, which is required, and `fallback`.
+- `For` takes `each`, which is required, `fallback`, and `keyed`. Its child is one row function.
+- `Repeat` takes `count`, which is required, and `fallback`. Its child is one row function.
+- `Switch` takes `fallback`. Its children must be `Match` elements.
+- `Match` takes `when`, which is required, and must be a direct child of `Switch`.
+- `Portal` takes `mount`.
+
+Spreads and other attributes on these tags have no meaning, and the compiler reports them with `CONTROL_FLOW_ATTRIBUTE`:
+
+```tsx expect=CONTROL_FLOW_ATTRIBUTE
+import { Show, signal } from "reze-js";
+
+export function Panel() {
+  let open = signal(true);
+  return (
+    <>
+      <button onClick={() => (open = false)}>Close</button>
+      <Show when={open} keyed>
+        <p>open</p>
+      </Show>
+    </>
+  );
+}
+```
+
+Using a control-flow name as a value is an error, reported as `CONTROL_FLOW_AS_VALUE`:
+
+```tsx expect=CONTROL_FLOW_AS_VALUE
+import { Show } from "reze-js";
+
+export const Conditional = Show;
+```
 
 ## Related pages
 
-- [Building interfaces](/building-interfaces) for events, conditional rendering, lists, styling, forms, DOM access, and portals.
-- [Reactivity](/reactivity) for declarations, tracked reads, and assignments.
-- [Lifecycle](/lifecycle) for ownership, effects, and cleanup.
+The following pages cover related topics:
+
+- [Building interfaces](/building-interfaces): events, conditions, lists, styling, forms, element refs, portals, and async components.
+- [Reactivity](/reactivity): `signal`, `computed`, `store`, and `action`.
+- [Lifecycle](/lifecycle): `effect`, ownership, cleanup, and context.
+- [Familiar patterns](/familiar-patterns): patterns from other frameworks and what to write instead.
+- [Compiler](/compiler): what the compiler lowers and its diagnostics.

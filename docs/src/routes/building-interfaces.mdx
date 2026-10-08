@@ -1,17 +1,15 @@
 ---
 title: Building interfaces
-description: Events, control flow, lists, forms, styling, DOM access, and portals.
+description: Handle events, render conditions and lists, style elements, bind form fields, reference elements, portal content, show async views, and load components as islands in Reze.
 ---
 
 # Building interfaces
 
-This page answers one question per section: how do events, conditions, lists, styles, forms, element handles, and portals behave in Reze. Each section gives a runnable example, the exact update rule, and the caveat that matters in practice.
+This page covers the features that shape what a component renders and how it responds to input: events, conditional and list rendering, styling, form fields, element references, portals, async views, and islands. Each section gives the rule, an example, and the compiler checks that apply to it.
 
-Component execution, props, and children are described in [components](/components). Reactive declarations, derived values, and cleanup live in [reactivity](/reactivity) and [lifecycle](/lifecycle).
+## Events
 
-## Events and user input
-
-Listeners use camel-case names such as `onClick` and `onInput`. A lowercase `onclick={handler}` still attaches a listener, but the compiler reports `EVENT_NAME_LOWERCASE` and suggests `onClick`; only a string literal `onclick="..."` renders as an HTML attribute.
+Event attributes use camel-case names such as `onClick` and `onInput`. Each takes a handler function that receives the DOM event:
 
 ```tsx
 import { signal } from "reze-js";
@@ -27,10 +25,38 @@ export function Stepper(props: { step: number }) {
 }
 ```
 
-Clicking the button bubbles from the target up to the handler on the `<div>`. Inside a handler, `currentTarget` is the element that declared the handler. `stopPropagation` stops the delegated walk. Writes from handlers batch: setting two signals in one click runs dependent effects once.
+Inside a handler, `currentTarget` is the element that declares the handler, even when the event starts at a child. Calling `stopPropagation()` on the event stops it from reaching ancestors that handle the same event.
 
-Eleven event types delegate through one document listener each: `click`, `input`, `change`, `submit`, `keydown`, `keyup`, `pointerdown`, `pointerup`, `pointermove`, `focusin`, `focusout`. Every other `on` name, including `onDoubleClick` for `dblclick`, attaches a direct listener. Disabled form elements do not run delegated handlers.
-A two-element array passes data without closing over it:
+### Delegated and direct events
+
+Eleven event types are delegated. Reze installs one listener per type on the `document` and calls the handler on the element that declares it:
+
+- `click`
+- `input`
+- `change`
+- `submit`
+- `keydown`
+- `keyup`
+- `pointerdown`
+- `pointerup`
+- `pointermove`
+- `focusin`
+- `focusout`
+
+Every other event attaches its listener directly to the element. For example, `onDoubleClick` listens for `dblclick` on the element itself. A disabled `<button>` does not run its delegated `onClick`. Spread props use the same name mapping.
+
+A lowercase name such as `onclick={save}` compiles to a `click` listener, and the compiler reports `EVENT_NAME_LOWERCASE` as a warning. Rename the attribute to camel case to clear the warning.
+
+```tsx expect=EVENT_NAME_LOWERCASE
+export function Save() {
+  const save = () => {};
+  return <button onclick={save}>save</button>;
+}
+```
+
+### Pass data to a handler
+
+A two-element array passes data to the handler without a closure:
 
 ```tsx
 import { signal } from "reze-js";
@@ -48,48 +74,59 @@ export function Choices() {
 }
 ```
 
-For a delegated event, `[handler, data]` calls `handler(data, event)`. For a direct listener, `[handler, options]` passes `options` to `addEventListener`, so `[save, { once: true }]` runs once. The `on:` prefix always attaches a direct listener: `on:scroll={onScroll}` listens for `scroll`, and `on:custom={[onCustom, { once: true }]}` passes listener options. The same mapping applies inside spreads: a spread `onClick` delegates, a spread `onDoubleClick` listens for `dblclick`.
+For a delegated event, `[handler, data]` calls `handler(data, event)`. For a direct listener, `[handler, options]` passes `options` to `addEventListener`, so `[save, { once: true }]` runs once.
+
+### Listen to any event name
+
+The `on:` prefix attaches a direct listener for the name after the colon, with no camel-case mapping: `on:scroll={onScroll}` listens for `scroll`, and `on:custom={[onCustom, { once: true }]}` listens for `custom` once.
 
 ## Conditional rendering
 
-Write small conditions inline with `? :` or `&&`. The branch rebuilds only when the test truthiness flips; while truthy it keeps its nodes and updates bindings in place.
+### Inline conditions
+
+Use `&&` or `?:` in JSX for a single condition. The branch builds its nodes when the test becomes truthy and disposes them when the test becomes falsy. While the test stays truthy, the nodes stay in place and their bindings update.
 
 ```tsx
 import { signal } from "reze-js";
 
 export function Panel() {
-  let open = signal<string | null>("a");
-  let text = signal("hello");
+  let open = signal(true);
+  let text = signal("details");
   return (
     <div>
-      <span>head</span>
+      <button onClick={() => (open = !open)}>toggle</button>
+      <button onClick={() => (text = text === "details" ? "more details" : "details")}>change text</button>
       {open && <p>{text}</p>}
-      <span>tail</span>
     </div>
   );
 }
 ```
 
-Changing `open` from `"a"` to `"b"` keeps the same `<p>` and rewrites its text when `text` changes. Setting `open` to `null` removes the paragraph; setting it back builds a new one. Changing between two truthy values never rebuilds; falling to a falsy value disposes the branch.
+Changing `text` updates the paragraph in place. Setting `open` to `false` removes the paragraph, and setting it back to `true` builds a new one. A ternary such as `{ready ? <b>ready</b> : <i>waiting</i>}` follows the same rule: a change between two values with the same truthiness keeps the nodes, and a flip rebuilds the active side.
 
-`Show` names the same behavior and exposes the tested value to its function child as a tracked getter:
+### Show and Switch
+
+`Show` renders its children while `when` is truthy and `fallback` otherwise. Without a `fallback`, a falsy `when` renders nothing. A function child receives the tested value as a tracked getter:
 
 ```tsx
 import { Show, signal } from "reze-js";
 
-export function User() {
-  let name = signal<string | undefined>("Ada");
+export function Greeting() {
+  let name = signal("Ada");
   return (
-    <Show when={name} fallback={<p>anonymous</p>}>
-      {(value) => <p>hello {value()}</p>}
-    </Show>
+    <div>
+      <input value={name} onInput={(e: InputEvent) => (name = (e.currentTarget as HTMLInputElement).value)} />
+      <Show when={name} fallback={<p>anonymous</p>}>
+        {(value) => <p>hello {value()}</p>}
+      </Show>
+    </div>
   );
 }
 ```
 
-While `name` stays truthy, edits update the greeting in place and `value()` always reads the current name. Element children behave the same way without the getter. When truthiness flips, the old side disposes and the new side builds. Without a `fallback`, a falsy `when` renders nothing.
+Clearing the input makes `name` falsy, which shows the fallback.
 
-`Switch` picks the first truthy `Match` and rebuilds only when that choice changes:
+`Switch` renders the first `Match` whose `when` is truthy, or its `fallback` when none match. It rebuilds only when the chosen `Match` changes:
 
 ```tsx
 import { Match, Switch, signal } from "reze-js";
@@ -97,23 +134,50 @@ import { Match, Switch, signal } from "reze-js";
 export function Status() {
   let code = signal(200);
   return (
-    <Switch fallback={<p>unknown</p>}>
-      <Match when={code === 200}>
-        <p>ok</p>
-      </Match>
-      <Match when={code === 404}>
-        <p>missing</p>
-      </Match>
-    </Switch>
+    <div>
+      <button onClick={() => (code = 404)}>not found</button>
+      <Switch fallback={<p>unknown</p>}>
+        <Match when={code === 200}>
+          <p>ok</p>
+        </Match>
+        <Match when={code === 404}>
+          <p>missing</p>
+        </Match>
+      </Switch>
+    </div>
   );
 }
 ```
 
-A function child of `Match` receives its `when` as a tracked getter, mirroring `Show`. `Match` works only as a direct child of `Switch`; a single condition uses `Show`. Disposal follows the same rule as `Show`: the side switched away from is disposed, including the effects and async work it owned, as described in [lifecycle](/lifecycle).
+A function child of `Match` receives its `when` as a tracked getter, as `Show` does. `Match` works only as a direct child of `Switch`, so use `Show` for a single condition:
 
-## Lists and identity
+```tsx expect=MATCH_OUTSIDE_SWITCH
+import { Match } from "reze-js";
 
-`For` renders one row per item. By default, or with `keyed={true}`, rows follow item identity and the child receives the item directly plus an index getter. With a `keyed` function, rows follow that key and the child receives both an item getter and an index getter. With `keyed={false}`, rows follow positions and the child receives an item getter plus a plain numeric index.
+export function Ready(props: { ready: boolean }) {
+  return (
+    <div>
+      <Match when={props.ready}>
+        <b>ready</b>
+      </Match>
+    </div>
+  );
+}
+```
+
+## Lists
+
+### Choose a row identity
+
+`For` renders one row per item. Its `keyed` prop decides which rows are kept when `each` changes:
+
+| Mode           | `keyed` value              | Rows follow                  | Row `item` argument   | Row `index` argument      |
+| -------------- | -------------------------- | ---------------------------- | --------------------- | ------------------------- |
+| Identity       | Omitted, or `keyed={true}` | The item object              | The item itself       | A getter for the position |
+| Keyed function | `keyed={(item) => key}`    | The key the function returns | A getter for the item | A getter for the position |
+| Position       | `keyed={false}`            | The array position           | A getter for the item | The position as a number  |
+
+The following component renders todos with a function key. Removing a row removes that row's nodes:
 
 ```tsx
 import { For, signal } from "reze-js";
@@ -121,20 +185,19 @@ import { For, signal } from "reze-js";
 interface Todo {
   id: number;
   title: string;
-  done: boolean;
 }
 
 export function Todos() {
   let todos = signal<Todo[]>([
-    { id: 1, title: "write", done: false },
-    { id: 2, title: "review", done: false },
+    { id: 1, title: "write" },
+    { id: 2, title: "review" },
   ]);
   return (
     <ul>
       <For each={todos} fallback={<li>empty</li>} keyed={(todo) => todo.id}>
         {(todo, index) => (
-          <li class={{ done: todo().done }}>
-            {index()}: {todo().title}
+          <li>
+            {index()}: {todo().title} <button onClick={() => (todos = todos.filter((t) => t.id !== todo().id))}>remove</button>
           </li>
         )}
       </For>
@@ -143,11 +206,37 @@ export function Todos() {
 }
 ```
 
-Each row is its own owner: removing an item disposes exactly that row, and the `fallback` shows in its own owner while the list is empty. In the function-keyed example, `todo()` tracks the row item and `index()` tracks its position. Reordering moves nodes; replacing an item with another object of the same key updates its getter while preserving the row's nodes.
+In keyed-function mode, replacing an item with another object that has the same key keeps the row's nodes and updates its `todo()` getter. Reordering moves the existing nodes. In identity mode, a new object builds a new row. The `fallback` renders when `each` is empty, `null`, `undefined`, or `false`.
 
-Keep keys stable for the lifetime of a row. Use identity mode for stable objects, function-keyed mode for objects replaced with the same logical identity, and position mode when a row belongs to its array slot. `each` accepts an array, `null`, `undefined`, or `false`; the last three render the fallback.
+Keep keys stable for the lifetime of a row. Use identity mode for stable objects, a keyed function when items are replaced but keep the same logical identity, and position mode when a row belongs to its array slot.
 
-`Repeat` renders a fixed count of rows indexed by position:
+An array literal passed directly to `each` builds new items on every evaluation, so no row can be reused. The compiler reports `INLINE_EACH` as a warning:
+
+```tsx expect=INLINE_EACH
+import { For } from "reze-js";
+
+export function Digits() {
+  return (
+    <ul>
+      <For each={[1, 2, 3]}>{(n) => <li>{n}</li>}</For>
+    </ul>
+  );
+}
+```
+
+Hoist the array to a module constant, or hold it in a signal.
+
+The compiler reports `KEY_ON_ELEMENT` as a warning when `key` is set on a native element, because `<For>` is the only place rows are keyed:
+
+```tsx expect=KEY_ON_ELEMENT
+export function Row() {
+  return <li key="a">a</li>;
+}
+```
+
+### Repeat a fixed count
+
+`Repeat` renders `count` rows, each passed its position as a plain number:
 
 ```tsx
 import { Repeat, signal } from "reze-js";
@@ -155,20 +244,51 @@ import { Repeat, signal } from "reze-js";
 export function Placeholders() {
   let count = signal(2);
   return (
-    <ul>
-      <Repeat count={count} fallback={<li>none</li>}>
-        {(index) => <li>row {index}</li>}
-      </Repeat>
-    </ul>
+    <div>
+      <button onClick={() => (count += 1)}>add row</button>
+      <ul>
+        <Repeat count={count} fallback={<li>none</li>}>
+          {(index) => <li>row {index}</li>}
+        </Repeat>
+      </ul>
+    </div>
   );
 }
 ```
 
-A `count` that is not a positive number renders zero rows; fractions truncate. A smaller count disposes rows from the end, a larger count appends rows, and surviving rows keep their nodes. The child is exactly one `(index) => …` function, and the index is a plain number, not a getter.
+A `count` that is not a positive number renders zero rows, and a fraction is truncated. Growing `count` appends rows, and shrinking it removes rows from the end. `fallback` renders while there are no rows.
+
+### Select one row of many
+
+`selector(source)` returns `isSelected(key)`, a function that tells whether `key` is the current value of `source`. Use it when many rows compare themselves with one selection. With the default `Object.is` comparison, each row subscribes to its own key, so a change re-runs only the rows whose answer flipped: the row that was selected and the row that is now selected. The source is a getter, so pass `() => active`, not the signal itself:
+
+```tsx
+import { For, selector, signal } from "reze-js";
+
+const tabs = ["home", "docs", "blog"];
+
+export function Tabs() {
+  let active = signal("home");
+  const isActive = selector(() => active);
+  return (
+    <nav>
+      <For each={tabs}>
+        {(tab) => (
+          <button class={{ on: isActive(tab) }} onClick={() => (active = tab)}>
+            {tab}
+          </button>
+        )}
+      </For>
+    </nav>
+  );
+}
+```
+
+Outside a tracked context, `isSelected(key)` returns the current answer without subscribing. A custom `equals(key, value)` replaces `Object.is`. With a custom `equals`, every live key is checked on each change, so the cost grows with the number of rows.
 
 ## Styling
 
-`class` accepts a string, a toggle object, or an array. `style` accepts a CSS string or an object of kebab-case properties.
+`class` accepts a string, `null`, `undefined`, `false`, a toggle object, or an array. `style` accepts a string or an object. The following component toggles a class and sets a width from signals:
 
 ```tsx
 import { signal } from "reze-js";
@@ -177,23 +297,32 @@ export function Badge() {
   let active = signal(false);
   let width = signal(1);
   return (
-    <p>
-      <b class={["btn", { active: active }]} />
-      <i style={{ display: "block", width: width + "px" }} />
-    </p>
+    <div>
+      <button onClick={() => (active = !active)}>toggle</button>
+      <button onClick={() => (width += 1)}>wider</button>
+      <p class={["btn", { active: active }]}>
+        <b style={{ display: "block", width: width + "px" }}>bar</b>
+      </p>
+    </div>
   );
 }
 ```
 
-A string replaces the `class` attribute; `null`, `undefined`, and `false` remove it. An object turns on every space-separated class of each truthy key, so `{ "bg-sky-400 text-white": selected }` toggles two tokens together and keeps a token shared by both sides across the flip. An array merges its items in order with nesting allowed: a later object key overrides an earlier one, and strings and numbers, `0` included, count as keys. Object and array values diff against the tokens the previous write applied, and classes added by other code are left alone.
+A string replaces the `class` attribute. `null`, `undefined`, and `false` remove it. An object adds every space-separated class of each truthy key, so `{ "bg-sky-400 text-white": selected }` toggles both classes together. An array applies its items in order, with nesting allowed. When two object keys name the same class, the later key decides whether it is on.
 
-A style string sets `cssText`. In an object, `null` and `undefined` remove that property; `null` or `undefined` as the whole value removes the `style` attribute. Partly reactive objects work: `width: width + "px"` updates only the width while `display` stays. Only changed properties are written.
+Object and array values change only the classes that the previous write applied to the element. Classes that other code added stay in place.
 
-Three prefixes select the lower-level write. `bool:hidden={hidden}` toggles the `hidden` attribute. `attr:aria-label={label}` and namespaced names such as `xlink:href` write attributes, with `null`, `undefined`, and `false` removing them. `prop:custom={value}` assigns a JavaScript property instead of an attribute.
+A `style` string sets the element's `cssText`. A `style` object takes kebab-case CSS property names. Within the object, `null` and `undefined` remove that property. As the whole value, `null` or `undefined` removes the `style` attribute. In the example, `width` updates when `width` changes and `display` stays as written.
+
+Three prefixes select lower-level writes:
+
+- `bool:hidden={hidden}` toggles the boolean `hidden` attribute.
+- `attr:aria-label={label}` writes an attribute. Namespaced names such as `xlink:href` also write attributes. `null`, `undefined`, and `false` remove the attribute.
+- `prop:customThing={value}` assigns a JavaScript property with that exact name.
 
 ## Forms
 
-There is no two-way binding helper. Wire the current value plus the event that reports edits:
+Bind the current value to `value` and update the signal from the event that reports the edit:
 
 ```tsx
 import { signal } from "reze-js";
@@ -221,9 +350,9 @@ export function Draft() {
 }
 ```
 
-`value` and `checked` are written as properties, not attributes, so typing does not fight the binding: the property is rewritten when the bound value changes and left alone otherwise. The same applies to `checked` on a checkbox and to `prop:` writes generally. A `<select>` applies its `value` after its options are inserted, so the initial selection matches even on first mount. Pressing Add stores the trimmed draft in `submitted` and clears the field, so the paragraph shows the last submitted value.
+On an HTML element, `value`, `checked`, `selected`, `textContent`, and `innerHTML` are written as DOM properties rather than attributes. On a `<select>`, `value` selects the matching `<option>` once the options are in place.
 
-The todo-list pattern combines both controls with a store:
+A checkbox bound to a `store` item follows the same pattern. The handler writes the item, and the bindings read it:
 
 ```tsx
 import { For, store } from "reze-js";
@@ -253,29 +382,53 @@ export function TodoList() {
 }
 ```
 
-The checkbox reflects `done` through `checked`, the row reflects it through `class`, and the change handler flips the store item in place. Store reads and updates are described in [reactivity](/reactivity).
+The checkbox reflects `done` through `checked`, the row reflects it through `class`, and the change handler flips the item in place.
 
-## DOM access
+### Link labels with createUniqueId
 
-`ref` exposes the element. Assign it to a variable, an object member, an array slot, or a callback:
+`createUniqueId()` returns an id that is unique on the page. Use it to connect a label to an input in a component that can render more than once:
 
 ```tsx
-export function Canvas() {
-  let canvas!: HTMLDivElement;
-  const seen: Element[] = [];
+import { createUniqueId } from "reze-js";
+
+export function Field(props: { label: string }) {
+  const id = createUniqueId();
   return (
-    <div ref={canvas}>
-      <b ref={(el: Element) => seen.push(el)} />
+    <div>
+      <label for={id}>{props.label}</label>
+      <input id={id} />
     </div>
   );
 }
 ```
 
-After mounting, `canvas` is the `<div>` and `seen` holds the `<b>`. Ref callbacks run untracked through the `use` helper, so they never subscribe their caller. A component cannot be measured directly; forward the ref it receives to the element inside, as shown in [components](/components). Element handles follow normal ownership: when the branch or row that built the element is disposed, the nodes are removed as described in [lifecycle](/lifecycle).
+Each call returns a new id, so call it once per instance. In a client-only build, ids are `r` followed by a number from a module-level counter. In a built page, the id comes from the component's position in the render tree. In the fixture checked for this page, the browser ids after hydration matched the built HTML.
+
+## Element references
+
+`ref` gives you the DOM element after the compiler builds it. Assign the reference to an identifier, to a member of an object, or to a callback:
+
+```tsx
+export function Canvas() {
+  let canvas!: HTMLDivElement;
+  const refs: { bar?: HTMLElement } = {};
+  const seen: Element[] = [];
+  return (
+    <div ref={canvas}>
+      <b ref={refs.bar} />
+      <i ref={(el: Element) => seen.push(el)} />
+    </div>
+  );
+}
+```
+
+After mounting, `canvas` is the `<div>`, `refs.bar` is the `<b>`, and `seen` holds the `<i>`. A callback runs untracked, so reading signals inside it does not subscribe the caller. Read a reference after the element is mounted, such as in an event handler.
 
 ## Portals
 
-`Portal` keeps its children in a different parent, defaulting to the document body. The children still belong to where the tag is written: reactivity, context, and error handling behave as if the content were inline.
+`Portal` keeps its children in a different parent. Without `mount`, or with `mount={null}`, the children go to the document body. Children stay reactive wherever they are mounted.
+
+This component renders a `<b>` inside a separate `<section>` while `open` is truthy:
 
 ```tsx
 import { Portal, signal } from "reze-js";
@@ -285,6 +438,7 @@ export function Dialog() {
   let target!: HTMLElement;
   return (
     <div>
+      <button onClick={() => (open = !open)}>toggle</button>
       <section ref={target} />
       {open && (
         <Portal mount={target}>
@@ -296,18 +450,22 @@ export function Dialog() {
 }
 ```
 
-The `<b>` renders inside `target` while the surrounding `<div>` renders in place. A reactive `mount` moves the same nodes when it changes; omitting `mount` or passing `null` selects the body. Children stay reactive after a move, components inside stay alive, and a delegated event inside the portal still reaches its handler. Toggling a portal accumulates nothing in the mount, and disposing its owner removes its nodes. An error thrown while building portal children reaches the surrounding `catchError`, as if the content were inline.
+When `mount` is reactive, the same nodes move to the new parent. Children stay reactive after a move, components inside stay alive, and a delegated event inside the portal still reaches its handler. Toggling a portal leaves nothing behind in the mount.
+
+An error thrown while building portal children reaches the nearest `catchError`, the same as an error in inline content. For error handling in general, see [Lifecycle](/lifecycle).
 
 ## Async components
 
-An `async` function component awaits data in its body and returns the view that stays on screen until the next one is ready. Read props into a `const` before the first `await`: a props read inside an awaited expression is a compile error (`ASYNC_PROPS_READ_IN_AWAIT`).
+An `async` function component awaits data in its body and renders a view when the awaits finish. Attach a `pending` view for the first load and a `failure` view for a rejected await:
 
 ```tsx
 import { abortSignal, isPending } from "reze-js";
 
 export async function Profile(props: { id: number }) {
   const id = props.id;
-  const user = await fetch(`/users/${id}`, { signal: abortSignal() }).then((r) => r.json());
+  const user = await fetch(`/users/${id}`, {
+    signal: abortSignal(),
+  }).then((r) => r.json());
   return <p class={isPending() ? "stale" : ""}>{user.name}</p>;
 }
 
@@ -315,33 +473,232 @@ Profile.pending = <i>loading</i>;
 Profile.failure = (error: unknown, retry: () => void) => <button onClick={retry}>{String(error)}</button>;
 ```
 
-`pending` is shown only until the first load settles; a reload keeps the previous view and sets `isPending()`. A rejected `await` renders `failure(error, retry)`, and `retry` re-runs the component from the start. A `try` around an `await` is a compile error (`ASYNC_TRY_AROUND_AWAIT`), so let the rejection reach `failure`. `abortSignal()` is valid only directly in the load, and `isPending()` only in the view.
+### Pending and failure views
 
-A component with `pending` is its own boundary: its first loads hold its own view, and its parent does not wait for it. A component without `pending` counts its loads toward the nearest ancestor boundary.
+`pending` renders until the first load settles. During the first load, `isPending()` is `false`. A reload does not show `pending` again. The view runs with `isPending()` set to `true` until the reload settles.
 
-Code splitting uses `await import()`:
+A rejected await renders `failure(error, retry)`. Calling `retry` runs the component again from its start. A `try` around an `await` is a compile error, so let the rejection reach `failure`.
 
-```tsx
-export async function Chart(props: ChartProps) {
+### Abort and pending state
+
+Call `isPending()` in the view. Call `abortSignal()` directly in the load, not in the view. A newer run of the load aborts the signal of the run it supersedes, and the current run's signal stays live. The `fetch` in the example uses it to cancel a stale request.
+
+### Pending boundaries
+
+A component with its own `pending` view shows that view for its own loads, and its parent renders without waiting for it. A component without `pending` shows the nearest ancestor's `pending` view until its own load settles.
+
+### Split code with dynamic import
+
+`await import()` inside an async component loads a module when the component runs, and the `pending` view shows until the import resolves. The three files below show a split chart. `Chart.pending` is set in the file that defines `Chart`:
+
+```tsx file=src/Chart.tsx
+import { Skeleton } from "./Skeleton";
+
+export async function Chart(props: { values: number[] }) {
+  const values = props.values;
   const { Plot } = await import("./Plot");
-  return <Plot {...props} />;
+  return <Plot values={values} />;
 }
 
 Chart.pending = <Skeleton />;
 ```
 
-`computed(await expr)` derives a value from an async expression without suspending the body. Reads before it settles count as a pending load for the nearest boundary, and a rejection is thrown into that boundary. `const user = await expr` suspends the body and re-runs it when its inputs change; the two forms are documented side by side and do not replace each other.
+```tsx file=src/Plot.tsx
+export function Plot(props: { values: number[] }) {
+  return <p>{props.values.join(", ")}</p>;
+}
+```
 
-`render` and router do not yet hold a root or route view while loads are pending, and they do not yet report root failures to `console.error`. Those gates are not implemented yet.
+```tsx file=src/Skeleton.tsx
+export function Skeleton() {
+  return <p class="skeleton">loading</p>;
+}
+```
 
-## Constraints and pitfalls
+### Rules for async components
 
-Control-flow tags accept fixed attributes: `Show` takes `when` and `fallback`, `For` takes `each`, `fallback`, and `keyed`, `Repeat` takes `count` and `fallback`, `Switch` takes `fallback`, `Match` takes `when`, and `Portal` takes `mount`. Anything else on those tags, spreads included, has no meaning and is reported by the compiler.
+The compiler checks the shape of an async component's body:
 
-Do not confuse the three list callback signatures: identity mode passes the item directly, function-keyed mode passes item and index getters, and position mode passes an item getter and numeric index. Conditional branches dispose the old side when switching, so state built inside a branch does not survive the flip.
+- Read props into a `const` before the first `await`. A props read inside an awaited expression is a compile error, `ASYNC_PROPS_READ_IN_AWAIT`:
+
+```tsx expect=ASYNC_PROPS_READ_IN_AWAIT
+export async function Card(props: { id: number }) {
+  const user = await fetchUser(props.id);
+  return <p>{user.name}</p>;
+}
+```
+
+- Do not wrap an `await` in `try`. The compiler reports `ASYNC_TRY_AROUND_AWAIT`, and a rejection goes to `failure`:
+
+```tsx expect=ASYNC_TRY_AROUND_AWAIT
+export async function Card(props: { id: number }) {
+  const id = props.id;
+  try {
+    const user = await fetchUser(id);
+    return <p>{user.name}</p>;
+  } catch {
+    return <p>Failed</p>;
+  }
+}
+```
+
+- Call `isPending()` only in the view, and call `abortSignal()` only directly in the load. Other calls are compile errors, `IS_PENDING_OUTSIDE_VIEW` and `ABORT_SIGNAL_OUTSIDE_LOAD`.
+
+## Islands
+
+An island is a component that the page renders before it loads. Reze renders the island's `fallback` first, then loads the component when its trigger fires. Islands use the same loading path as async components, so the `fallback` also renders while a promise from `load` is pending.
+
+There are two ways to write one. The `island()` function takes the loader as an argument. The `island` attribute on a component tag is compiled to a call to `island()` for the client target, and its companion attributes become the arguments.
+
+### Call island
+
+`island(trigger, load, props, fallback?, options?)` returns the island. Its arguments are:
+
+- `trigger`: an `IslandTrigger`, one of `"eager"`, `"idle"`, `"visible"`, `"media"`, or `"interaction"`.
+- `load`: a function that returns the component, or a promise for it. It runs when the trigger fires, so `import()` inside it starts the download at that point. With `"eager"`, it runs at once.
+- `props`: the props passed to the component.
+- `fallback`: an optional function that returns the placeholder, such as `() => <p>loading</p>`.
+- `options`: an optional `IslandOptions` object. `media` is the query for the `"media"` trigger, and `rootMargin` is the margin for the `"visible"` trigger.
+
+| Trigger       | Loads when                                                                                            | Renders before loading                                        |
+| ------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `eager`       | At once                                                                                               | Nothing, or `fallback` while a promise from `load` is pending |
+| `idle`        | On the first idle period, after 2000 ms at most (after 200 ms where `requestIdleCallback` is missing) | `fallback`                                                    |
+| `visible`     | When the shell scrolls into view, with `options.rootMargin` around the viewport (default `200px`)     | A `<span data-island="visible">` holding `fallback`           |
+| `media`       | When the `options.media` query matches, at once if it already does                                    | `fallback`                                                    |
+| `interaction` | On the first `pointerdown`, `focusin`, or `keydown` inside the shell                                  | A `<span data-island="interaction">` holding `fallback`       |
+
+Without a `fallback`, the `visible` and `interaction` shell gets `display:block;min-width:1px;min-height:1px` so that it can be observed.
+
+The examples below use a counter component, defined in its own module:
+
+```tsx file=src/Counter.tsx
+import { signal } from "reze-js";
+
+export function Counter(props: { step: number }) {
+  let count = signal(0);
+  return <button onClick={() => (count += props.step)}>{count}</button>;
+}
+```
+
+This example renders the counter when it scrolls near the viewport. `load` returns the component through a dynamic import, which starts only when the trigger fires:
+
+```tsx file=src/Page.tsx
+import { island } from "reze-js";
+
+export function Page() {
+  return (
+    <main>
+      <h1>Dashboard</h1>
+      {island<{ step: number }>(
+        "visible",
+        () => import("./Counter").then((m) => m.Counter),
+        { step: 1 },
+        () => (
+          <p>loading counter</p>
+        ),
+        { rootMargin: "400px" },
+      )}
+    </main>
+  );
+}
+```
+
+A failed load renders the `failure` view of the async component that contains the island. See [Async components](#async-components).
+
+### Use the island attribute
+
+On a component tag, `island` makes the component an island, and the companion attributes configure it:
+
+- `island` by itself, or `island={true}`, is `"eager"`.
+- `island="visible"` sets the trigger. The value must be a string literal. A value read from a variable is reported as ISLAND_TRIGGER.
+- `islandMedia="(max-width: 40rem)"` is the `media` option, and `island="media"` requires it.
+- `islandRootMargin="400px"` is the `rootMargin` option.
+- `islandFallback={<p>loading</p>}` is the fallback, written as an element instead of a function.
+
+This dashboard renders the counter with the attribute form and the same fallback:
+
+```tsx file=src/Dashboard.tsx
+import { Counter } from "./Counter";
+
+export function Dashboard() {
+  return (
+    <main>
+      <h1>Dashboard</h1>
+      <Counter island="visible" islandRootMargin="400px" step={1} islandFallback={<p>loading counter</p>} />
+    </main>
+  );
+}
+```
+
+### Split island components
+
+The attribute form moves the component's code into its own chunk when the import line names only that component, the importing file does not export that name, and every use is an island. The compiler then lowers the loader to a dynamic `import()` of that module. Otherwise it reports ISLAND_NOT_SPLIT and keeps the static import.
+
+### Render islands in static output
+
+During a build, an `eager` island renders its component into the HTML. Every other trigger renders only its fallback, inside the `<span data-island>` shell for `visible` and `interaction`, and never calls `load`. The component loads in the browser when its trigger fires. Hydration renders the same shell and arms the trigger.
+
+For `<Counter island="visible" islandFallback={<p>loading counter</p>} />`, the built HTML contains the `data-island="visible"` span with the paragraph inside, and no markup from `Counter`. Static output ignores `islandMedia` and `islandRootMargin`, since the build never loads a non-eager component. To build a site with static output, see [Static site generation](/vite-plugin#static-site-generation).
+
+### Check island diagnostics
+
+The compiler checks the attribute form. An unknown trigger, or a value that is not a literal, is ISLAND_TRIGGER:
+
+```tsx file=src/Sometimes.tsx expect=ISLAND_TRIGGER
+import { Counter } from "./Counter";
+
+export function Sometimes() {
+  return <Counter island="sometimes" step={1} />;
+}
+```
+
+The `media` trigger needs the query in `islandMedia`. Without it, the compiler reports ISLAND_MEDIA_MISSING:
+
+```tsx file=src/Responsive.tsx expect=ISLAND_MEDIA_MISSING
+import { Counter } from "./Counter";
+
+export function Responsive() {
+  return <Counter island="media" step={1} />;
+}
+```
+
+`island` marks a component tag. On a native element it is reported as ISLAND_ON_ELEMENT:
+
+```tsx expect=ISLAND_ON_ELEMENT
+export function Plain() {
+  return <section island="visible">hi</section>;
+}
+```
+
+`islandMedia`, `islandRootMargin`, and `islandFallback` need `island` on the same tag. Without it, the compiler reports ISLAND_ORPHAN:
+
+```tsx file=src/Orphan.tsx expect=ISLAND_ORPHAN
+import { Counter } from "./Counter";
+
+export function Orphan() {
+  return <Counter islandRootMargin="400px" step={1} />;
+}
+```
+
+A component that is also used outside an island stays in the main chunk, and the compiler reports ISLAND_NOT_SPLIT:
+
+```tsx file=src/Shared.tsx expect=ISLAND_NOT_SPLIT
+import { Counter } from "./Counter";
+
+export function Shared() {
+  return (
+    <main>
+      <Counter island="visible" step={1} />
+      <Counter step={2} />
+    </main>
+  );
+}
+```
 
 ## Related pages
 
 - [Components](/components) for component execution, props, children, and `dynamic`.
 - [Reactivity](/reactivity) for signals, derived values, stores, and actions.
-- [Lifecycle](/lifecycle) for ownership, effects, and disposal.
+- [Lifecycle](/lifecycle) for ownership, effects, disposal, and error handling.
+- [Vite plugin](/vite-plugin) for building static output and the `ssg` option.

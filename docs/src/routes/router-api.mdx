@@ -1,168 +1,511 @@
 ---
 title: Router API
-description: Router creation, history, navigation hooks, and typed file routes.
+description: Look up each @rezejs/router export, with its signature, options, and the behavior the router guarantees.
 ---
 
 # Router API
 
-Reference for `@rezejs/router` and the file-routes side of `@rezejs/vite-plugin`. Behavior, naming rules, and deployment live in [routing](/routing).
+This page is the reference for every public export of `@rezejs/router`. Use it to look up a signature, an option, or what a hook returns, and to check the defaults and rules that apply.
 
-## createRouter
+## The `createRouter` factory
 
-```tsx
-import { createBrowserHistory, createRouter } from "@rezejs/router";
-import { paths, routes } from "virtual:reze-routes";
-
-const Router = createRouter({ routes, paths, history: createBrowserHistory(import.meta.env.BASE_URL) });
-```
-
-`createRouter(config)` compiles the table once and returns the router component. Mount it with an optional `root` shell whose `props.children` is the matched branch. `Router.match(url)` matches without rendering and returns root-to-leaf hits (`[]` when nothing matches). `Router.paths` is the configured builders tree, `Router.routes` the configured table.
-
-| Option    | Default                                         | Meaning                                                                  |
-| --------- | ----------------------------------------------- | ------------------------------------------------------------------------ |
-| `routes`  | required                                        | `RouteDefinition[]`, or the generated `routes`                           |
-| `paths`   | none                                            | Builders from `virtual:reze-routes`, or `buildPaths(table)`              |
-| `history` | `createBrowserHistory()`                        | Browser, hash, or memory history                                         |
-| `links`   | `true` for window histories, `false` for memory | Route same-origin `<a>` clicks document-wide                             |
-| `preload` | `true`                                          | Load and preload a link's route on hover, focus, or touch; needs `links` |
-
-## Histories
+`createRouter` takes a `RouterConfig` and returns a `RouterInstance`. Render the instance as a component once, usually in the root of the app, and read its `match` and `paths` members when you need them without rendering.
 
 ```tsx
-import { createBrowserHistory, createHashHistory, createMemoryHistory } from "@rezejs/router";
+import { createBrowserHistory, createRouter, defineRoutes } from "@rezejs/router";
 
-const browser = createBrowserHistory(import.meta.env.BASE_URL);
-const hash = createHashHistory();
-const memory = createMemoryHistory("/pinned");
+function Home() {
+  return <h1>Home</h1>;
+}
+
+function About() {
+  return <h1>About the studio</h1>;
+}
+
+const routes = defineRoutes([
+  { path: "/", component: Home },
+  { path: "/about", component: About },
+]);
+
+export const Router = createRouter({
+  routes,
+  history: createBrowserHistory(),
+  headDefaults: { title: "Studio" },
+});
 ```
 
-`createBrowserHistory(base)` routes `window.location` paths under `base`; a relative base means the root. `createHashHistory()` keeps the route in `location.hash` (`#/path`) for hosts without rewrites; other hashes stay in-page anchors. `createMemoryHistory(initial)` never touches `window` and leaves document anchors to the browser. Window histories manage scroll and set `scrollRestoration` to manual; memory does not. `history.base` is the prefix route hrefs carry (`""`, the served base, or `"#"`).
+### `RouterConfig` options
+
+| Option         | Type                         | Default                                                   | Purpose                                                                                        |
+| -------------- | ---------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `routes`       | `readonly RouteDefinition[]` | Required                                                  | The route table. See [route definitions](#route-definition-fields).                            |
+| `paths`        | `PathsTree`                  | None                                                      | The `paths` builders. The router returns them as `paths` when you pass them.                   |
+| `history`      | `RouterHistory`              | `createBrowserHistory()`                                  | Where the router reads and writes the location.                                                |
+| `links`        | `boolean`                    | `true` for browser and hash histories, `false` for memory | Routes same-origin anchor clicks that match a route through the router instead of the browser. |
+| `preload`      | `boolean`                    | `true`                                                    | Runs route `preload` functions when a matching link is hovered, focused, or touched.           |
+| `headDefaults` | `PageMetadata`               | None                                                      | Title and metadata used when no matched route sets them.                                       |
+
+### The `RouterInstance` members
+
+| Member   | Type                                                                                   | Purpose                                                                                      |
+| -------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| call     | `(props: { root?: (props: { children: JSX.Element }) => JSX.Element }) => JSX.Element` | Renders the matched route tree. `root` wraps the matched output, for example to add a shell. |
+| `match`  | `(url: string) => OutputMatch[]`                                                       | Matches a URL without rendering. Returns `[]` when no route matches.                         |
+| `paths`  | `PathsTree \| undefined`                                                               | The `paths` you passed to the factory, or `undefined` when you passed none.                  |
+| `routes` | `readonly RouteDefinition[]`                                                           | The route table you passed to the factory.                                                   |
+
+### Match a URL without rendering
+
+`match` returns one entry per level of the matched route branch, from the outermost route to the leaf. Each entry carries the pattern and `info` of its own level, but `path` and `params` cover the whole URL and the whole branch, so every entry for `/blog/42` reports `path: "/blog/42"` and `params: { id: "42" }`.
+
+```ts
+import { createRouter, defineRoutes } from "@rezejs/router";
+
+const router = createRouter({
+  routes: defineRoutes([{ path: "/blog", children: [{ path: "/:id" }] }]),
+});
+
+export const matches = router.match("/blog/42");
+```
+
+## History implementations
+
+A history decides where the router reads and writes the location. Pass one to `RouterConfig.history`.
+
+| Factory                              | Base prefix                      | Manages `window` scroll | Use it when                                                   |
+| ------------------------------------ | -------------------------------- | ----------------------- | ------------------------------------------------------------- |
+| `createBrowserHistory(base = "")`    | `base`, without a trailing slash | Yes                     | The app is served from the browser's History API at a path.   |
+| `createHashHistory()`                | `#`                              | Yes                     | The app is served where only the URL hash can change.         |
+| `createMemoryHistory(initial = "/")` | `""`                             | No                      | You need a router without changing the URL, such as in tests. |
+
+Window histories save scroll positions in `sessionStorage` under the key `reze-router:scroll`, keeping at most 128 entries.
+
+### The `RouterHistory` interface
+
+Each factory returns a `RouterHistory`. Read it when you write a custom history or inspect the one you pass in.
+
+| Member    | Type                                                      | Purpose                                                                                                         |
+| --------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `get`     | `() => HistoryEntry`                                      | Returns the current entry.                                                                                      |
+| `push`    | `(path: string, state: unknown) => void`                  | Adds an entry. `path` is a router path: pathname, search, and hash.                                             |
+| `replace` | `(path: string, state: unknown) => void`                  | Replaces the current entry.                                                                                     |
+| `go`      | `(delta: number) => void`                                 | Moves through the session history by `delta` entries.                                                           |
+| `listen`  | `(listener: (entry: HistoryEntry) => void) => () => void` | Calls the listener for each entry change the router did not cause, such as back and forward. Returns a remover. |
+| `resolve` | `(url: URL) => string \| undefined`                       | Returns the router path for a same-origin anchor URL, or `undefined` to let the browser handle it.              |
+| `base`    | `string`                                                  | The prefix that router hrefs carry.                                                                             |
+| `scroll`  | `boolean`                                                 | Whether the router manages `window` scroll for this history.                                                    |
+
+`HistoryEntry` has three fields: `path` (the router path), `state` (the value passed to `push` or `replace`), and `index` (the position in the session, so the router can tell back from forward).
 
 ## Route tables
 
+A route table is an array of `RouteDefinition` values passed to `routes`. Build it with `defineRoutes` so that the literal route types are kept.
+
+### Route definition fields
+
+| Field       | Type                                                                 | Purpose                                                                                                                                                     |
+| ----------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`      | `string`                                                             | The route pattern, relative to the parent route. Segments are static text, `:param`, `:param?`, or `*splat`.                                                |
+| `component` | `RouteComponent`                                                     | Renders the route. The router passes `params`, `location`, `data`, and `children`.                                                                          |
+| `children`  | `readonly RouteDefinition[]`                                         | Nested routes. The matched child renders through the parent's `children` prop.                                                                              |
+| `load`      | `() => Promise<RouteModule>`                                         | Loads the route module on demand. When it resolves, its `default` and `route` override `component`, `preload`, `meta`, `redirect`, and `info`.              |
+| `id`        | `string`                                                             | Stable identity for hydration seeds and static generation. The plugin sets it for file routes. Otherwise the router assigns an index chain such as `"2/0"`. |
+| `name`      | `string`                                                             | The key of this route in the `paths` builder tree. Siblings that share a key throw when the router is created.                                              |
+| `preload`   | `(args: PreloadArgs) => unknown`                                     | Starts the route's data. See [preload, metadata, and redirects](#preload-metadata-and-redirects).                                                           |
+| `meta`      | `PageMetadata \| ((args) => Awaitable<PageMetadata>)`                | Page metadata for the route. Its behavior is covered under Preload, metadata, and redirects.                                                                |
+| `redirect`  | `RouteRedirect \| ((args) => Awaitable<RouteRedirect \| undefined>)` | Sends the navigation somewhere else. Its behavior is covered under Preload, metadata, and redirects.                                                        |
+| `info`      | `Readonly<Record<string, unknown>>`                                  | Free-form data attached to the route. `useCurrentMatches` returns it for each match.                                                                        |
+
+The following table defines a layout route with a nested child:
+
 ```tsx
-import { buildPaths, createRouter, defineRoute, defineRoutes } from "@rezejs/router";
+import { defineRoutes, type RouteProps } from "@rezejs/router";
 
-const table = defineRoutes([
-  defineRoute({
+function Layout(props: RouteProps) {
+  return <main>{props.children}</main>;
+}
+
+function BlogIndex() {
+  return <h1>Posts</h1>;
+}
+
+function BlogPost(props: RouteProps) {
+  return <h1>Post {props.params.id}</h1>;
+}
+
+export const routes = defineRoutes([
+  { path: "/", component: BlogIndex },
+  {
     path: "/blog",
-    children: [
-      defineRoute({
-        path: "/:id",
-        preload: ({ params }) => ({ title: `Post ${params.id}` }),
-        component: (props) => <h1>{props.data.title}</h1>,
-      }),
-    ],
-  }),
+    component: Layout,
+    children: [{ path: "/:id", component: BlogPost, meta: { title: "Post" } }],
+  },
 ]);
-
-const Router = createRouter({ routes: table, paths: buildPaths(table) });
 ```
 
-`defineRoutes` preserves the literal tuple for the factory; `defineRoute` types `preload` and `component` params from the path string. `RouteDefinition` fields: `path` (`:param`, `:optional?`, `*splat`), optional `name` node key in `paths`, `component`, `preload`, `meta`, `redirect`, `info`, lazy `load`, and `children`. A layout with children renders them as `props.children`; a component-less entry renders its child directly, and a redirect-only entry carries no component. `buildPaths(table, base)` builds the `paths` builders for hand-written tables; every emitted href carries `base`.
+### Preload, metadata, and redirects
 
-When `defineRoute` receives a `preload`, its return type retains that loader and
-its data type. `DataOf<{ route: typeof route }>` extracts the settled data;
-`component`, `meta`, and `redirect` receive that same awaited type.
-The resulting definition also composes with `defineRoutes` when the loader
-returns `Promise<never>` (for example, a loader that always throws).
+These three fields run in a fixed order when a navigation enters a route.
+
+- `preload` starts the route's data. The router calls it with intent `"preload"` when a matching link is hovered, focused, or touched, and with intent `"navigate"` when the route is entered. Return a promise to start a fetch; a navigation waits for it and delivers the settled value as `data`, and never the promise itself.
+- `meta` sets the document title, description, canonical URL, and robots tag. The router merges the fields of the matched routes from the root to the leaf, and the last defined field wins. A function receives the settled `data`. Hovering a link never runs `meta`.
+- `redirect` sends the navigation to another path. A literal object short-circuits the navigation before any `preload` runs. A function receives the settled `data`, and the first defined result from the root to the leaf wins. Hovering a link never runs `redirect`.
+
+The following module loads a post's data through `preload`, uses it for the title, and redirects an old path:
+
+```tsx
+import { defineRoutes, type RouteProps } from "@rezejs/router";
+
+async function loadPost(id: string) {
+  return { title: `Post ${id}` };
+}
+
+function PostPage(props: RouteProps) {
+  return <h1>{props.params.id}</h1>;
+}
+
+function NewsPage() {
+  return <h1>News</h1>;
+}
+
+export const routes = defineRoutes([
+  {
+    path: "/posts/:id",
+    component: PostPage,
+    preload: ({ params }) => loadPost(params.id),
+    meta: ({ data }) => ({ title: data.title }),
+  },
+  { path: "/old-news", redirect: { to: "/news", replace: true } },
+  { path: "/news", component: NewsPage },
+]);
+```
+
+`meta` and `redirect` are not limited to `defineRoutes`. A route module loaded through `load` can export the same fields as `route`. Its values override the definition's values once the module loads.
+
+### `defineRoute` and `defineRoutes`
+
+`defineRoutes` takes an array of route definitions and returns the same array with literal types preserved. It does not change the routes at runtime.
+
+`defineRoute` takes one route definition and returns it. When the definition has a `preload`, the returned route keeps the data type of that `preload`, so generated and hand-written routes can share types. Without a `preload`, the return type is `RouteDefinition` with the `path` kept as a literal type.
+
+## Build typed paths with `buildPaths`
+
+`buildPaths` turns a route table into a tree of builder functions. Each builder returns a href for one route, with the parameters filled in and the search and hash appended.
+
+```tsx
+import { buildPaths, defineRoutes } from "@rezejs/router";
+
+const routes = defineRoutes([
+  { path: "/", name: "index" },
+  { path: "/blog/:id", name: "byId" },
+]);
+
+export const paths = buildPaths(routes);
+
+export const postHref = paths.byId("42");
+export const homeHref = paths.index();
+```
+
+The builder for a route takes its values in pattern order, then an optional search object and an optional hash string. The search object takes `SearchInit`: `null` and `undefined` values are skipped, and an array appends one entry per item. The hash must be a string, and a leading `#` is removed when you pass one.
+
+In a project with generated route types, `buildPaths` returns the generated `paths` tree, so its typed keys come from the file routes rather than from the table you pass. The sample uses the keys that the generated routes in this project define.
+
+| Rule                            | Behavior                                                                                                                                                                          |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Key of a route in the tree      | The route's `name` when you set one. Otherwise a static last segment keeps its text, and a parameter or splat becomes `by` plus the capitalized name, such as `byId` or `byRest`. |
+| Multi-segment `path`            | The key comes from its last segment, so `"/tags/*rest"` under `blog` is `paths.blog.byRest`.                                                                                      |
+| Splat values                    | A string is split on `/`. An array gives one segment per item. Each value is encoded with `encodeURIComponent`.                                                                   |
+| Missing parameter               | Throws `[reze-router] paths.blog.byId requires a value for ":id"`, naming the route's position in the tree.                                                                       |
+| Duplicate keys under one parent | Throws `[reze-router] duplicate path name "<key>" under "<trail>"; rename a segment` when the builders are created.                                                               |
+
+Keys that are not valid identifiers, such as `about-us`, are read with bracket notation, as in `paths["about-us"]`.
+
+With the Vite plugin, the same builders come from generated route files, typed by `Register`. See [generated route types](#generated-route-types).
 
 ## Hooks
 
-```tsx
-import { useCurrentMatches, useIsRouting, useLocation, useMatch, useNavigate, useParams, useSearchParams } from "@rezejs/router";
+Each hook must run inside a component, because it reads the router from the component's context. The reactive getters the hooks return update when the location changes.
 
-export function Meta() {
-  const location = useLocation();
+### Read the location and params
+
+`useLocation` returns a getter for the current `Location`. `useParams` returns a getter for the params of the matched route, and it accepts a route pattern to type those params in generated apps.
+
+```tsx
+import { useLocation, useParams } from "@rezejs/router";
+
+export function PostHeader() {
   const params = useParams();
-  const navigate = useNavigate();
-  const [query, setQuery] = useSearchParams();
-  const match = useMatch(() => "/blog/*");
-  const isRouting = useIsRouting();
-  const matches = useCurrentMatches();
+  const location = useLocation();
+
   return (
-    <p>
-      {location().pathname} has {Object.keys(params()).length} params
-    </p>
+    <header>
+      <p>Post {params().id}</p>
+      <p>{location().pathname}</p>
+    </header>
   );
 }
 ```
 
-Each hook returns a reactive getter, so call the result to read the current value, as in `location()` and `params()`. The snippet names every return for reference. `useLocation()` returns the reactive location: `pathname`, `search`, `hash`, `query` (repeated keys map to every value in order), and history `state`. `useParams()` returns the deepest match's params merged across layouts; `useParams("/blog/:id")` narrows them to a registered pattern. `useNavigate()` returns `navigate(to, options)`: a route path resolved against the current location, a same-origin absolute URL, or a history delta. Options are `{ replace, state, scroll }` with scroll defaulting to true. `useSearchParams()` returns the query and a setter that merges into the pending location, deletes `null`/`undefined` keys, writes one entry per non-nullish array item, and defaults to `{ scroll: false }`. `useMatch(() => pattern)` matches one pattern against the current pathname; a trailing `/*` makes it a prefix match. `useIsRouting()` is true while chunks load. `useCurrentMatches()` returns `{ path, params, data, info }` per level.
+`Location` has `pathname`, `search`, `hash`, `query`, and `state`. The `query` field maps each key to a string, or to an array of strings when the key repeats, such as `?tag=a&tag=b`.
+
+### Read matches and routing state
+
+`useCurrentMatches` returns a getter for the matched routes, from the root to the leaf. Each `RouteMatch` has `path`, `params`, `data`, and `info`. `useIsRouting` returns a getter that is `true` while a navigation waits for route modules to load.
+
+```tsx
+import { useCurrentMatches, useIsRouting } from "@rezejs/router";
+
+export function Breadcrumbs() {
+  const matches = useCurrentMatches();
+  const routing = useIsRouting();
+
+  return (
+    <nav>
+      <p>{routing() ? "Loading" : "Ready"}</p>
+      {matches().map((match) => (
+        <span>{match.path}</span>
+      ))}
+    </nav>
+  );
+}
+```
+
+### Navigate from code
+
+`useNavigate` returns a `Navigate` function. Its `to` argument is one of three kinds of value:
+
+- A number moves through the history by that many entries, as `history.go` does.
+- A route path, with an optional query or hash, is resolved against the current location.
+- An absolute URL outside the router is loaded with `location.assign`.
+
+The options object takes `replace`, `state`, and `scroll`. `scroll` defaults to `true`, which scrolls to the hash target or the top of the page after the navigation.
+
+```tsx
+import { useNavigate } from "@rezejs/router";
+
+export function SaveButton() {
+  const navigate = useNavigate();
+
+  return <button onClick={() => navigate("/blog/42", { replace: true })}>Save</button>;
+}
+```
+
+### Read and write search parameters
+
+`useSearchParams` returns a tuple of a getter for the query and a setter. The setter merges its `SearchInit` argument into the latest location, so keys you omit keep their values. A `null` or `undefined` value deletes a key, and an array value appends one entry per item. The setter scrolls to neither the hash nor the top by default, because its default options are `{ scroll: false, ...options }`.
+
+```tsx
+import { useSearchParams } from "@rezejs/router";
+
+export function TagFilter() {
+  const [, setQuery] = useSearchParams();
+
+  return <button onClick={() => setQuery({ tag: ["ui", "forms"], page: null })}>Filter</button>;
+}
+```
+
+### Guard navigation with `useBeforeLeave`
+
+`useBeforeLeave` registers a listener that runs before each navigation away from the current path, and before the document unloads. The listener is removed when the component that called the hook is disposed.
+
+The listener receives a `BeforeLeaveEvent`:
+
+| Member             | Type                        | Purpose                                                                                                                          |
+| ------------------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `from`             | `Location`                  | The location you are leaving.                                                                                                    |
+| `to`               | `string \| number \| null`  | The target path, a history delta, or `null` when the document is unloading.                                                      |
+| `options`          | `NavigateOptions`           | The options of the navigation.                                                                                                   |
+| `defaultPrevented` | `boolean`                   | Whether an earlier listener blocked the navigation.                                                                              |
+| `preventDefault()` | `() => void`                | Blocks the navigation. For a document unload, the browser shows its own confirmation.                                            |
+| `retry(force?)`    | `(force?: boolean) => void` | Runs the blocked navigation again. `force` defaults to `true` and skips the leave guards. It does nothing for a document unload. |
+
+The router skips the listener when the target path equals the current path. A listener that throws is reported with `reportError`, and the navigation continues.
 
 ```tsx
 import { useBeforeLeave } from "@rezejs/router";
 
-export function Guarded(props: { needsConfirm: () => boolean }) {
-  let pending: (() => void) | undefined;
+export function Editor() {
   useBeforeLeave((event) => {
-    if (props.needsConfirm()) {
-      event.preventDefault();
-      pending = () => event.retry();
-    }
+    if (!window.confirm("Discard your changes?")) event.preventDefault();
   });
-  return <button onClick={() => pending?.()}>Leave anyway</button>;
+
+  return <textarea />;
 }
 ```
 
-`useBeforeLeave(listener)` runs before each navigation away and before unload until the calling owner disposes. `event.to` is the target path, a history delta, or `null` for unload; `preventDefault()` blocks (asks to confirm on unload), `retry(force = true)` re-runs the prevented navigation past the guards.
-
 ## Links
 
-```tsx
-import { useLinkState } from "@rezejs/router";
+A link is an `<a>` element whose `href` matches a route. The router routes its clicks through the history, and it can preload the route's data on hover, focus, or touch.
 
-export function Pill(props: { href: "/about" }) {
-  const state = useLinkState(() => props.href);
+### Anchor attributes
+
+Anchors take these attributes in addition to `href`:
+
+| Attribute  | Type      | Effect                                                    |
+| ---------- | --------- | --------------------------------------------------------- |
+| `href`     | `Href`    | The destination. Typed against the generated route paths. |
+| `replace`  | `boolean` | Replaces the current entry instead of adding one.         |
+| `noscroll` | `boolean` | Skips the scroll after the navigation.                    |
+| `state`    | `string`  | Passed to the navigation as its `state`.                  |
+
+The router handles a click only when the `href` matches a route and the click has no modifier keys and is not already prevented. Any other anchor is left to the browser.
+
+The compiler reports a bare `state` attribute as `UNKNOWN_ATTRIBUTE`, so write it as `attr:state`, as the sample does. The router reads the attribute under the name `state`.
+
+```tsx
+export function PostLinks() {
   return (
-    <a href={props.href} data-active={state.active() ? "" : null}>
-      About
+    <nav>
+      <a href="/blog/42" replace={true}>
+        Post 42
+      </a>
+      <a href="/" noscroll={true} attr:state="from-nav">
+        About
+      </a>
+    </nav>
+  );
+}
+```
+
+### `useLinkState`
+
+`useLinkState` takes a getter for an `Href` and returns a `LinkState` for it. Each member is a getter that returns a `boolean`.
+
+| Member    | Type            | Meaning                                                                                                                                         |
+| --------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `current` | `() => boolean` | The link's pathname is the current pathname. The link gets `aria-current="page"`.                                                               |
+| `active`  | `() => boolean` | The link's pathname is the current pathname or a segment prefix of it. `/` is active only when it matches exactly. The link gets `data-active`. |
+| `pending` | `() => boolean` | A navigation to exactly the link's pathname waits for route modules. The link gets `data-pending`.                                              |
+
+```tsx
+import { useLinkState, type Href } from "@rezejs/router";
+
+export function NavLink(props: { href: Href; label: string }) {
+  const state = useLinkState(() => props.href);
+
+  return (
+    <a href={props.href} data-state={state.pending() ? "pending" : "idle"}>
+      {props.label}
     </a>
   );
 }
 ```
 
-## File routes plugin
+### `link`
 
-```tsx
-import reze from "@rezejs/vite-plugin";
-import { defineConfig } from "vite";
+`link(el, href?)` attaches the link state described above to an element and routes its clicks through the router. With the Vite plugin's `links` option on, the compiler passes each `<a href>` it claims to `link`, so you rarely call it yourself. The compiler does not claim an anchor that sets `aria-current` itself.
 
-export default defineConfig({
-  plugins: [
-    reze({
-      fileRoutes: {
-        dir: "src/routes",
-        types: "src/routes.gen.d.ts",
-        links: true,
-        history: "browser",
-        extensions: ["tsx"],
-      },
-    }),
-  ],
-});
-```
+## Generated route types
 
-`reze({ fileRoutes: true })` uses `@rezejs/router/fs` defaults; an options object overrides them. `dir` is relative to the Vite root. `types` selects the generated declaration file, `false` disables it. `links` claims native anchors. `history: "hash"` types `#/path` hrefs. `extensions` defaults to the top-level `extensions` or script extensions; listing a non-script extension needs a preprocessor running before this plugin, see [Vite plugin](/vite-plugin). The plugin serves `virtual:reze-routes` with one lazy chunk per route file and triggers a full reload when the tree changes.
+The Vite plugin generates types for the routes in a project and attaches them to `@rezejs/router` through the `Register` interface. Each generated type falls back to a loose type when the plugin does not generate one.
 
-The generated `.d.ts` registers leaf patterns with params and preload data, the `paths` builders, every href shape, and `base`, which drives the typed `Href`, `useParams(from)`, and builder calls. Route files export the component as default and data as `route`:
+### The `Register` interface
 
-```tsx
+The generated declaration augments `Register` with four members:
+
+- `paths`: every href shape of every leaf route. `RoutePath`, `Href`, and `NavigateTarget` read it.
+- `base`: the prefix an `<a href>` gets, or `#` for hash history.
+- `routes`: each leaf pattern mapped to its `params` and `data`. `ParamsFor` and `DataFor` read it.
+- `pathsTree`: the typed `paths` builders. `PathsTree` reads it.
+
+The plugin writes the declaration to `src/routes.gen.d.ts` by default. You do not write `Register` by hand. Without generated types, `RoutePath` is `string`, `RoutePattern` is `string`, and the params and data types fall back to `Params` and `unknown`.
+
+### Route module types
+
+A route module in `src/routes/` can type its `route` export and its component props from its own pattern. `RouteConfigFor` checks the `preload`, `meta`, `redirect`, and `info` fields against the leaf pattern, and `RoutePropsFor` gives the component typed `params` and `data`.
+
+```tsx file=src/routes/blog/[id].tsx
 import type { RouteConfigFor, RoutePropsFor } from "@rezejs/router";
 
-interface Post {
-  title: string;
-}
-
 export const route = {
-  preload: ({ params, location, intent }) => ({ title: `Post ${params.id}` }),
-} satisfies RouteConfigFor<"/blog/:id", Post>;
+  preload: ({ params }) => ({ title: `Post ${params.id}` }),
+  meta: ({ data }) => ({ title: data.title }),
+} satisfies RouteConfigFor<"/blog/:id", { title: string }>;
 
-export default function PostPage(props: RoutePropsFor<"/blog/:id">) {
+export default function BlogPost(props: RoutePropsFor<"/blog/:id">) {
   return <h1>{props.data.title}</h1>;
 }
 ```
 
-`RouteProps` carries `params`, `location`, `data`, and `children`. `preload` receives `{ params, location, intent }` with intent `"initial" | "navigate" | "preload"`. Type the `route` export with `satisfies RouteConfigFor<P, D = unknown>`: `P` is the leaf pattern, `D` the data `preload` returns, and `meta` and `redirect` callbacks receive it. `DataOf<M>` is the awaited `preload` return; `ParamsFor<P>`, `DataFor<P>`, `RoutePropsFor<P>`, `HrefFor<H>`, `RoutePattern`, and `RoutePath` read the registration, falling back to loose types without the plugin. `useMatch` is the public way to match a pattern; the matching helpers behind it are internal.
+### Href types
 
-See [routing](/routing) for the guide, [installation](/installation) for setup, and the [compiler](/compiler) for anchor claiming.
+`Href` is the type of an `<a href>`. `NavigateTarget` is the type of a `navigate` target, which omits the `base` prefix. `HrefFor` expands one route shape into its plain, query, and hash forms.
+
+```tsx file=src/routes/index.tsx
+import type { Href } from "@rezejs/router";
+
+export const featuredPost: Href = "/blog/42";
+
+export default function Home() {
+  return <h1>Home</h1>;
+}
+```
+
+### Route parameter types
+
+`RouteParams` parses a pattern string into an object type of its parameters. An optional segment, such as `:id?`, types as `string`, as `Params` does.
+
+```ts
+import type { RouteParams } from "@rezejs/router";
+
+export type BlogParams = RouteParams<"/blog/:id/*rest">;
+```
+
+For file routes, the Vite plugin's `fileRoutes` option controls the route directory, the generated declaration path, and the `links` behavior. Its options are listed on the Vite plugin page.
+
+## Other exported types
+
+These exports are types only. They describe values you receive from the hooks, the builders, and the route definitions.
+
+| Type                          | Shape or meaning                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `AnchorAttributes`            | The attributes an `<a>` element accepts, listed in [anchor attributes](#anchor-attributes).             |
+| `Awaitable<T>`                | `T` or a promise-like of `T`.                                                                           |
+| `DataFor<P>`                  | The `data` type of leaf pattern `P`, or `unknown` without generated types.                              |
+| `DataOf<M>`                   | The awaited return of a route module's `route.preload`, or `unknown`.                                   |
+| `HistoryEntry`                | `{ path, state, index }` as described in [the `RouterHistory` interface](#the-routerhistory-interface). |
+| `Href`                        | An `<a href>` value. Any string without generated types.                                                |
+| `HrefFor<H>`                  | `H`, `H` with a query, or `H` with a hash.                                                              |
+| `LinkState`                   | The return type of `useLinkState`, as described in [`useLinkState`](#uselinkstate).                     |
+| `Location`                    | `{ pathname, search, hash, query, state }`.                                                             |
+| `LoosePathNode`, `LoosePaths` | The builder types used when no generated `pathsTree` exists.                                            |
+| `Navigate`                    | The type of the function `useNavigate` returns.                                                         |
+| `NavigateOptions`             | `{ replace?, state?, scroll? }`.                                                                        |
+| `NavigateTarget`              | A `navigate` target: a route path, a path with a query or hash, or an absolute URL.                     |
+| `OutputMatch`                 | `{ path, pattern, params, info }`, the entries `match` returns.                                         |
+| `PageMetadata`                | `{ title?, description?, canonical?, robots? }`.                                                        |
+| `Params`                      | A readonly record of string params.                                                                     |
+| `ParamsFor<P>`                | The params of leaf pattern `P`, or `Params` without generated types.                                    |
+| `PathMatch`                   | `{ params, path }`, the result of matching one pattern. No hook in this version returns it.             |
+| `PathMatchFor<P>`             | `{ params, path }` typed by the pattern `P`. No hook in this version returns it.                        |
+| `PathsTree`                   | The type of the `paths` builders: generated, or `LoosePaths` otherwise.                                 |
+| `PreloadArgs<P>`              | `{ params, location, intent }`, the argument of `preload`. `intent` is a `PreloadIntent`.               |
+| `PreloadIntent`               | `"initial"`, `"navigate"`, or `"preload"`.                                                              |
+| `Register`                    | The interface the generated declaration augments.                                                       |
+| `RouteComponent<P, D>`        | A component that receives `RouteProps<P, D>` and returns a `JSX.Element`.                               |
+| `RouteConfig<D>`              | The `preload`, `meta`, `redirect`, and `info` fields of a route.                                        |
+| `RouteConfigFor<P, D>`        | `RouteConfig` with the params of leaf pattern `P`.                                                      |
+| `RouteDefinition`             | `RouteConfig` plus `path`, `id`, `name`, `component`, `load`, and `children`.                           |
+| `RouteMatch`                  | `{ path, params, data, info }`, the entries `useCurrentMatches` returns.                                |
+| `RouteModule`                 | `{ default?, route? }`, the module a `load` function resolves to.                                       |
+| `RouteParams<S>`              | The params parsed from pattern string `S`.                                                              |
+| `RoutePath`                   | Every href path, or `string` without generated types.                                                   |
+| `RoutePattern`                | Every leaf pattern, or `string` without generated types.                                                |
+| `RouteProps<P, D>`            | `{ params, location, data, children }`, the props a route component receives.                           |
+| `RoutePropsFor<P>`            | `RouteProps` with the params and data of leaf pattern `P`.                                              |
+| `RouteRedirect`               | `{ to, replace? }`, the value a `redirect` resolves to.                                                 |
+| `RouteResolvedArgs<P, D>`     | `PreloadArgs` plus the settled `data`, the argument of function `meta` and `redirect`.                  |
+| `SearchInit`                  | A record of search values, where an array value appends one entry per item.                             |
+| `SearchValue`                 | `string`, `number`, `boolean`, `null`, or `undefined`.                                                  |
+| `BeforeLeaveEvent`            | The event described in [guarding navigation](#guard-navigation-with-usebeforeleave).                    |
+| `RouterConfig`                | The options described in [`RouterConfig` options](#routerconfig-options).                               |
+| `RouterInstance`              | The members described in [the `RouterInstance` members](#the-routerinstance-members).                   |
+
+## Related pages
+
+- [Routing](/routing) explains file routes, layouts, params, data, and navigation in an app.
+- [Vite plugin](/vite-plugin) covers the `fileRoutes` option and the generated declaration.
+- [Installation](/installation) covers project setup and the first component.
+- [Components](/components) covers props and children for route components.
+- [Lifecycle](/lifecycle) covers cleanup of the listeners that hooks register.
+- [Compiler](/compiler) covers how the compiler claims anchors and lowers reactive reads.

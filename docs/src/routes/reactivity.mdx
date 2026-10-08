@@ -1,232 +1,555 @@
 ---
 title: Reactivity
-description: Signals, computed values, stores, and actions.
+description: Declare signals, computed values, stores, and actions, and see when writes reach the DOM and what a failed action undoes.
 ---
 
 # Reactivity
 
-Reze tracks reads and writes at the binding level. A signal holds one value; a
-computed derives from other values; a store holds a mutable object tree. Reads
-inside a computation subscribe it, and writes re-run exactly the subscribers
-that read the changed value. Nothing re-renders.
+This page covers the four reactive declarations, `signal`, `computed`, `store`, and `action`, plus the helpers `readonly` and `trigger`. It shows what the compiler accepts, when a write reaches the DOM, and what an action undoes when it fails.
 
-Every value export of `reze-js` except `render` and `hydrate` is a declaration
-the compiler lowers; there is no runtime body to call directly. Importing from
-`reze-js` without compiling fails at module link time, which in practice means
-the file bypassed the Vite plugin — see [installation](/installation).
+The Vite plugin compiles the forms on this page. For setup, see [Installation](/installation).
 
 ## Signals
 
-Declare a reactive variable with `signal`. Reads look like variable reads;
-writes look like assignments:
+A `signal` holds a value that bindings and derivations read. You read it like a variable and write it with an assignment. The compiler turns both into calls on the signal.
+
+### Signal declarations
+
+Declare a signal with `let` and an initial value. Read it in JSX and write it from an event handler:
 
 ```tsx
 import { signal } from "reze-js";
 
+let count = signal(0);
+
 export function Counter() {
-  let count = signal(0);
   return (
-    <section>
-      <output>{count}</output>
-      <button onClick={() => (count += 1)}>+1</button>
-      <button onClick={() => (count = 0)} disabled={count === 0}>
-        reset
-      </button>
-    </section>
+    <button
+      onClick={() => {
+        count += 1;
+      }}
+    >
+      Count: {count}
+    </button>
   );
 }
 ```
 
-Compound assignments (`+=`, `++`, `||=`, …) update the value in place. An
-assigned expression that reads other signals reads fresh values when the write
-lands:
+The declaration is valid in any variable declaration, at module level or inside a component or function body. The compiler refuses a `signal` anywhere else:
+
+```tsx expect=SIGNAL_NOT_DECLARED
+import { signal } from "reze-js";
+
+export function makeCount() {
+  return signal(0);
+}
+```
+
+A destructured declaration is refused. Declare one name per signal:
+
+```tsx expect=SIGNAL_FOLDED,SIGNAL_PATTERN
+import { signal } from "reze-js";
+
+const [count, setCount] = signal(0);
+```
+
+Use `let` for every signal you write. TypeScript reports an assignment to a `const` binding, and the compiler does not change that. A non-exported signal that is never written compiles to its initial value and reports `SIGNAL_FOLDED`, an info diagnostic:
+
+```tsx expect=SIGNAL_FOLDED
+import { signal } from "reze-js";
+
+const label = signal("Save");
+
+export function SaveButton() {
+  return <button>{label}</button>;
+}
+```
+
+A signal cannot be the default export:
+
+```tsx expect=SIGNAL_DEFAULT_EXPORT
+import { signal } from "reze-js";
+
+let count = signal(0);
+
+export function bump() {
+  count += 1;
+}
+
+export default count;
+```
+
+### Signal updates
+
+A write is `=`, a compound assignment such as `+=`, or `++` as a statement. A read after a write in the same handler returns the new value. The DOM updates after the handler returns, on a microtask. Several writes before that point produce one DOM update with the final value:
 
 ```tsx
 import { signal } from "reze-js";
 
-let base = signal(2);
-let scaled = signal(0);
+let count = signal(0);
 
-export function rescale(factor: number) {
-  scaled = base * factor;
+export function Counter() {
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button
+        onClick={() => {
+          count += 1;
+          count += 1;
+        }}
+      >
+        Add 2
+      </button>
+      <button
+        onClick={() => {
+          count = 0;
+        }}
+      >
+        Reset
+      </button>
+    </div>
+  );
 }
 ```
 
-Declaration rules, enforced by the compiler:
+`count++` inside a larger expression is refused, because the update would also produce a value in the middle of the expression:
 
-- Declare with `let` (or `const` for a value you never write) in the file that
-  uses the variable. The declaration cannot be destructured. A named export stays
-  reactive for importing modules, which can read it but not write it. To let them
-  write it, export a function that updates it, or keep the data in a `store` (below).
-- Reading the variable — including passing its value to a call such as
-  `pick(list)` — simply tracks. What is refused is using the `signal`
-  primitive itself as a value instead of calling it.
-- To store a function in a signal, assign the function itself; the compiler
-  wraps right-hand sides that need it so the value is not mistaken for an
-  updater.
-- The second argument is an options object (`signal("a", { equals: false })`).
+```tsx expect=SIGNAL_UPDATE_IN_EXPRESSION
+import { signal } from "reze-js";
 
-A write updates the value synchronously and schedules subscribers on a microtask automatically — `effect`s and framework bindings alike. `flush()` only forces queued subscribers to run synchronously, which is handy in tests (see [Lifecycle](/lifecycle)).
-Writes compare with `Object.is` by default and skip notification when the value
-is equal; pass `{ equals: false }` to notify on every write, or a custom
-`equals(prev, next)` predicate.
+let count = signal(0);
+
+export function next() {
+  return count++;
+}
+```
+
+Destructuring assignment to a signal is refused:
+
+```tsx expect=SIGNAL_ASSIGN_PATTERN
+import { signal } from "reze-js";
+
+let count = signal(0);
+
+export function reset() {
+  [count] = [1];
+}
+```
+
+### Equality and notification
+
+A write compares the new value with the current value using `Object.is`. If they are equal, readers are not notified. `NaN` equals `NaN`, and `0` and `-0` are different values.
+
+Two options change this comparison:
+
+- `{ equals: false }` notifies readers on every write.
+- `equals(previous, next)` decides equality itself. When it returns `true`, the write is ignored and the old value stays.
+
+This profile ignores a rename when the `id` is the same, so the name stays `Ada`:
+
+```tsx
+import { signal } from "reze-js";
+
+type User = { id: number; name: string };
+
+let user = signal<User>({ id: 1, name: "Ada" }, { equals: (previous, next) => previous.id === next.id });
+
+export function Profile() {
+  return (
+    <div>
+      <p>{user.name}</p>
+      <button
+        onClick={() => {
+          user = { id: 1, name: "Grace" };
+        }}
+      >
+        Rename
+      </button>
+    </div>
+  );
+}
+```
+
+### Exported signals
+
+Export a signal with `export let`. A module that imports it reads the value by name and sees every update. The compiler does not export the setter, so an importer cannot write to the signal. An importer that assigns to the imported name is not rewritten and not reported by the compiler. The module runtime throws `TypeError` when that assignment runs. Export a function that does the write instead:
+
+```tsx file=counter.tsx
+import { signal } from "reze-js";
+
+export let count = signal(0);
+
+export function bump() {
+  count += 1;
+}
+```
+
+A component in another module imports the signal and the function:
+
+```tsx
+import { bump, count } from "./counter";
+
+export function Counter() {
+  return <button onClick={bump}>Count: {count}</button>;
+}
+```
 
 ## Computed values
 
-Derive with `computed`. Pass the expression itself, not a function — the
-compiler wraps it:
+A `computed` derives a value from other signals and stores. You read it like a signal, and you cannot write to it.
+
+### Computed declarations
+
+Pass the expression itself to `computed`, with no function around it. The compiler wraps the expression, so `computed(price * qty)` recomputes when `price` or `qty` changes:
 
 ```tsx
 import { computed, signal } from "reze-js";
 
+let price = signal(4.5);
+let qty = signal(2);
+const total = computed(price * qty);
+
 export function Cart() {
-  let price = signal(6);
-  let qty = signal(2);
-  const total = computed(price * qty);
   return (
-    <p>
-      <button onClick={() => (qty += 1)}>Qty: {qty}</button>
-      Total: {total}
-    </p>
+    <div>
+      <p>Total: {total}</p>
+      <button
+        onClick={() => {
+          qty += 1;
+        }}
+      >
+        Add one
+      </button>
+      <button
+        onClick={() => {
+          price = 5;
+        }}
+      >
+        Raise price
+      </button>
+    </div>
   );
 }
 ```
 
-A computed is lazy and cached: it recomputes when read after a dependency
-changed, and notifies its own readers only when the result differs by
-`Object.is`.
+A computed value can be exported. An importer reads it by name, as it reads an exported signal. The setter that changes `price` stays in its module:
 
-Limits, enforced by the compiler:
+```tsx file=pricing.tsx
+import { computed, signal } from "reze-js";
 
-- A computed is read-only. Every write form (`=`, `+=`, `++`, destructuring,
-  `for...of`) is refused.
-- The argument must be an expression, not a function literal. A simple arrow
-  wrapper around the expression is refused with a fix that unwraps it; other
-  function forms are refused without one.
+let price = signal(6);
 
-Computed graphs must be acyclic: in development, reading a computed while it is
-being evaluated warns and returns the stale value. Computations created inside
-a computed are owned by it and disposed before each recomputation, so a
-re-derivation never leaks its inner effects.
+export function raisePrice() {
+  price += 1;
+}
 
-For async work, write an async function component and read its results with `computed(await expr)`; see [building interfaces](/building-interfaces#async-components). `action` covers user-triggered writes (below).
+export const doubled = computed(price * 2);
+```
+
+```tsx
+import { doubled, raisePrice } from "./pricing";
+
+export function PriceTag() {
+  return <button onClick={raisePrice}>Double: {doubled}</button>;
+}
+```
+
+### Computed evaluation
+
+A computed value follows these rules:
+
+- It is lazy. It does not run until something reads it.
+- It caches its result. Reads without a change in its dependencies return the cached value.
+- After a dependency changes, the next read recomputes. Subscribers are notified only when the new result differs by `Object.is`.
+- An effect created inside a computed belongs to it. Before the computed recomputes, the cleanup of the previous run's effects runs. See [Lifecycle](/lifecycle) for effects and cleanup.
+- A computed that reads itself during its own evaluation logs a warning and returns its previous value. The warning text is `[rezejs] Cycle detected: a computed was read while it is being evaluated, so it depends on itself and returns a stale value. Computed graphs must be acyclic.` Keep computed graphs acyclic.
+
+### Refused computed shapes
+
+A computed cannot be written. The compiler reports `COMPUTED_WRITTEN` for an assignment to it:
+
+```tsx expect=COMPUTED_WRITTEN
+import { computed, signal } from "reze-js";
+
+let price = signal(4.5);
+const total = computed(price * 2);
+
+export function raise() {
+  price += 1;
+}
+
+export function Reset() {
+  return (
+    <button
+      onClick={() => {
+        total = 0;
+      }}
+    >
+      Reset
+    </button>
+  );
+}
+```
+
+A function literal passed to `computed` is refused. The compiler reports `COMPUTED_FUNCTION` and asks for the expression without `() =>`:
+
+```tsx expect=COMPUTED_FUNCTION
+import { computed, signal } from "reze-js";
+
+let price = signal(4.5);
+const total = computed(() => price * 2);
+
+export function raise() {
+  price += 1;
+}
+```
 
 ## Stores
 
-`store` makes a deep reactive object. Reads track per key, writes land in place
-and notify immediately:
+A `store` wraps an object or an array in a deep reactive proxy. A read tracks the property it reads. A write notifies only the readers of the property it changes.
+
+### Store declarations
+
+`store(value)` wraps the object you pass. It does not copy it, so writes change that object. Passing a store to `store` returns it unchanged. This list renders a store with `For`, toggles a property from a checkbox, and adds an item with `push`:
 
 ```tsx
 import { For, store } from "reze-js";
 
-const todos = store([{ id: 1, done: false }]);
+const todos = store([
+  { id: 1, title: "Write docs", done: false },
+  { id: 2, title: "Review diff", done: true },
+]);
 
-export function List() {
+export function TodoList() {
   return (
-    <ul>
-      <For each={todos}>
-        {(todo) => (
-          <li>
-            <input type="checkbox" checked={todo.done} onChange={() => (todo.done = !todo.done)} />
-          </li>
-        )}
-      </For>
-      <button onClick={() => todos.push({ id: todos.length + 1, done: false })}>add</button>
-    </ul>
+    <div>
+      <ul>
+        <For each={todos}>
+          {(todo) => (
+            <li>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={todo.done}
+                  onChange={() => {
+                    todo.done = !todo.done;
+                  }}
+                />
+                {todo.title}
+              </label>
+            </li>
+          )}
+        </For>
+      </ul>
+      <button
+        onClick={() => {
+          todos.push({ id: 3, title: "Ship", done: false });
+        }}
+      >
+        Add
+      </button>
+    </div>
   );
 }
 ```
 
-Semantics:
+### Store reads and writes
 
-- The initializer is adopted, not copied: `store(obj)` wraps `obj` itself.
-- Assignment, `delete`, and array methods (`push`, `splice`, `sort`, `length`
-  writes, …) change the object in place and notify readers of the affected
-  keys, plus readers of the key set when keys are added or removed.
-- Nested plain objects and arrays are wrapped on read, so `state.user.name`
-  tracks exactly that path.
-- Accessor properties and frozen data values are read through without
-  tracking.
-- `readonly(state)` returns a view with the same tracked reads that throws
-  `TypeError` on every write.
+Reads and writes follow these rules:
 
-In development, writing a store while a computed or render binding runs throws:
-derive the value instead, or write from an event handler or an effect.
+- Nested properties are tracked by path. A binding that reads `state.user.name` subscribes to that path.
+- Assignment and `delete` notify the readers of that key. Adding or removing a key also notifies readers of `Object.keys(...)`.
+- The array methods `push`, `pop`, `sort`, and `splice`, and assigning `length = 0`, notify readers.
+- An accessor property re-runs its readers when the values it reads change.
+
+### Untracked values and trigger
+
+A `Map`, a `Date`, or a class instance stored in a store is returned as it is. Changing it does not notify readers, because it is not a store. Call `trigger(fn)` to notify the readers of whatever `fn` reads. `trigger` runs `fn`, notifies those readers, and then flushes queued subscribers before it returns.
+
+For a `Map` held in a signal, call `trigger` after the change. Reset the signal to a new `Map` when you need readers to see a replacement:
+
+```tsx
+import { signal, trigger } from "reze-js";
+
+let cache = signal(new Map<string, number>());
+
+export function Cache() {
+  return (
+    <div>
+      <p>Entries: {cache.size}</p>
+      <button
+        onClick={() => {
+          cache.set("a", cache.size + 1);
+          trigger(() => cache);
+        }}
+      >
+        Add
+      </button>
+      <button
+        onClick={() => {
+          cache = new Map();
+        }}
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+```
+
+### Read-only views
+
+`readonly(state)` returns a view of `state`. The view reads the same values and tracks reads the same way. Every write through the view throws `TypeError`, including assignment and `delete`. Writes through the original store appear in the view:
+
+```tsx
+import { readonly, store } from "reze-js";
+
+const settings = store({ theme: "light", density: "comfortable" });
+
+export const viewSettings = readonly(settings);
+
+export function ThemeToggle() {
+  return (
+    <button
+      onClick={() => {
+        settings.theme = settings.theme === "light" ? "dark" : "light";
+      }}
+    >
+      Theme: {viewSettings.theme}
+    </button>
+  );
+}
+```
+
+### Writes from derivations
+
+In development builds, a store write inside a `computed` or a render binding throws. Derive the value instead, or write from an event handler or an effect. Production builds do not run this check.
 
 ## Actions
 
-An action wraps an async (or sync) function whose store writes are speculative:
-visible at once, kept when the call succeeds, undone when it fails. The
-compiler threads the run context through every `await`:
+An `action` wraps a function that writes stores and may await. Store writes in a run apply at once. If the run fails, the run undoes its store writes. Signal writes are not undone.
+
+### Action declarations
+
+Pass a function literal to `action`. The returned value is the action. You call it like a function, and it has two reactive properties: `pending` and `error`. This example saves a todo when its checkbox changes and shows the pending and error state:
 
 ```tsx
 import { action, For, Show, store } from "reze-js";
 
-interface Todo {
-  id: number;
-  done: boolean;
-  updatedAt?: number;
-}
+const todos = store([{ id: 1, title: "Write docs", done: false }]);
 
-async function saveTodo(todo: Todo): Promise<Todo> {
-  const res = await fetch(`/todos/${todo.id}`, {
-    method: "PATCH",
+const saveTodo = action(async (todo: { id: number; done: boolean }) => {
+  const response = await fetch(`/api/todos/${todo.id}`, {
+    method: "PUT",
     body: JSON.stringify({ done: todo.done }),
   });
-  if (!res.ok) throw new Error(`save failed: ${res.status}`);
-  return res.json() as Promise<Todo>;
-}
-
-const todos = store<Todo[]>([{ id: 1, done: false }]);
-
-const toggle = action(async (todo: Todo) => {
-  todo.done = !todo.done;
-  const saved = await saveTodo(todo);
-  todo.updatedAt = saved.updatedAt;
+  if (!response.ok) {
+    throw new Error(`Save failed with ${response.status}`);
+  }
 });
 
-export function List() {
+export function TodoList() {
   return (
-    <ul>
-      <For each={todos}>
-        {(todo) => (
-          <li>
-            <input type="checkbox" checked={todo.done} onChange={() => toggle(todo).catch(() => {})} />
-          </li>
-        )}
-      </For>
-      <Show when={toggle.pending > 0}>
-        <p>Saving…</p>
+    <div>
+      <ul>
+        <For each={todos}>
+          {(todo) => (
+            <li>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={todo.done}
+                  onChange={() => {
+                    todo.done = !todo.done;
+                    saveTodo(todo).catch(() => {});
+                  }}
+                />
+                {todo.title}
+              </label>
+            </li>
+          )}
+        </For>
+      </ul>
+      <Show when={saveTodo.pending > 0}>
+        <p>Saving changes</p>
       </Show>
-      <Show when={toggle.error !== undefined}>
-        <p>Saving failed; the list shows the pre-save state.</p>
+      <Show when={saveTodo.error !== undefined}>
+        <p>{saveTodo.error instanceof Error ? saveTodo.error.message : "Save failed"}</p>
       </Show>
-    </ul>
+    </div>
   );
 }
 ```
 
-Only store writes are speculative. Signal writes inside an action are immediate
-and permanent, and writes inside nested functions or deferred callbacks
-(`setTimeout`, `.then`) run outside the action — the compiler warns on member
-writes in functions that run later. Each call returns a promise that rejects
-with what the run threw after its writes were undone, so the event handler
-above catches the rejection while `toggle.error` drives the failure message.
-`pending` counts runs in flight and `error` holds the latest failure until the
-next call; both are tracked, so the `Show` branches above update for free.
-Overlapping runs on one key stay isolated per run: a failure undoes only that
-run's layers. A synchronous action keeps its writes on return and undoes them
-on a throw. Using the `action` primitive itself as a value instead of calling
-it is refused; the declared action is an ordinary value — export it and call it
-from event handlers or effects.
+- `pending` is the number of runs in flight.
+- `error` holds what the latest failed run threw. It is cleared when the next run starts.
+- An action declared at module level can be exported. An importer calls it directly.
 
-In development, calling an action while a computed or render binding runs
-throws; call it from an event handler or an effect.
+The compiler refuses three shapes. The argument must be a function literal written at the call. An action must be called, not referenced. A generator or an async generator is not supported.
+
+```tsx expect=ACTION_ARGUMENT
+import { action } from "reze-js";
+
+async function persist(id: number) {
+  await fetch(`/api/todos/${id}`, { method: "POST" });
+}
+
+export const saveTodo = action(persist);
+```
+
+```tsx expect=ACTION_NOT_CALLED
+import { action } from "reze-js";
+
+const save = action;
+```
+
+```tsx expect=ACTION_UNSUPPORTED
+import { action } from "reze-js";
+
+export const stream = action(async function* () {
+  yield 1;
+});
+```
+
+### Speculative writes
+
+A store write in an action body applies at once, so the UI shows it while the run is in progress. If the run throws, the store returns to its state before the run. Writes after an `await` in the same body belong to the run too. In the example above, a failed save restores `todo.done`.
+
+Signal writes are not undone. A signal write made in a failed run stays in place.
+
+### Failed runs
+
+A run that throws returns a promise that rejects with the same error, after the undo has finished. This applies to a synchronous throw as well as a rejected `await`. Catch the returned promise where you call the action, as the example above does. Without a catch, the rejection is unhandled. The `error` property records the failure until the next run starts.
+
+### Synchronous and overlapping runs
+
+A synchronous action keeps its store writes when it returns. When it throws, it undoes them.
+
+Two runs can overlap. If run a fails while run b is still in flight, run a undoes only its own writes. Writes from run b that have committed stay in place.
+
+### Nested writes
+
+A store write in a nested callback inside an action body is not part of the run. The compiler reports `ACTION_NESTED_WRITE` as a warning for this shape:
+
+```tsx expect=ACTION_NESTED_WRITE
+import { action, store } from "reze-js";
+
+const state = store({ saved: false });
+
+export const save = action(async () => {
+  setTimeout(() => {
+    state.saved = true;
+  }, 0);
+});
+```
+
+### Calls inside derivations
+
+Calling an action inside a `computed` or a render binding throws in development builds. The error text is `[rezejs] An action was called while a computed or render binding runs; call it from an event handler or effect.` Call actions from event handlers or effects. Production builds do not run this check.
 
 ## Related pages
 
-- [Lifecycle](/lifecycle) — effect scheduling, ownership and cleanup, and
-  context.
-- [Components](/components) — how bindings subscribe in templates.
-- [Building interfaces](/building-interfaces) — putting signals, stores, and
-  actions together in UI flows.
+- [Lifecycle](/lifecycle): effects, `flush`, cleanup, and ownership.
+- [Components](/components): how bindings in templates subscribe to signals, computed values, and stores.
+- [Building interfaces](/building-interfaces): lists with `For`, events, and async components.
+- [Compiler](/compiler): how declarations are lowered and what each diagnostic code means.

@@ -1,48 +1,42 @@
 ---
 title: Routing
-description: Set up file-system routes, layouts, parameters, navigation, and deployment.
+description: Map files under src/routes to URLs, load data before render, guard navigation, and deploy with the Reze router.
 ---
 
 # Routing
 
-File-system routes with a typed client router. Route files under `src/routes` become lazily loaded branches; nested files render inside their parent layout through `props.children`.
+Reze turns the files under `src/routes` into routes. This page covers the file conventions, layouts, params, typed paths, data loading, redirects, navigation, link handling, search params, and deployment. For the `createRouter` options, histories, and hook signatures, see the [Router API](/router-api).
 
-## Setup
+## Set up file routes
 
-Start from the [installation](/installation) Vite setup, then add the router and file routes. The blocks below assume `src/routes/index.tsx` exists so `paths.index()` resolves.
+Install the packages as described in [Installation](/installation). Then turn on file routes in the Vite config:
 
-```sh
-pnpm add @rezejs/router
-pnpm add -D @rezejs/vite-plugin vite
-```
-
-`vite.config.ts`:
-
-```tsx
+```ts file=vite.config.ts
 import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [reze({ fileRoutes: true, ssg: { entry: "src/app.tsx" } })],
+  plugins: [reze({ fileRoutes: true })],
 });
 ```
 
-`src/app.tsx`:
+The [Vite plugin](/vite-plugin) reads `src/routes` and generates the `virtual:reze-routes` module. That module exports `routes` and `paths`. Pass both to `createRouter`, choose a history, and render the router with a shell component that wraps every page:
 
-```tsx
-export { paths, routes } from "virtual:reze-routes";
-export { Shell as default } from "./Shell";
+```tsx file=src/main.tsx
+import { createBrowserHistory, createRouter } from "@rezejs/router";
+import { render } from "reze-js";
+import { paths, routes } from "virtual:reze-routes";
+
+import { Shell } from "./Shell";
+
+const Router = createRouter({ routes, paths, history: createBrowserHistory(import.meta.env.BASE_URL) });
+
+render(() => <Router root={Shell} />, document.getElementById("app")!);
 ```
 
-The shared entry selects router mode through the `routes` export; the default export is the shell around the matched branch. Development renders it client-side, while `vite build` pre-renders every page and hydrates in the browser. The HTML template loads the generated bootstrap instead of the entry directly:
+The shell renders around each page. It links to the home page, so the project needs `src/routes/index.tsx`:
 
-```html
-<script type="module" src="/@reze/ssg-client.js"></script>
-```
-
-`src/Shell.tsx`:
-
-```tsx
+```tsx file=src/Shell.tsx
 import { useIsRouting } from "@rezejs/router";
 import type { JSX } from "reze-js";
 import { paths } from "virtual:reze-routes";
@@ -52,8 +46,8 @@ export function Shell(props: { children: JSX.Element }) {
   return (
     <>
       <nav>
-        <a href={paths.index()}>Home</a>
-        {isRouting() ? <span id="routing"> loading…</span> : null}
+        <a href={paths.index()}>Home</a> <a href={paths.about()}>About</a> <a href={paths.blog()}>Blog</a>
+        {isRouting() ? <span id="routing"> loading</span> : null}
       </nav>
       <main>{props.children}</main>
     </>
@@ -61,96 +55,127 @@ export function Shell(props: { children: JSX.Element }) {
 }
 ```
 
-`src/routes/index.tsx`:
-
-```tsx
+```tsx file=src/routes/index.tsx
 export default function Home() {
   return <h1>Home</h1>;
 }
 ```
 
-`virtual:reze-routes` exports the scanned `routes` table and the `paths` builders. Each route file becomes one lazy chunk loaded on first visit. Pass `paths` to get typed href builders on `Router.paths`; omit it and build links from literal strings instead. The plugin watches the routes directory in dev and regenerates the module plus `src/routes.gen.d.ts`.
+## Map files to URLs
 
-## File names
+Each file under `src/routes` becomes a route. Folders add URL segments, and file names add params:
 
-| File                              | URL                              | Notes                                                    |
-| --------------------------------- | -------------------------------- | -------------------------------------------------------- |
-| `index.tsx`                       | `/`                              | Root page                                                |
-| `about.tsx`                       | `/about`                         | Static segment, matched case-insensitively               |
-| `blog.tsx` + `blog/index.tsx`     | `/blog`                          | `blog.tsx` is the layout, `blog/index.tsx` fills it      |
-| `blog/[id].tsx`                   | `/blog/42`                       | Required param, available as `params.id`                 |
-| `archive/[[page]].tsx`            | `/archive`, `/archive/2`         | Optional param; must not precede a required segment      |
-| `docs/[...path].tsx`              | `/docs/a/b`                      | Splat; must be the last segment                          |
-| `[...404].tsx`                    | any unmatched path               | Catch-all; pair with a static prefix to scope it         |
-| `(auth)/login.tsx`                | `/login`                         | Group contributes no segment                             |
-| `(auth).tsx` + `(auth)/login.tsx` | `/login` inside the group layout | A file named like a directory is that directory's layout |
+| File                            | Route pattern  |
+| ------------------------------- | -------------- |
+| `src/routes/index.tsx`          | `/`            |
+| `src/routes/about.tsx`          | `/about`       |
+| `src/routes/blog/index.tsx`     | `/blog`        |
+| `src/routes/blog/[id].tsx`      | `/blog/:id`    |
+| `src/routes/blog/[[page]].tsx`  | `/blog/:page?` |
+| `src/routes/docs/[...slug].tsx` | `/docs/*slug`  |
+| `src/routes/(auth)/login.tsx`   | `/login`       |
 
-Nesting follows the directory tree: a file named like a directory is the layout for everything under it. `blog.tsx` renders on every `/blog/*` page with the child page as `props.children`:
+The scanner applies these rules:
 
-`src/routes/blog.tsx`:
+- An `index` file serves the URL of its folder. `blog/index.tsx` serves `/blog`.
+- `[name]` is a required param. `[[name]]` is an optional param, so the URL matches with or without that segment.
+- `[...name]` is a catch-all. It matches one or more segments, and it must be the last segment of its path.
+- `(group)` folders add no URL segment. Use them to organize files.
+- A file whose name matches its folder is that folder's layout. See [Add layouts](#add-layouts).
+- Files and folders whose names start with `_` or `.` are skipped. So are `*.d.ts`, `*.test.*`, and `*.spec.*` files.
 
-```tsx
+When more than one route matches a URL, the router compares the segments from left to right. A static segment beats a param, a param beats a catch-all, and the route defined first wins a tie. Static segments match case-insensitively. Trailing slashes and empty segments are ignored.
+
+### Scan errors
+
+The plugin stops the build when the route files cannot form a valid route tree. The errors include:
+
+- Two files resolve to the same route.
+- Two routes with conflicting shapes match the same URL. The message names both routes, for example `routes "<a>" and "<b>" both match`.
+- A catch-all is not the last segment.
+- A param name is invalid or repeated in one path.
+- An optional param comes before a required segment.
+- The routes directory does not exist. The message is `[reze-router] routes directory not found: <dir>`.
+
+## Add layouts
+
+A route module with a default export renders a page. A module without a default export renders its children, which makes it a layout. Layouts share their markup with every route nested under them. This file in `src/routes/blog.tsx` wraps every page under `/blog`:
+
+```tsx file=src/routes/blog.tsx
 import type { RouteProps } from "@rezejs/router";
 
-export default function Blog(props: RouteProps) {
+export default function BlogLayout(props: RouteProps) {
   return (
     <section>
-      <h1>Blog</h1>
+      <h2>Blog</h2>
       {props.children}
     </section>
   );
 }
 ```
 
-`src/routes/blog/index.tsx`:
+The pages in `src/routes/blog/` render in place of the layout's `children`.
 
-```tsx
-import { paths } from "virtual:reze-routes";
+## Read params
 
-export default function Posts() {
-  return (
-    <ul>
-      <li>
-        <a href={paths.blog.byId(1)}>Post 1</a>
-      </li>
-      <li>
-        <a href={paths.blog.byId(2)}>Post 2</a>
-      </li>
-    </ul>
-  );
+A dynamic route receives its params through `RouteProps` for the page component, or through `useParams` anywhere below the route. A catch-all's value is stored under the name of the catch-all:
+
+```tsx file=src/routes/[...404].tsx
+import type { RouteProps } from "@rezejs/router";
+
+export default function NotFound(props: RouteProps<{ "404": string }>) {
+  return <p>No page at /{props.params["404"]}</p>;
 }
 ```
 
-Only script files (`.ts`, `.tsx`, `.js`, `.jsx`) become routes by default; other extensions are skipped unless the plugin's `extensions` option lists them. Private files never become routes: underscore-prefixed segments (`_utils.ts`, `blog/_draft.tsx`), dotfiles, `.d.ts` files, and `*.test.*` / `*.spec.*`. Duplicate files for one id (`a.ts` + `a.tsx`), two leaves matching the same shape (`[id].tsx` + `[slug].tsx`), duplicate or invalid param names, and optionals before required segments throw at scan time.
+Dynamic values are decoded with `decodeURIComponent`. A value that cannot be decoded is kept as written.
 
-Params decode with `decodeURIComponent` and statics compare case-insensitively. When branches overlap, static beats param beats splat segment by segment; ties keep definition order.
+`useParams()` returns a getter for the params of the deepest matched route, merged with the params of its layouts. Pass a route pattern to type the result. This component reads the `id` of `/blog/:id` from any place under that route:
 
-## Typed paths
+```tsx file=src/PostHeader.tsx
+import { useParams } from "@rezejs/router";
 
-`paths` mirrors the tree: statics are props, params and splats are `byName` calls. Builders take an optional query object and hash:
+export function PostHeader() {
+  const params = useParams("/blog/:id");
+  return <h1>Post {params().id}</h1>;
+}
+```
 
-```tsx
+A URL that matches no route renders nothing. Add a catch-all route to render a not-found page.
+
+## Build typed paths
+
+The plugin generates `paths`, one builder per route. A builder takes the route's params in order, then an optional `search` object and an optional `hash` string, and returns an href that includes the router base:
+
+```tsx file=src/PostLinks.tsx
 import { paths } from "virtual:reze-routes";
 
-export function PostNav(props: { id: number }) {
+export function PostLinks() {
   return (
     <nav>
-      <a href={paths.index()}>Home</a>
-      <a href={paths.blog()}>Blog</a>
-      <a href={paths.blog.byId(props.id)}>This post</a>
-      <a href={paths.blog.byId("hello", { ref: "nav" }, "#comments")}>Discussed</a>
+      <a href={paths.blog.byId(1)}>First post</a>
+      <a href={paths.blog.byId(2, { tab: "comments" }, "#replies")}>Comments</a>
     </nav>
   );
 }
 ```
 
-A path with no matchable leaf of its own is not callable and only exposes children. A node with several dynamic segments in one builder throws when called; nest the routes so each level binds one value. Every emitted href already carries the served base, while `navigate()` takes the route path without it.
+The builders follow these rules:
 
-## Data loading
+- Param values are encoded with `encodeURIComponent`.
+- In `search`, a `null` or `undefined` value is skipped. An array appends one entry for each non-nullish item.
+- A leading `#` in `hash` is optional. The builder adds one when it is missing.
+- A catch-all builder takes a string or an array of segments.
+- Hash routing changes the base to `#`, so `paths.about()` returns `#/about`. See [Host a client-only build](#host-a-client-only-build).
+- A builder that needs a required param throws when the value is missing, for example `[reze-router] paths.blog.byId requires a value for ":id"`.
 
-A route module exports a component as default and its data hook as `route`. `src/routes/blog/[id].tsx`:
+A folder with two dynamic children, such as `[id].tsx` and `[slug].tsx`, has no unambiguous href. The builder for that folder throws. Nest the dynamic segments in separate folders, so each level has one dynamic child.
 
-```tsx
+## Load data before rendering
+
+A route can export `route` with a `preload` function. The router runs `preload` before it commits the page, so the component reads the loaded data through `props.data`:
+
+```tsx file=src/routes/blog/[id].tsx
 import type { RouteConfigFor, RoutePropsFor } from "@rezejs/router";
 import { paths } from "virtual:reze-routes";
 
@@ -173,172 +198,338 @@ export default function PostPage(props: RoutePropsFor<"/blog/:id">) {
 }
 ```
 
-`preload` runs with intent `"preload"` when a link to the route is hovered, focused, or touched, and again with `"navigate"` when the route is entered (`"initial"` on the first load and in static builds), so cache the fetch when it should not repeat. Its return value becomes the component's `props.data`. A hash-only change keeps the current data without re-running `preload`.
+The router calls `preload` with an intent that tells it why the page loads:
 
-## Metadata and redirects
+- `initial` runs for the first page the app renders.
+- `navigate` runs when the user navigates to the route.
+- `preload` runs when the router warms the route for a link. See [Hover warming](#hover-warming).
 
-`route.meta` sets the page head from the settled preload data: a literal object or a callback returning one. Entries merge root-to-leaf with the last defined field winning; fields missing from the new branch fall back to the template baseline instead of lingering from the previous page. Static builds write the merged head into each page's HTML, and client navigation applies the same fields to the document. Markdown and MDX pages export `route.meta` explicitly; frontmatter is not read into it.
+While a navigation waits for `preload`, the current page stays on screen, and `useIsRouting()` returns `true`. [Show pending state and errors](#show-pending-state-and-errors) describes the pending state.
 
-```tsx
+A navigation that changes only the hash, such as `/about` to `/about#intro`, skips `preload` and `meta`.
+
+### Hover warming
+
+With `preload` enabled, which is the default, the router starts loading a route before the user clicks one of its links:
+
+- Hovering a link starts a 20 ms timer. When the timer ends, the router loads the route's chunk and runs its `preload` with intent `preload`. Moving the pointer away before the timer ends cancels the warming.
+- Focusing a link, or touching it, starts warming at once.
+- Warming never runs `meta` or `redirect`.
+- An error during warming is ignored. The navigation runs `preload` again and reports the error if it repeats.
+- A `navigate` call made while warming is running a `preload` is ignored.
+
+Set `preload: false` in `createRouter` to turn warming off. Clicks still route the page.
+
+## Set page metadata
+
+A route can set the document title, description, canonical URL, and robots directive. Export a `meta` object from `route`:
+
+```tsx file=src/routes/about.tsx
 import type { RouteConfigFor } from "@rezejs/router";
-
-interface Post {
-  title: string;
-}
 
 export const route = {
-  preload: ({ params }) => ({ title: `Post ${params.id}` }),
-  meta: ({ data }) => ({ title: data.title }),
-} satisfies RouteConfigFor<"/blog/:id", Post>;
-```
+  meta: { title: "About", description: "Who we are" },
+} satisfies RouteConfigFor<"/about">;
 
-`route.redirect` leaves the page before it renders. A literal object short-circuits the navigation before `preload` runs; a callback receives the settled data and runs after it. A module with only a redirect and no component renders nothing:
-
-```tsx
-import type { RouteConfigFor } from "@rezejs/router";
-
-export const route = { redirect: { to: "/installation", replace: true } } satisfies RouteConfigFor<"/">;
-```
-
-End every `route` export with `satisfies RouteConfigFor<pattern, Data>`. The check types the `preload` parameters from the pattern, types the `data` that `meta` and `redirect` callbacks receive from `Data`, and rejects unknown keys and wrong shapes such as a misspelled `preload` or a non-string `redirect.to`. `Data` defaults to `unknown` for modules without a `preload`.
-
-Static builds resolve redirect chains at build time and fail on loops or missing targets.
-
-## Navigation
-
-Plain anchors navigate when they point at a known same-origin route:
-
-```tsx
-import { useNavigate } from "@rezejs/router";
-
-export function BackButton() {
-  const navigate = useNavigate();
-  return <button onClick={() => navigate(-1)}>Back</button>;
+export default function About() {
+  return <h1>About</h1>;
 }
 ```
 
-`navigate("/about")` pushes by default; `navigate("/about", { replace: true })` replaces, `{ state }` attaches history state, `{ scroll: false }` keeps the scroll position. Passing a number moves through history (`navigate(-1)`). Absolute same-origin URLs resolve against the router; anything outside it, links with a `target` other than `_self`, `download`, `rel="external"`, modified clicks, or hrefs matching no route stay with the browser. Anchor attributes map onto navigation options: `replace` replaces, `noscroll` keeps scroll, `state` passes the raw string as history state.
+`meta` can also be a function. The function receives the route's settled data and params, and it can return the object or a promise of it. When several matched routes set a field, the leaf route wins. A field that no matched route sets returns to its baseline. The baseline is the `headDefaults` option of `createRouter` when you set it. Otherwise it is the head the document had at the first commit.
 
-```tsx
-export function Actions() {
+## Redirect routes
+
+A route can send the user to another path. Export `redirect` from `route`. It is either an object or a function that receives the route's params:
+
+```tsx file=src/routes/legacy/[id].tsx
+import type { RouteConfigFor } from "@rezejs/router";
+import { paths } from "virtual:reze-routes";
+
+export const route = {
+  redirect: ({ params }) => ({ to: paths.blog.byId(params.id) }),
+} satisfies RouteConfigFor<"/legacy/:id">;
+```
+
+These rules apply to redirects:
+
+- The router checks object redirects from every matched route before it runs any `preload`. Then it checks each matched route, from the root to the leaf: `preload`, `meta`, and the `redirect` function.
+- A `redirect` function that returns `undefined` or `null` keeps the page. The first redirect that returns a value, checked from the root to the leaf, wins.
+- A redirect replaces the current history entry unless you set `replace: false`.
+
+The redirects in a prerendered build have extra rules. See [Prerender pages](#prerender-pages).
+
+## Navigate in code
+
+Use `useNavigate()` to change pages from an event handler. Its first argument is a path, an absolute URL, or a number of history steps:
+
+```tsx file=src/PostButtons.tsx
+import { useNavigate } from "@rezejs/router";
+import { paths } from "virtual:reze-routes";
+
+export function PostButtons() {
+  const navigate = useNavigate();
+  return (
+    <div>
+      <button onClick={() => navigate(paths.blog())}>Back to list</button>
+      <button onClick={() => navigate(-1)}>Previous page</button>
+      <button onClick={() => navigate(paths.blog.byId(2), { replace: true, scroll: false })}>Next post</button>
+    </div>
+  );
+}
+```
+
+The options are:
+
+- `replace` replaces the current history entry instead of adding one. Navigating to the path that is already current also replaces it.
+- `state` stores a value on the history entry. Read it with `useLocation().state`.
+- `scroll` defaults to `true`. Set it to `false` to keep the scroll position.
+
+A path routes inside the app. An absolute URL outside the router base loads in the browser. A number moves through the history by that many steps, like `history.go`.
+
+Scrolling works as follows. Back and forward navigation restore the saved scroll position. A navigation to a hash scrolls the matching element into view. Any other navigation scrolls to the top, unless it is the initial render or `scroll` is `false`. Only histories that control scrolling do this. Browser and hash histories control scrolling, and memory history does not.
+
+## Link between pages
+
+Anchors that point to routes do not need a router component. Write a native `<a href>` with a path from `paths`:
+
+```tsx file=src/Nav.tsx
+import { paths } from "virtual:reze-routes";
+
+export function Nav() {
   return (
     <nav>
-      <a href="/about" replace>
-        About without a history entry
-      </a>
-      <a href="/blog" noscroll>
-        Blog without scrolling
+      <a href={paths.index()}>Home</a>
+      <a href={paths.about()}>About</a>
+      <a href={paths.blog.byId(1)} replace noscroll>
+        First post
       </a>
     </nav>
   );
 }
 ```
 
-An unmatched URL renders nothing; add a catch-all to show a page instead. `src/routes/[...404].tsx`:
+The anchor attributes are:
 
-```tsx
-import type { RouteProps } from "@rezejs/router";
+- `replace` replaces the history entry, as the `replace` option does for `navigate`.
+- `noscroll` keeps the scroll position, as `scroll: false` does.
 
-export default function NotFound(props: RouteProps<{ "404": string }>) {
-  return <h1>Not found: /{props.params["404"]}</h1>;
+### Compile-time link claims
+
+With `fileRoutes` enabled, the compiler claims an `<a>` element when all of these hold:
+
+- The element has an `href` attribute, and a spread does not override that attribute.
+- The element has no `aria-current` attribute.
+- The `href` is routable.
+
+A routable `href` is a path inside the app. The compiler does not claim these hrefs:
+
+- Query-only hrefs such as `?tab=2`.
+- Protocol-relative hrefs such as `//example.com`.
+- Fragment hrefs such as `#intro`. A hash route such as `#/about` is routable.
+- Any URL with a scheme, such as `https:` or `mailto:`.
+
+A literal `null` or `false` href is not claimed. An expression is claimed, because its value is unknown until runtime.
+
+Set `fileRoutes.links` to `false` in the Vite plugin to turn claims off. The `links` option of `createRouter` is a separate setting, described next.
+
+### Click handling
+
+The router intercepts clicks on routable anchors when the `links` option of `createRouter` is on. The default is `true` for browser and hash histories and `false` for memory history.
+
+The browser handles a click, and the router does not, when any of these hold:
+
+- The click was already prevented with `preventDefault`.
+- The button is not the primary button.
+- The user holds Meta, Control, Shift, or Alt.
+- The anchor has a `download` attribute, or a `target` other than `_self`.
+- The anchor has a `rel` value that contains `external`.
+- The URL is cross-origin or outside the history base.
+- No route matches the URL.
+
+### Active link state
+
+A claimed link gets attributes that reflect the current location:
+
+- `aria-current="page"` when the link's path is the current path.
+- `data-active` when the link's path is the current path or a parent of it, matched by segment. The `/` link is active only on `/`.
+- `data-pending` while a navigation to the link's path is loading route modules or async `preload` data.
+
+Code can read the same state. The `useLinkState` hook returns getters for `current`, `active`, and `pending`. The [Router API](/router-api) lists the `link` function and `useLinkState` signatures.
+
+## Show pending state and errors
+
+`useIsRouting()` returns a getter. It is `true` before the first commit, and while a navigation waits for route modules or async `preload` data. It becomes `false` when the new page commits. Hover warming does not change it.
+
+An error thrown during a route's `preload`, `meta`, or `redirect` is rethrown when the page renders. The nearest `catchError` boundary handles it. See [Lifecycle](/lifecycle) for how boundaries work.
+
+When a route module fails to load, the page renders the load error. The next navigation to that route tries to load the module again.
+
+## Guard leaving a page
+
+`useBeforeLeave` registers a listener that runs before the router leaves the current page. The listener is removed when its owner is disposed. The listener receives an event with these fields:
+
+- `from` and `to` are the current and target locations.
+- `options` are the navigation options, such as `replace`.
+- `defaultPrevented` tells whether a listener already prevented the navigation.
+- `preventDefault()` cancels the navigation.
+- `retry(force = true)` runs the navigation again. With `force` set, the guards do not run again.
+
+This editor blocks navigation while it has unsaved changes, and it resumes the navigation after the user saves:
+
+```tsx file=src/Editor.tsx
+import { type BeforeLeaveEvent, useBeforeLeave } from "@rezejs/router";
+
+let hasUnsavedChanges = false;
+let pendingNavigation: BeforeLeaveEvent | undefined;
+
+export function saveDraft() {
+  hasUnsavedChanges = false;
+  const event = pendingNavigation;
+  pendingNavigation = undefined;
+  event?.retry();
 }
-```
-
-Redirect by navigating from `preload` or from the component; the redirect target wins over the navigation that triggered it. `src/routes/admin.tsx`:
-
-```tsx
-import { useNavigate } from "@rezejs/router";
-
-export default function Admin() {
-  useNavigate()("/about", { replace: true });
-  return <p>secret</p>;
-}
-```
-
-## Pending and errors
-
-While route chunks load, the previous view stays on screen and `useIsRouting()` returns true. A navigation superseded mid-load never commits. Guard an in-flight transition with a leave listener:
-
-```tsx
-import { useBeforeLeave } from "@rezejs/router";
-import { signal } from "reze-js";
 
 export function Editor() {
-  let dirty = signal(false);
   useBeforeLeave((event) => {
-    if (dirty) {
-      event.preventDefault();
-    }
+    if (!hasUnsavedChanges) return;
+    event.preventDefault();
+    pendingNavigation = event;
   });
-  return <textarea onInput={(e: InputEvent) => (dirty = (e.currentTarget as HTMLTextAreaElement).value !== "")} />;
-}
-```
-
-`event.preventDefault()` blocks the navigation and `event.retry()` re-runs it; the same guard also covers back/forward moves (undone when prevented) and unloading the document. A throwing guard is reported without blocking.
-
-Errors thrown from `preload` or a route component have no route-level `pending` or `failure` view yet; that shape is not part of the public API. A failed chunk load is stored and retried by the next navigation to that route.
-
-Query and location stay reactive through dedicated hooks:
-
-```tsx
-import { useLocation, useSearchParams } from "@rezejs/router";
-
-export function Filters() {
-  const location = useLocation();
-  const [query, setQuery] = useSearchParams();
   return (
-    <section>
-      <p>
-        {location().pathname} tagged {query().tag}
-      </p>
-      <button onClick={() => setQuery({ tag: "reze" })}>Tag</button>
-      <button onClick={() => setQuery({ tag: null })}>Clear</button>
-    </section>
+    <textarea
+      rows={12}
+      onInput={() => {
+        hasUnsavedChanges = true;
+      }}
+    />
   );
 }
 ```
 
-The setter merges into the current query: `null` or `undefined` deletes a key, an array writes one entry per non-nullish item, and it builds on the pending location even mid-navigation.
+These rules also apply:
 
-Claimed anchors expose their state as attributes: `aria-current="page"` on the exact URL, `data-active` on the URL or its segment-prefix, `data-pending` while a navigation to exactly that pathname waits for chunks.
+- A navigation to the current path skips the guards.
+- Back and forward navigation that a guard blocks returns the history to the page the user was on.
+- While a leave listener is registered in a browser page, the router installs a `beforeunload` listener. It removes that listener when the last leave listener is removed.
+- A listener that throws reports the error and does not block the navigation.
 
-## Deployment
+## Read and set search params
 
-With static generation, every page is its own HTML file: serve the output directory directly with no fallback rewrite, since rewriting an unknown path to another page's HTML would hydrate the wrong route. Unmatched URLs return the host 404 unless a catch-all route renders them. Match Vite's `base` with the served path so links and history agree; static generation requires browser history and rejects hash routing.
+`useSearchParams()` returns a getter and a setter. The getter reads the query of the committed location. A key that repeats in the URL reads as an array:
 
-For relocatable output, set Vite's `base` to `"./"` or `""`. Static generation
-rebases bootstrap, stylesheet and preload URLs for each page, including both
-trailing-slash modes. Hydration derives the router's deployment prefix from the
-validated bootstrap URL and still rejects a payload for another page.
-`navigate("/about")` stays inside that prefix. Native anchor URLs keep browser
-semantics: `href="/"` points to the origin root, not the router root; use
-base-aware hrefs when linking into a mounted application. An absolute CDN
-asset base does not become a router path prefix.
+```tsx file=src/routes/blog/index.tsx
+import { useSearchParams } from "@rezejs/router";
 
-The HTML template is parsed as HTML rather than replaced with regular
-expressions. Nested mount content, unquoted attributes, comments and inert
-templates do not change which live root or bootstrap is selected. Route head
-metadata is applied as text and attributes, preserving decoded template
-defaults.
+export default function BlogIndex() {
+  const [search, setSearch] = useSearchParams();
+  const tab = () => {
+    const value = search().tab;
+    return typeof value === "string" ? value : "latest";
+  };
+  return (
+    <div>
+      <button onClick={() => setSearch({ tab: "popular" })}>Show popular posts</button>
+      <p>Tab: {tab()}</p>
+    </div>
+  );
+}
+```
 
-Without static generation, the build is a client-rendered application instead: the host must rewrite unknown paths to the HTML entry, or the router never loads for a deep link. Hosts without rewrites use hash history, with the plugin typing `#/path` hrefs. `vite.config.ts`:
+The setter follows these rules:
 
-```tsx
+- It builds the new query from the latest navigation, including a navigation that is still loading.
+- A `null` or `undefined` value deletes the key.
+- An array replaces every value for the key. The key moves to the end of the query. Each `null` or `undefined` item is skipped.
+- An empty array deletes the key.
+- A scalar value replaces the key's values.
+- It pushes a history entry by default. Set `replace: true` to replace the entry instead.
+- It does not scroll by default.
+
+`useLocation()` returns a getter for the committed location. The `Location` object has `pathname`, `search`, `hash`, `query`, and `state`. Read the getter inside the code that needs the current value.
+
+## Deploy the router
+
+A Reze router app deploys in one of two ways. You can prerender each route to its own HTML file, or you can host a client-only build. Prerendering gives each route a document the server can return before the script runs. A client-only build needs the host to serve `index.html` for every route.
+
+### Prerender pages
+
+Set `ssg` in the Vite plugin options. The `entry` names the module that exports the app. The `paths` option lists the params for each dynamic route:
+
+```ts file=vite.config.ts
 import reze from "@rezejs/vite-plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [reze({ fileRoutes: { history: "hash" } })],
+  plugins: [
+    reze({
+      fileRoutes: true,
+      ssg: {
+        entry: "src/entry-server.tsx",
+        paths: {
+          "/blog/:id": [{ id: "1" }, { id: "2" }],
+        },
+      },
+    }),
+  ],
 });
 ```
 
-```tsx
-import { createHashHistory, createRouter } from "@rezejs/router";
-import { paths, routes } from "virtual:reze-routes";
+The entry exports the route table and the shell:
 
-const Router = createRouter({ routes, paths, history: createHashHistory() });
+```tsx file=src/entry-server.tsx
+import { Shell } from "./Shell";
+import { routes } from "virtual:reze-routes";
+
+export { routes };
+export default Shell;
 ```
 
-Back/forward restores the saved scroll position, hash links scroll to the matching element id, and positions survive a reload in the same tab through `sessionStorage`.
+The `ssg` options are:
 
-See the [router API](/router-api) for hooks, histories, and the generated types, [installation](/installation) for the Vite setup, and the [compiler](/compiler) for how anchors are claimed.
+- `entry` is required. It exports named `routes` for a router app. An entry that exports only a default component renders `/` alone.
+- `template` is the HTML file that each page is written into. It defaults to `index.html`.
+- `selector` is the element that receives the rendered markup. It defaults to `#app`, and it must be `#` followed by an identifier.
+- `trailingSlash` is `"always"` by default. With `"always"`, `/about` is written to `/about/`. With `"never"`, it stays `/about`. Each page is written to an `index.html` in its folder.
+- `timeoutMs` limits how long the build waits for the route discovery step and for each page to render. It defaults to `30000`.
+- `paths` maps each route pattern to its params. The value is an array of param records, or a function that returns the array, synchronously or as a promise. A param value is a string, an array of strings, or `undefined`.
+
+Every dynamic route needs an entry in `paths`. Map a route to `[]` to skip it. A static route must not have an entry, because it renders once. An entry for an unknown pattern or an unknown param name is an error, and so is a page whose output file collides with another page's.
+
+Prerendering rejects these setups:
+
+- `fileRoutes.history: "hash"`, because hash routes have no server path to render.
+- Library builds, `build.watch` builds, and explicit `ssr` builds.
+- `ssg.paths` with a standalone entry that has no `routes` export.
+- A missing `entry` file.
+- A redirect to a path under the base that does not match a prerendered page, or to a path outside the base.
+- A redirect to a URL with a scheme other than `http:` or `https:`. Absolute `http:` and `https:` targets, and protocol-relative `//` targets, are left as they are.
+- A cycle of redirects.
+
+### Host a client-only build
+
+A build without `ssg` is a client-only single-page app. The browser reads the URL, so the host must serve `index.html` for every route path. Most static hosts have a rewrite rule for this.
+
+If the host cannot rewrite paths, use hash routing. Set `fileRoutes` to `{ history: "hash" }`, so the generated `paths` hrefs start with `#/`. Then create the router with `createHashHistory()`:
+
+```tsx file=src/main.tsx
+import { createHashHistory, createRouter } from "@rezejs/router";
+import { render } from "reze-js";
+import { paths, routes } from "virtual:reze-routes";
+
+import { Shell } from "./Shell";
+
+const Router = createRouter({ routes, paths, history: createHashHistory() });
+
+render(() => <Router root={Shell} />, document.getElementById("app")!);
+```
+
+Hash routing cannot be combined with `ssg`.
+
+## Related pages
+
+- For the `createRouter` options, histories, hooks, and route types, see the [Router API](/router-api).
+- For the file-route and prerendering options of the Vite plugin, see the [Vite plugin](/vite-plugin).
+- For error boundaries, see [Lifecycle](/lifecycle).
+- For how the compiler claims links, see [Compiler](/compiler).
+- For installing the packages, see [Installation](/installation).
