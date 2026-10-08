@@ -7,7 +7,6 @@ export default defineConfig({
     "src/jsx-dev-runtime.ts",
     "src/internal/reactivity.ts",
     "src/internal/runtime.ts",
-    "src/internal/async.ts",
     "src/internal/html.ts",
     "src/internal/hydrate.ts",
   ],
