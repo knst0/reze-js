@@ -109,8 +109,7 @@ being evaluated warns and returns the stale value. Computations created inside
 a computed are owned by it and disposed before each recomputation, so a
 re-derivation never leaks its inner effects.
 
-For async work, use async function components and `action` (below); pending
-and error UI helpers are being redesigned.
+For async work, write an async function component and read its results with `computed(await expr)`; see [building interfaces](/building-interfaces#async-components). `action` covers user-triggered writes (below).
 
 ## Stores
 

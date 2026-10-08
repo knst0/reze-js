@@ -276,7 +276,7 @@ export function Editor() {
 
 `event.preventDefault()` blocks the navigation and `event.retry()` re-runs it; the same guard also covers back/forward moves (undone when prevented) and unloading the document. A throwing guard is reported without blocking.
 
-Errors thrown from `preload` or a route component propagate to the nearest error boundary. A failed chunk load is stored and retried by the next navigation to that route.
+Errors thrown from `preload` or a route component have no route-level `pending` or `failure` view yet; that shape is not part of the public API. A failed chunk load is stored and retried by the next navigation to that route.
 
 Query and location stay reactive through dedicated hooks:
 

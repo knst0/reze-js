@@ -211,10 +211,11 @@ async function UserCard(props: { id: string }) {
 ```
 
 After activation, changing `props.id` runs the real producer again. Reactive
-reads hidden inside the skipped awaited expression, such as
-`await loadUser(props.id)` or a signal read inside `loadUser()`, do not restore
-dependencies during initial hydration. Move those input reads into synchronous
-setup. Initial route preloads are not repeated.
+reads hidden inside the skipped awaited expression, such as a signal read inside
+`loadUser()`, do not restore dependencies during initial hydration. A direct
+`props` read inside an awaited expression, such as `await loadUser(props.id)`,
+is a compile error (`ASYNC_PROPS_READ_IN_AWAIT`); hoist it into a `const` before
+the first `await`. Initial route preloads are not repeated.
 
 Module-level resources use the same seeded-then-revalidate contract, including
 resources created through factories, getters, and class static initialization.
@@ -296,6 +297,8 @@ catchError(
   (error) => console.error("caught", error),
 );
 ```
+
+A rejected `await` inside an async component renders its `failure(error, retry)` view, and an error thrown by `failure` itself goes to the nearest enclosing boundary. See [building interfaces](/building-interfaces#async-components).
 
 ## Related pages
 

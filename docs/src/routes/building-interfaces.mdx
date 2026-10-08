@@ -298,6 +298,42 @@ export function Dialog() {
 
 The `<b>` renders inside `target` while the surrounding `<div>` renders in place. A reactive `mount` moves the same nodes when it changes; omitting `mount` or passing `null` selects the body. Children stay reactive after a move, components inside stay alive, and a delegated event inside the portal still reaches its handler. Toggling a portal accumulates nothing in the mount, and disposing its owner removes its nodes. An error thrown while building portal children reaches the surrounding `catchError`, as if the content were inline.
 
+## Async components
+
+An `async` function component awaits data in its body and returns the view that stays on screen until the next one is ready. Read props into a `const` before the first `await`: a props read inside an awaited expression is a compile error (`ASYNC_PROPS_READ_IN_AWAIT`).
+
+```tsx
+import { abortSignal, isPending } from "reze-js";
+
+export async function Profile(props: { id: number }) {
+  const id = props.id;
+  const user = await fetch(`/users/${id}`, { signal: abortSignal() }).then((r) => r.json());
+  return <p class={isPending() ? "stale" : ""}>{user.name}</p>;
+}
+
+Profile.pending = <i>loading</i>;
+Profile.failure = (error: unknown, retry: () => void) => <button onClick={retry}>{String(error)}</button>;
+```
+
+`pending` is shown only until the first load settles; a reload keeps the previous view and sets `isPending()`. A rejected `await` renders `failure(error, retry)`, and `retry` re-runs the component from the start. A `try` around an `await` is a compile error (`ASYNC_TRY_AROUND_AWAIT`), so let the rejection reach `failure`. `abortSignal()` is valid only directly in the load, and `isPending()` only in the view.
+
+A component with `pending` is its own boundary: its first loads hold its own view, and its parent does not wait for it. A component without `pending` counts its loads toward the nearest ancestor boundary.
+
+Code splitting uses `await import()`:
+
+```tsx
+export async function Chart(props: ChartProps) {
+  const { Plot } = await import("./Plot");
+  return <Plot {...props} />;
+}
+
+Chart.pending = <Skeleton />;
+```
+
+`computed(await expr)` derives a value from an async expression without suspending the body. Reads before it settles count as a pending load for the nearest boundary, and a rejection is thrown into that boundary. `const user = await expr` suspends the body and re-runs it when its inputs change; the two forms are documented side by side and do not replace each other.
+
+`render` and router do not yet hold a root or route view while loads are pending, and they do not yet report root failures to `console.error`. Those gates are not implemented yet.
+
 ## Constraints and pitfalls
 
 Control-flow tags accept fixed attributes: `Show` takes `when` and `fallback`, `For` takes `each`, `fallback`, and `keyed`, `Repeat` takes `count` and `fallback`, `Switch` takes `fallback`, `Match` takes `when`, and `Portal` takes `mount`. Anything else on those tags, spreads included, has no meaning and is reported by the compiler.

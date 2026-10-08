@@ -181,6 +181,8 @@ Diagnostics include a bracketed code, source location, and repair information. E
 | `KEY_ON_ELEMENT`         | `key` on a native element does nothing.                                                   | Remove it; key rows with `<For keyed>`.                    |
 | `UNKNOWN_ATTRIBUTE`      | An attribute name is not a known HTML attribute.                                          | Use the suggested name, such as `class`.                   |
 | `EVENT_NAME_LOWERCASE`   | A lowercase `onclick` received a function.                                                | Use `onClick`.                                             |
+| `ASYNC_PROPS_READ_IN_AWAIT` | A `props` read sits inside an awaited expression of an async component. | Hoist it into a `const` before the first `await`. |
+| `ASYNC_TRY_AROUND_AWAIT` | A `try` wraps an `await` in an async component. | Remove it; a rejected `await` renders `failure`. |
 
 To capture all diagnostic severities, including informational diagnostics:
 
