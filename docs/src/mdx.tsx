@@ -10,7 +10,7 @@ const iconAttrs = { width: "16", height: "16", "aria-hidden": "true" };
 
 function HeadingLink(props: { id?: string; children?: JSX.Element }) {
   return (
-    <a href={`#${props.id}`} class="no-underline transition-colors duration-150 hover:text-accent">
+    <a href={`#${props.id}`} class="text-underline-offset-4 hover:underline">
       {props.children}
     </a>
   );
