@@ -344,13 +344,14 @@ export function hErrored(site: Site, child: () => JSX.Element, fallback?: (error
 export function hAsyncComponent<V extends unknown[], R>(
   site: Site,
   load: (context: AsyncContext) => PromiseLike<V>,
-  body: (values: () => V) => R,
+  body: (values: () => V, isPending: () => boolean) => R,
 ): HtmlRange {
   return managedRange("async", "async", site, () => {
     const step = internalAsyncComputed(load);
     const values = (): V => step.value()!;
     const isLoaded = computed(() => step.value() !== undefined);
-    const view = computed(() => (isLoaded() ? untrack(body, values) : undefined));
+    const render = (): R => body(values, () => false);
+    const view = computed(() => (isLoaded() ? untrack(render) : undefined));
     return computed(() => {
       const current = view();
       const error = step.error();

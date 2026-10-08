@@ -13,6 +13,7 @@ import {
 } from "./internal/resource";
 import { getScopeObserver } from "./internal/scope";
 import { profileCreated, profileReran } from "./profile";
+import { enterReload, leaveReload, type ReloadScope } from "./reload";
 import { SignalNode } from "./signal";
 
 /** The tracking context the compiler threads through an async computation. */
@@ -22,6 +23,11 @@ export interface AsyncContext {
    * the computation was disposed, reads are untracked.
    */
   get<T>(source: () => T): T;
+  /**
+   * The signal of this run: aborted once a newer run started or the computation was disposed, and
+   * already aborted when read after either.
+   */
+  abortSignal(): AbortSignal;
 }
 
 /** The state of an async computation; every getter is tracked. */
@@ -41,10 +47,14 @@ export interface AsyncComputed<T> {
 class AsyncRun implements AsyncContext {
   declare node: AsyncComputedNode<unknown>;
   declare generation: number;
+  declare controller: AbortController | undefined;
+  declare aborted: boolean;
 
   constructor(node: AsyncComputedNode<unknown>, generation: number) {
     this.node = node;
     this.generation = generation;
+    this.controller = undefined;
+    this.aborted = false;
   }
 
   get<T>(source: () => T): T {
@@ -55,6 +65,19 @@ class AsyncRun implements AsyncContext {
     } finally {
       setActiveSub(prevSub);
     }
+  }
+
+  abortSignal(): AbortSignal {
+    const controller = (this.controller ??= new AbortController());
+    if (this.aborted) {
+      controller.abort();
+    }
+    return controller.signal;
+  }
+
+  abort(): void {
+    this.aborted = true;
+    this.controller?.abort();
   }
 }
 
@@ -70,6 +93,8 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
   declare pending: SignalNode<boolean>;
   declare hasSettled: boolean;
   declare rejection: SignalNode<unknown>;
+  declare reloadScopes: ReloadScope[] | undefined;
+  declare current: AsyncRun | undefined;
 
   constructor(fn: (c: AsyncContext) => PromiseLike<T> | T) {
     this.deps = undefined;
@@ -83,6 +108,8 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
     this.pending = new SignalNode<boolean>(true, Object.is);
     this.hasSettled = false;
     this.rejection = new SignalNode<unknown>(undefined, Object.is);
+    this.reloadScopes = undefined;
+    this.current = undefined;
   }
 
   value(): T | undefined {
@@ -129,12 +156,18 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
         beforeResourcePending(record);
       }
     }
+    if (this.hasSettled && this.reloadScopes === undefined) {
+      this.reloadScopes = enterReload(this);
+    }
+    this.current?.abort();
+    const run = new AsyncRun(this as AsyncComputedNode<unknown>, generation);
+    this.current = run;
     this.pending.write(true);
     const prevSub = startTracking(this, FlagWatching);
     let result: PromiseLike<T> | T;
     try {
       enterEffect();
-      result = this.fn(new AsyncRun(this as AsyncComputedNode<unknown>, generation));
+      result = this.fn(run);
     } catch (error) {
       result = Promise.reject(error);
     } finally {
@@ -213,6 +246,7 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
     this.resolved.write(value);
     this.rejection.write(undefined);
     this.pending.write(false);
+    this.releaseReload();
   }
 
   private commitRejection(error: unknown): void {
@@ -220,6 +254,15 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
     purgeDeps(this);
     this.rejection.write(error);
     this.pending.write(false);
+    this.releaseReload();
+  }
+
+  private releaseReload(): void {
+    const scopes = this.reloadScopes;
+    if (scopes !== undefined) {
+      this.reloadScopes = undefined;
+      leaveReload(scopes);
+    }
   }
 
   unwatched(): void {
@@ -231,6 +274,9 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
       disposeResource(this);
     }
     ++this.generation;
+    this.current?.abort();
+    this.current = undefined;
+    this.releaseReload();
     disposeNode(this);
   }
 }

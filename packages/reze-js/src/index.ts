@@ -77,6 +77,18 @@ export declare function signal<T>(initial: T, options?: SignalOptions<T>): T;
 export declare function computed<T>(value: T, options?: ComputedOptions): T;
 
 /**
+ * Compiler syntax in an async component's load: the signal of the run reading it. It aborts when a
+ * newer run starts or the component is disposed, and reads as already aborted after either.
+ */
+export declare function abortSignal(): AbortSignal;
+
+/**
+ * Compiler syntax in an async component's view: whether a re-run of a load in this component or its
+ * subtree is pending. It reports reloads only, not first loads.
+ */
+export declare function isPending(): boolean;
+
+/**
  * Compiler syntax for an action: `const save = action(async (todo) => { … })`. Store writes in
  * the body, also after each `await`, are speculative: visible at once, undone if the call fails.
  * Writes in nested functions run outside the action.

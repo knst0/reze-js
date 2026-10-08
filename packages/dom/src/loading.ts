@@ -9,6 +9,7 @@ import {
   runWithOwner,
   signal,
   untrack,
+  withReloadScope,
 } from "@rezejs/signals";
 import { internalAsyncComputed } from "@rezejs/signals/internal/resource";
 import { renderEffect } from "@rezejs/signals/render";
@@ -112,23 +113,27 @@ export function loading(children: () => JSX.Element, fallback?: () => JSX.Elemen
 
 /**
  * The child of an async component: `body` runs once, untracked, after the first run of `load` resolves, and reads
- * the resolved values through `values()`, so a re-run updates them in place. Renders `undefined` until then and
- * throws the rejection of the latest run into the surrounding `catchError`.
+ * the resolved values through `values()`, so a re-run updates them in place. `isPending()` is true while a re-run
+ * of `load` in this component or its subtree is pending. Renders `undefined` until then and throws the rejection
+ * of the latest run into the surrounding `catchError`.
  */
 export function asyncComponent<V extends unknown[], R>(
   load: (c: AsyncContext) => PromiseLike<V>,
-  body: (values: () => V) => R,
+  body: (values: () => V, isPending: () => boolean) => R,
 ): () => R | undefined {
-  const step = internalAsyncComputed(load);
-  const values = (): V => step.value()!;
-  const isLoaded = computed(() => step.value() !== undefined);
-  const view = computed(() => (isLoaded() ? untrack(body, values) : undefined));
-  return computed(() => {
-    const current = view();
-    const error = step.error();
-    if (error !== undefined) {
-      throw error;
-    }
-    return current;
+  return withReloadScope((isPending) => {
+    const step = internalAsyncComputed(load);
+    const values = (): V => step.value()!;
+    const render = (): R => body(values, isPending);
+    const isLoaded = computed(() => step.value() !== undefined);
+    const view = computed(() => (isLoaded() ? untrack(render) : undefined));
+    return computed(() => {
+      const current = view();
+      const error = step.error();
+      if (error !== undefined) {
+        throw error;
+      }
+      return current;
+    });
   });
 }

@@ -8,6 +8,7 @@ export { effectScope } from "./effectScope";
 export { catchError } from "./error";
 export { onCleanup, root, untrack, type Owner } from "./owner";
 export { ContextNotFoundError, createContext, provideContext, useContext, type Context, type ContextKey } from "./provide";
+export { withReloadScope } from "./reload";
 export { flush } from "./scheduler";
 export { selector } from "./selector";
 export { signal, type Equals, type Getter, type Setter, type SignalOptions } from "./signal";
