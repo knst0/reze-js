@@ -29,7 +29,29 @@ See [installation](/installation) for the complete project configuration.
 | `ssg`         | options object              | Pre-render the application to static HTML with hydration. See [static site generation](#static-site-generation).                                                    |
 | `profile`     | `{ dir: string }`           | Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. |
 
+| `analyze` | `string[]` | Packages, or `scope/*` prefixes, whose source the plugin analyzes when they have no valid manifest. See [libraries](#libraries). |
 The exported `DEFAULT_ROUTE_EXTENSIONS` contains `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`. Leading dots are optional in custom extension entries. Files in `node_modules` are excluded from the compiler transform.
+
+## Libraries
+
+A library ships compiler facts so applications compile against its exports without reading its source. Declare a `reze` export condition that points at the library's source, and a `reze.manifest` path where the facts are written:
+
+```json
+{
+  "exports": { ".": { "reze": "./src/index.ts", "default": "./dist/index.js" } },
+  "reze": { "manifest": "./reze.json" }
+}
+```
+
+`reze-manifest`, a bin of `@rezejs/vite-plugin`, writes the manifest. Run it in the package directory, for example from the build script. It analyzes every source file under the directories of the `reze` targets and writes `reze.json`, keyed by package-relative path. Files the compiler refuses are printed to stderr and left out, so importers treat them as opaque.
+
+An importer uses a manifest entry only when the entry's hash matches the source file's contents. A missing or stale entry makes the module opaque, unless its package is listed in `analyze`, in which case the plugin analyzes the source directly:
+
+```ts
+reze({ analyze: ["@acme/ui", "@acme/charts/*"] });
+```
+
+A stale manifest for a package not listed in `analyze` logs a warning once in dev. A package without a `reze` condition is never compiled, and its exports stay opaque.
 
 ## File routes
 

@@ -12,6 +12,9 @@
     "dist"
   ],
   "type": "module",
+  "bin": {
+    "reze-manifest": "./dist/manifest-cli.js"
+  },
   "sideEffects": false,
   "exports": {
     ".": {

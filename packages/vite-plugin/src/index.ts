@@ -3,8 +3,10 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path";
 
 import { compile } from "@rezejs/compiler";
-import type { Environment, Plugin } from "vite";
+import type { DevEnvironment, Environment, EnvironmentModuleNode, Plugin } from "vite";
 
+import { ModuleFactsStore, staticImportSpecifiers, type Resolver } from "./facts";
+import { profileHash } from "./hash";
 import { canonicalModuleId } from "./module-identity";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
 import { SsgClientId, SsgHtmlAdapterId, SsgRedirectId, SsgViewId } from "./ssg/adapter";
@@ -28,6 +30,8 @@ export interface Options {
     /** Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. */
     dir: string;
   };
+  /** Packages whose sources are analyzed for module facts when their `reze.json` manifest is missing or stale, e.g. `"@acme/ui"` or `"@acme/charts/*"`. Other packages stay opaque. */
+  analyze?: string[];
 }
 
 export interface RezeApi {
@@ -87,17 +91,6 @@ interface ProfileFile {
   file: string;
   hash: string;
   components: ProfileComponentFacts[];
-}
-
-/** FNV-1a64 of `text`, lowercase hex; the compiler checks the same hash before specializing. */
-function profileHash(text: string): string {
-  let hash = 0xcbf29ce484222325n;
-  const bytes = Buffer.from(text, "utf8");
-  for (const byte of bytes) {
-    hash ^= BigInt(byte);
-    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
-  }
-  return hash.toString(16).padStart(16, "0");
 }
 
 function profileKey(file: string): string {
@@ -187,6 +180,16 @@ function fileProfileTree(dir: string, hashes: Map<string, string>, tree: unknown
   }
 }
 
+type ResolveById = (specifier: string, importer: string) => Promise<{ id: string; external?: unknown } | null>;
+
+function resolverOf(resolveById: ResolveById): Resolver {
+  return async (specifier, importer) => {
+    const resolved = await resolveById(specifier, importer);
+    if (resolved === null || resolved.external || resolved.id.startsWith("\0")) return undefined;
+    return resolved.id.replace(QueryOrHash, "");
+  };
+}
+
 function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
   const jsonl = options.diagnostics?.jsonl;
   const seenCodes = new Set<string>();
@@ -201,6 +204,16 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
   const runtimeEntries = new Set<string>();
   const runtimeDirectories = new Set<string>();
   const filter = transformFilter(options.extensions);
+  const moduleFacts = new ModuleFactsStore(options.analyze ?? [], (file) => filter.include.test(file));
+
+  async function invalidateStaleImporters(environment: DevEnvironment, file: string, timestamp: number): Promise<EnvironmentModuleNode[]> {
+    const resolve = resolverOf((specifier, importer) => environment.pluginContainer.resolveId(specifier, importer));
+    const graph = environment.moduleGraph;
+    const importers = await moduleFacts.importersToInvalidate(file, resolve);
+    const nodes = importers.flatMap((importer) => [...(graph.getModulesByFile(importer) ?? [])]);
+    for (const node of nodes) graph.invalidateModule(node, new Set(), timestamp, true);
+    return nodes;
+  }
 
   function formatDiagnostic(d: Diagnostic): string {
     if (seenCodes.has(d.code)) return d.rendered;
@@ -234,6 +247,9 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
       },
     },
     applyToEnvironment: (environment) => environment.name === "client" || environment.name === HtmlEnv,
+    config() {
+      return { resolve: { conditions: ["reze"] } };
+    },
     configResolved(config) {
       isServe = config.command === "serve";
       debugNames = !config.isProduction;
@@ -241,6 +257,7 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
       root = config.root ?? "";
       shared.root = root;
       shared.isServe = isServe;
+      moduleFacts.configure({ root, warn: isServe ? (message) => config.logger.warn(message) : undefined });
     },
     async resolveId(id, importer, options) {
       if (!RuntimeEntry.test(id)) return;
@@ -253,9 +270,9 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
       }
       return resolved;
     },
-    transform(code, id) {
-      if (id !== SsgViewId && (!filter.include.test(id) || filter.exclude.test(id))) return null;
+    async transform(code, id) {
       const file = id.replace(QueryOrHash, "");
+      if (id !== SsgViewId && (!filter.include.test(id) || (filter.exclude.test(id) && !moduleFacts.declaresReze(file)))) return null;
       if (runtimeEntries.has(file) || id === SsgClientId || id === SsgHtmlAdapterId || id === SsgRedirectId) return;
       if (id.startsWith("\0vite/") || id.startsWith("\0rolldown/")) return;
       for (const directory of runtimeDirectories) if (file.startsWith(directory)) return;
@@ -269,6 +286,11 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
         shared.registry.register(moduleId, code);
         if (ssgTarget === "hydrate") shared.moduleFiles.set(moduleId, id);
       }
+      const imported = await moduleFacts.factsFor(
+        file,
+        staticImportSpecifiers(code),
+        resolverOf((specifier, importer) => this.resolve(specifier, importer, { skipSelf: true })),
+      );
       const result = compile(code, file, {
         sourceMap: emitsSourceMap(this.environment.config),
         debugNames,
@@ -276,8 +298,10 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
         links,
         ...(profile === undefined ? {} : { profile }),
         ...(ssgTarget === undefined ? {} : { target: ssgTarget, moduleId }),
+        facts: imported,
       });
       if (result === null) return null;
+      moduleFacts.recordCompiled(file, code, result.facts);
       const diagnostics: Diagnostic[] = result.diagnostics;
       record(diagnostics);
       const errors: Diagnostic[] = [];
@@ -302,6 +326,14 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
         });
       }
       return { code: result.code!, map: result.map ?? null };
+    },
+    async watchChange(file) {
+      if (this.environment.mode === "dev") await invalidateStaleImporters(this.environment, file, Date.now());
+    },
+    async hotUpdate(context) {
+      const importers = await invalidateStaleImporters(this.environment, context.file, context.timestamp);
+      if (importers.length === 0) return;
+      return [...new Set([...context.modules, ...importers])];
     },
     configureServer(server) {
       if (profileDir === undefined) return;
