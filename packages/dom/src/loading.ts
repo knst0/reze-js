@@ -46,7 +46,7 @@ function prepare(build: () => JSX.Element): [() => JSX.Element, Boundary] {
     return resolved;
   });
 }
-/** A shown side of a flow inside `Loading`: its built view, how to dispose it, and the boundary counting its loads. */
+/** A shown side of a flow inside a pending boundary: its built view, how to dispose it, and the boundary counting its loads. */
 interface Side<K> {
   key: K;
   view: JSX.Element;
@@ -55,7 +55,7 @@ interface Side<K> {
 }
 
 /**
- * Builds a new side. The first side is not a counting boundary, so its loads count toward the enclosing `Loading`;
+ * Builds a new side. The first side is not a counting boundary, so its loads count toward the enclosing pending boundary;
  * later sides each build in their own `prepare` boundary, so their loads can hold the swap.
  */
 function openSide<K>(key: K, build: (key: K) => JSX.Element, isFirst: boolean): Side<K> {
@@ -103,7 +103,7 @@ function heldSwap<K>(key: () => K, build: (key: K) => JSX.Element): () => JSX.El
   });
 }
 
-/** Runtime of `<Loading>`: shows `fallback` until nothing `children` built has a pending first load, then the children for good. */
+/** Shows `fallback` until nothing `children` built has a pending first load, then the children for good. */
 export function loading(children: () => JSX.Element, fallback?: () => JSX.Element): () => JSX.Element {
   setSwap(heldSwap);
   const [content, scope] = prepare(children);

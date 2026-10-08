@@ -28,7 +28,6 @@ export {
   prepareList,
   prepareRepeat,
   prepareRows,
-  prepareLoading,
   prepareErrored,
   prepareAsyncComponent,
   prepareAsyncViews,

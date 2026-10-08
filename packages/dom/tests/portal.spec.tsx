@@ -1,7 +1,6 @@
 import { signal } from "@rezejs/signals";
-import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
+import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
 import { onCleanup, Portal, provideContext, Show, useContext } from "reze-js";
-import { Errored } from "reze-js/internal/async";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -145,20 +144,24 @@ test("a delegated event inside a Portal reaches its handler", () => {
   expect(clicks).toEqual(["clicked"]);
 });
 
-test("an error thrown while building Portal children reaches the Errored around it, and what was built is disposed", () => {
+test("an error thrown while building Portal children reaches the failure view of the async component around it, and what was built is disposed", async () => {
   const cleaned: string[] = [];
   const section = target();
   function Boom(): never {
     onCleanup(() => cleaned.push("boom"));
     throw new Error("nope");
   }
-  const { el } = mount(() => (
-    <Errored fallback={(error) => <em>{(error as Error).message}</em>}>
+  async function Page() {
+    await Promise.resolve();
+    return (
       <Portal mount={section}>
         <Boom />
       </Portal>
-    </Errored>
-  ));
+    );
+  }
+  Page.failure = (error: unknown) => <em>{(error as Error).message}</em>;
+  const { el } = mount(() => <Page />);
+  await settle();
   expect(el.innerHTML).toBe("<em>nope</em>");
   expect(section.childNodes.length).toBe(0);
   expect(cleaned).toEqual(["boom"]);

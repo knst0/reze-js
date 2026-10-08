@@ -49,17 +49,6 @@ export interface MatchProps<T> {
   children: JSX.Element | ((value: () => T) => JSX.Element);
 }
 
-export interface LoadingProps {
-  fallback?: JSX.Element;
-  children: JSX.Element;
-}
-
-export interface ErroredProps {
-  /** A function written in place as the attribute receives the error and `reset`, which builds the children again; any other value is shown as is. */
-  fallback?: JSX.Element | ((error: unknown, reset: () => void) => JSX.Element);
-  children: JSX.Element;
-}
-
 export interface PortalProps {
   /** Where the children are kept, the document body when absent or `null`; the same nodes move when it changes. */
   mount?: Node | null;

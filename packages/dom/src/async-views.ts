@@ -14,5 +14,5 @@ export function asyncViews(
   if (failure === undefined) {
     return pending === undefined ? children : loading(children, pending);
   }
-  return errored(pending === undefined ? children : () => loading(children, pending), failure);
+  return errored(() => loading(children, pending), failure);
 }

@@ -10,7 +10,6 @@ import { currentExecution, type Instance } from "../hydration/execution";
 import { HydrationError, type RangeKind, type Site } from "../hydration/protocol";
 import type { JSX } from "../jsx";
 import { list } from "../list";
-import { loading } from "../loading";
 import { repeat } from "../repeat";
 import {
   applySpread,
@@ -319,15 +318,6 @@ export function hRows(site: Site, count: number, map: (index: number) => unknown
     for (let index = 0; index < count; index += 1) rows.push(managedRange("row", "row", site, () => map(index)));
     return rows;
   });
-}
-
-export function hLoading(site: Site, child: () => JSX.Element, fallback?: () => JSX.Element): HtmlRange {
-  return managedRange("branch", "loading", site, () =>
-    loading(
-      () => managedRange("branch", "content", site, child) as unknown as JSX.Element,
-      fallback === undefined ? undefined : () => managedRange("branch", "fallback", site, fallback) as unknown as JSX.Element,
-    ),
-  );
 }
 
 export function hErrored(site: Site, child: () => JSX.Element, fallback?: (error: unknown, reset: () => void) => JSX.Element): HtmlRange {

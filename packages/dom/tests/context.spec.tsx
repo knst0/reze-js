@@ -1,7 +1,6 @@
 import { signal } from "@rezejs/signals";
-import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
+import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
 import { createContext, useContext } from "reze-js";
-import { Errored } from "reze-js/internal/async";
 import { afterEach, expect, test } from "vitest";
 
 afterEach(cleanup);
@@ -52,16 +51,18 @@ test("a default-less context scopes a reactive payload to its subtree", () => {
   tick();
   expect(el.innerHTML).toBe("<li>a,b<button>add</button></li>");
 });
-test("reading a default-less context outside a provider throws", () => {
+test("reading a default-less context outside a provider fails with ContextNotFoundError", async () => {
   const Ctx = createContext<string>();
   function Consumer() {
     const value = useContext(Ctx);
     return <>{value}</>;
   }
-  const { el } = mount(() => (
-    <Errored fallback={(error) => <i>{(error as Error).name}</i>}>
-      <Consumer />
-    </Errored>
-  ));
+  async function Page() {
+    await Promise.resolve();
+    return <Consumer />;
+  }
+  Page.failure = (error: unknown) => <i>{(error as Error).name}</i>;
+  const { el } = mount(() => <Page />);
+  await settle();
   expect(el.innerHTML).toBe("<i>ContextNotFoundError</i>");
 });

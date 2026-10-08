@@ -8,7 +8,7 @@ interface Failure {
 }
 
 /**
- * Runtime of `<Errored>`: shows `children`, and once anything built inside throws, tears it down and shows
+ * Shows `children`, and once anything built inside throws, tears it down and shows
  * `fallback(error, reset)`. `reset` builds `children` again. Errors thrown by `fallback` go to the surrounding handler.
  */
 export function errored(children: () => JSX.Element, fallback?: (error: unknown, reset: () => void) => JSX.Element): () => JSX.Element {

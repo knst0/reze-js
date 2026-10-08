@@ -6,7 +6,7 @@ import { errored } from "../errored";
 import { branch, choose } from "../flow";
 import type { JSX } from "../jsx";
 import { list } from "../list";
-import { asyncComponent, loading } from "../loading";
+import { asyncComponent } from "../loading";
 import { repeat } from "../repeat";
 import type { RangeKind, Site } from "./protocol";
 import { managedRange } from "./range";
@@ -103,16 +103,6 @@ export function prepareRows(site: Site, count: number, map: (index: number) => u
     for (let index = 0; index < count; index++) rows.push(range("row", "row", site, () => map(index)));
     return rows;
   });
-}
-
-export function prepareLoading(site: Site, child: () => JSX.Element, fallback?: () => JSX.Element): JSX.Element {
-  if (preparingSession() === undefined) return loading(child, fallback);
-  return range("branch", "loading", site, () =>
-    loading(
-      () => range("branch", "content", site, child),
-      fallback === undefined ? undefined : () => range("branch", "fallback", site, fallback),
-    ),
-  );
 }
 
 export function prepareErrored(

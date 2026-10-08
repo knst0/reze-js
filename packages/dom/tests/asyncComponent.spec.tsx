@@ -1,7 +1,6 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
-import { catchError, effect, flush, onCleanup, root, Show } from "reze-js";
-import { asyncComputed, Loading } from "reze-js/internal/async";
+import { catchError, computed, effect, flush, onCleanup, root, Show } from "reze-js";
 import { asyncComponent } from "reze-js/internal/runtime";
 import { afterEach, expect, test } from "vitest";
 
@@ -162,19 +161,98 @@ test("a rejected load reaches catchError and the previous content stays", async 
   expect(read()).toBe(1);
 });
 
-test("Loading shows its fallback until the first content and keeps the content while reloading", async () => {
+type Load = (id: number) => Promise<string>;
+
+async function Name(props: { id: number; load: Load }) {
+  const id = props.id;
+  const load = props.load;
+  const name = await load(id);
+  return <b>{name}</b>;
+}
+Name.pending = <i>loading</i>;
+
+async function Item(props: { id: number; load: Load }) {
+  const id = props.id;
+  const load = props.load;
+  const name = await load(id);
+  return <b>{name}</b>;
+}
+
+async function Stuck() {
+  await new Promise<never>(() => {});
+  return <i>spin</i>;
+}
+
+async function Patient(props: { load: Load }) {
+  const load = props.load;
+  const name = await load(2);
+  return <b>{name}</b>;
+}
+Patient.pending = <Stuck />;
+
+async function Page(props: { load: Load }) {
+  const load = props.load;
+  await Promise.resolve();
+  return (
+    <div>
+      <Item id={1} load={load} />
+      <Item id={2} load={load} />
+    </div>
+  );
+}
+Page.pending = <i>loading</i>;
+
+async function Gate(props: { on: () => boolean; load: Load }) {
+  const on = props.on;
+  const load = props.load;
+  await Promise.resolve();
+  return (
+    <div>
+      <Show when={on()}>
+        <Item id={1} load={load} />
+      </Show>
+      <Item id={2} load={load} />
+    </div>
+  );
+}
+Gate.pending = <i>loading</i>;
+
+async function Wrapped(props: { load: Load }) {
+  const load = props.load;
+  await Promise.resolve();
+  return (
+    <Show when={true}>
+      <Item id={7} load={load} />
+    </Show>
+  );
+}
+Wrapped.pending = <i>loading</i>;
+
+async function Badge(props: { load: () => Promise<string> }) {
+  const load = props.load;
+  const name = computed(await load());
+  return <b>{name}</b>;
+}
+Badge.pending = <i>loading</i>;
+
+async function Tabs(props: { tab: () => string; load: Load }) {
+  const tab = props.tab;
+  const load = props.load;
+  await Promise.resolve();
+  return (
+    <div>
+      <Show when={tab() === "a"} fallback={<Item id={2} load={load} />}>
+        <Item id={1} load={load} />
+      </Show>
+    </div>
+  );
+}
+Tabs.pending = <i>loading</i>;
+
+test("a pending view shows until the first content settles and keeps the content while a reload is pending", async () => {
   const [id, setId] = signal(1);
   const { requests, load } = requestsOf();
-  async function User(props: { id: number }) {
-    const userId = props.id;
-    const name = await load(userId);
-    return <b>{name}</b>;
-  }
-  const { el } = mount(() => (
-    <Loading fallback={<i>loading</i>}>
-      <User id={id()} />
-    </Loading>
-  ));
+  const { el } = mount(() => <Name id={id()} load={load} />);
   tick();
   expect(el.innerHTML).toBe("<i>loading</i>");
 
@@ -191,169 +269,92 @@ test("Loading shows its fallback until the first content and keeps the content w
   expect(el.innerHTML).toBe("<b>b</b>");
 });
 
-test("Loading waits for every async component below it", async () => {
+test("a component without pending holds the pending view of its ancestor until its own load settles", async () => {
   const { requests, load } = requestsOf();
-  async function User(props: { id: number }) {
-    const userId = props.id;
-    const name = await load(userId);
-    return <b>{name}</b>;
-  }
-  const { el } = mount(() => (
-    <Loading fallback={<i>loading</i>}>
-      <User id={1} />
-      <User id={2} />
-    </Loading>
-  ));
-  tick();
+  const { el } = mount(() => <Page load={load} />);
+  await settle();
+  expect(el.innerHTML).toBe("<i>loading</i>");
+
   requests[1].resolve("a");
   await settle();
   expect(el.innerHTML).toBe("<i>loading</i>");
 
   requests[2].resolve("b");
   await settle();
-  expect(el.innerHTML).toBe("<b>a</b><b>b</b>");
+  expect(el.innerHTML).toBe("<div><b>a</b><b>b</b></div>");
 });
 
-test("Loading releases a component disposed before its first settle", async () => {
+test("a component disposed before its first settle releases the pending view that was waiting on it", async () => {
   const [on, setOn] = signal(true);
-  const pending = new Map<string, PromiseWithResolvers<string>>();
-  const load = (id: string): Promise<string> => {
-    const request = Promise.withResolvers<string>();
-    pending.set(id, request);
-    return request.promise;
-  };
-  async function User(props: { id: string }) {
-    const userId = props.id;
-    const name = await load(userId);
-    return <b>{name}</b>;
-  }
-  const { el } = mount(() => (
-    <Loading fallback={<i>loading</i>}>
-      <div>
-        <Show when={on()}>
-          <User id="a" />
-        </Show>
-        <User id="b" />
-      </div>
-    </Loading>
-  ));
+  const { requests, load } = requestsOf();
+  const { el } = mount(() => <Gate on={on} load={load} />);
+  await settle();
+  expect(el.innerHTML).toBe("<i>loading</i>");
+
   setOn(false);
   tick();
-  pending.get("a")!.resolve("a");
-  pending.get("b")!.resolve("b");
+  requests[2].resolve("b");
   await settle();
   expect(el.innerHTML).toBe("<div><b>b</b></div>");
 });
 
-test("Loading waits for a top-level Show", async () => {
+test("a pending view waits for a top-level Show's content", async () => {
   const { requests, load } = requestsOf();
-  async function User(props: { id: number }) {
-    const userId = props.id;
-    const name = await load(userId);
-    return <b>{name}</b>;
-  }
-  const { el } = mount(() => (
-    <Loading fallback={<i>loading</i>}>
-      <Show when={true}>
-        <User id={7} />
-      </Show>
-    </Loading>
-  ));
-  tick();
+  const { el } = mount(() => <Wrapped load={load} />);
+  await settle();
   expect(el.innerHTML).toBe("<i>loading</i>");
+
   requests[7].resolve("t");
   await settle();
   expect(el.innerHTML).toBe("<b>t</b>");
 });
 
-test("Loading never waits for its fallback", async () => {
-  const pending = new Map<string, PromiseWithResolvers<string>>();
-  const load = (id: string): Promise<string> => {
-    const request = Promise.withResolvers<string>();
-    pending.set(id, request);
-    return request.promise;
-  };
-  async function User(props: { id: string }) {
-    const userId = props.id;
-    const name = await load(userId);
-    return <b>{name}</b>;
-  }
-  const { el } = mount(() => (
-    <Loading fallback={<User id="spinner" />}>
-      <User id="content" />
-    </Loading>
-  ));
-  pending.get("content")!.resolve("content");
+test("a pending view never holds the component it stands in for", async () => {
+  const { requests, load } = requestsOf();
+  const { el } = mount(() => <Patient load={load} />);
+  await settle();
+
+  requests[2].resolve("content");
   await settle();
   expect(el.innerHTML).toBe("<b>content</b>");
 });
 
-test("Loading waits for an asyncComputed read by a sync component", async () => {
+test("a read of an async computed holds the pending view until it settles", async () => {
   const request = Promise.withResolvers<string>();
-  const name = asyncComputed(() => request.promise);
-  function Label() {
-    return <b>{name.value()}</b>;
-  }
-  const { el } = mount(() => (
-    <Loading fallback={<i>loading</i>}>
-      <Label />
-    </Loading>
-  ));
-  tick();
+  const { el } = mount(() => <Badge load={() => request.promise} />);
+  await settle();
   expect(el.innerHTML).toBe("<i>loading</i>");
+
   request.resolve("x");
   await settle();
   expect(el.innerHTML).toBe("<b>x</b>");
 });
 
-test("a rejected load inside Loading reaches catchError and renders nothing", async () => {
-  const request = Promise.withResolvers<string>();
+test("a rejected load with no failure view reaches catchError and renders nothing", async () => {
+  const { requests, load } = requestsOf();
   const errors: unknown[] = [];
-  async function User() {
-    const name = await request.promise;
-    return <b>{name}</b>;
-  }
   const { el } = mount(() =>
     catchError(
-      () => (
-        <Loading fallback={<i>loading</i>}>
-          <User />
-        </Loading>
-      ),
+      () => <Name id={1} load={load} />,
       (error) => errors.push(error),
     ),
   );
-  request.reject(new Error("nope"));
+  await settle();
+
+  requests[1].reject(new Error("nope"));
   await settle();
   expect((errors[0] as Error).message).toBe("nope");
   expect(el.innerHTML).toBe("");
 });
 
-test("Loading holds the old side of a Show until the new side loads", async () => {
+test("a pending component holds the shown side of a Show until the new side loads", async () => {
   const [tab, setTab] = signal("a");
-  const pending = new Map<string, PromiseWithResolvers<string>>();
-  const load = (id: string): Promise<string> => {
-    const request = Promise.withResolvers<string>();
-    pending.set(id, request);
-    return request.promise;
-  };
-  async function Tab(props: { id: string }) {
-    const userId = props.id;
-    const name = await load(userId);
-    return <b>{name}</b>;
-  }
-  const { el } = mount(() => (
-    <Loading fallback={<i>loading</i>}>
-      <div>
-        <Show when={tab() === "a"} fallback={<Tab id="b" />}>
-          <Tab id="a" />
-        </Show>
-      </div>
-    </Loading>
-  ));
-  tick();
+  const { requests, load } = requestsOf();
+  const { el } = mount(() => <Tabs tab={tab} load={load} />);
+  await settle();
   expect(el.innerHTML).toBe("<i>loading</i>");
-  pending.get("a")!.resolve("A");
+
+  requests[1].resolve("A");
   await settle();
   expect(el.innerHTML).toBe("<div><b>A</b></div>");
 
@@ -361,46 +362,28 @@ test("Loading holds the old side of a Show until the new side loads", async () =
   tick();
   expect(el.innerHTML).toBe("<div><b>A</b></div>");
 
-  pending.get("b")!.resolve("B");
+  requests[2].resolve("B");
   await settle();
   expect(el.innerHTML).toBe("<div><b>B</b></div>");
 });
 
-test("Loading keeps the old side when switching back before the new side loads", async () => {
+test("a pending component keeps the shown side when a Show switches back before the new side loads", async () => {
   const [tab, setTab] = signal("a");
-  const pending = new Map<string, PromiseWithResolvers<string>>();
-  const load = (id: string): Promise<string> => {
-    const request = Promise.withResolvers<string>();
-    pending.set(id, request);
-    return request.promise;
-  };
-  async function Tab(props: { id: string }) {
-    const userId = props.id;
-    const name = await load(userId);
-    return <b>{name}</b>;
-  }
-  const { el } = mount(() => (
-    <Loading fallback={<i>loading</i>}>
-      <div>
-        <Show when={tab() === "a"} fallback={<Tab id="b" />}>
-          <Tab id="a" />
-        </Show>
-      </div>
-    </Loading>
-  ));
-  pending.get("a")!.resolve("A");
+  const { requests, load } = requestsOf();
+  const { el } = mount(() => <Tabs tab={tab} load={load} />);
+  await settle();
+
+  requests[1].resolve("A");
   await settle();
   expect(el.innerHTML).toBe("<div><b>A</b></div>");
 
   setTab("b");
   tick();
-  expect(el.innerHTML).toBe("<div><b>A</b></div>");
-
   setTab("a");
   tick();
   expect(el.innerHTML).toBe("<div><b>A</b></div>");
 
-  pending.get("b")!.resolve("B");
+  requests[2].resolve("B");
   await settle();
   expect(el.innerHTML).toBe("<div><b>A</b></div>");
 });
