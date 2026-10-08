@@ -277,7 +277,7 @@ catalog! {
         fix: None,
         example: Pair {
             bad: "import { computed, signal } from \"reze-js\";\n\nlet id = signal(1);\nconst label = computed(await describe(id));\nexport const view = <p onClick={() => (id += 1)}>{label}</p>;\n",
-            good: "import { computed } from \"reze-js\";\n\nexport async function Label(props) {\n  const text = await describe(props.id);\n  const label = computed(text.toUpperCase());\n  return <p>{label}</p>;\n}\n",
+            good: "import { computed } from \"reze-js\";\n\nexport async function Label(props) {\n  const id = props.id;\n  const text = await describe(id);\n  const label = computed(text.toUpperCase());\n  return <p>{label}</p>;\n}\n",
         },
     }
     ActionArgument {
@@ -494,8 +494,34 @@ catalog! {
         repair: "Give every await its own `const x = await …;` statement, keep other statements before the first await or after the last one, and start the JSX after the last await.",
         fix: None,
         example: Pair {
-            bad: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}\n",
-            good: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  const posts = await fetchPosts(user.id);\n  log(user);\n  return <p>{posts.length}</p>;\n}\n",
+            bad: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}\n",
+            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  const posts = await fetchPosts(user.id);\n  log(user);\n  return <p>{posts.length}</p>;\n}\n",
+        },
+    }
+    AsyncPropsReadInAwait {
+        name: "ASYNC_PROPS_READ_IN_AWAIT",
+        severity: Error,
+        title: "Props read inside an await",
+        message: "`{component}` reads its props inside an `await` operand, which hydration replays without tracking the read, so the load can keep a stale value. Hoist the read into a `const` before the first `await`.",
+        explanation: "An async component re-runs its load when a tracked read changes. On hydrate, an await operand is replayed, and a props read inside it is not tracked, so the load would keep a stale value. The compiler refuses the shape instead of guessing. Reads inside functions the operand calls are not tracked on hydrate either. `data.component` is the component.",
+        repair: "Read the prop into a `const` before the first `await`, then pass that constant to the awaited call.",
+        fix: None,
+        example: Pair {
+            bad: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  return <p>{user.name}</p>;\n}\n",
+            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\n",
+        },
+    }
+    AsyncTryAroundAwait {
+        name: "ASYNC_TRY_AROUND_AWAIT",
+        severity: Error,
+        title: "`try` around an await in an async component",
+        message: "`{component}` wraps an `await` in `try`, which the compiler cannot lower into the load step. Handle the failure with `failure` or catch the promise in the awaited expression.",
+        explanation: "Each `await` in an async component is a step of one lowering path, which has no place for a `try` around it. A rejected await renders the component's `failure` view. Handle a specific error by inspecting the value in `failure`, or by catching the promise in the load expression. `data.component` is the component.",
+        repair: "Remove the `try`, and declare a `failure` view on the component to show the error.",
+        fix: None,
+        example: Pair {
+            bad: "export async function Card(props) {\n  const id = props.id;\n  try {\n    const user = await fetchUser(id);\n    return <p>{user.name}</p>;\n  } catch (error) {\n    return <p>Failed</p>;\n  }\n}\n",
+            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\n\nCard.failure = (error, retry) => <button onClick={retry}>Retry</button>;\n",
         },
     }
     SignalReadOnce {

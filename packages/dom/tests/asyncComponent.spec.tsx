@@ -20,7 +20,8 @@ test("an async component renders once its await settles, and a reload updates it
   const [id, setId] = signal(1);
   const { requests, load } = requestsOf();
   async function User(props: { id: number }) {
-    const name = await load(props.id);
+    const userId = props.id;
+    const name = await load(userId);
     const [likes, setLikes] = signal(0);
     return (
       <button onClick={() => setLikes((n) => n + 1)}>
@@ -58,7 +59,8 @@ test("a source read by a later await reloads the component", async () => {
     return value;
   }
   async function Label(props: { prefix: string }) {
-    const base = await echo(props.prefix);
+    const prefix = props.prefix;
+    const base = await echo(prefix);
     const full = await echo(base + suffix());
     return <p>{full}</p>;
   }
@@ -164,7 +166,8 @@ test("Loading shows its fallback until the first content and keeps the content w
   const [id, setId] = signal(1);
   const { requests, load } = requestsOf();
   async function User(props: { id: number }) {
-    const name = await load(props.id);
+    const userId = props.id;
+    const name = await load(userId);
     return <b>{name}</b>;
   }
   const { el } = mount(() => (
@@ -191,7 +194,8 @@ test("Loading shows its fallback until the first content and keeps the content w
 test("Loading waits for every async component below it", async () => {
   const { requests, load } = requestsOf();
   async function User(props: { id: number }) {
-    const name = await load(props.id);
+    const userId = props.id;
+    const name = await load(userId);
     return <b>{name}</b>;
   }
   const { el } = mount(() => (
@@ -219,7 +223,8 @@ test("Loading releases a component disposed before its first settle", async () =
     return request.promise;
   };
   async function User(props: { id: string }) {
-    const name = await load(props.id);
+    const userId = props.id;
+    const name = await load(userId);
     return <b>{name}</b>;
   }
   const { el } = mount(() => (
@@ -243,7 +248,8 @@ test("Loading releases a component disposed before its first settle", async () =
 test("Loading waits for a top-level Show", async () => {
   const { requests, load } = requestsOf();
   async function User(props: { id: number }) {
-    const name = await load(props.id);
+    const userId = props.id;
+    const name = await load(userId);
     return <b>{name}</b>;
   }
   const { el } = mount(() => (
@@ -268,7 +274,8 @@ test("Loading never waits for its fallback", async () => {
     return request.promise;
   };
   async function User(props: { id: string }) {
-    const name = await load(props.id);
+    const userId = props.id;
+    const name = await load(userId);
     return <b>{name}</b>;
   }
   const { el } = mount(() => (
@@ -331,7 +338,8 @@ test("Loading holds the old side of a Show until the new side loads", async () =
     return request.promise;
   };
   async function Tab(props: { id: string }) {
-    const name = await load(props.id);
+    const userId = props.id;
+    const name = await load(userId);
     return <b>{name}</b>;
   }
   const { el } = mount(() => (
@@ -367,7 +375,8 @@ test("Loading keeps the old side when switching back before the new side loads",
     return request.promise;
   };
   async function Tab(props: { id: string }) {
-    const name = await load(props.id);
+    const userId = props.id;
+    const name = await load(userId);
     return <b>{name}</b>;
   }
   const { el } = mount(() => (

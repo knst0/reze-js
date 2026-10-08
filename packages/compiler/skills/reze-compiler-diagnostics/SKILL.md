@@ -490,7 +490,8 @@ After:
 import { computed } from "reze-js";
 
 export async function Label(props) {
-  const text = await describe(props.id);
+  const id = props.id;
+  const text = await describe(id);
   const label = computed(text.toUpperCase());
   return <p>{label}</p>;
 }
@@ -971,7 +972,8 @@ Before:
 
 ```tsx
 export async function Card(props) {
-  const user = await fetchUser(props.id);
+  const id = props.id;
+  const user = await fetchUser(id);
   log(user);
   const posts = await fetchPosts(user.id);
   return <p>{posts.length}</p>;
@@ -982,11 +984,85 @@ After:
 
 ```tsx
 export async function Card(props) {
-  const user = await fetchUser(props.id);
+  const id = props.id;
+  const user = await fetchUser(id);
   const posts = await fetchPosts(user.id);
   log(user);
   return <p>{posts.length}</p>;
 }
+```
+
+## ASYNC_PROPS_READ_IN_AWAIT
+
+**Props read inside an await** · severity `error`
+
+> `{component}` reads its props inside an `await` operand, which hydration replays without tracking the read, so the load can keep a stale value. Hoist the read into a `const` before the first `await`.
+
+`data` keys: `component`
+
+Automatic fix: no
+
+An async component re-runs its load when a tracked read changes. On hydrate, an await operand is replayed, and a props read inside it is not tracked, so the load would keep a stale value. The compiler refuses the shape instead of guessing. Reads inside functions the operand calls are not tracked on hydrate either. `data.component` is the component.
+
+**Repair:** Read the prop into a `const` before the first `await`, then pass that constant to the awaited call.
+
+Before:
+
+```tsx
+export async function Card(props) {
+  const user = await fetchUser(props.id);
+  return <p>{user.name}</p>;
+}
+```
+
+After:
+
+```tsx
+export async function Card(props) {
+  const id = props.id;
+  const user = await fetchUser(id);
+  return <p>{user.name}</p>;
+}
+```
+
+## ASYNC_TRY_AROUND_AWAIT
+
+**`try` around an await in an async component** · severity `error`
+
+> `{component}` wraps an `await` in `try`, which the compiler cannot lower into the load step. Handle the failure with `failure` or catch the promise in the awaited expression.
+
+`data` keys: `component`
+
+Automatic fix: no
+
+Each `await` in an async component is a step of one lowering path, which has no place for a `try` around it. A rejected await renders the component's `failure` view. Handle a specific error by inspecting the value in `failure`, or by catching the promise in the load expression. `data.component` is the component.
+
+**Repair:** Remove the `try`, and declare a `failure` view on the component to show the error.
+
+Before:
+
+```tsx
+export async function Card(props) {
+  const id = props.id;
+  try {
+    const user = await fetchUser(id);
+    return <p>{user.name}</p>;
+  } catch (error) {
+    return <p>Failed</p>;
+  }
+}
+```
+
+After:
+
+```tsx
+export async function Card(props) {
+  const id = props.id;
+  const user = await fetchUser(id);
+  return <p>{user.name}</p>;
+}
+
+Card.failure = (error, retry) => <button onClick={retry}>Retry</button>;
 ```
 
 ## SIGNAL_READ_ONCE

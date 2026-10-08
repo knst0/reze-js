@@ -1010,8 +1010,16 @@ struct AsyncCollector<'c, 's> {
 }
 
 impl AsyncCollector<'_, '_> {
-    fn component(&mut self, start: u32, statements: &[Statement<'_>]) {
-        let Some(result) = plan(start, statements, self.scoping, self.nodes) else { return };
+    fn component(
+        &mut self,
+        start: u32,
+        params: &FormalParameters<'_>,
+        statements: &[Statement<'_>],
+    ) {
+        let props = props_symbols(params);
+        let Some(result) = plan(start, statements, &props, self.scoping, self.nodes) else {
+            return;
+        };
         match result {
             Ok((plan, reads)) => {
                 self.facts.reads.extend(reads);
@@ -1032,7 +1040,7 @@ impl<'a> Visit<'a> for AsyncCollector<'_, '_> {
             && is_component_name(id.name.as_str())
             && let Some(body) = &it.body
         {
-            self.component(it.span.start, &body.statements);
+            self.component(it.span.start, &it.params, &body.statements);
         }
         walk::walk_function(self, it, flags);
     }
@@ -1045,7 +1053,7 @@ impl<'a> Visit<'a> for AsyncCollector<'_, '_> {
             match init {
                 Expression::ArrowFunctionExpression(arrow) if arrow.r#async => {
                     if let ArrowFunctionBody::FunctionBody(body) = &arrow.body {
-                        self.component(arrow.span.start, &body.statements);
+                        self.component(arrow.span.start, &arrow.params, &body.statements);
                     }
                 }
                 Expression::FunctionExpression(function)
@@ -1054,7 +1062,7 @@ impl<'a> Visit<'a> for AsyncCollector<'_, '_> {
                         && is_declared_component(function) =>
                 {
                     if let Some(body) = &function.body {
-                        self.component(function.span.start, &body.statements);
+                        self.component(function.span.start, &function.params, &body.statements);
                     }
                 }
                 _ => {}
@@ -1069,6 +1077,7 @@ type AsyncReads = std::vec::Vec<(ReferenceId, (u32, usize))>;
 fn plan(
     function_start: u32,
     statements: &[Statement<'_>],
+    props: &[SymbolId],
     scoping: &Scoping,
     nodes: &AstNodes<'_>,
 ) -> Option<Result<(AsyncPlan, AsyncReads), Reject>> {
@@ -1076,6 +1085,9 @@ fn plan(
     let mut tracked = std::vec::Vec::new();
     for (i, statement) in statements[..=last].iter().enumerate() {
         let reject = |reason| Reject { reason, span: statement.span() };
+        if matches!(statement, Statement::TryStatement(_)) && contains_await(statement) {
+            return Some(Err(reject("try-around-await")));
+        }
         if has_jsx(|check| check.visit_statement(statement)) {
             return Some(Err(reject("jsx-before-await")));
         }
@@ -1090,6 +1102,9 @@ fn plan(
                 Ok(operand) => operand,
                 Err(reject) => return Some(Err(reject)),
             };
+            if reads_symbol(operand, scoping, props) {
+                return Some(Err(reject("props-read-in-await")));
+            }
             if i > first {
                 tracked.push(operand.span());
             }
@@ -1132,6 +1147,35 @@ fn plan(
         .filter_map(|(r, symbol)| positions.get(&symbol).map(|&index| (r, (function_start, index))))
         .collect();
     Some(Ok((AsyncPlan { first, last, tracked, values }, reads)))
+}
+
+fn props_symbols(params: &FormalParameters<'_>) -> std::vec::Vec<SymbolId> {
+    params.items.first().map_or_else(std::vec::Vec::new, |first| {
+        first.pattern.get_binding_identifiers().into_iter().map(|id| id.symbol_id()).collect()
+    })
+}
+
+fn reads_symbol(expression: &Expression<'_>, scoping: &Scoping, symbols: &[SymbolId]) -> bool {
+    let mut check = SymbolRead { scoping, symbols, found: false };
+    check.visit_expression(expression);
+    check.found
+}
+
+struct SymbolRead<'s, 'y> {
+    scoping: &'s Scoping,
+    symbols: &'y [SymbolId],
+    found: bool,
+}
+
+impl<'a> Visit<'a> for SymbolRead<'_, '_> {
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        if let Some(reference) = it.reference_id.get()
+            && let Some(symbol) = self.scoping.get_reference(reference).symbol_id()
+            && self.symbols.contains(&symbol)
+        {
+            self.found = true;
+        }
+    }
 }
 
 fn contains_await(statement: &Statement<'_>) -> bool {

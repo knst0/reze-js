@@ -110,11 +110,14 @@ impl Collector<'_, '_, '_> {
         let Some(result) = self.facts.plan(start) else { return };
         match result {
             Err(reject) => {
-                self.reports.push(
-                    Report::new(Code::AsyncComponentShape, reject.span)
-                        .arg("component", name)
-                        .arg("reason", reject.reason),
-                );
+                let report = match reject.reason {
+                    "props-read-in-await" => Report::new(Code::AsyncPropsReadInAwait, reject.span),
+                    "try-around-await" => Report::new(Code::AsyncTryAroundAwait, reject.span),
+                    reason => {
+                        Report::new(Code::AsyncComponentShape, reject.span).arg("reason", reason)
+                    }
+                };
+                self.reports.push(report.arg("component", name));
             }
             Ok(found) => {
                 let head = statements[0].span();

@@ -111,11 +111,11 @@ fn a_control_flow_attribute_fix_removes_it() {
 fn unsupported_async_shapes_error_with_their_reason() {
     for (source, reason) in [
         (
-            "export async function Card(props) {\n  let user = await fetchUser(props.id);\n  user = normalize(user);\n  return <p>{user.name}</p>;\n}",
+            "export async function Card(props) {\n  const id = props.id;\n  let user = await fetchUser(id);\n  user = normalize(user);\n  return <p>{user.name}</p>;\n}",
             "value-reassigned",
         ),
         (
-            "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}",
+            "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}",
             "statement-between-awaits",
         ),
     ] {
@@ -125,6 +125,36 @@ fn unsupported_async_shapes_error_with_their_reason() {
         assert_eq!(errs[0].severity, Severity::Error, "{source}");
         assert_eq!(errs[0].data["reason"], reason, "{source}");
     }
+}
+
+#[test]
+fn async_reads_and_try_refusals_report_their_own_code() {
+    for (source, code) in [
+        (
+            "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  return <p>{user.name}</p>;\n}",
+            Code::AsyncPropsReadInAwait,
+        ),
+        (
+            "export async function Card({ id }) {\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}",
+            Code::AsyncPropsReadInAwait,
+        ),
+        (
+            "export async function Card(props) {\n  const id = props.id;\n  try {\n    const user = await fetchUser(id);\n    return <p>{user.name}</p>;\n  } catch (error) {\n    return <p>Failed</p>;\n  }\n}",
+            Code::AsyncTryAroundAwait,
+        ),
+    ] {
+        let errs: Vec<_> =
+            errors(source).into_iter().filter(|d| d.severity == Severity::Error).collect();
+        assert_eq!(errs.len(), 1, "{source}");
+        assert_eq!(errs[0].code, code, "{source}");
+        assert_eq!(errs[0].severity, Severity::Error, "{source}");
+    }
+}
+
+#[test]
+fn hoisted_props_read_before_await_compiles() {
+    let source = "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}";
+    assert!(compile(source, "test.tsx", &Options::default()).is_ok(), "{source}");
 }
 
 #[test]
