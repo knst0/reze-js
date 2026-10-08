@@ -69,6 +69,9 @@ pub struct SharedFacts {
     pub runtime_calls: HashMap<NodeId, RuntimeCallKind>,
     pub dynamic_tags: HashMap<NodeId, super::dynamic::DynamicTag>,
     pub getter_kinds: HashMap<SymbolId, Kind>,
+    pub signal_setters: HashMap<SymbolId, Option<SymbolId>>,
+    pub computed_getters: HashSet<SymbolId>,
+    pub callee_kinds: HashMap<SymbolId, Kind>,
 }
 
 impl SharedFacts {
@@ -249,6 +252,11 @@ impl SharedFacts {
                         _ => None,
                     };
                 }
+                if let Some(kind) =
+                    Self::symbol(scoping, id).and_then(|symbol| self.callee_kinds.get(&symbol))
+                {
+                    return Some(*kind);
+                }
                 if call.arguments.is_empty()
                     && call.type_arguments.is_none()
                     && self.is_stable_getter(scoping, id)
@@ -388,6 +396,9 @@ pub fn collect(
         runtime_calls,
         dynamic_tags,
         getter_kinds: HashMap::new(),
+        signal_setters: HashMap::new(),
+        computed_getters: HashSet::new(),
+        callee_kinds: HashMap::new(),
     };
     collect_primitives(program, &mut facts);
     if facts.named.is_empty() && facts.namespaces.is_empty() {
@@ -405,6 +416,7 @@ pub fn collect(
     };
     collector.visit_program(program);
     let Collector { called, signals, computeds, .. } = collector;
+    facts.computed_getters.extend(computeds.iter().copied());
     for getter in computeds {
         facts.getter_refs.extend(scoping.get_resolved_reference_ids(getter));
     }
@@ -413,6 +425,7 @@ pub fn collect(
     let mut written = Vec::new();
     for signal in signals {
         let getter_refs = scoping.get_resolved_reference_ids(signal.getter);
+        facts.signal_setters.insert(signal.getter, signal.setter);
         facts.getter_refs.extend(getter_refs);
         let is_exported = exported.contains(&signal.getter)
             || signal.setter.is_some_and(|s| exported.contains(&s));

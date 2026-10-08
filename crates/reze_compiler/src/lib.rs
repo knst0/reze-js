@@ -9,15 +9,20 @@ mod html;
 mod imports;
 mod ir;
 mod kind;
+mod module_facts;
 
 use oxc_allocator::Allocator;
+use oxc_ast::ast::Program;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::Parser;
 use oxc_span::{SourceType, Span};
+use std::collections::HashMap;
 
 pub use diagnostic::{
     CATALOG, Code, Diagnostic, Edit, Entry, Example, Fix, Label, Position, Severity, render_skill,
 };
+
+pub use module_facts::{ExportFacts, FactKind, ModuleFacts, Reads, Written};
 
 use diagnostic::Report;
 
@@ -50,6 +55,10 @@ pub struct Options {
     /// specialized only when the record names this file with a matching schema and source hash;
     /// anything else compiles as without facts.
     pub profile: Option<ProfileFacts>,
+    /// Facts of imported modules keyed by import specifier as written in the source. Each entry's
+    /// `hash` must match the imported source; facts whose `v` or `compiler` differ from this build
+    /// are ignored.
+    pub facts: HashMap<String, ModuleFacts>,
 }
 
 /// Schema version of `ProfileFacts`; records with another version are ignored.
@@ -108,6 +117,7 @@ impl Default for Options {
             target: CompileTarget::Client,
             module_id: None,
             profile: None,
+            facts: HashMap::new(),
         }
     }
 }
@@ -120,6 +130,13 @@ pub struct Output {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// Result of `compile_with_facts`. `output` is `None` when nothing in the file is rewritten.
+pub struct Compiled {
+    pub output: Option<Output>,
+    /// Facts of this module's exports, a function of its own source only.
+    pub facts: ModuleFacts,
+}
+
 /// Compiles `source`. `Ok(None)` when nothing in the file is rewritten; `Err` holds every
 /// diagnostic when at least one is an `error`. `filename` picks the dialect (unknown extensions
 /// parse as TSX) and names the source in diagnostics, source maps and hot-swap ids.
@@ -130,6 +147,15 @@ pub fn compile(
     filename: &str,
     options: &Options,
 ) -> Result<Option<Output>, Vec<Diagnostic>> {
+    compile_with_facts(source, filename, options).map(|compiled| compiled.output)
+}
+
+/// Like `compile`, also returning the module's facts; facts are returned even when `output` is `None`.
+pub fn compile_with_facts(
+    source: &str,
+    filename: &str,
+    options: &Options,
+) -> Result<Compiled, Vec<Diagnostic>> {
     if matches!(options.target, CompileTarget::Hydrate | CompileTarget::Html)
         && options.module_id.as_deref().is_none_or(str::is_empty)
     {
@@ -151,30 +177,26 @@ fn compile_module(
     filename: &str,
     source_type: SourceType,
     options: &Options,
-) -> Result<Option<Output>, Vec<Diagnostic>> {
+) -> Result<Compiled, Vec<Diagnostic>> {
     let allocator = Allocator::default();
-    let parsed = Parser::new(&allocator, source, source_type).parse();
-    if !parsed.diagnostics.is_empty() {
-        let reports = parsed
-            .diagnostics
-            .iter()
-            .map(|d| {
-                let span = d.labels.first().map_or(Span::empty(0), |label| {
-                    let start = label.offset();
-                    Span::new(start, start + label.len())
-                });
-                Report::new(Code::ParseError, span).arg("detail", d.message.to_string())
-            })
-            .collect();
-        return Err(diagnostic::resolve(reports, source, filename));
-    }
-
-    let program = allocator.alloc(parsed.program);
+    let program = parse_program(&allocator, source, filename, source_type)?;
     let hot_plan = codegen::hot::should_apply(options).then(|| codegen::hot::collect(program));
     let module_id =
         (options.target != CompileTarget::Client).then_some(options.module_id.as_deref()).flatten();
     let sites = ir::collect_sites(program, module_id, source);
-    let normalized = frontend::normalize(&allocator, program, source);
+    let mut normalized = frontend::normalize(&allocator, program, source);
+    let facts = module_facts::collect(
+        normalized.program,
+        &normalized.scoping,
+        &normalized.facts,
+        profile_hash(source),
+    );
+    module_facts::apply_imports(
+        normalized.program,
+        &normalized.scoping,
+        &options.facts,
+        &mut normalized.facts,
+    );
     let mut module = ir::build_module_ir(
         normalized.program,
         &normalized.scoping,
@@ -202,7 +224,7 @@ fn compile_module(
         && !(options.debug_names && options.target != CompileTarget::Html)
         && options.target == CompileTarget::Client
     {
-        return Ok(None);
+        return Ok(Compiled { output: None, facts });
     }
     let cold = options.target != CompileTarget::Html
         && is_cold(source, filename, options.profile.as_ref());
@@ -220,7 +242,7 @@ fn compile_module(
     )
     .emit(normalized.program, hot_plan.as_ref());
     if !changed && !normalized.content_changed {
-        return Ok(None);
+        return Ok(Compiled { output: None, facts });
     }
     let output = Codegen::new()
         .with_options(CodegenOptions {
@@ -228,9 +250,54 @@ fn compile_module(
             ..CodegenOptions::default()
         })
         .build(normalized.program);
-    Ok(Some(Output {
-        code: output.code,
-        map: output.map.map(codegen::serialize_source_map),
-        diagnostics,
-    }))
+    Ok(Compiled {
+        output: Some(Output {
+            code: output.code,
+            map: output.map.map(codegen::serialize_source_map),
+            diagnostics,
+        }),
+        facts,
+    })
+}
+
+/// Reactive facts of `source`'s exports, computed without compiling. `Err` when the module has errors.
+pub fn analyze(source: &str, filename: &str) -> Result<ModuleFacts, Vec<Diagnostic>> {
+    let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::tsx());
+    let allocator = Allocator::default();
+    let program = parse_program(&allocator, source, filename, source_type)?;
+    let normalized = frontend::normalize(&allocator, program, source);
+    let diagnostics = diagnostic::resolve(normalized.reports, source, filename);
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return Err(diagnostics);
+    }
+    Ok(module_facts::collect(
+        normalized.program,
+        &normalized.scoping,
+        &normalized.facts,
+        profile_hash(source),
+    ))
+}
+
+fn parse_program<'a>(
+    allocator: &'a Allocator,
+    source: &'a str,
+    filename: &str,
+    source_type: SourceType,
+) -> Result<&'a mut Program<'a>, Vec<Diagnostic>> {
+    let parsed = Parser::new(allocator, source, source_type).parse();
+    if !parsed.diagnostics.is_empty() {
+        let reports = parsed
+            .diagnostics
+            .iter()
+            .map(|d| {
+                let span = d.labels.first().map_or(Span::empty(0), |label| {
+                    let start = label.offset();
+                    Span::new(start, start + label.len())
+                });
+                Report::new(Code::ParseError, span).arg("detail", d.message.to_string())
+            })
+            .collect();
+        return Err(diagnostic::resolve(reports, source, filename));
+    }
+    Ok(allocator.alloc(parsed.program))
 }
