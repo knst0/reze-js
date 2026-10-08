@@ -10,6 +10,7 @@ use oxc_syntax::symbol::SymbolId;
 
 use super::Namer;
 use super::analysis::Primitive;
+use crate::diagnostic::{Code, Report};
 use crate::exports::{self, REACTIVITY, Role};
 use crate::imports::HelperImports;
 
@@ -105,6 +106,23 @@ struct Relocation {
 }
 
 type Moved<'a> = Vec<ArenaBox<'a, ImportSpecifier<'a>>>;
+
+pub(crate) fn refuse_internal_reactivity(program: &Program<'_>, reports: &mut Vec<Report>) {
+    for statement in &program.body {
+        let Statement::ImportDeclaration(import) = statement else { continue };
+        if import.import_kind.is_type() || import.source.value.as_str() != REACTIVITY {
+            continue;
+        }
+        for specifier in import.specifiers.iter().flatten() {
+            let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else { continue };
+            let name = named.imported.name();
+            if named.import_kind.is_type() || exports::primitive_named(REACTIVITY, name.as_str()).is_none() {
+                continue;
+            }
+            reports.push(Report::new(Code::InternalReactivityImport, named.span).arg("name", name.as_str()));
+        }
+    }
+}
 
 pub(crate) fn has_lowerable(program: &Program<'_>) -> bool {
     program.body.iter().any(|statement| {

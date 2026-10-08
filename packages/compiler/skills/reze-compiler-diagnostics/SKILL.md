@@ -989,6 +989,36 @@ export async function Card(props) {
 Card.failure = (error) => <p>{error.message}</p>;
 ```
 
+## INTERNAL_REACTIVITY_IMPORT
+
+**Reactive primitive imported from the private compiler module** · severity `error`
+
+> `{name}` is imported from `reze-js/internal/reactivity`, which is private compiler output. Import `{name}` from `reze-js` instead.
+
+`data` keys: `name`
+
+Automatic fix: no
+
+`reze-js/internal/reactivity` is the module compiler output calls. Only `reze-js` is a public import, and importing a reactive primitive from the private module would skip the public surface and its diagnostics.
+
+**Repair:** Import `{name}` from `reze-js` and let the compiler lower it.
+
+Before:
+
+```tsx
+import { signal } from "reze-js/internal/reactivity";
+let count = signal(0);
+export const view = <p>{count}</p>;
+```
+
+After:
+
+```tsx
+import { signal } from "reze-js";
+let count = signal(0);
+export const view = <p>{count}</p>;
+```
+
 ## ASYNC_PROPS_READ_IN_AWAIT
 
 **Props read inside an await** · severity `error`

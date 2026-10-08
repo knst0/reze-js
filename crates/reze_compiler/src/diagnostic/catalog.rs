@@ -498,6 +498,19 @@ catalog! {
             good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\nCard.failure = (error) => <p>{error.message}</p>;\n",
         },
     }
+    InternalReactivityImport {
+        name: "INTERNAL_REACTIVITY_IMPORT",
+        severity: Error,
+        title: "Reactive primitive imported from the private compiler module",
+        message: "`{name}` is imported from `reze-js/internal/reactivity`, which is private compiler output. Import `{name}` from `reze-js` instead.",
+        explanation: "`reze-js/internal/reactivity` is the module compiler output calls. Only `reze-js` is a public import, and importing a reactive primitive from the private module would skip the public surface and its diagnostics.",
+        repair: "Import `{name}` from `reze-js` and let the compiler lower it.",
+        fix: None,
+        example: Pair {
+            bad: "import { signal } from \"reze-js/internal/reactivity\";\nlet count = signal(0);\nexport const view = <p>{count}</p>;\n",
+            good: "import { signal } from \"reze-js\";\nlet count = signal(0);\nexport const view = <p>{count}</p>;\n",
+        },
+    }
     AsyncPropsReadInAwait {
         name: "ASYNC_PROPS_READ_IN_AWAIT",
         severity: Error,

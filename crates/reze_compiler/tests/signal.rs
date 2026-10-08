@@ -148,6 +148,18 @@ fn a_reactive_binding_cannot_be_the_default_export() {
 }
 
 #[test]
+fn a_reactive_primitive_imported_from_the_private_module_is_refused_with_the_public_fix() {
+    for name in ["signal", "computed", "action"] {
+        let source = format!(
+            "import {{ {name} }} from \"reze-js/internal/reactivity\";\nexport const view = <p>{{1}}</p>;"
+        );
+        let d = only(&source, Code::InternalReactivityImport);
+        assert_eq!(d.data["name"].as_str(), name);
+        assert_eq!((d.start.line, d.start.column), (1, 9));
+    }
+}
+
+#[test]
 fn a_write_the_language_performs_is_an_assign_pattern() {
     for write in ["[a] = list;", "({ a } = obj);", "for (a of list) {}", "for (a in obj) {}"] {
         let source = format!(

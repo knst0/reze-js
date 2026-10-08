@@ -80,6 +80,7 @@ pub fn normalize<'a>(
     imported: &HashMap<String, ModuleFacts>,
 ) -> FrontendOutput<'a> {
     let mut reports = Vec::new();
+    imports::refuse_internal_reactivity(&*program, &mut reports);
     let syntax;
     let mut helpers = HelperImports::default();
     let mut namer;
