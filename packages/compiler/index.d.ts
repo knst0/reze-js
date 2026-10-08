@@ -10,10 +10,23 @@
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
 /**
- * Compiles `source`; `null` when nothing in the file is rewritten. Compile errors come back as
- * `error` diagnostics without `code`; the call never throws on them.
+ * Reactive facts of `source`'s exports, for `compile`'s `facts` of imported modules. `facts` is
+ * absent when the module has errors.
  */
-export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult | null
+export declare function analyze(source: string, filename: string): AnalyzeResult
+
+export interface AnalyzeResult {
+  /** Absent when `diagnostics` holds an `error`. */
+  facts?: any
+  diagnostics: Array<Diagnostic>
+}
+
+/**
+ * Compiles `source`. `code` is absent when nothing in the file is rewritten, and when
+ * `diagnostics` holds an `error`; compile errors come back as diagnostics without `code`, and the
+ * call never throws on them.
+ */
+export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult
 
 export interface CompileOptions {
   /** Default: `true`. */
@@ -30,6 +43,11 @@ export interface CompileOptions {
   moduleId?: string
   /** Profiling facts for this file, from the profile store. Default: none. */
   profile?: ProfileFacts
+  /**
+   * Reactive facts of imported modules keyed by import specifier, from `analyze`. Each entry
+   * must be for the exact source the import resolves to. Default: none.
+   */
+  facts?: any
 }
 
 export interface CompileResult {
@@ -38,6 +56,8 @@ export interface CompileResult {
   /** Source map v3 JSON. */
   map?: string
   diagnostics: Array<Diagnostic>
+  /** Reactive facts of this module's exports; absent when `diagnostics` holds an `error`. */
+  facts?: any
 }
 
 export type CompileTarget = 'client' | 'hydrate' | 'html'

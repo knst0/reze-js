@@ -46,6 +46,9 @@ pub struct CompileOptions {
     pub module_id: Option<String>,
     /// Profiling facts for this file, from the profile store. Default: none.
     pub profile: Option<ProfileFacts>,
+    /// Reactive facts of imported modules keyed by import specifier, from `analyze`. Each entry
+    /// must be for the exact source the import resolves to. Default: none.
+    pub facts: Option<serde_json::Value>,
 }
 
 #[napi(object)]
@@ -109,6 +112,8 @@ pub struct CompileResult {
     /// Source map v3 JSON.
     pub map: Option<String>,
     pub diagnostics: Vec<Diagnostic>,
+    /// Reactive facts of this module's exports; absent when `diagnostics` holds an `error`.
+    pub facts: Option<serde_json::Value>,
 }
 
 fn position(position: reze_compiler::Position) -> Position {
@@ -147,14 +152,30 @@ fn diagnostic(d: reze_compiler::Diagnostic) -> Diagnostic {
     }
 }
 
-/// Compiles `source`; `null` when nothing in the file is rewritten. Compile errors come back as
-/// `error` diagnostics without `code`; the call never throws on them.
+#[napi(object)]
+pub struct AnalyzeResult {
+    /// Absent when `diagnostics` holds an `error`.
+    pub facts: Option<serde_json::Value>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+fn facts_value(facts: &reze_compiler::ModuleFacts) -> napi::Result<serde_json::Value> {
+    serde_json::to_value(facts).map_err(|error| napi::Error::from_reason(error.to_string()))
+}
+
+fn diagnostics(diagnostics: Vec<reze_compiler::Diagnostic>) -> Vec<Diagnostic> {
+    diagnostics.into_iter().map(diagnostic).collect()
+}
+
+/// Compiles `source`. `code` is absent when nothing in the file is rewritten, and when
+/// `diagnostics` holds an `error`; compile errors come back as diagnostics without `code`, and the
+/// call never throws on them.
 #[napi]
 pub fn compile(
     source: String,
     filename: String,
     options: Option<CompileOptions>,
-) -> Option<CompileResult> {
+) -> napi::Result<CompileResult> {
     let mut opts = reze_compiler::Options::default();
     if let Some(o) = options {
         opts.source_map = o.source_map.unwrap_or(opts.source_map);
@@ -184,18 +205,42 @@ pub fn compile(
                 })
                 .collect(),
         });
+        opts.facts = match o.facts {
+            Some(value) => serde_json::from_value(value)
+                .map_err(|error| napi::Error::from_reason(format!("invalid facts: {error}")))?,
+            None => HashMap::new(),
+        };
     }
-    match reze_compiler::compile(&source, &filename, &opts) {
-        Ok(None) => None,
-        Ok(Some(out)) => Some(CompileResult {
-            code: Some(out.code),
-            map: out.map,
-            diagnostics: out.diagnostics.into_iter().map(diagnostic).collect(),
-        }),
-        Err(diagnostics) => Some(CompileResult {
+    match reze_compiler::compile_with_facts(&source, &filename, &opts) {
+        Ok(reze_compiler::Compiled { output, facts }) => {
+            let (code, map, diagnostics_out) = match output {
+                Some(out) => (Some(out.code), out.map, out.diagnostics),
+                None => (None, None, Vec::new()),
+            };
+            Ok(CompileResult {
+                code,
+                map,
+                diagnostics: diagnostics(diagnostics_out),
+                facts: Some(facts_value(&facts)?),
+            })
+        }
+        Err(errors) => Ok(CompileResult {
             code: None,
             map: None,
-            diagnostics: diagnostics.into_iter().map(diagnostic).collect(),
+            diagnostics: diagnostics(errors),
+            facts: None,
         }),
+    }
+}
+
+/// Reactive facts of `source`'s exports, for `compile`'s `facts` of imported modules. `facts` is
+/// absent when the module has errors.
+#[napi]
+pub fn analyze(source: String, filename: String) -> napi::Result<AnalyzeResult> {
+    match reze_compiler::analyze(&source, &filename) {
+        Ok(facts) => {
+            Ok(AnalyzeResult { facts: Some(facts_value(&facts)?), diagnostics: Vec::new() })
+        }
+        Err(errors) => Ok(AnalyzeResult { facts: None, diagnostics: diagnostics(errors) }),
     }
 }
