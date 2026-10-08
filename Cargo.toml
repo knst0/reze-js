@@ -6,3 +6,6 @@ members = ["crates/*"]
 edition = "2024"
 publish = false
 license = "MIT"
+
+[profile.dev]
+debug = false
