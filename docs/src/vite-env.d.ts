@@ -7,3 +7,13 @@ declare module "*.mdx" {
   const Content: (props: { children?: JSX.Element; [key: string]: unknown }) => JSX.Element;
   export default Content;
 }
+
+declare module "disarto-icons/icons/*" {
+  const icon: {
+    readonly name: string;
+    readonly viewBox: string;
+    readonly inner: string;
+    toSvg(attrs?: Record<string, string>): string;
+  };
+  export default icon;
+}

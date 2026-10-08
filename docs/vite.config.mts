@@ -7,9 +7,9 @@ import remarkGfm from "remark-gfm";
 import remarkMdxFrontmatter from "remark-mdx-frontmatter";
 import { defineConfig } from "vite";
 
-import frontmatterRoute from "./plugins/frontmatter-route";
-import llms from "./plugins/llms";
-import rehypeSugarHigh from "./plugins/rehype-sugar-high";
+import frontmatterRoute from "./plugins/frontmatter-route.ts";
+import llms from "./plugins/llms.ts";
+import rehypeSugarHigh from "./plugins/rehype-sugar-high.ts";
 
 export default defineConfig({
   plugins: [

@@ -689,6 +689,9 @@ importers:
       '@rezejs/router':
         specifier: workspace:*
         version: link:../packages/router
+      disarto-icons:
+        specifier: ^1.0.0
+        version: 1.0.0
       reze-js:
         specifier: workspace:*
         version: link:../packages/reze-js
@@ -3836,6 +3839,9 @@ packages:
   diff@8.0.4:
     resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
     engines: {node: '>=0.3.1'}
+
+  disarto-icons@1.0.0:
+    resolution: {integrity: sha512-Kas/rXlM5fEKFBRFkxlJFzDrsejWnsl5CbsdZkjInEluawsxVszaH/UKk5jsSmgJG8HjNUZsj2tMzTBzt+Ar+A==}
 
   dts-resolver@3.0.0:
     resolution: {integrity: sha512-1T1f+z+4tl9XD+m+0HBgWoL/nm0bOIffyWaUuUSBlFg/86IWvfx+wjNaO/ybU0AJzG9/Mi5hBUgGV6zCmWEN7Q==}
@@ -7768,6 +7774,8 @@ snapshots:
       dequal: 2.0.3
 
   diff@8.0.4: {}
+
+  disarto-icons@1.0.0: {}
 
   dts-resolver@3.0.0: {}
 
