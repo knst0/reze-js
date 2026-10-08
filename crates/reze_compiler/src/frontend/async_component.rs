@@ -26,7 +26,6 @@ pub struct Plan {
 #[derive(Clone)]
 struct Entry {
     function_start: u32,
-    name: String,
     function_span: Span,
     head: (u32, u32),
     first: (u32, u32),
@@ -41,7 +40,6 @@ struct Entry {
 #[derive(Clone)]
 struct ResourceView {
     function_start: u32,
-    name: String,
     function_span: Span,
 }
 
@@ -66,9 +64,9 @@ impl Plan {
         self.entries.iter().find(|entry| entry.function_start == start).cloned()
     }
 
-    fn has_component(&self, name: &str) -> bool {
-        self.entries.iter().any(|entry| entry.name == name)
-            || self.resources.iter().any(|view| view.name == name)
+    fn has_target(&self, start: u32) -> bool {
+        self.entries.iter().any(|entry| entry.function_start == start)
+            || self.resources.iter().any(|view| view.function_start == start)
     }
 
     fn resource_view(&self, start: u32) -> Option<&ResourceView> {
@@ -85,7 +83,8 @@ pub fn collect(
     let mut facts = AsyncFacts::collect(program, scoping, nodes);
     reports.extend(facts.take_reports());
     let mut plan = Plan::default();
-    Collector { facts: &facts, reports, plan: &mut plan }.visit_program(program);
+    Collector { facts: &facts, reports: &mut *reports, plan: &mut plan }.visit_program(program);
+    ViewTargets { plan: &plan, reports }.visit_program(program);
     plan
 }
 
@@ -99,7 +98,9 @@ pub fn apply<'a>(
     if plan.is_empty() {
         return false;
     }
-    let views = take_views(allocator, namer, helpers, program, &plan);
+    let mut taker = ViewTaker { allocator, namer: &mut *namer, helpers: &mut *helpers, plan: &plan, found: HashMap::new() };
+    taker.visit_program(program);
+    let views = taker.found;
     let async_component = if plan.entries.is_empty() {
         ""
     } else {
@@ -131,7 +132,6 @@ impl Collector<'_, '_, '_> {
             if self.facts.has_resource_within(span) && ends_in_return(statements) {
                 self.plan.resources.push(ResourceView {
                     function_start: start,
-                    name: name.to_owned(),
                     function_span: span,
                 });
             }
@@ -160,7 +160,6 @@ impl Collector<'_, '_, '_> {
                 }
                 self.plan.entries.push(Entry {
                     function_start: start,
-                    name: name.to_owned(),
                     function_span: span,
                     head: (head.start, head.end),
                     first: (first.start, first.end),
@@ -238,7 +237,7 @@ struct Rewrite<'x, 'p, 'a> {
     plan: &'p Plan,
     namer: &'x mut Namer<'a>,
     async_component: &'a str,
-    views: HashMap<String, Views<'a>>,
+    views: HashMap<u32, Views<'a>>,
     done: HashSet<u32>,
     changed: bool,
 }
@@ -253,7 +252,7 @@ impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
                     self.async_component,
                     it,
                     &entry,
-                    self.views.remove(&entry.name),
+                    self.views.remove(&entry.function_start),
                 ) {
                     self.done.insert(it.span.start);
                     self.changed = true;
@@ -263,7 +262,7 @@ impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
         if it.span != SPAN
             && !self.done.contains(&it.span.start)
             && let Some(view) = self.plan.resource_view(it.span.start)
-            && let Some(views) = self.views.remove(&view.name)
+            && let Some(views) = self.views.remove(&view.function_start)
             && let Some(body) = it.body.as_mut()
         {
             wrap_resource_return(self.alloc, body, views, view.function_span);
@@ -286,7 +285,7 @@ impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
                     self.async_component,
                     it,
                     &entry,
-                    self.views.remove(&entry.name),
+                    self.views.remove(&entry.function_start),
                 ) {
                     self.done.insert(it.span.start);
                     self.changed = true;
@@ -296,7 +295,7 @@ impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
         if it.span != SPAN
             && !self.done.contains(&it.span.start)
             && let Some(view) = self.plan.resource_view(it.span.start)
-            && let Some(views) = self.views.remove(&view.name)
+            && let Some(views) = self.views.remove(&view.function_start)
             && let ArrowFunctionBody::FunctionBody(body) = &mut it.body
         {
             wrap_resource_return(self.alloc, body, views, view.function_span);
@@ -480,40 +479,110 @@ fn narrow_return<'a>(
     annotation.type_annotation = inner;
 }
 
-fn take_views<'a>(
+struct ViewTaker<'x, 'a, 'p> {
     allocator: &'a Allocator,
-    namer: &mut Namer<'a>,
-    helpers: &mut HelperImports<'a>,
-    program: &mut Program<'a>,
-    plan: &Plan,
-) -> HashMap<String, Views<'a>> {
-    let builder = AstBuilder::new(allocator);
-    let body = std::mem::replace(&mut program.body, ArenaVec::new_in(&builder));
-    let mut kept = ArenaVec::new_in(&builder);
-    let mut found: HashMap<String, Views<'a>> = HashMap::new();
-    for mut statement in body {
-        let Some((name, slot, value)) = take_view(&mut statement, allocator, plan) else {
-            kept.push(statement);
-            continue;
-        };
-        let helper = helpers.require(allocator, namer, crate::RUNTIME_MODULE, "asyncViews");
-        let views = found.entry(name).or_insert(Views { helper, pending: None, failure: None });
-        match slot {
-            ViewSlot::Pending => views.pending = Some(value),
-            ViewSlot::Failure => views.failure = Some(value),
-        }
-    }
-    program.body = kept;
-    found
+    namer: &'x mut Namer<'a>,
+    helpers: &'x mut HelperImports<'a>,
+    plan: &'p Plan,
+    found: HashMap<u32, Views<'a>>,
 }
 
-fn take_view<'a>(
-    statement: &mut Statement<'a>,
-    allocator: &'a Allocator,
-    plan: &Plan,
-) -> Option<(String, ViewSlot, Expression<'a>)> {
+impl<'a> VisitMut<'a> for ViewTaker<'_, 'a, '_> {
+    fn visit_statements(&mut self, it: &mut ArenaVec<'a, Statement<'a>>) {
+        let builder = AstBuilder::new(self.allocator);
+        let mut targets = HashMap::new();
+        for statement in it.iter() {
+            record_targets(statement, self.plan, &mut targets);
+        }
+        let body = std::mem::replace(it, ArenaVec::new_in(&builder));
+        let mut kept = ArenaVec::new_in(&builder);
+        for mut statement in body {
+            let Some((start, slot, value)) = take_view(&mut statement, self.allocator, &targets) else {
+                kept.push(statement);
+                continue;
+            };
+            let helper = self.helpers.require(self.allocator, self.namer, crate::RUNTIME_MODULE, "asyncViews");
+            let views = self.found.entry(start).or_insert(Views { helper, pending: None, failure: None });
+            match slot {
+                ViewSlot::Pending => views.pending = Some(value),
+                ViewSlot::Failure => views.failure = Some(value),
+            }
+        }
+        *it = kept;
+        walk_mut::walk_statements(self, it);
+    }
+}
+
+struct ViewTargets<'p, 'r> {
+    plan: &'p Plan,
+    reports: &'r mut Vec<Report>,
+}
+
+impl<'a> Visit<'a> for ViewTargets<'_, '_> {
+    fn visit_statements(&mut self, it: &ArenaVec<'a, Statement<'a>>) {
+        let mut targets = HashMap::new();
+        for statement in it.iter() {
+            record_targets(statement, self.plan, &mut targets);
+        }
+        for statement in it.iter() {
+            let Some((object, slot)) = view_assignment(statement) else { continue };
+            if is_component_name(object) && !targets.contains_key(object) {
+                let view = match slot {
+                    ViewSlot::Pending => "pending",
+                    ViewSlot::Failure => "failure",
+                };
+                self.reports.push(Report::new(Code::AsyncViewTarget, statement.span()).arg("name", object).arg("view", view));
+            }
+        }
+        walk::walk_statements(self, it);
+    }
+}
+
+fn record_targets(statement: &Statement<'_>, plan: &Plan, targets: &mut HashMap<String, u32>) {
+    match statement {
+        Statement::FunctionDeclaration(function) => record_function(function, plan, targets),
+        Statement::VariableDeclaration(declaration) => record_declarators(declaration, plan, targets),
+        Statement::ExportDeclaration(export) => match &export.declaration {
+            Declaration::FunctionDeclaration(function) => record_function(function, plan, targets),
+            Declaration::VariableDeclaration(declaration) => record_declarators(declaration, plan, targets),
+            _ => {}
+        },
+        Statement::ExportDefaultDeclaration(export) => {
+            if let ExportDefaultDeclarationKind::FunctionDeclaration(function) = &export.declaration {
+                record_function(function, plan, targets);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn record_function(function: &Function<'_>, plan: &Plan, targets: &mut HashMap<String, u32>) {
+    if let Some(id) = &function.id {
+        record_target(id.name.as_str(), function.span.start, plan, targets);
+    }
+}
+
+fn record_declarators(declaration: &VariableDeclaration<'_>, plan: &Plan, targets: &mut HashMap<String, u32>) {
+    for declarator in &declaration.declarations {
+        let BindingPattern::BindingIdentifier(id) = &declarator.id else { continue };
+        let start = match declarator.init.as_ref().map(Expression::without_parentheses) {
+            Some(Expression::ArrowFunctionExpression(arrow)) => arrow.span.start,
+            Some(Expression::FunctionExpression(function)) => function.span.start,
+            _ => continue,
+        };
+        record_target(id.name.as_str(), start, plan, targets);
+    }
+}
+
+fn record_target(name: &str, start: u32, plan: &Plan, targets: &mut HashMap<String, u32>) {
+    if plan.has_target(start) {
+        targets.insert(name.to_owned(), start);
+    }
+}
+
+fn view_assignment<'s>(statement: &'s Statement<'_>) -> Option<(&'s str, ViewSlot)> {
     let Statement::ExpressionStatement(expression) = statement else { return None };
-    let Expression::AssignmentExpression(assign) = &mut expression.expression else { return None };
+    let Expression::AssignmentExpression(assign) = &expression.expression else { return None };
     if assign.operator != AssignmentOperator::Assign {
         return None;
     }
@@ -524,12 +593,19 @@ fn take_view<'a>(
         "failure" => ViewSlot::Failure,
         _ => return None,
     };
-    let name = object.name.as_str();
-    if !plan.has_component(name) {
-        return None;
-    }
-    let name = name.to_owned();
-    Some((name, slot, assign.right.take_in(&AstBuilder::new(allocator))))
+    Some((object.name.as_str(), slot))
+}
+
+fn take_view<'a>(
+    statement: &mut Statement<'a>,
+    allocator: &'a Allocator,
+    targets: &HashMap<String, u32>,
+) -> Option<(u32, ViewSlot, Expression<'a>)> {
+    let (object, slot) = view_assignment(statement)?;
+    let start = *targets.get(object)?;
+    let Statement::ExpressionStatement(expression) = statement else { return None };
+    let Expression::AssignmentExpression(assign) = &mut expression.expression else { return None };
+    Some((start, slot, assign.right.take_in(&AstBuilder::new(allocator))))
 }
 
 fn ends_in_return(statements: &[Statement<'_>]) -> bool {

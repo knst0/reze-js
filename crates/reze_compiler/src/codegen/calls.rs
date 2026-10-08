@@ -33,7 +33,7 @@ pub fn rewrite<'a>(
     next.push(Argument::from(site));
     let callee = match kind {
         RuntimeCallKind::Resource => unreachable!("resource calls return before the managed path"),
-        RuntimeCallKind::AsyncComputed | RuntimeCallKind::UniqueId => {
+        RuntimeCallKind::UniqueId => {
             let receiver = match call.callee.without_parentheses() {
                 Expression::StaticMemberExpression(member) => match &member.object {
                     Expression::Identifier(namespace) => ast.ident(namespace.name.as_str()),

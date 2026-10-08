@@ -255,12 +255,6 @@ fn flow_exprs(flow: &FlowView, visit: &mut impl FnMut(ViewReference)) {
             }
         }
         FlowView::Rows { map, .. } => visit(ViewReference::Expression(*map)),
-        FlowView::Loading { child, fallback } | FlowView::Errored { child, fallback } => {
-            flow_render_exprs(child, visit);
-            if let Some(fallback) = fallback {
-                flow_render_exprs(fallback, visit);
-            }
-        }
         FlowView::Portal { child, mount } => {
             flow_render_exprs(child, visit);
             if let Some(mount) = mount {
@@ -481,8 +475,6 @@ pub enum FlowView {
     For { each: FlowSource, map: ExprRef, fallback: Option<FlowRender>, key: Option<FlowKeyValue> },
     Repeat { count: FlowSource, map: ExprRef, fallback: Option<FlowRender> },
     Rows { times: u32, map: ExprRef },
-    Loading { child: FlowRender, fallback: Option<FlowRender> },
-    Errored { child: FlowRender, fallback: Option<FlowRender> },
     Portal { child: FlowRender, mount: Option<FlowSource> },
 }
 

@@ -2718,8 +2718,6 @@ impl Builder<'_> {
             Intrinsic::For => self.flow_for(el),
             Intrinsic::Repeat => self.flow_repeat(el),
             Intrinsic::Switch => self.flow_switch(el),
-            Intrinsic::Loading => self.flow_loading(el),
-            Intrinsic::Errored => self.flow_errored(el),
             Intrinsic::Portal => self.flow_portal(el),
             Intrinsic::Match => {
                 self.report(Report::new(Code::MatchOutsideSwitch, el.opening_element.span));
@@ -2865,33 +2863,6 @@ impl Builder<'_> {
         let child = self.case_children(el, intrinsic)?;
         let fallback = self.flow_fallback(&attributes);
         Some(Branch { when, child, fallback })
-    }
-
-    fn flow_loading(&mut self, el: &JSXElement<'_>) -> Option<FlowView> {
-        let intrinsic = Intrinsic::Loading;
-        let attributes = self.flow_attributes(el, intrinsic, &["fallback"]);
-        let child = self.case_children(el, intrinsic)?;
-        let fallback = self.flow_fallback(&attributes);
-        Some(FlowView::Loading { child, fallback })
-    }
-
-    fn flow_errored(&mut self, el: &JSXElement<'_>) -> Option<FlowView> {
-        let intrinsic = Intrinsic::Errored;
-        let attributes = self.flow_attributes(el, intrinsic, &["fallback"]);
-        let child = self.case_children(el, intrinsic)?;
-        let fallback =
-            self.fallback_function(&attributes).or_else(|| self.flow_fallback(&attributes));
-        Some(FlowView::Errored { child, fallback })
-    }
-
-    fn fallback_function<'b, 'x>(
-        &mut self,
-        attributes: &[(String, &'b JSXAttribute<'x>)],
-    ) -> Option<FlowRender> {
-        let (_, a) = attributes.iter().rev().find(|(name, _)| *name == "fallback")?;
-        let JSXAttributeValue::ExpressionContainer(c) = a.value.as_ref()? else { return None };
-        let function = c.expression.as_expression().filter(|e| is_function(e))?;
-        Some(FlowRender::Function(ExprRef::of(function)))
     }
 
     fn flow_portal(&mut self, el: &JSXElement<'_>) -> Option<FlowView> {

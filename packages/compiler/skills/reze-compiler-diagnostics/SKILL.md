@@ -88,7 +88,7 @@ export const view = <table><tbody><tr><td>cell</td></tr></tbody></table>;
 
 Automatic fix: no
 
-`Show`, `For`, `Repeat`, `Switch`, `Match`, `Loading`, `Errored` and `Portal` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
+`Show`, `For`, `Repeat`, `Switch`, `Match` and `Portal` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
 
 **Repair:** Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and select that with `dynamic(() => …)`.
 
@@ -118,7 +118,7 @@ export const view = <Show when={open()}><p>open</p></Show>;
 
 Automatic fix: yes
 
-A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
+A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
 
 **Repair:** Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.
 
@@ -178,7 +178,7 @@ export const view = <Show when={open()} fallback={<p>closed</p>}><p>open</p></Sh
 
 Automatic fix: no
 
-`<Show>`, `<Match>`, `<Loading>`, `<Errored>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.
+`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.
 
 **Repair:** Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`.
 
@@ -953,6 +953,40 @@ export async function Card(props) {
   log(user);
   return <p>{posts.length}</p>;
 }
+```
+
+## ASYNC_VIEW_TARGET
+
+**View assigned to a name that is not an async component here** · severity `error`
+
+> `{name}.{view}` is assigned, but `{name}` is not an async component declared in this block, so the view is never rendered.
+
+`data` keys: `name`, `view`
+
+Automatic fix: no
+
+`pending` and `failure` views attach to an async component declared in the same statement list. Any other assignment would be a plain property write that no runtime reads, and a failing load would then have no handler.
+
+**Repair:** Declare `{name}` as an `async function` in the same block, or drop the view assignment.
+
+Before:
+
+```tsx
+function Card(props) {
+  return <p>{props.id}</p>;
+}
+Card.failure = (error) => <p>{error.message}</p>;
+```
+
+After:
+
+```tsx
+export async function Card(props) {
+  const id = props.id;
+  const user = await fetchUser(id);
+  return <p>{user.name}</p>;
+}
+Card.failure = (error) => <p>{error.message}</p>;
 ```
 
 ## ASYNC_PROPS_READ_IN_AWAIT

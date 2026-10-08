@@ -5,7 +5,6 @@ use crate::frontend::props::PropsMethod;
 pub const PUBLIC: &str = "reze-js";
 pub const RUNTIME: &str = "reze-js/internal/runtime";
 pub const REACTIVITY: &str = "reze-js/internal/reactivity";
-pub const ASYNC: &str = "reze-js/internal/async";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
@@ -105,15 +104,12 @@ static TABLE: &[&[Entry]] = &[
     &[row(RUNTIME, "asyncViews", Role::Call(RuntimeCallKind::AsyncViews), None)],
     &[row(PUBLIC, "abortSignal", Role::Primitive(Primitive::AbortSignal), None)],
     &[row(PUBLIC, "isPending", Role::Primitive(Primitive::IsPending), None)],
-    &[row(ASYNC, "asyncComputed", Role::Call(RuntimeCallKind::AsyncComputed), None)],
     &[intrinsic(PUBLIC, "Show", Intrinsic::Show)],
     &[intrinsic(PUBLIC, "For", Intrinsic::For)],
     &[intrinsic(PUBLIC, "Repeat", Intrinsic::Repeat)],
     &[intrinsic(PUBLIC, "Switch", Intrinsic::Switch)],
     &[intrinsic(PUBLIC, "Match", Intrinsic::Match)],
     &[intrinsic(PUBLIC, "Portal", Intrinsic::Portal)],
-    &[intrinsic(ASYNC, "Loading", Intrinsic::Loading)],
-    &[intrinsic(ASYNC, "Errored", Intrinsic::Errored)],
     &plain("store"),
     &plain("effect"),
     &plain("createContext"),
@@ -142,7 +138,7 @@ pub fn lookup(specifier: &str, name: &str) -> Option<&'static Entry> {
 }
 
 pub fn module(specifier: &str) -> Option<&'static str> {
-    [PUBLIC, RUNTIME, REACTIVITY, ASYNC].into_iter().find(|module| *module == specifier)
+    [PUBLIC, RUNTIME, REACTIVITY].into_iter().find(|module| *module == specifier)
 }
 
 pub fn syntax_named(specifier: &str, name: &str) -> Option<Syntax> {

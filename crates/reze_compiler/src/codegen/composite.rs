@@ -472,52 +472,6 @@ fn flow<'a, 'm>(
                 ctx.call(source, helper, [site, ast.number(f64::from(*times)), map])
             }
         },
-        FlowView::Loading { child, fallback } => {
-            let child = render_flow(ctx, child);
-            let fallback = fallback.as_ref().map(|fallback| render_flow(ctx, fallback));
-            match ctx.options.target {
-                CompileTarget::Client => {
-                    let mut args = vec![child];
-                    args.extend(fallback);
-                    ctx.call(RUNTIME_MODULE, "loading", args)
-                }
-                CompileTarget::Html => {
-                    let site = ctx.site(view);
-                    let mut args = vec![site, child];
-                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
-                    ctx.call(HTML, "hLoading", args)
-                }
-                CompileTarget::Hydrate => {
-                    let site = ctx.site(view);
-                    let mut args = vec![site, child];
-                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
-                    ctx.call(HYDRATE, "prepareLoading", args)
-                }
-            }
-        }
-        FlowView::Errored { child, fallback } => {
-            let child = render_flow(ctx, child);
-            let fallback = fallback.as_ref().map(|fallback| render_flow(ctx, fallback));
-            match ctx.options.target {
-                CompileTarget::Client => {
-                    let mut args = vec![child];
-                    args.extend(fallback);
-                    ctx.call(RUNTIME_MODULE, "errored", args)
-                }
-                CompileTarget::Html => {
-                    let site = ctx.site(view);
-                    let mut args = vec![site, child];
-                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
-                    ctx.call(HTML, "hErrored", args)
-                }
-                CompileTarget::Hydrate => {
-                    let site = ctx.site(view);
-                    let mut args = vec![site, child];
-                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
-                    ctx.call(HYDRATE, "prepareErrored", args)
-                }
-            }
-        }
         FlowView::Portal { child, mount } => {
             let child = render_flow(ctx, child);
             let mount = mount.as_ref().map(|mount| ctx.flow_getter(mount));

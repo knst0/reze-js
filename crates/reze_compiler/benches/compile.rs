@@ -28,10 +28,6 @@ const COMPONENT_PROPS: &str = r##"const a = <Card title="t" count={n()} static={
 const SHOW_COMPONENTS: &str = r##"import { Show } from "reze-js";
 const a = <div><Show when={a()} fallback={<B />}><C /></Show></div>;"##;
 
-const LOADING: &str = r##"import { Loading } from "reze-js/internal/async";
-const a = <Loading fallback={<i>wait</i>}><User id={id()} /></Loading>;
-const b = <div><Loading><p>x</p>{y()}</Loading></div>;"##;
-
 const REPEAT: &str = r##"import { Repeat } from "reze-js";
 import { signal } from "reze-js";
 let size = signal(4);
@@ -111,11 +107,6 @@ fn component_props(bencher: divan::Bencher) {
 #[divan::bench]
 fn show_components(bencher: divan::Bencher) {
     bench_source(SHOW_COMPONENTS, bencher);
-}
-
-#[divan::bench]
-fn loading(bencher: divan::Bencher) {
-    bench_source(LOADING, bencher);
 }
 
 #[divan::bench]

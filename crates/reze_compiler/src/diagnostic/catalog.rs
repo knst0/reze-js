@@ -116,7 +116,7 @@ catalog! {
         severity: Error,
         title: "Control-flow tag used as a value",
         message: "`{name}` is compiled away and has no runtime value, so this reference would throw. Use `{name}` only as a JSX tag.",
-        explanation: "`Show`, `For`, `Repeat`, `Switch`, `Match`, `Loading`, `Errored` and `Portal` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
+        explanation: "`Show`, `For`, `Repeat`, `Switch`, `Match` and `Portal` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
         repair: "Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and select that with `dynamic(() => …)`.",
         fix: None,
         example: Pair {
@@ -129,7 +129,7 @@ catalog! {
         severity: Error,
         title: "Attribute a control-flow tag does not accept",
         message: "`<{tag}>` does not accept `{attribute}`, so it would be silently dropped. Remove it.",
-        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Loading fallback>`, `<Errored fallback>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
+        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
         repair: "Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.",
         fix: Some("remove `{attribute}`"),
         example: Pair {
@@ -155,7 +155,7 @@ catalog! {
         severity: Error,
         title: "Control-flow tag with children it cannot render",
         message: "`<{tag}>` expects {expected} as children, so this cannot be compiled.",
-        explanation: "`<Show>`, `<Match>`, `<Loading>`, `<Errored>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.",
+        explanation: "`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.",
         repair: "Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`.",
         fix: None,
         example: Pair {
@@ -483,6 +483,19 @@ catalog! {
         example: Pair {
             bad: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}\n",
             good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  const posts = await fetchPosts(user.id);\n  log(user);\n  return <p>{posts.length}</p>;\n}\n",
+        },
+    }
+    AsyncViewTarget {
+        name: "ASYNC_VIEW_TARGET",
+        severity: Error,
+        title: "View assigned to a name that is not an async component here",
+        message: "`{name}.{view}` is assigned, but `{name}` is not an async component declared in this block, so the view is never rendered.",
+        explanation: "`pending` and `failure` views attach to an async component declared in the same statement list. Any other assignment would be a plain property write that no runtime reads, and a failing load would then have no handler.",
+        repair: "Declare `{name}` as an `async function` in the same block, or drop the view assignment.",
+        fix: None,
+        example: Pair {
+            bad: "function Card(props) {\n  return <p>{props.id}</p>;\n}\nCard.failure = (error) => <p>{error.message}</p>;\n",
+            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\nCard.failure = (error) => <p>{error.message}</p>;\n",
         },
     }
     AsyncPropsReadInAwait {

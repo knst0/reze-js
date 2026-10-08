@@ -33,8 +33,6 @@ pub enum Intrinsic {
     Repeat,
     Switch,
     Match,
-    Loading,
-    Errored,
     Portal,
 }
 
@@ -46,8 +44,6 @@ impl Intrinsic {
             Intrinsic::Repeat => "Repeat",
             Intrinsic::Switch => "Switch",
             Intrinsic::Match => "Match",
-            Intrinsic::Loading => "Loading",
-            Intrinsic::Errored => "Errored",
             Intrinsic::Portal => "Portal",
         }
     }
@@ -1362,7 +1358,6 @@ fn declared_symbols<'s, 'a>(statement: &'s Statement<'a>, out: &mut Vec<(SymbolI
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RuntimeCallKind {
-    AsyncComputed,
     Resource,
     UniqueId,
     AsyncComponent,

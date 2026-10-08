@@ -318,6 +318,35 @@ fn resource_only_component_takes_its_views_into_the_return() {
 }
 
 #[test]
+fn a_view_assigned_inside_a_nested_scope_is_taken_into_its_component() {
+    let source = "export function mount() {\n  async function Card(props) {\n    const id = props.id;\n    const user = await fetchUser(id);\n    return <p>{user}</p>;\n  }\n  Card.failure = (error) => <p>{String(error)}</p>;\n  return Card;\n}";
+    let code = compiled(source, &options());
+    assert!(code.contains("asyncViews("), "{code}");
+    assert!(!code.contains("Card.failure ="), "{code}");
+}
+
+#[test]
+fn a_view_on_a_name_that_is_not_an_async_component_here_is_refused() {
+    let d = only(
+        "function Card(props) {\n  return <p>{props.id}</p>;\n}\nCard.failure = (error) => <p>{String(error)}</p>;",
+        Code::AsyncViewTarget,
+    );
+    assert_eq!(d.data["name"], "Card");
+    assert_eq!(d.data["view"], "failure");
+}
+
+#[test]
+fn a_lowercase_object_with_a_pending_property_is_not_a_view() {
+    let source = "export function mount(state) {\n  state.pending = true;\n  return state;\n}";
+    let reported = match compile(source, "test.tsx", &options()) {
+        Ok(Some(out)) => out.diagnostics,
+        Ok(None) => Vec::new(),
+        Err(diagnostics) => diagnostics,
+    };
+    assert!(reported.iter().all(|d| d.code != Code::AsyncViewTarget), "{reported:?}");
+}
+
+#[test]
 fn computed_declaration_errors_name_the_primitive() {
     let d = only(
         "import { computed } from \"reze-js\";\nexport const view = <p>{computed(1)}</p>;",
