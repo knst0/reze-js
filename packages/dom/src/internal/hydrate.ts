@@ -31,6 +31,7 @@ export {
   prepareLoading,
   prepareErrored,
   prepareAsyncComponent,
+  prepareAsyncViews,
   prepareDynamic,
 } from "../hydration/flows";
 export { prepareElementType, prepareDynamicElement } from "../hydration/dynamic";

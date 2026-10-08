@@ -360,6 +360,15 @@ export function hAsyncComponent<V extends unknown[], R>(
   });
 }
 
+export function hAsyncViews(
+  site: Site,
+  children: () => HtmlRange,
+  failure?: (error: unknown, reset: () => void) => JSX.Element,
+): HtmlRange {
+  if (failure === undefined) return children();
+  return hErrored(site, () => children() as unknown as JSX.Element, failure);
+}
+
 export function hDynamic<P>(site: Site, source: () => ((props: P) => unknown) | null | undefined | false): (props: P) => unknown {
   return (props) => {
     const type = computed(source);

@@ -487,9 +487,9 @@ catalog! {
     }
     AsyncComponentShape {
         name: "ASYNC_COMPONENT_SHAPE",
-        severity: Warn,
+        severity: Error,
         title: "Async component in a form that cannot be compiled",
-        message: "`{component}` is an async component the compiler cannot rewrite ({reason}), so it stays an `async` function that returns a Promise and renders nothing. Reshape the awaits so each one is a whole statement.",
+        message: "`{component}` is an async component the compiler cannot rewrite ({reason}). Reshape the awaits so each one is a whole statement.",
         explanation: "An `async` component compiles to a load step, re-run when a source it reads changes, and a body that runs once after the first load and reads each awaited value through a getter, so later loads update it in place. That needs each top-level `await` to be a whole statement, `const x = await …;` or `await …;` (`await-position`, and `nested-await` when its operand awaits again); between the first and last await only `const`/`let`/`var` declarations may appear (`statement-between-awaits`); nothing up to the last await may `return` (`return-before-await`) or contain JSX (`jsx-before-await`); no value an await produces may be assigned after the last await (`value-reassigned`). `data.component` is the component and `data.reason` the rule.",
         repair: "Give every await its own `const x = await …;` statement, keep other statements before the first await or after the last one, and start the JSX after the last await.",
         fix: None,

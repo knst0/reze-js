@@ -108,7 +108,7 @@ fn a_control_flow_attribute_fix_removes_it() {
 }
 
 #[test]
-fn unsupported_async_shapes_warn_with_their_reason() {
+fn unsupported_async_shapes_error_with_their_reason() {
     for (source, reason) in [
         (
             "export async function Card(props) {\n  let user = await fetchUser(props.id);\n  user = normalize(user);\n  return <p>{user.name}</p>;\n}",
@@ -119,11 +119,11 @@ fn unsupported_async_shapes_warn_with_their_reason() {
             "statement-between-awaits",
         ),
     ] {
-        let out = output_for(source, "test.tsx", &Options::default());
-        assert_eq!(out.diagnostics.len(), 1, "{source}");
-        assert_eq!(out.diagnostics[0].code, Code::AsyncComponentShape, "{source}");
-        assert_eq!(out.diagnostics[0].severity, Severity::Warn, "{source}");
-        assert_eq!(out.diagnostics[0].data["reason"], reason, "{source}");
+        let errs = errors(source);
+        assert_eq!(errs.len(), 1, "{source}");
+        assert_eq!(errs[0].code, Code::AsyncComponentShape, "{source}");
+        assert_eq!(errs[0].severity, Severity::Error, "{source}");
+        assert_eq!(errs[0].data["reason"], reason, "{source}");
     }
 }
 

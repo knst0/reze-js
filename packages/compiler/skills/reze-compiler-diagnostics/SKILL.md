@@ -955,9 +955,9 @@ export const view = <ul><For each={numbers}>{(n) => <li>{n}</li>}</For></ul>;
 
 ## ASYNC_COMPONENT_SHAPE
 
-**Async component in a form that cannot be compiled** · severity `warn`
+**Async component in a form that cannot be compiled** · severity `error`
 
-> `{component}` is an async component the compiler cannot rewrite ({reason}), so it stays an `async` function that returns a Promise and renders nothing. Reshape the awaits so each one is a whole statement.
+> `{component}` is an async component the compiler cannot rewrite ({reason}). Reshape the awaits so each one is a whole statement.
 
 `data` keys: `component`, `reason`
 

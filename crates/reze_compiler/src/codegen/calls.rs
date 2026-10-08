@@ -21,7 +21,10 @@ pub fn rewrite<'a>(
     }
     let ast = Ast::new(ctx.allocator);
     let site = ctx.origin_site(call.span);
-    let arguments = call.arguments.take_in(&ctx.allocator);
+    let mut arguments = call.arguments.take_in(&ctx.allocator);
+    if kind == RuntimeCallKind::AsyncViews {
+        arguments.remove(1);
+    }
     let mut next = ArenaVec::with_capacity_in(arguments.len() + 3, &ast.builder);
     next.push(Argument::from(site));
     let callee = match kind {
@@ -40,12 +43,16 @@ pub fn rewrite<'a>(
             ctx.helper("reze-js/internal/reactivity", "withResourceSite")
         }
         RuntimeCallKind::AsyncComponent
+        | RuntimeCallKind::AsyncViews
         | RuntimeCallKind::Dynamic
         | RuntimeCallKind::DynamicElement
         | RuntimeCallKind::Island => {
             let (source, export) = match (ctx.options.target, kind) {
                 (CompileTarget::Html, RuntimeCallKind::AsyncComponent) => {
                     ("reze-js/internal/html", "hAsyncComponent")
+                }
+                (CompileTarget::Html, RuntimeCallKind::AsyncViews) => {
+                    ("reze-js/internal/html", "hAsyncViews")
                 }
                 (CompileTarget::Html, RuntimeCallKind::Dynamic) => {
                     ("reze-js/internal/html", "hDynamic")
@@ -58,6 +65,9 @@ pub fn rewrite<'a>(
                 }
                 (CompileTarget::Hydrate, RuntimeCallKind::AsyncComponent) => {
                     ("reze-js/internal/hydrate", "prepareAsyncComponent")
+                }
+                (CompileTarget::Hydrate, RuntimeCallKind::AsyncViews) => {
+                    ("reze-js/internal/hydrate", "prepareAsyncViews")
                 }
                 (CompileTarget::Hydrate, RuntimeCallKind::Dynamic) => {
                     ("reze-js/internal/hydrate", "prepareDynamic")

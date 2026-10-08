@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use oxc_allocator::{Allocator, Box as ArenaBox, Vec as ArenaVec};
+use oxc_allocator::{Allocator, Box as ArenaBox, TakeIn, Vec as ArenaVec};
 use oxc_ast::{ast::*, builder::AstBuilder};
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_semantic::{AstNodes, Scoping};
@@ -24,6 +24,7 @@ pub struct Plan {
 #[derive(Clone)]
 struct Entry {
     function_start: u32,
+    name: String,
     function_span: Span,
     head: (u32, u32),
     first: (u32, u32),
@@ -33,6 +34,18 @@ struct Entry {
     reads: Vec<(ReferenceId, usize)>,
 }
 
+#[derive(Clone, Copy)]
+enum ViewSlot {
+    Pending,
+    Failure,
+}
+
+struct Views<'a> {
+    helper: &'a str,
+    pending: Option<Expression<'a>>,
+    failure: Option<Expression<'a>>,
+}
+
 impl Plan {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
@@ -40,6 +53,10 @@ impl Plan {
 
     fn entry(&self, start: u32) -> Option<Entry> {
         self.entries.iter().find(|entry| entry.function_start == start).cloned()
+    }
+
+    fn has_component(&self, name: &str) -> bool {
+        self.entries.iter().any(|entry| entry.name == name)
     }
 }
 
@@ -65,6 +82,7 @@ pub fn apply<'a>(
     if plan.entries.is_empty() {
         return false;
     }
+    let views = take_views(allocator, namer, helpers, program, &plan);
     let async_component =
         helpers.require(allocator, namer, crate::RUNTIME_MODULE, "asyncComponent");
     let mut rewrite = Rewrite {
@@ -72,6 +90,7 @@ pub fn apply<'a>(
         plan: &plan,
         namer,
         async_component,
+        views,
         done: HashSet::new(),
         changed: false,
     };
@@ -108,6 +127,7 @@ impl Collector<'_, '_, '_> {
                 }
                 self.plan.entries.push(Entry {
                     function_start: start,
+                    name: name.to_owned(),
                     function_span: span,
                     head: (head.start, head.end),
                     first: (first.start, first.end),
@@ -183,6 +203,7 @@ struct Rewrite<'x, 'p, 'a> {
     plan: &'p Plan,
     namer: &'x mut Namer<'a>,
     async_component: &'a str,
+    views: HashMap<String, Views<'a>>,
     done: HashSet<u32>,
     changed: bool,
 }
@@ -191,7 +212,14 @@ impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
     fn visit_function(&mut self, it: &mut Function<'a>, flags: ScopeFlags) {
         if it.span != SPAN && !self.done.contains(&it.span.start) {
             if let Some(entry) = self.plan.entry(it.span.start) {
-                if split_function(self.alloc, self.namer, self.async_component, it, &entry) {
+                if split_function(
+                    self.alloc,
+                    self.namer,
+                    self.async_component,
+                    it,
+                    &entry,
+                    self.views.remove(&entry.name),
+                ) {
                     self.done.insert(it.span.start);
                     self.changed = true;
                 }
@@ -203,7 +231,14 @@ impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
     fn visit_arrow_function_expression(&mut self, it: &mut ArrowFunctionExpression<'a>) {
         if it.span != SPAN && !self.done.contains(&it.span.start) {
             if let Some(entry) = self.plan.entry(it.span.start) {
-                if split_arrow(self.alloc, self.namer, self.async_component, it, &entry) {
+                if split_arrow(
+                    self.alloc,
+                    self.namer,
+                    self.async_component,
+                    it,
+                    &entry,
+                    self.views.remove(&entry.name),
+                ) {
                     self.done.insert(it.span.start);
                     self.changed = true;
                 }
@@ -219,9 +254,10 @@ fn split_function<'a>(
     async_component: &'a str,
     it: &mut Function<'a>,
     entry: &Entry,
+    views: Option<Views<'a>>,
 ) -> bool {
     let Some(body) = it.body.as_mut() else { return false };
-    if !split_body(alloc, namer, async_component, body, entry) {
+    if !split_body(alloc, namer, async_component, body, entry, views) {
         return false;
     }
     it.r#async = false;
@@ -235,9 +271,10 @@ fn split_arrow<'a>(
     async_component: &'a str,
     it: &mut ArrowFunctionExpression<'a>,
     entry: &Entry,
+    views: Option<Views<'a>>,
 ) -> bool {
     let ArrowFunctionBody::FunctionBody(body) = &mut it.body else { return false };
-    if !split_body(alloc, namer, async_component, body, entry) {
+    if !split_body(alloc, namer, async_component, body, entry, views) {
         return false;
     }
     it.r#async = false;
@@ -251,6 +288,7 @@ fn split_body<'a>(
     async_component: &'a str,
     body: &mut FunctionBody<'a>,
     entry: &Entry,
+    views: Option<Views<'a>>,
 ) -> bool {
     let mut head = None;
     let mut first = None;
@@ -328,7 +366,11 @@ fn split_body<'a>(
         false,
         &builder,
     );
-    outside.push(Statement::new_return_statement(SPAN, Some(call), &builder));
+    let returned = match views {
+        Some(views) => wrap_views(alloc, views, entry.function_span, call),
+        None => call,
+    };
+    outside.push(Statement::new_return_statement(SPAN, Some(returned), &builder));
     body.statements = outside;
     true
 }
@@ -350,6 +392,91 @@ fn narrow_return<'a>(
     let taken = std::mem::replace(&mut arguments.params, ArenaVec::new_in(&alloc));
     let Some(inner) = taken.into_iter().next() else { return };
     annotation.type_annotation = inner;
+}
+
+fn take_views<'a>(
+    allocator: &'a Allocator,
+    namer: &mut Namer<'a>,
+    helpers: &mut HelperImports<'a>,
+    program: &mut Program<'a>,
+    plan: &Plan,
+) -> HashMap<String, Views<'a>> {
+    let builder = AstBuilder::new(allocator);
+    let body = std::mem::replace(&mut program.body, ArenaVec::new_in(&builder));
+    let mut kept = ArenaVec::new_in(&builder);
+    let mut found: HashMap<String, Views<'a>> = HashMap::new();
+    for mut statement in body {
+        let Some((name, slot, value)) = take_view(&mut statement, allocator, plan) else {
+            kept.push(statement);
+            continue;
+        };
+        let helper = helpers.require(allocator, namer, crate::RUNTIME_MODULE, "asyncViews");
+        let views = found.entry(name).or_insert(Views { helper, pending: None, failure: None });
+        match slot {
+            ViewSlot::Pending => views.pending = Some(value),
+            ViewSlot::Failure => views.failure = Some(value),
+        }
+    }
+    program.body = kept;
+    found
+}
+
+fn take_view<'a>(
+    statement: &mut Statement<'a>,
+    allocator: &'a Allocator,
+    plan: &Plan,
+) -> Option<(String, ViewSlot, Expression<'a>)> {
+    let Statement::ExpressionStatement(expression) = statement else { return None };
+    let Expression::AssignmentExpression(assign) = &mut expression.expression else { return None };
+    if assign.operator != AssignmentOperator::Assign {
+        return None;
+    }
+    let AssignmentTarget::StaticMemberExpression(member) = &assign.left else { return None };
+    let Expression::Identifier(object) = &member.object else { return None };
+    let slot = match member.property.name.as_str() {
+        "pending" => ViewSlot::Pending,
+        "failure" => ViewSlot::Failure,
+        _ => return None,
+    };
+    let name = object.name.as_str();
+    if !plan.has_component(name) {
+        return None;
+    }
+    let name = name.to_owned();
+    Some((name, slot, assign.right.take_in(&AstBuilder::new(allocator))))
+}
+
+fn wrap_views<'a>(
+    alloc: &'a Allocator,
+    views: Views<'a>,
+    span: Span,
+    call: Expression<'a>,
+) -> Expression<'a> {
+    let builder = AstBuilder::new(alloc);
+    let children = loader(alloc, false, None, returning(&builder, call));
+    let pending = match views.pending {
+        Some(value) => loader(alloc, false, None, returning(&builder, value)),
+        None => reference(alloc, SPAN, "undefined"),
+    };
+    let failure = views.failure.unwrap_or_else(|| reference(alloc, SPAN, "undefined"));
+    let mut arguments = ArenaVec::new_in(&builder);
+    arguments.push(Argument::from(children));
+    arguments.push(Argument::from(pending));
+    arguments.push(Argument::from(failure));
+    Expression::new_call_expression(
+        span,
+        reference(alloc, SPAN, views.helper),
+        None,
+        arguments,
+        false,
+        &builder,
+    )
+}
+
+fn returning<'a>(builder: &AstBuilder<'a>, value: Expression<'a>) -> ArenaVec<'a, Statement<'a>> {
+    let mut statements = ArenaVec::new_in(builder);
+    statements.push(Statement::new_return_statement(SPAN, Some(value), builder));
+    statements
 }
 
 fn wrap_await_operand<'a>(alloc: &'a Allocator, context: &'a str, statement: &mut Statement<'a>) {

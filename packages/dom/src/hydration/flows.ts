@@ -149,6 +149,14 @@ export function prepareAsyncComponent<V extends unknown[], R>(
   });
 }
 
+export function prepareAsyncViews(
+  site: Site,
+  children: () => JSX.Element,
+  failure?: (error: unknown, reset: () => void) => JSX.Element,
+): JSX.Element {
+  return failure === undefined ? children() : prepareErrored(site, children, failure);
+}
+
 export function prepareDynamic<P>(
   site: Site,
   source: () => ((props: P) => JSX.Element) | null | undefined | false,

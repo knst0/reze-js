@@ -102,6 +102,7 @@ static TABLE: &[&[Entry]] = &[
     &call("island", RuntimeCallKind::Island),
     &call("createUniqueId", RuntimeCallKind::UniqueId),
     &[row(RUNTIME, "asyncComponent", Role::Call(RuntimeCallKind::AsyncComponent), None)],
+    &[row(RUNTIME, "asyncViews", Role::Call(RuntimeCallKind::AsyncViews), None)],
     &[row(ASYNC, "asyncComputed", Role::Call(RuntimeCallKind::AsyncComputed), None)],
     &[intrinsic(PUBLIC, "Show", Intrinsic::Show)],
     &[intrinsic(PUBLIC, "For", Intrinsic::For)],

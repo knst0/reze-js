@@ -1200,6 +1200,7 @@ pub enum RuntimeCallKind {
     AsyncComputed,
     UniqueId,
     AsyncComponent,
+    AsyncViews,
     Dynamic,
     DynamicElement,
     Island,

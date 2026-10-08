@@ -1,3 +1,4 @@
+export { asyncViews } from "./async-views";
 export { setAttribute, setAttributeNS, setBoolAttribute } from "./attributes";
 export { className, type ClassValue } from "./class-name";
 export { createComponent, render } from "./component";
