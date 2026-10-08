@@ -1,12 +1,11 @@
-import { asyncComputed } from "reze-js/internal/async";
+import { resource } from "@rezejs/signals/internal/resource";
 
-const makeModuleResource = [asyncComputed][0];
 const moduleRuns = [];
 export let moduleBranchValue;
 export let moduleCatchValue;
 
 function moduleResource(name, prefix = "") {
-  return makeModuleResource(() => {
+  return resource(() => {
     const phase =
       typeof document === "undefined" ? "seed" : document.querySelector(`#module-${name}[data-hydrated]`) === null ? "early" : "live";
     if (typeof document !== "undefined") moduleRuns.push(`${name}:${phase}`);
@@ -16,7 +15,7 @@ function moduleResource(name, prefix = "") {
 
 if (true) {
   const resource = moduleResource("branch");
-  moduleBranchValue = () => resource.value();
+  moduleBranchValue = () => resource();
 }
 
 const moduleStore = {
@@ -38,13 +37,13 @@ try {
     return "body";
   }
   const resource = moduleResource("catch", `${label}:`);
-  moduleCatchValue = () => resource.value();
+  moduleCatchValue = () => resource();
 }
 
 export function moduleTrace() {
   moduleBranchValue();
-  moduleGetter.value();
-  ModuleClass.value.value();
+  moduleGetter();
+  ModuleClass.value();
   moduleCatchValue();
   return moduleRuns.join(",");
 }

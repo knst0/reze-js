@@ -1,6 +1,5 @@
 import { signal as runtimeSignal } from "@rezejs/signals";
 import { action, computed, render, signal } from "reze-js";
-import { Errored, Loading } from "reze-js/internal/async";
 
 import { ModuleClass, moduleBranchValue, moduleCatchValue, moduleGetter, moduleTrace } from "./module-resources.js";
 
@@ -25,6 +24,7 @@ async function First({ note }: { note: () => void }) {
   note();
   return <span id="first">{before === shared ? "same" : "diff"}</span>;
 }
+First.pending = <p>loading order…</p>;
 
 async function Second({ note }: { note: () => void }) {
   await Promise.resolve();
@@ -32,11 +32,13 @@ async function Second({ note }: { note: () => void }) {
   note();
   return <span id="second">{shared.items.join(",")}</span>;
 }
+Second.pending = <p>loading order…</p>;
 
 async function Slow() {
   await new Promise((done) => setTimeout(done, 600));
   return <p id="slow">slow settled</p>;
 }
+Slow.pending = <p>loading slow…</p>;
 
 async function Flaky(props: { round: number }) {
   const round = props.round;
@@ -51,6 +53,15 @@ async function Flaky(props: { round: number }) {
     </b>
   );
 }
+Flaky.pending = <p>loading flaky…</p>;
+Flaky.failure = (error: unknown, retry: () => void) => (
+  <p>
+    <span id="flaky-error">{(error as Error).message}</span>
+    <button id="retry" type="button" onClick={retry}>
+      retry
+    </button>
+  </p>
+);
 
 async function nestedInput(value: number): Promise<number> {
   if (typeof document !== "undefined") {
@@ -133,10 +144,10 @@ export default function App() {
         {moduleBranchValue()}
       </p>
       <p id="module-getter" ref={(node) => node.setAttribute("data-hydrated", "")}>
-        {moduleGetter.value()}
+        {moduleGetter()}
       </p>
       <p id="module-class" ref={(node) => node.setAttribute("data-hydrated", "")}>
-        {ModuleClass.value.value()}
+        {ModuleClass.value()}
       </p>
       <p id="module-catch" ref={(node) => node.setAttribute("data-hydrated", "")}>
         {moduleCatchValue()}
@@ -148,29 +159,12 @@ export default function App() {
       <button id="step" type="button" onClick={() => ((count += 1), (step += 1))}>
         step
       </button>
-      <Loading fallback={<p>loading order…</p>}>
-        <First note={note} />
-        <Second note={note} />
-      </Loading>
+      <First note={note} />
+      <Second note={note} />
       <p id="order">{done === 2 ? log.join(",") : "pending"}</p>
       <NestedActions />
-      <Loading fallback={<p>loading slow…</p>}>
-        <Slow />
-      </Loading>
-      <Errored
-        fallback={(error: unknown, reset: () => void) => (
-          <p>
-            <span id="flaky-error">{(error as Error).message}</span>
-            <button id="retry" type="button" onClick={reset}>
-              retry
-            </button>
-          </p>
-        )}
-      >
-        <Loading fallback={<p>loading flaky…</p>}>
-          <Flaky round={round} />
-        </Loading>
-      </Errored>
+      <Slow />
+      <Flaky round={round} />
       <button id="break" type="button" onClick={() => (round = round === 0 ? 1 : 0)}>
         break
       </button>

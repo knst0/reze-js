@@ -1,17 +1,22 @@
 import { computed, effect, signal } from "reze-js";
-import { lazy, Loading } from "reze-js/internal/async";
 
 import { buildGreeting } from "./data";
 import logoUrl from "./logo.svg?url";
 
 import "./styles.css";
 
-const Late = lazy(() => import("./Late"));
+async function Late() {
+  const text = await import("./Late").then((late) => late.text);
+  return <p id="late">{text}</p>;
+}
+
+Late.pending = <p>loading late…</p>;
 
 async function Quote() {
   const text = await Promise.resolve("settled quote");
   return <blockquote id="quote">{text}</blockquote>;
 }
+Quote.pending = <p>loading quote…</p>;
 
 function SpreadChildren() {
   let reads = 0;
@@ -50,12 +55,8 @@ export default function App() {
       </button>
       <input id="name" value={name} onInput={(event) => (name = (event.target as HTMLInputElement).value)} />
       <p id="hello">hi {name}</p>
-      <Loading fallback={<p>loading quote…</p>}>
-        <Quote />
-      </Loading>
-      <Loading fallback={<p>loading late…</p>}>
-        <Late />
-      </Loading>
+      <Quote />
+      <Late />
       <img id="logo" src={logoUrl} alt="dot" />
       <SpreadChildren />
     </main>
