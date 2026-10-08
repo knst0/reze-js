@@ -19,6 +19,8 @@ use crate::imports::HelperImports;
 #[derive(Default)]
 pub struct Plan {
     entries: Vec<Entry>,
+    synchronous: Vec<u32>,
+    resources: Vec<ResourceView>,
 }
 
 #[derive(Clone)]
@@ -36,6 +38,13 @@ struct Entry {
     pending: Vec<ReferenceId>,
 }
 
+#[derive(Clone)]
+struct ResourceView {
+    function_start: u32,
+    name: String,
+    function_span: Span,
+}
+
 #[derive(Clone, Copy)]
 enum ViewSlot {
     Pending,
@@ -50,7 +59,7 @@ struct Views<'a> {
 
 impl Plan {
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.entries.is_empty() && self.synchronous.is_empty()
     }
 
     fn entry(&self, start: u32) -> Option<Entry> {
@@ -59,6 +68,11 @@ impl Plan {
 
     fn has_component(&self, name: &str) -> bool {
         self.entries.iter().any(|entry| entry.name == name)
+            || self.resources.iter().any(|view| view.name == name)
+    }
+
+    fn resource_view(&self, start: u32) -> Option<&ResourceView> {
+        self.resources.iter().find(|view| view.function_start == start)
     }
 }
 
@@ -82,12 +96,15 @@ pub fn apply<'a>(
     namer: &mut Namer<'a>,
     helpers: &mut HelperImports<'a>,
 ) -> bool {
-    if plan.entries.is_empty() {
+    if plan.is_empty() {
         return false;
     }
     let views = take_views(allocator, namer, helpers, program, &plan);
-    let async_component =
-        helpers.require(allocator, namer, crate::RUNTIME_MODULE, "asyncComponent");
+    let async_component = if plan.entries.is_empty() {
+        ""
+    } else {
+        helpers.require(allocator, namer, crate::RUNTIME_MODULE, "asyncComponent")
+    };
     let mut rewrite = Rewrite {
         alloc: allocator,
         plan: &plan,
@@ -110,7 +127,17 @@ struct Collector<'f, 'r, 'p> {
 impl Collector<'_, '_, '_> {
     fn component(&mut self, span: Span, name: &str, statements: &[Statement<'_>]) {
         let start = span.start;
-        let Some(result) = self.facts.plan(start) else { return };
+        let Some(result) = self.facts.plan(start) else {
+            if self.facts.has_resource_within(span) && ends_in_return(statements) {
+                self.plan.resources.push(ResourceView {
+                    function_start: start,
+                    name: name.to_owned(),
+                    function_span: span,
+                });
+            }
+            self.plan.synchronous.push(start);
+            return;
+        };
         match result {
             Err(reject) => {
                 let report = match reject.reason {
@@ -233,6 +260,20 @@ impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
                 }
             }
         }
+        if it.span != SPAN
+            && !self.done.contains(&it.span.start)
+            && let Some(view) = self.plan.resource_view(it.span.start)
+            && let Some(views) = self.views.remove(&view.name)
+            && let Some(body) = it.body.as_mut()
+        {
+            wrap_resource_return(self.alloc, body, views, view.function_span);
+            self.done.insert(it.span.start);
+            self.changed = true;
+        }
+        if self.plan.synchronous.contains(&it.span.start) {
+            it.r#async = false;
+            self.changed = true;
+        }
         walk_mut::walk_function(self, it, flags);
     }
 
@@ -251,6 +292,20 @@ impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
                     self.changed = true;
                 }
             }
+        }
+        if it.span != SPAN
+            && !self.done.contains(&it.span.start)
+            && let Some(view) = self.plan.resource_view(it.span.start)
+            && let Some(views) = self.views.remove(&view.name)
+            && let ArrowFunctionBody::FunctionBody(body) = &mut it.body
+        {
+            wrap_resource_return(self.alloc, body, views, view.function_span);
+            self.done.insert(it.span.start);
+            self.changed = true;
+        }
+        if self.plan.synchronous.contains(&it.span.start) {
+            it.r#async = false;
+            self.changed = true;
         }
         walk_mut::walk_arrow_function_expression(self, it);
     }
@@ -475,6 +530,16 @@ fn take_view<'a>(
     }
     let name = name.to_owned();
     Some((name, slot, assign.right.take_in(&AstBuilder::new(allocator))))
+}
+
+fn ends_in_return(statements: &[Statement<'_>]) -> bool {
+    matches!(statements.last(), Some(Statement::ReturnStatement(returned)) if returned.argument.is_some())
+}
+
+fn wrap_resource_return<'a>(alloc: &'a Allocator, body: &mut FunctionBody<'a>, views: Views<'a>, span: Span) {
+    let Some(Statement::ReturnStatement(returned)) = body.statements.last_mut() else { return };
+    let Some(argument) = returned.argument.take() else { return };
+    returned.argument = Some(wrap_views(alloc, views, span, argument));
 }
 
 fn wrap_views<'a>(

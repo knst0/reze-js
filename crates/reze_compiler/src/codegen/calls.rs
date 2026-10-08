@@ -13,6 +13,10 @@ pub fn rewrite<'a>(
     call: &mut CallExpression<'a>,
     kind: RuntimeCallKind,
 ) {
+    if kind == RuntimeCallKind::Resource {
+        rewrite_resource(ctx, call);
+        return;
+    }
     if kind == RuntimeCallKind::AsyncComponent {
         continuation::prepare(ctx, call);
     }
@@ -28,6 +32,7 @@ pub fn rewrite<'a>(
     let mut next = ArenaVec::with_capacity_in(arguments.len() + 3, &ast.builder);
     next.push(Argument::from(site));
     let callee = match kind {
+        RuntimeCallKind::Resource => unreachable!("resource calls return before the managed path"),
         RuntimeCallKind::AsyncComputed | RuntimeCallKind::UniqueId => {
             let receiver = match call.callee.without_parentheses() {
                 Expression::StaticMemberExpression(member) => match &member.object {
@@ -86,6 +91,25 @@ pub fn rewrite<'a>(
     next.extend(arguments);
     call.callee = callee;
     call.arguments = next;
+    ctx.changed = true;
+}
+
+fn rewrite_resource<'a>(ctx: &mut EmitContext<'a, '_>, call: &mut CallExpression<'a>) {
+    let resource = ctx.helper("reze-js/internal/reactivity", "resource");
+    if ctx.options.target == CompileTarget::Client {
+        call.callee = resource;
+    } else {
+        let ast = Ast::new(ctx.allocator);
+        let site = ctx.origin_site(call.span);
+        let arguments = call.arguments.take_in(&ctx.allocator);
+        let mut next = ArenaVec::with_capacity_in(arguments.len() + 3, &ast.builder);
+        next.push(Argument::from(site));
+        next.push(Argument::from(resource));
+        next.push(Argument::from(ast.undefined()));
+        next.extend(arguments);
+        call.callee = ctx.helper("reze-js/internal/reactivity", "withResourceSite");
+        call.arguments = next;
+    }
     ctx.changed = true;
 }
 

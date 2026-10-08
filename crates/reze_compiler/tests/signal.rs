@@ -301,12 +301,20 @@ fn a_function_literal_argument_is_refused_and_the_fix_unwraps_it() {
 }
 
 #[test]
-fn awaiting_inside_the_expression_is_refused_but_inside_a_nested_function_is_not() {
-    let source = "import { computed } from \"reze-js\";\nexport async function load(id) {\n  const d = computed(await fetchUser(id));\n  return d;\n}";
-    only(source, Code::ComputedAwait);
-    let nested = "import { computed } from \"reze-js\";\nexport function load(id) {\n  const d = computed(pick(async () => await fetchUser(id)));\n  return d;\n}";
-    let code = compiled(nested, &options());
-    assert!(code.contains("await fetchUser"), "{code}");
+fn awaiting_inside_computed_lowers_to_a_resource_and_leaves_the_component_unsuspended() {
+    let source = "import { computed } from \"reze-js\";\nexport async function Card(props) {\n  const id = props.id;\n  const user = computed(await fetchUser(id));\n  return <p>{user}</p>;\n}";
+    let code = compiled(source, &options());
+    assert!(code.contains("resource("), "{code}");
+    assert!(code.contains("async () =>"), "{code}");
+    assert!(!code.contains("asyncComponent("), "{code}");
+}
+
+#[test]
+fn resource_only_component_takes_its_views_into_the_return() {
+    let source = "import { computed } from \"reze-js\";\nasync function Card(props) {\n  const user = computed(await fetchUser(props.id));\n  return <p>{user}</p>;\n}\nCard.pending = <p>loading</p>;";
+    let code = compiled(source, &options());
+    assert!(code.contains("asyncViews("), "{code}");
+    assert!(!code.contains("Card.pending ="), "{code}");
 }
 
 #[test]

@@ -460,43 +460,6 @@ const doubled = computed(count * 2);
 export const view = <button onClick={() => (count += 1)}>{doubled}</button>;
 ```
 
-## COMPUTED_AWAIT
-
-**`await` or `yield` in `computed`** · severity `error`
-
-> The expression of `computed` awaits or yields, but it is derived synchronously, where `await` and `yield` are not valid. Await the value in an async component and derive from the result.
-
-`data` keys: none
-
-Automatic fix: no
-
-`computed(expression)` derives its value synchronously. An `await` or `yield` outside a nested function cannot move into it.
-
-**Repair:** Await the value in an async component before the derivation, then derive from the loaded value.
-
-Before:
-
-```tsx
-import { computed, signal } from "reze-js";
-
-let id = signal(1);
-const label = computed(await describe(id));
-export const view = <p onClick={() => (id += 1)}>{label}</p>;
-```
-
-After:
-
-```tsx
-import { computed } from "reze-js";
-
-export async function Label(props) {
-  const id = props.id;
-  const text = await describe(id);
-  const label = computed(text.toUpperCase());
-  return <p>{label}</p>;
-}
-```
-
 ## ACTION_ARGUMENT
 
 **`action` without a function literal** · severity `error`

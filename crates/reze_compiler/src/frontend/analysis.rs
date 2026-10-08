@@ -415,10 +415,14 @@ pub fn collect(
         called: HashSet::new(),
         signals: Vec::new(),
         computeds: Vec::new(),
+        resources: Vec::new(),
     };
     collector.visit_program(program);
-    let Collector { called, signals, computeds, .. } = collector;
+    let Collector { called, signals, computeds, resources, .. } = collector;
     facts.computed_getters.extend(computeds.iter().copied());
+    for node in resources {
+        facts.runtime_calls.insert(node, RuntimeCallKind::Resource);
+    }
     for getter in computeds {
         facts.getter_refs.extend(scoping.get_resolved_reference_ids(getter));
     }
@@ -665,6 +669,7 @@ struct Collector<'c, 's> {
     called: HashSet<ReferenceId>,
     signals: Vec<SignalDecl>,
     computeds: Vec<SymbolId>,
+    resources: Vec<NodeId>,
 }
 
 impl Collector<'_, '_> {
@@ -730,6 +735,13 @@ fn is_foldable_signal_shape(
         && call.arguments.get(1).is_none_or(is_plain_options)
 }
 
+fn is_await_resource(call: &CallExpression<'_>) -> bool {
+    matches!(
+        call.arguments.first().and_then(Argument::as_expression),
+        Some(Expression::ArrowFunctionExpression(arrow)) if super::dsl::is_await_arrow(arrow)
+    )
+}
+
 fn is_plain_options(argument: &Argument<'_>) -> bool {
     let Some(Expression::ObjectExpression(object)) = argument.as_expression() else { return false };
     object.properties.iter().all(|property| match property {
@@ -771,6 +783,9 @@ impl<'a> Visit<'a> for Collector<'_, '_> {
                 Some(Primitive::Computed) => {
                     if let BindingPattern::BindingIdentifier(id) = &it.id {
                         self.computeds.push(id.symbol_id());
+                    }
+                    if is_await_resource(call) {
+                        self.resources.push(call.node_id.get());
                     }
                 }
                 _ => {}
@@ -1009,6 +1024,7 @@ pub struct AsyncFacts {
     plans: HashMap<u32, Result<AsyncPlan, Reject>>,
     reads: HashMap<ReferenceId, (u32, usize)>,
     reports: Vec<Report>,
+    resource_starts: Vec<u32>,
 }
 
 impl AsyncFacts {
@@ -1056,6 +1072,10 @@ impl AsyncFacts {
 
     pub fn plan(&self, function_start: u32) -> Option<&Result<AsyncPlan, Reject>> {
         self.plans.get(&function_start)
+    }
+
+    pub fn has_resource_within(&self, span: Span) -> bool {
+        self.resource_starts.iter().any(|&start| span.start <= start && start < span.end)
     }
 
     pub fn is_awaited_value(&self, reference: ReferenceId) -> bool {
@@ -1123,6 +1143,13 @@ impl AsyncCollector<'_, '_> {
 }
 
 impl<'a> Visit<'a> for AsyncCollector<'_, '_> {
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if is_await_resource(it) {
+            self.facts.resource_starts.push(it.span.start);
+        }
+        walk::walk_call_expression(self, it);
+    }
+
     fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
         if it.r#async
             && !it.generator
@@ -1336,6 +1363,7 @@ fn declared_symbols<'s, 'a>(statement: &'s Statement<'a>, out: &mut Vec<(SymbolI
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RuntimeCallKind {
     AsyncComputed,
+    Resource,
     UniqueId,
     AsyncComponent,
     AsyncViews,

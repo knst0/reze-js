@@ -14,7 +14,7 @@ import {
 } from "./scope";
 
 export type { AsyncComputed, AsyncContext } from "../asyncComputed";
-export { internalAsyncComputed } from "../asyncComputed";
+export { internalAsyncComputed, resource } from "../asyncComputed";
 
 export type ResourceKind = "public" | "internal";
 

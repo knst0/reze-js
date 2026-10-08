@@ -234,7 +234,7 @@ fn scope_expression<'a>(
     if let Expression::CallExpression(call) = expression.without_parentheses()
         && matches!(
             ctx.facts.runtime_calls.get(&call.node_id.get()),
-            Some(RuntimeCallKind::AsyncComputed | RuntimeCallKind::UniqueId)
+            Some(RuntimeCallKind::AsyncComputed | RuntimeCallKind::Resource | RuntimeCallKind::UniqueId)
         )
     {
         let mut arguments = Initializer::default();

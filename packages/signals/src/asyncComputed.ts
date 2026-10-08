@@ -355,3 +355,29 @@ function createInternalAsyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> 
   node.start();
   return node;
 }
+
+class ResourceRejection {
+  constructor(readonly reason: unknown) {}
+}
+
+/**
+ * Lowers `computed(await expr)`: `load` re-runs on change, reads count as a pending load before the
+ * first settlement, and a rejection is thrown from the read instead of being stored.
+ */
+export function resource<T>(load: () => PromiseLike<T> | T): () => T | undefined {
+  const node = asyncComputed<T>(async () => {
+    try {
+      return await load();
+    } catch (reason) {
+      throw new ResourceRejection(reason);
+    }
+  });
+  return (): T | undefined => {
+    const value = node.value();
+    const error = node.error();
+    if (error instanceof ResourceRejection) {
+      throw error.reason;
+    }
+    return value;
+  };
+}

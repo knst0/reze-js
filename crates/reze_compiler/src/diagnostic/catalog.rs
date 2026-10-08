@@ -267,19 +267,6 @@ catalog! {
             good: "import { computed, signal } from \"reze-js\";\n\nlet count = signal(0);\nconst doubled = computed(count * 2);\nexport const view = <button onClick={() => (count += 1)}>{doubled}</button>;\n",
         },
     }
-    ComputedAwait {
-        name: "COMPUTED_AWAIT",
-        severity: Error,
-        title: "`await` or `yield` in `computed`",
-        message: "The expression of `computed` awaits or yields, but it is derived synchronously, where `await` and `yield` are not valid. Await the value in an async component and derive from the result.",
-        explanation: "`computed(expression)` derives its value synchronously. An `await` or `yield` outside a nested function cannot move into it.",
-        repair: "Await the value in an async component before the derivation, then derive from the loaded value.",
-        fix: None,
-        example: Pair {
-            bad: "import { computed, signal } from \"reze-js\";\n\nlet id = signal(1);\nconst label = computed(await describe(id));\nexport const view = <p onClick={() => (id += 1)}>{label}</p>;\n",
-            good: "import { computed } from \"reze-js\";\n\nexport async function Label(props) {\n  const id = props.id;\n  const text = await describe(id);\n  const label = computed(text.toUpperCase());\n  return <p>{label}</p>;\n}\n",
-        },
-    }
     ActionArgument {
         name: "ACTION_ARGUMENT",
         severity: Error,

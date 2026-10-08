@@ -706,7 +706,7 @@ impl Analyzer<'_, '_> {
 
     fn computed_value(&mut self, value: &Expression<'_>) {
         match value.without_parentheses() {
-            Expression::ArrowFunctionExpression(arrow) => {
+            Expression::ArrowFunctionExpression(arrow) if !is_await_arrow(arrow) => {
                 let mut report = Report::new(Code::ComputedFunction, arrow.span);
                 if let (false, true, Some(body)) =
                     (arrow.r#async, arrow.params.is_empty(), arrow.get_expression())
@@ -723,11 +723,7 @@ impl Analyzer<'_, '_> {
             Expression::FunctionExpression(function) => {
                 self.reports.push(Report::new(Code::ComputedFunction, function.span));
             }
-            _ => {
-                if suspends(value) {
-                    self.reports.push(Report::new(Code::ComputedAwait, value.span()));
-                }
-            }
+            _ => {}
         }
     }
 
@@ -1160,17 +1156,22 @@ fn arrow_expr<'a>(
     span: Span,
     params_span: Span,
     body: Expression<'a>,
+    is_async: bool,
 ) -> Expression<'a> {
     let builder = AstBuilder::new(alloc);
     Expression::new_arrow_function_expression(
         span,
-        false,
+        is_async,
         None,
         empty_params(alloc, params_span),
         None,
         ArrowFunctionBody::from(body),
         &builder,
     )
+}
+
+pub(super) fn is_await_arrow(arrow: &ArrowFunctionExpression<'_>) -> bool {
+    arrow.r#async && arrow.span.is_empty()
 }
 
 fn run_param<'a>(alloc: &'a Allocator, span: Span, run: &'a str) -> FormalParameter<'a> {
@@ -1434,15 +1435,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
             }
             _ => {}
         }
-        if suspends(&value) {
-            let mut args = ArenaVec::new_in(&self.alloc);
-            args.push(Argument::from(value));
-            for argument in into {
-                args.push(argument);
-            }
-            call.arguments = args;
-            return;
-        }
+        let is_async = suspends(&value);
         let span = value.span();
         let text = &self.source[span.start as usize..span.end as usize];
         let body = if text.starts_with('{') {
@@ -1452,7 +1445,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
             value
         };
         let mut args = ArenaVec::new_in(&self.alloc);
-        args.push(Argument::from(arrow_expr(self.alloc, SPAN, SPAN, body)));
+        args.push(Argument::from(arrow_expr(self.alloc, SPAN, SPAN, body, is_async)));
         for argument in into {
             args.push(argument);
         }
@@ -1550,7 +1543,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         let rebuilt = match shape {
             Shape::Set => {
                 let value = if !is_never_function(&right) && !suspends(&right) {
-                    arrow_expr(self.alloc, SPAN, SPAN, right)
+                    arrow_expr(self.alloc, SPAN, SPAN, right, false)
                 } else {
                     right
                 };
@@ -1560,7 +1553,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
             }
             Shape::Logical(op) => {
                 let value = if !is_never_function(&right) && !suspends(&right) {
-                    arrow_expr(self.alloc, SPAN, SPAN, right)
+                    arrow_expr(self.alloc, SPAN, SPAN, right, false)
                 } else {
                     right
                 };
