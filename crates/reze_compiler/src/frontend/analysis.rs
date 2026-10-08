@@ -563,6 +563,39 @@ fn report_intrinsic_values(
     }
 }
 
+pub(crate) fn default_exported_symbols(
+    program: &Program<'_>,
+    scoping: &Scoping,
+) -> HashSet<SymbolId> {
+    let mut exported = HashSet::new();
+    let resolved = |local: &IdentifierReference<'_>| {
+        scoping.get_reference(local.reference_id.get()?).symbol_id()
+    };
+    for statement in &program.body {
+        match statement {
+            Statement::ExportNamedDeclaration(export) => {
+                for specifier in &export.specifiers {
+                    if specifier.exported.name().as_str() == "default"
+                        && let ModuleExportName::IdentifierReference(local) = &specifier.local
+                        && let Some(symbol) = resolved(local)
+                    {
+                        exported.insert(symbol);
+                    }
+                }
+            }
+            Statement::ExportDefaultDeclaration(export) => {
+                if let ExportDefaultDeclarationKind::Identifier(local) = &export.declaration
+                    && let Some(symbol) = resolved(local)
+                {
+                    exported.insert(symbol);
+                }
+            }
+            _ => {}
+        }
+    }
+    exported
+}
+
 pub(crate) fn exported_symbols(program: &Program<'_>, scoping: &Scoping) -> HashSet<SymbolId> {
     let mut exported = HashSet::new();
     let resolved = |local: &IdentifierReference<'_>| {

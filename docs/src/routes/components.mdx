@@ -194,7 +194,7 @@ Every call to `dynamic` creates a new component, so call it once per owner: hois
 
 `Show`, `For`, `Repeat`, `Switch`, `Match`, and `Portal` are compiler intrinsics. Every such tag compiles to direct runtime calls, and the imported binding only throws. Call one, pass one around, or re-export one, and that throw is what runs. Render each one as a tag, and give it the attributes it accepts: `Show` takes `when` and `fallback`, `For` takes `each`, `fallback`, and `keyed`, `Repeat` takes `count` and `fallback`, `Switch` takes `fallback` with `Match` children, `Match` takes `when`, and `Portal` takes `mount`. Anything else on those tags, spreads included, has no meaning.
 
-Component bodies run once, so work that must repeat on prop changes belongs in a binding, a derived value from [reactivity](/reactivity), or an effect with cleanup from [lifecycle](/lifecycle). Reactive declarations are file-local compiler syntax; a `signal` variable cannot be exported to another module and stay reactive.
+Component bodies run once, so work that must repeat on prop changes belongs in a binding, a derived value from [reactivity](/reactivity), or an effect with cleanup from [lifecycle](/lifecycle). Reactive declarations are file-local compiler syntax; a named `export` of a `signal` stays reactive for importing modules, which can read it but not write it.
 
 ## Related pages
 

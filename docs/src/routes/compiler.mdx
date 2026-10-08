@@ -61,14 +61,12 @@ Habits carried over from other frameworks are caught early:
 
 Declare `signal` and `computed` with a single identifier in a `let` or `const` declaration. They cannot be used as arbitrary expressions, destructured declarations, or values passed to another function.
 
-The rewritten binding is local to the file that declares it. Do not export it directly. Export a function that owns the state instead:
+A named export stays reactive: importing modules read it like local state but cannot assign it. Export a function that updates it so other modules can write it:
 
 ```ts
 import { signal } from "reze-js";
 
-let count = signal(0);
-
-export const readCount = () => count;
+export let count = signal(0);
 
 export function increment() {
   count += 1;
@@ -77,7 +75,7 @@ export function increment() {
 
 Additional restrictions:
 
-- A computed binding is read-only; update its source state instead.
+- A reactive binding cannot be the default export; export it by name instead.
 - `computed` accepts an expression, not an inline function literal. Use `computed(calculate())` for a multi-statement calculation.
 - Write signals through direct assignments, not destructuring assignments or `for` loop heads.
 - Increment and decrement statements are supported, but `count++` inside a larger expression is rejected. Use `count += 1` or a block-bodied handler.
@@ -175,7 +173,7 @@ Diagnostics include a bracketed code, source location, and repair information. E
 | Code                     | Meaning                                                                                   | Correction                                                 |
 | ------------------------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `SIGNAL_NOT_DECLARED`    | Compiler syntax has no supported local declaration.                                       | Initialize one named variable with `let` or `const`.       |
-| `SIGNAL_EXPORTED`        | A rewritten reactive binding is exported.                                                 | Export a function that owns the state, or share a `store`. |
+| `SIGNAL_DEFAULT_EXPORT`  | A reactive binding is the default export.                                                 | Export it by name, or export a function that reads it.     |
 | `COMPUTED_WRITTEN`       | Derived state is being assigned.                                                          | Update its source signals.                                 |
 | `CONTROL_FLOW_AS_VALUE`  | An intrinsic is used outside a JSX tag.                                                   | Render the tag inside an ordinary component.               |
 | `CONTROL_FLOW_ATTRIBUTE` | An intrinsic received an unsupported attribute.                                           | Remove it or use the documented attribute.                 |

@@ -55,9 +55,9 @@ export function rescale(factor: number) {
 Declaration rules, enforced by the compiler:
 
 - Declare with `let` (or `const` for a value you never write) in the file that
-  uses the variable. The declaration cannot be exported or destructured. To
-  share state across modules, export a function that owns the state, or keep
-  the data in a `store` (below).
+  uses the variable. The declaration cannot be destructured. A named export stays
+  reactive for importing modules, which can read it but not write it. To let them
+  write it, export a function that updates it, or keep the data in a `store` (below).
 - Reading the variable — including passing its value to a call such as
   `pick(list)` — simply tracks. What is refused is using the `signal`
   primitive itself as a value instead of calling it.

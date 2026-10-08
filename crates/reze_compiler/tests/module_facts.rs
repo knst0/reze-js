@@ -42,8 +42,11 @@ fn exports_describe_functions_actions_values_and_reexports() {
 #[test]
 fn a_module_with_an_error_has_no_facts() {
     assert!(
-        analyze("import { signal } from \"reze-js\";\nexport let n = signal(0);", "bad.tsx")
-            .is_err()
+        analyze(
+            "import { signal } from \"reze-js\";\nlet n = signal(0);\nexport default n;",
+            "bad.tsx"
+        )
+        .is_err()
     );
 }
 
@@ -78,4 +81,32 @@ fn facts_of_a_different_format_version_are_ignored() {
     stale.v = 0;
     let with_stale = code(APP, &options_with(HashMap::from([("./lib".to_string(), stale)])));
     assert_eq!(with_stale, code(APP, &Options::default()));
+}
+
+const COUNTER: &str = "import { signal } from \"reze-js\";\nexport let count = signal(0);\nexport const bump = () => (count += 1);\nexport const doubled = () => count * 2;";
+
+fn counter_facts() -> HashMap<String, ModuleFacts> {
+    HashMap::from([("./counter".to_string(), analyze(COUNTER, "counter.tsx").expect("analyzes"))])
+}
+
+#[test]
+fn an_imported_signal_read_lowers_to_its_getter_call() {
+    let app = "import { count } from \"./counter\";\nexport const View = () => <p>{count + 1}</p>;";
+    assert!(code(app, &options_with(counter_facts())).contains("count() + 1"));
+}
+
+#[test]
+fn a_namespace_read_of_an_imported_signal_calls_the_getter() {
+    let app = "import * as k from \"./counter\";\nexport const View = () => <p>{k.count}</p>;";
+    assert!(code(app, &options_with(counter_facts())).contains("k.count()"));
+}
+
+#[test]
+fn a_function_reading_an_imported_signal_reads_dynamically() {
+    let reader = "import { count } from \"./counter\";\nexport const twice = () => count * 2;";
+    let exports = analyze(reader, "reader.tsx").expect("analyzes").exports;
+    let ExportFacts::Function { reads, .. } = &exports["twice"] else {
+        panic!("twice is a function: {:?}", exports["twice"]);
+    };
+    assert_eq!(*reads, Reads::Dynamic);
 }

@@ -89,15 +89,61 @@ fn a_tuple_whose_setter_escapes_has_no_fix() {
     }
 }
 
+fn exported_names(code: &str) -> Vec<String> {
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, code, SourceType::tsx()).parse();
+    parsed
+        .program
+        .body
+        .iter()
+        .flat_map(|statement| match statement {
+            oxc_ast::ast::Statement::ExportNamedDeclaration(export) => export
+                .specifiers
+                .iter()
+                .map(|specifier| specifier.exported.name().to_string())
+                .collect::<Vec<_>>(),
+            oxc_ast::ast::Statement::ExportDeclaration(export) => match &export.declaration {
+                oxc_ast::ast::Declaration::VariableDeclaration(variables) => variables
+                    .declarations
+                    .iter()
+                    .flat_map(|declarator| declarator.id.get_binding_identifiers())
+                    .map(|id| id.name.to_string())
+                    .collect(),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
 #[test]
-fn an_exported_signal_is_refused_however_it_is_exported() {
-    for export in [
-        "export let a = signal(0);",
-        "let a = signal(0);\nexport { a };",
-        "let a = signal(0);\nexport default a;",
+fn a_named_export_of_a_signal_exports_the_getter_and_keeps_the_setter_private() {
+    for (body, expected) in [
+        (
+            "export let count = signal(0);\nexport const bump = () => (count += 1);",
+            ["count", "bump"],
+        ),
+        (
+            "let count = signal(0);\nexport { count };\nexport const bump = () => (count += 1);",
+            ["count", "bump"],
+        ),
+        (
+            "let count = signal(0);\nexport { count as value };\nexport const bump = () => (count += 1);",
+            ["value", "bump"],
+        ),
     ] {
-        let source = format!("import {{ signal }} from \"reze-js\";\n{export}");
-        only(&source, Code::SignalExported);
+        let code = compiled(&format!("import {{ signal }} from \"reze-js\";\n{body}"), &options());
+        assert_eq!(exported_names(&code), expected, "{code}");
+    }
+}
+
+#[test]
+fn a_reactive_binding_cannot_be_the_default_export() {
+    for export in ["export default count;", "export { count as default };"] {
+        let source =
+            format!("import {{ signal }} from \"reze-js\";\nlet count = signal(0);\n{export}");
+        let d = only(&source, Code::SignalDefaultExport);
+        assert_eq!((d.data["signal"].as_str(), d.data["primitive"].as_str()), ("count", "signal"));
     }
 }
 
@@ -277,7 +323,7 @@ fn computed_declaration_errors_name_the_primitive() {
         Code::SignalPattern,
     );
     assert_eq!(d.data["primitive"], "computed");
-    let d = only(&computed_module("export { d };"), Code::SignalExported);
+    let d = only(&computed_module("export default d;"), Code::SignalDefaultExport);
     assert_eq!((d.data["signal"].as_str(), d.data["primitive"].as_str()), ("d", "computed"));
 }
 

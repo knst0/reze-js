@@ -184,7 +184,7 @@ fn compile_module(
     let module_id =
         (options.target != CompileTarget::Client).then_some(options.module_id.as_deref()).flatten();
     let sites = ir::collect_sites(program, module_id, source);
-    let mut normalized = frontend::normalize(&allocator, program, source);
+    let mut normalized = frontend::normalize(&allocator, program, source, &options.facts);
     let facts = module_facts::collect(
         normalized.program,
         &normalized.scoping,
@@ -265,7 +265,7 @@ pub fn analyze(source: &str, filename: &str) -> Result<ModuleFacts, Vec<Diagnost
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::tsx());
     let allocator = Allocator::default();
     let program = parse_program(&allocator, source, filename, source_type)?;
-    let normalized = frontend::normalize(&allocator, program, source);
+    let normalized = frontend::normalize(&allocator, program, source, &HashMap::new());
     let diagnostics = diagnostic::resolve(normalized.reports, source, filename);
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(diagnostics);

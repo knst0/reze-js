@@ -291,26 +291,27 @@ let count = signal(0);
 export const view = <button onClick={() => (count += 1)}>{count}</button>;
 ```
 
-## SIGNAL_EXPORTED
+## SIGNAL_DEFAULT_EXPORT
 
-**`signal` or `computed` exported** · severity `error`
+**`signal` or `computed` as the default export** · severity `error`
 
-> `{signal}` is a `{primitive}` and cannot be exported: an importing module cannot know it is reactive, so it would read a getter function or lose updates.
+> `{signal}` is a `{primitive}` and cannot be the default export: a default import carries no reactive facts, so it would read a getter function or a value that never updates.
 
 `data` keys: `primitive`, `signal`
 
 Automatic fix: no
 
-`signal` and `computed` variables exist only in the file that declares them; the compiler rewrites their uses there and nowhere else. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.
+Named exports of `signal` and `computed` variables are reactive: importers read them as values. The default export is not analyzed across modules, so it is refused. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.
 
-**Repair:** Keep the variable private and export a function that reads it, or hold the shared state in a `store`.
+**Repair:** Export it by name: `export let count = signal(0)`, or export a function that reads it.
 
 Before:
 
 ```tsx
 import { signal } from "reze-js";
 
-export let count = signal(0);
+let count = signal(0);
+export default count;
 ```
 
 After:
@@ -318,8 +319,7 @@ After:
 ```tsx
 import { signal } from "reze-js";
 
-let count = signal(0);
-export const readCount = () => count;
+export let count = signal(0);
 ```
 
 ## SIGNAL_ASSIGN_PATTERN

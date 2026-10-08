@@ -1,11 +1,12 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use oxc_ast::ast::{
     ArrowFunctionBody, BindingIdentifier, BindingPattern, Declaration, Expression, Function,
-    FunctionBody, ImportDeclarationSpecifier, ModuleExportName, Program, Statement,
+    FunctionBody, ImportDeclarationSpecifier, ImportSpecifier, ModuleExportName, Program,
+    Statement,
 };
 use oxc_ast_visit::Visit;
-use oxc_semantic::{Scoping, SymbolId};
+use oxc_semantic::{Scoping, SymbolFlags, SymbolId};
 use serde::{Deserialize, Serialize};
 
 use crate::frontend::analysis::{self, Primitive, SharedFacts};
@@ -270,15 +271,98 @@ pub fn apply_imports(
     imported: &HashMap<String, ModuleFacts>,
     facts: &mut SharedFacts,
 ) {
+    for (specifier, export) in imported_exports(program, imported) {
+        let symbol = specifier.local.symbol_id();
+        match export {
+            ExportFacts::Signal { kind, .. } | ExportFacts::Computed { kind } => {
+                facts.getter_refs.extend(scoping.get_resolved_reference_ids(symbol));
+                if let Some(kind) = kind {
+                    facts.getter_kinds.insert(symbol, Kind::from(*kind));
+                }
+            }
+            ExportFacts::Function { returns: Some(kind), .. } => {
+                facts.callee_kinds.insert(symbol, Kind::from(*kind));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Imported bindings that read as signal or computed getters: named imports by local symbol, and
+/// namespace imports with their getter export names. The normalizer lowers their reads to getter
+/// calls before the module's own facts are collected.
+#[derive(Default)]
+pub(crate) struct ImportedGetters {
+    pub(crate) bindings: HashSet<SymbolId>,
+    pub(crate) members: HashMap<SymbolId, HashSet<String>>,
+}
+
+impl ImportedGetters {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.bindings.is_empty() && self.members.is_empty()
+    }
+}
+
+pub(crate) fn imported_getters(
+    program: &Program<'_>,
+    imported: &HashMap<String, ModuleFacts>,
+) -> ImportedGetters {
+    let mut getters = ImportedGetters::default();
+    for (specifier, export) in imported_exports(program, imported) {
+        if is_getter(export) {
+            getters.bindings.insert(specifier.local.symbol_id());
+        }
+    }
     for statement in &program.body {
         let Statement::ImportDeclaration(import) = statement else { continue };
         if import.import_kind.is_type() {
             continue;
         }
-        let Some(module) = imported.get(import.source.value.as_str()) else { continue };
-        if module.v != VERSION || module.compiler != COMPILER {
+        let Some(module) = compatible_module(import.source.value.as_str(), imported) else {
+            continue;
+        };
+        for specifier in import.specifiers.iter().flatten() {
+            let ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) = specifier else {
+                continue;
+            };
+            let names: HashSet<String> = module
+                .exports
+                .iter()
+                .filter(|(_, export)| is_getter(export))
+                .map(|(name, _)| name.clone())
+                .collect();
+            if !names.is_empty() {
+                getters.members.insert(namespace.local.symbol_id(), names);
+            }
+        }
+    }
+    getters
+}
+
+fn is_getter(export: &ExportFacts) -> bool {
+    matches!(export, ExportFacts::Signal { .. } | ExportFacts::Computed { .. })
+}
+
+fn compatible_module<'b>(
+    source: &str,
+    imported: &'b HashMap<String, ModuleFacts>,
+) -> Option<&'b ModuleFacts> {
+    imported.get(source).filter(|module| module.v == VERSION && module.compiler == COMPILER)
+}
+
+fn imported_exports<'b, 'a>(
+    program: &'b Program<'a>,
+    imported: &'b HashMap<String, ModuleFacts>,
+) -> Vec<(&'b ImportSpecifier<'a>, &'b ExportFacts)> {
+    let mut exports = Vec::new();
+    for statement in &program.body {
+        let Statement::ImportDeclaration(import) = statement else { continue };
+        if import.import_kind.is_type() {
             continue;
         }
+        let Some(module) = compatible_module(import.source.value.as_str(), imported) else {
+            continue;
+        };
         for specifier in import.specifiers.iter().flatten() {
             let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
                 continue;
@@ -286,21 +370,12 @@ pub fn apply_imports(
             if specifier.import_kind.is_type() {
                 continue;
             }
-            let symbol = specifier.local.symbol_id();
-            match module.exports.get(specifier.imported.name().as_str()) {
-                Some(ExportFacts::Signal { kind, .. } | ExportFacts::Computed { kind }) => {
-                    facts.getter_refs.extend(scoping.get_resolved_reference_ids(symbol));
-                    if let Some(kind) = kind {
-                        facts.getter_kinds.insert(symbol, Kind::from(*kind));
-                    }
-                }
-                Some(ExportFacts::Function { returns: Some(kind), .. }) => {
-                    facts.callee_kinds.insert(symbol, Kind::from(*kind));
-                }
-                _ => {}
+            if let Some(export) = module.exports.get(specifier.imported.name().as_str()) {
+                exports.push((&**specifier, export));
             }
         }
     }
+    exports
 }
 
 enum Declared<'b, 'a> {
@@ -352,9 +427,9 @@ fn function_facts(
     let Some(body) = body else {
         return ExportFacts::Function { reads: Reads::None, returns: None };
     };
-    let mut finder = GetterReads { facts, found: false };
+    let mut finder = GetterReads { facts, scoping, found: false, imports: false };
     finder.visit_function_body(body);
-    summarize_body(facts, scoping, finder.found, returned_in_block(body.statements.as_slice()))
+    summarize_body(facts, scoping, &finder, returned_in_block(body.statements.as_slice()))
 }
 
 fn arrow_facts(
@@ -362,18 +437,20 @@ fn arrow_facts(
     scoping: &Scoping,
     body: &ArrowFunctionBody<'_>,
 ) -> ExportFacts {
-    let mut finder = GetterReads { facts, found: false };
+    let mut finder = GetterReads { facts, scoping, found: false, imports: false };
     finder.visit_arrow_function_body(body);
-    summarize_body(facts, scoping, finder.found, arrow_returned_expression(body))
+    summarize_body(facts, scoping, &finder, arrow_returned_expression(body))
 }
 
 fn summarize_body(
     facts: &SharedFacts,
     scoping: &Scoping,
-    reads_getter: bool,
+    finder: &GetterReads<'_, '_>,
     returned: Option<&Expression<'_>>,
 ) -> ExportFacts {
-    let reads = if !reads_getter {
+    let reads = if finder.imports {
+        Reads::Dynamic
+    } else if !finder.found {
         Reads::None
     } else if returned.is_some_and(|e| facts.reads_unconditionally(scoping, e)) {
         Reads::Fixed
@@ -384,15 +461,20 @@ fn summarize_body(
     ExportFacts::Function { reads, returns }
 }
 
-struct GetterReads<'f> {
+struct GetterReads<'f, 's> {
     facts: &'f SharedFacts,
+    scoping: &'s Scoping,
     found: bool,
+    imports: bool,
 }
 
-impl<'a> Visit<'a> for GetterReads<'_> {
+impl<'a> Visit<'a> for GetterReads<'_, '_> {
     fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
-        if it.reference_id.get().is_some_and(|r| self.facts.getter_refs.contains(&r)) {
-            self.found = true;
-        }
+        let Some(reference) = it.reference_id.get() else { return };
+        self.found |= self.facts.getter_refs.contains(&reference);
+        self.imports |=
+            self.scoping.get_reference(reference).symbol_id().is_some_and(|symbol| {
+                self.scoping.symbol_flags(symbol).contains(SymbolFlags::Import)
+            });
     }
 }

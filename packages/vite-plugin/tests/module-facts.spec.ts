@@ -90,7 +90,7 @@ describe("application modules", () => {
   });
 
   it("omits facts of a module the compiler refuses", async () => {
-    write("src/b.ts", `import { signal } from "reze-js";\nexport let n = signal(0);\n`);
+    write("src/b.ts", `import { signal } from "reze-js";\nlet n = signal(0);\nexport default n;\nexport const bump = () => (n += 1);\n`);
     const facts = await storeFor().factsFor(mainPath(), ["./b"], resolve);
     expect(facts).toEqual({});
   });
@@ -176,10 +176,10 @@ describe("library modules", () => {
 
   it("reports modules the compiler refuses instead of writing them", () => {
     writeLibrary();
-    write("node_modules/@acme/ui/src/bad.ts", `import { signal } from "reze-js";\nexport let m = signal(1);\n`);
+    write("node_modules/@acme/ui/src/bad.ts", `import { signal } from "reze-js";\nlet m = signal(1);\nexport default m;\nexport const bump = () => (m += 1);\n`);
     const report = writeManifest(libraryDir());
     expect(report.written).toBe(1);
-    expect(report.skipped).toEqual([{ file: "src/bad.ts", reason: "SIGNAL_EXPORTED" }]);
+    expect(report.skipped).toEqual([{ file: "src/bad.ts", reason: "SIGNAL_DEFAULT_EXPORT" }]);
   });
 
   it("rejects a package without a reze.manifest", () => {

@@ -19,6 +19,7 @@ pub use analysis::SharedFacts;
 
 use crate::diagnostic::Report;
 use crate::imports::HelperImports;
+use crate::module_facts::{self, ModuleFacts};
 
 pub struct Namer<'a> {
     taken: HashSet<&'a str>,
@@ -76,6 +77,7 @@ pub fn normalize<'a>(
     allocator: &'a Allocator,
     program: &'a mut Program<'a>,
     source: &str,
+    imported: &HashMap<String, ModuleFacts>,
 ) -> FrontendOutput<'a> {
     let mut reports = Vec::new();
     let syntax;
@@ -87,9 +89,11 @@ pub fn normalize<'a>(
     let selector_plan;
     let mut async_reports = Vec::new();
     let first_scoping;
+    let imported_getters;
     {
         let first = SemanticBuilder::new().with_build_nodes(true).build(&*program);
         let (scoping, nodes) = first.semantic.into_scoping_and_nodes();
+        imported_getters = module_facts::imported_getters(program, imported);
         syntax = imports::SyntaxImports::collect(program);
         namer = Namer::seeded(&scoping, allocator);
         pre = dsl::prescan(program, &scoping, &syntax, &mut namer, &mut reports);
@@ -103,6 +107,7 @@ pub fn normalize<'a>(
             && props_plan.is_empty()
             && async_plan.is_empty()
             && selector_plan.is_empty()
+            && imported_getters.is_empty()
         {
             reports.extend(async_reports);
             dsl::scan(program, &scoping, &pre, source, &mut reports);
@@ -133,8 +138,16 @@ pub fn normalize<'a>(
     content_changed |= outcome.changed | reexports_changed;
     let props_changed = props::apply(allocator, program, props_plan, &mut namer, &mut helpers);
     content_changed |= props_changed;
-    let normalized =
-        dsl::normalize_ast(allocator, program, &first_scoping, &syntax, &pre, &outcome, source);
+    let normalized = dsl::normalize_ast(
+        allocator,
+        program,
+        &first_scoping,
+        &syntax,
+        &pre,
+        &outcome,
+        &imported_getters,
+        source,
+    );
     content_changed |= normalized;
     if (props_changed || normalized) && (!async_plan.is_empty() || !async_reports.is_empty()) {
         content_changed |= helpers.install(allocator, program);

@@ -152,6 +152,6 @@ Type checking and bundling are separate commands. Vite writes the production app
 - **JSX parse error:** check the `.tsx` extension and ensure `reze()` is installed in the Vite plugin list.
 - **Missing export from `reze-js`:** the file was not transformed. Check the plugin's file extensions and do not execute `signal` source directly with Node.js.
 - **Nothing mounts:** ensure the HTML contains `id="app"` and loads `/src/main.tsx`.
-- **Reactive state cannot be exported:** export a function that owns the state, or share a `store`; see [compiler](/compiler#declaration-and-module-boundaries).
+- **Reactive default export:** export the reactive binding by name, or export a function that reads it; see [compiler](/compiler#declaration-and-module-boundaries).
 
 Next: [reactivity](/reactivity), [components and JSX](/components), and [the compiler](/compiler). For multiple screens, follow [routing](/routing).

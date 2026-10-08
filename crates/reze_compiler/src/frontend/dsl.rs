@@ -11,13 +11,15 @@ use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 
-use oxc_allocator::{Allocator, Box as ArenaBox, Vec as ArenaVec};
+use oxc_allocator::{Allocator, Box as ArenaBox, TakeIn, Vec as ArenaVec};
 use oxc_ast_visit::{VisitMut, walk_mut};
 
 use super::Namer;
 use super::imports::{ImportResult, Syntax, SyntaxImports};
 use super::pure::is_component_name;
 use crate::diagnostic::{Code, Edit, Report};
+use crate::module_facts::ImportedGetters;
+
 pub struct DeclPlan {
     pub primitive: Syntax,
     pub setter: Option<String>,
@@ -72,8 +74,15 @@ pub fn prescan(
     let mut decls = HashMap::new();
     let mut by_symbol = HashMap::new();
     let mut inits = HashSet::new();
-    let exported = super::analysis::exported_symbols(program, scoping);
+    let default_exported = super::analysis::default_exported_symbols(program, scoping);
     for (symbol, variable) in &variables {
+        if default_exported.contains(symbol) {
+            reports.push(
+                Report::new(Code::SignalDefaultExport, variable.declarator)
+                    .arg("signal", scoping.symbol_name(*symbol))
+                    .arg("primitive", variable.primitive.name()),
+            );
+        }
         if let Some(plan) = declarators.get(&variable.declarator.start) {
             decls.insert(
                 variable.declarator.start,
@@ -85,13 +94,6 @@ pub fn prescan(
             );
             by_symbol.insert(*symbol, variable.declarator.start);
             inits.insert((variable.init.start, variable.init.end));
-            if exported.contains(symbol) {
-                reports.push(
-                    Report::new(Code::SignalExported, variable.declarator)
-                        .arg("signal", scoping.symbol_name(*symbol))
-                        .arg("primitive", variable.primitive.name()),
-                );
-            }
         }
     }
     let mut marker = TopMarker { discarded: HashSet::new() };
@@ -1209,9 +1211,10 @@ pub(crate) fn normalize_ast<'a>(
     syntax: &SyntaxImports,
     pre: &PreScan,
     outcome: &ImportResult<'a>,
+    imported_getters: &ImportedGetters,
     source: &str,
 ) -> bool {
-    if pre.decls.is_empty() && pre.action_callees.is_empty() {
+    if pre.decls.is_empty() && pre.action_callees.is_empty() && imported_getters.is_empty() {
         return false;
     }
     let mut norm = Normalizer {
@@ -1222,11 +1225,67 @@ pub(crate) fn normalize_ast<'a>(
         source,
         targets: &outcome.targets,
         locals: &outcome.locals,
+        imported_getters,
         action_depth: None,
         changed: false,
     };
+    let split = split_exported_setters(allocator, program, pre);
     norm.visit_program(program);
-    norm.changed
+    split || norm.changed
+}
+
+fn split_exported_setters<'a>(
+    allocator: &'a Allocator,
+    program: &mut Program<'a>,
+    pre: &PreScan,
+) -> bool {
+    let builder = AstBuilder::new(allocator);
+    let body = std::mem::replace(&mut program.body, ArenaVec::new_in(&builder));
+    let mut changed = false;
+    for statement in body {
+        let Statement::ExportDeclaration(export) = statement else {
+            program.body.push(statement);
+            continue;
+        };
+        let export = export.unbox();
+        let span = export.span;
+        match export.declaration {
+            Declaration::VariableDeclaration(decl) if declares_setter(&decl, pre) => {
+                let mut specifiers = ArenaVec::new_in(&builder);
+                for declarator in &decl.declarations {
+                    if let BindingPattern::BindingIdentifier(id) = &declarator.id {
+                        specifiers.push(ExportSpecifier::new(
+                            SPAN,
+                            ModuleExportName::new_identifier_reference(SPAN, id.name, &builder),
+                            ModuleExportName::new_identifier_name(SPAN, id.name, &builder),
+                            ImportOrExportKind::Value,
+                            &builder,
+                        ));
+                    }
+                }
+                program.body.push(Statement::VariableDeclaration(decl));
+                program.body.push(Statement::new_export_named_declaration(
+                    SPAN,
+                    specifiers,
+                    ImportOrExportKind::Value,
+                    &builder,
+                ));
+                changed = true;
+            }
+            declaration => {
+                program.body.push(Statement::new_export_declaration(span, declaration, &builder));
+            }
+        }
+    }
+    changed
+}
+
+fn declares_setter(declaration: &VariableDeclaration<'_>, pre: &PreScan) -> bool {
+    declaration.declarations.iter().all(|d| matches!(d.id, BindingPattern::BindingIdentifier(_)))
+        && declaration
+            .declarations
+            .iter()
+            .any(|d| pre.decls.get(&d.span.start).is_some_and(|plan| plan.setter.is_some()))
 }
 
 struct Normalizer<'x, 'p, 's, 'a> {
@@ -1237,6 +1296,7 @@ struct Normalizer<'x, 'p, 's, 'a> {
     source: &'p str,
     targets: &'x HashMap<SymbolId, &'a str>,
     locals: &'x [Option<&'a str>; 3],
+    imported_getters: &'x ImportedGetters,
     action_depth: Option<u32>,
     changed: bool,
 }
@@ -1404,7 +1464,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         let Expression::Identifier(id) = it else { return false };
         let Some(reference) = id.reference_id.get() else { return false };
         let Some(symbol) = self.scoping.get_reference(reference).symbol_id() else { return false };
-        if self.decl_plan(symbol).is_none() {
+        if self.decl_plan(symbol).is_none() && !self.imported_getters.bindings.contains(&symbol) {
             return false;
         }
         if self.scoping.get_reference(reference).flags().is_write() {
@@ -1413,6 +1473,26 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         let span = id.span;
         let text: &'a str = self.alloc.alloc_str(id.name.as_str());
         *it = getter_call(self.alloc, span, text);
+        self.changed = true;
+        true
+    }
+
+    fn normalize_namespace_read(&mut self, it: &mut Expression<'a>) -> bool {
+        let Expression::StaticMemberExpression(member) = it else { return false };
+        if member.optional {
+            return false;
+        }
+        let Expression::Identifier(object) = &member.object else { return false };
+        let Some(reference) = object.reference_id.get() else { return false };
+        let Some(symbol) = self.scoping.get_reference(reference).symbol_id() else { return false };
+        let getters = self.imported_getters;
+        let Some(names) = getters.members.get(&symbol) else { return false };
+        if !names.contains(member.property.name.as_str()) {
+            return false;
+        }
+        let span = member.span;
+        let read = it.take_in(&self.alloc);
+        *it = call_expr(self.alloc, span, read, ArenaVec::new_in(&self.alloc));
         self.changed = true;
         true
     }
@@ -1805,6 +1885,10 @@ impl<'a> VisitMut<'a> for Normalizer<'_, '_, '_, 'a> {
             }
         } else if matches!(it, Expression::AwaitExpression(_)) {
             if self.normalize_await(it) {
+                return;
+            }
+        } else if matches!(it, Expression::StaticMemberExpression(_)) {
+            if self.normalize_namespace_read(it) {
                 return;
             }
         }

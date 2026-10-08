@@ -202,17 +202,17 @@ catalog! {
             good: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport const view = <button onClick={() => (count += 1)}>{count}</button>;\n",
         },
     }
-    SignalExported {
-        name: "SIGNAL_EXPORTED",
+    SignalDefaultExport {
+        name: "SIGNAL_DEFAULT_EXPORT",
         severity: Error,
-        title: "`signal` or `computed` exported",
-        message: "`{signal}` is a `{primitive}` and cannot be exported: an importing module cannot know it is reactive, so it would read a getter function or lose updates.",
-        explanation: "`signal` and `computed` variables exist only in the file that declares them; the compiler rewrites their uses there and nowhere else. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.",
-        repair: "Keep the variable private and export a function that reads it, or hold the shared state in a `store`.",
+        title: "`signal` or `computed` as the default export",
+        message: "`{signal}` is a `{primitive}` and cannot be the default export: a default import carries no reactive facts, so it would read a getter function or a value that never updates.",
+        explanation: "Named exports of `signal` and `computed` variables are reactive: importers read them as values. The default export is not analyzed across modules, so it is refused. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.",
+        repair: "Export it by name: `export let count = signal(0)`, or export a function that reads it.",
         fix: None,
         example: Pair {
-            bad: "import { signal } from \"reze-js\";\n\nexport let count = signal(0);\n",
-            good: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport const readCount = () => count;\n",
+            bad: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport default count;\n",
+            good: "import { signal } from \"reze-js\";\n\nexport let count = signal(0);\n",
         },
     }
     SignalAssignPattern {
