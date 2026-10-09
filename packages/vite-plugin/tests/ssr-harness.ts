@@ -1,11 +1,9 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { createServer } from "node:http";
-import type { Server } from "node:http";
 import { extname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { Page } from "playwright";
-import { createNodeListener } from "reze-js/node";
+import { serve } from "reze-js/server";
 import { createServer as createDevServer } from "vite";
 import type { Plugin } from "vite";
 
@@ -84,19 +82,20 @@ function staticFile(root: string, pathname: string): string | undefined {
   return existsSync(file) && statSync(file).isFile() ? file : undefined;
 }
 
-export function serveSsrApp(select: () => SsrBuild): Promise<SsrOrigin> {
-  const server: Server = createServer((req, res) => {
-    const build = select();
-    const { pathname } = new URL(req.url ?? "/", "http://127.0.0.1");
-    const file = staticFile(build.clientDir, pathname);
-    if (file === undefined) {
-      createNodeListener(build.handler)(req, res);
-      return;
-    }
-    res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
-    res.end(readFileSync(file));
-  });
-  return listen(server);
+export async function serveSsrApp(select: () => SsrBuild): Promise<SsrOrigin> {
+  const server = await serve(
+    async (request) => {
+      const build = select();
+      const { pathname } = new URL(request.url);
+      const file = staticFile(build.clientDir, pathname);
+      if (file === undefined) return build.handler(request);
+      return new Response(readFileSync(file), {
+        headers: { "content-type": MIME[extname(file)] ?? "application/octet-stream" },
+      });
+    },
+    { port: 0, hostname: "127.0.0.1" },
+  );
+  return { origin: `http://127.0.0.1:${server.port}`, close: () => server.close() };
 }
 
 export async function startDevServer(fixtureDir: string): Promise<SsrOrigin> {
@@ -111,23 +110,6 @@ export async function startDevServer(fixtureDir: string): Promise<SsrOrigin> {
   const local = server.resolvedUrls?.local[0];
   if (local === undefined) throw new Error("[reze] dev server did not report a local url");
   return { origin: local.replace(/\/$/, ""), close: () => server.close() };
-}
-
-function listen(server: Server): Promise<SsrOrigin> {
-  const { promise, resolve, reject } = Promise.withResolvers<SsrOrigin>();
-  server.once("error", reject);
-  server.listen(0, "127.0.0.1", () => {
-    const address = server.address();
-    const port = typeof address === "object" && address !== null ? address.port : 0;
-    resolve({
-      origin: `http://127.0.0.1:${port}`,
-      close: () =>
-        new Promise<void>((done, fail) => {
-          server.close((error) => (error ? fail(error) : done()));
-        }),
-    });
-  });
-  return promise;
 }
 
 export async function readChunks(response: Response): Promise<string[]> {

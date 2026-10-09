@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { ClientModules } from "reze-js/internal/html";
-import { createNodeListener } from "reze-js/node";
+import { createNodeListener } from "reze-js/server";
 import { isRunnableDevEnvironment } from "vite";
 import type { Connect, EnvironmentModuleGraph, EnvironmentModuleNode, ViteDevServer } from "vite";
 

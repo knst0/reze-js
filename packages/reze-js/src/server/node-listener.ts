@@ -3,9 +3,11 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 
+import type { RequestHandler } from "./shared";
+
 export type NodeListener = (req: IncomingMessage, res: ServerResponse) => void;
 
-export function createNodeListener(handler: (request: Request) => Promise<Response>): NodeListener {
+export function createNodeListener(handler: RequestHandler): NodeListener {
   return (req, res) => {
     const controller = new AbortController();
     res.once("close", () => {

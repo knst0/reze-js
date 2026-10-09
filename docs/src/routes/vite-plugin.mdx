@@ -221,19 +221,17 @@ The client and the server must come from the same build. The server writes a bui
 
 ### Serve the handler
 
-`handler` takes a web `Request`. It answers `302` for a route redirect, `404` with `Not Found` for a path that no route matches, and `500` with `Internal Server Error` when rendering fails before the first byte. The package `reze-js/node` adapts it to Node's HTTP server. The next sample is a fragment, because `dist/server/entry.js` exists only after a build:
+`handler` takes a web `Request`. It answers `302` for a route redirect, `404` with `Not Found` for a path that no route matches, and `500` with `Internal Server Error` when rendering fails before the first byte. `reze-js/server` picks the implementation with export conditions (`bun`, `deno`, `node`), not with runtime detection in code, so a runtime without a matching condition fails at import. The next sample is a fragment, because `dist/server/entry.js` exists only after a build:
 
 ```ts fragment
-import { createServer } from "node:http";
-
-import { createNodeListener } from "reze-js/node";
+import { serve } from "reze-js/server";
 
 import { handler } from "../dist/server/entry.js";
 
-createServer(createNodeListener(handler)).listen(3000);
+await serve(handler, { port: 3000 });
 ```
 
-`createNodeListener` aborts the request's `signal` when the client disconnects, and the render stops. Serve the client output on the same origin, for example with your host's static file support in front of the handler.
+`serve(handler, options)` resolves to `{ port, hostname, close() }`. `port` defaults to `3000`; pass `0` to get an ephemeral port and read the bound one from the result. On Node.js, `createNodeListener(handler)` from `reze-js/server` returns a request listener for an existing `http` server or a Connect middleware. Its request's `signal` aborts when the client disconnects, and the render stops. Serve the client output on the same origin, for example with your host's static file support in front of the handler.
 
 ### Streaming
 

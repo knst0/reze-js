@@ -42,9 +42,11 @@
       "types": "./dist/internal/client.d.ts",
       "import": "./dist/internal/client.js"
     },
-    "./node": {
-      "types": "./dist/node.d.ts",
-      "import": "./dist/node.js"
+    "./server": {
+      "types": "./dist/server/node.d.ts",
+      "bun": "./dist/server/bun.js",
+      "deno": "./dist/server/deno.js",
+      "node": "./dist/server/node.js"
     }
   },
   "publishConfig": {
