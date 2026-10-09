@@ -61,7 +61,7 @@ jobs:
           case "$base" in */) ;; *) base="$base/" ;; esac
           echo "DOCS_BASE=$base" >> "$GITHUB_ENV"
       - name: Build the docs
-        run: pnpm --filter @rezejs/docs exec vite build --base "$DOCS_BASE"
+        run: pnpm --filter @rezejs/docs exec vp build --base "$DOCS_BASE"
       - name: Prepare the Pages artifact
         run: |
           touch docs/dist/.nojekyll
