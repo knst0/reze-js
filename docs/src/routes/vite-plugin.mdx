@@ -191,7 +191,7 @@ export default defineConfig({
         template: "index.html",
         selector: "#app",
         timeoutMs: 30000,
-        outDir: "dist-server",
+        outDir: "dist/server",
       },
     }),
   ],
@@ -206,7 +206,7 @@ The `ssr` options are:
 | `template`  | `string` | `"index.html"`  | HTML template for every response. It must contain exactly one `<script type="module" src="/@reze/client.js">` and one element whose `id` matches `selector`. |
 | `selector`  | `string` | `"#app"`        | Mount element. The value must be `#` followed by an ASCII identifier.                                                                                        |
 | `timeoutMs` | `number` | `30000`         | Time one request has to finish rendering, in milliseconds. The value must be finite and greater than zero.                                                   |
-| `outDir`    | `string` | `"dist-server"` | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers.                           |
+| `outDir`    | `string` | `"dist/server"` | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers.                           |
 
 When you set both `ssr` and `ssg`, they must use the same `entry`, `template`, and `selector`. Otherwise the plugin fails with `[reze] ssg and ssr must use the same entry, template and selector`.
 
@@ -214,21 +214,21 @@ When you set both `ssr` and `ssg`, they must use the same `entry`, `template`, a
 
 `vite build` renders the HTML environment, builds the client, and then writes two directories:
 
-- The client output, in `build.outDir`, serves from your static host. It also contains `reze-assets.json`. See [Work with a service worker](#work-with-a-service-worker).
-- The server output, in `ssr.outDir`, contains `entry.js`, which exports `handler`, and the files it imports. Run it with any runtime that provides the web `Request` and `Response`.
+- The client output, in `build.outDir` (`dist/client` when `ssr` is set and `build.outDir` is not), serves from your static host. It also contains `reze-assets.json`. See [Work with a service worker](#work-with-a-service-worker).
+- The server output, in `ssr.outDir` (`dist/server` by default), contains `entry.js`, which exports `handler`, and the files it imports. Run it with any runtime that provides the web `Request` and `Response`. The two directories must not overlap: the server directory is replaced on every build, and the client directory is served to browsers. The build fails with `[reze] ssr.outDir ... overlaps build.outDir` otherwise.
 
 The client and the server must come from the same build. The server writes a build ID into every document, and a page that navigates to a document with a different build ID loads the document fully instead of swapping it.
 
 ### Serve the handler
 
-`handler` takes a web `Request`. It answers `302` for a route redirect, `404` with `Not Found` for a path that no route matches, and `500` with `Internal Server Error` when rendering fails before the first byte. The package `reze-js/node` adapts it to Node's HTTP server. The next sample is a fragment, because `dist-server/entry.js` exists only after a build:
+`handler` takes a web `Request`. It answers `302` for a route redirect, `404` with `Not Found` for a path that no route matches, and `500` with `Internal Server Error` when rendering fails before the first byte. The package `reze-js/node` adapts it to Node's HTTP server. The next sample is a fragment, because `dist/server/entry.js` exists only after a build:
 
 ```ts fragment
 import { createServer } from "node:http";
 
 import { createNodeListener } from "reze-js/node";
 
-import { handler } from "../dist-server/entry.js";
+import { handler } from "../dist/server/entry.js";
 
 createServer(createNodeListener(handler)).listen(3000);
 ```

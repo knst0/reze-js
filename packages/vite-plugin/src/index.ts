@@ -26,7 +26,7 @@ export interface Options {
   fileRoutes?: boolean | FileRoutesOptions;
   /** Static-site generation: a production build that prerenders each page with the server renderer. Absent by default. */
   ssg?: SsgOptions;
-  /** Request-time rendering: builds `dist-server/entry.js`, exporting a web `fetch` handler. Absent by default. */
+  /** Request-time rendering: builds `dist/server/entry.js`, exporting a web `fetch` handler. Absent by default. */
   ssr?: SsrOptions;
   profile?: {
     /** Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. */

@@ -1,3 +1,5 @@
+import { isAbsolute, relative, sep } from "node:path";
+
 export type StaticParams = Readonly<Record<string, string | readonly string[] | undefined>>;
 
 export type StaticPathsValue = readonly StaticParams[] | (() => readonly StaticParams[] | PromiseLike<readonly StaticParams[]>);
@@ -41,7 +43,8 @@ export interface ResolvedSsrOptions {
 export const SelectorPattern = /^#[A-Za-z_][A-Za-z0-9_-]*$/;
 
 const TimeoutDefault = 30_000;
-const OutDirDefault = "dist-server";
+const OutDirDefault = "dist/server";
+export const ClientOutDirDefault = "dist/client";
 
 function checkEntry(prefix: string, entry: unknown): void {
   if (typeof entry !== "string" || entry.length === 0) {
@@ -134,4 +137,17 @@ export async function resolvePathsCallbacks(
     out[pattern] = list;
   }
   return out;
+}
+
+export function assertDisjointOutDirs(clientOutDir: string, ssrOutDir: string): void {
+  if (isInside(clientOutDir, ssrOutDir) || isInside(ssrOutDir, clientOutDir)) {
+    throw new Error(
+      `[reze] ssr.outDir ${JSON.stringify(ssrOutDir)} overlaps build.outDir ${JSON.stringify(clientOutDir)}: the server bundle replaces its directory, and build.outDir is served to browsers. Set ssr.outDir to a separate directory, such as "dist/server"`,
+    );
+  }
+}
+
+function isInside(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }

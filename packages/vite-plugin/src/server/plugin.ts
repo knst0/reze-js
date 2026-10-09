@@ -33,7 +33,13 @@ import { captureOutput } from "./capture";
 import { createDevDocumentMiddleware } from "./dev";
 import { resolveAppMode } from "./export-graph";
 import type { AppMode } from "./export-graph";
-import { assertSharedServerOptions, resolveSsgOptions, resolveSsrOptions } from "./options";
+import {
+  ClientOutDirDefault,
+  assertDisjointOutDirs,
+  assertSharedServerOptions,
+  resolveSsgOptions,
+  resolveSsrOptions,
+} from "./options";
 import type { ResolvedSsgOptions, ResolvedSsrOptions, SsgOptions, SsrOptions } from "./options";
 import { validateTemplate } from "./template";
 
@@ -138,6 +144,9 @@ export function createServerPlugin(
       if (config.build?.lib !== undefined && config.build.lib !== false) {
         throw new Error(`[reze] ${label} does not support library mode`);
       }
+      if (input.ssr !== undefined && config.build?.outDir === undefined) {
+        config.build = { ...config.build, outDir: ClientOutDirDefault };
+      }
       const environments = config.environments ?? {};
       const htmlEnv: EnvironmentOptions = environments[HtmlEnv] ?? {};
       const htmlBuild = htmlEnv.build ?? {};
@@ -216,6 +225,7 @@ export function createServerPlugin(
       ssgOptions = input.ssg === undefined ? undefined : resolveSsgOptions(input.ssg);
       const resolvedSsr = input.ssr === undefined ? undefined : resolveSsrOptions(input.ssr);
       ssrOptions = resolvedSsr === undefined ? undefined : { ...resolvedSsr, outDir: resolve(root, resolvedSsr.outDir) };
+      if (ssrOptions !== undefined) assertDisjointOutDirs(outDir, ssrOptions.outDir);
       if (ssgOptions !== undefined && ssrOptions !== undefined) assertSharedServerOptions(ssgOptions, ssrOptions);
       primary = ssgOptions ?? ssrOptions;
       if (primary === undefined) throw new Error("[reze] server plugin needs ssg or ssr options");
