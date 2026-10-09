@@ -8,6 +8,7 @@
   },
   "devDependencies": {
     "@rezejs/vite-plugin": "workspace:*",
-    "vite": "^8.3.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

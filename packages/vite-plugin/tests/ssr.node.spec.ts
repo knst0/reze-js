@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Browser } from "playwright";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "vite-plus/test";
 
 import { launchEngine, openPage, resolveBrowsers, waitFor } from "./ssg-harness";
 import type { SsgBrowserName } from "./ssg-harness";

@@ -1,5 +1,5 @@
 import { flush, onCleanup } from "@rezejs/signals";
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { render } from "../src/component";
 import { hotComponent } from "../src/hot";

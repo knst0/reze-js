@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { build, createServer } from "vite";
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import llms from "./llms";
 

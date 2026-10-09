@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "vite-plus/test";
 
 import { compileRoutes, matchBranches, matchPath } from "../src/match";
 import type { RouteDefinition } from "../src/types";

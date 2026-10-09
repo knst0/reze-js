@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import type { BenchFn, TestContext } from "vitest";
+import type { BenchFn, TestContext } from "vite-plus/test";
 
 const resultsDir = join(import.meta.dirname, "..", "results");
 const isUpdate = process.env.REZE_BENCH_UPDATE === "1";

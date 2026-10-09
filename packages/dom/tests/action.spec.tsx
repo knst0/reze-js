@@ -2,7 +2,7 @@ import { action as rawAction } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import * as R from "reze-js";
 import { action, action as act, signal, effect, For, Show, store } from "reze-js";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 

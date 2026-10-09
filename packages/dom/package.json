@@ -40,8 +40,8 @@
   },
   "scripts": {
     "bench:codspeed": "node --import ../../benches/kit/production-env.mjs benches/codspeed.ts",
-    "build": "tsdown",
-    "test": "vitest run"
+    "build": "vp pack",
+    "test": "vp test run"
   },
   "dependencies": {
     "@rezejs/signals": "workspace:^",

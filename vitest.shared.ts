@@ -1,8 +1,8 @@
 import { join } from "node:path";
 
-import { playwright } from "@vitest/browser-playwright";
 import type { PluginOption } from "vite";
-import { configDefaults, defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
+import { configDefaults, defineConfig, type TestProjectInlineConfiguration } from "vite-plus";
+import { playwright } from "vite-plus/test/browser-playwright";
 
 type BrowserConfig = NonNullable<TestProjectInlineConfiguration["test"]>["browser"];
 

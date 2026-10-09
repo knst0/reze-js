@@ -43,4 +43,4 @@ jobs:
         if: matrix.vite == '8.0.0'
         env:
           REZE_SSG_BROWSERS: chromium,firefox,webkit
-        run: pnpm exec vitest run --project @rezejs/vite-plugin
+        run: pnpm exec vp test run --project @rezejs/vite-plugin

@@ -2,7 +2,7 @@ import { signal } from "@rezejs/signals";
 import { cleanup, mount, tick } from "@rezejs/testing-library";
 import { For, Match, onCleanup, Show, Switch } from "reze-js";
 import { signal as sig } from "reze-js";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 

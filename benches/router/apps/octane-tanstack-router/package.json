@@ -8,6 +8,7 @@
   },
   "devDependencies": {
     "@octanejs/vite-plugin": "0.1.61",
-    "vite": "^8.3.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

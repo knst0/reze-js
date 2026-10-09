@@ -14,9 +14,8 @@ declare const Deno: {
 };
 
 export async function serve(handler: RequestHandler, options: ServeOptions = {}): Promise<RunningServer> {
-  const server = Deno.serve(
-    { port: options.port ?? DefaultPort, hostname: options.hostname, onListen() {} },
-    (request) => guardedFetch(handler, request),
+  const server = Deno.serve({ port: options.port ?? DefaultPort, hostname: options.hostname, onListen() {} }, (request) =>
+    guardedFetch(handler, request),
   );
   return {
     hostname: server.addr.hostname,

@@ -110,7 +110,7 @@ The following fence declares a route module, so the generated route types apply:
 - Prefer a complete module the reader can paste: imports, an exported component, and no undeclared
   names. Use `file=` instead of `fragment` when the only gap is a sibling module.
 - Show one idea per sample. Cut code that does not serve the sentence before it.
-- Let `oxfmt` lay out samples. Run `pnpm exec oxfmt docs` after editing; NEVER hand-wrap against it.
+- Let `vp fmt` lay out samples. Run `pnpm exec vp fmt docs` after editing; NEVER hand-wrap against it.
 - Introduce each sample with a sentence. End it with a colon if the sample follows directly.
 - Mark omitted code with a comment in the sample's language, such as `// Other routes omitted.`.
   NEVER use `...` or `…` as a placeholder.
@@ -122,11 +122,11 @@ The following fence declares a route module, so the generated route types apply:
 Prove timing, ordering, and update claims by running them. Write a throwaway spec named after the
 page, such as `zz-docs-reactivity.spec.tsx`, run it, then delete it:
 
-| Claim about                                        | Put the spec in                                                                      | Run                                                                                           |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Components, JSX, signals, stores, actions, effects | `packages/dom/tests/`                                                                | `pnpm exec vitest run --project @rezejs/dom packages/dom/tests/zz-docs-<page>.spec.tsx`       |
-| Router behavior                                    | `packages/router/tests/`                                                             | `pnpm exec vitest run --project @rezejs/router packages/router/tests/zz-docs-<page>.spec.tsx` |
-| Compiler output or diagnostics                     | A scratch `.mts` script under `docs/` that calls `compile()` from `@rezejs/compiler` | `node docs/<script>.mts`                                                                      |
+| Claim about                                        | Put the spec in                                                                      | Run                                                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Components, JSX, signals, stores, actions, effects | `packages/dom/tests/`                                                                | `pnpm exec vp test run --project @rezejs/dom packages/dom/tests/zz-docs-<page>.spec.tsx`       |
+| Router behavior                                    | `packages/router/tests/`                                                             | `pnpm exec vp test run --project @rezejs/router packages/router/tests/zz-docs-<page>.spec.tsx` |
+| Compiler output or diagnostics                     | A scratch `.mts` script under `docs/` that calls `compile()` from `@rezejs/compiler` | `node docs/<script>.mts`                                                                       |
 
 `@rezejs/testing-library` provides `mount`, `tick`, `settle`, and `cleanup`. The existing specs in
 those folders show the patterns. These specs run through the Vite plugin, so compiler syntax works
@@ -136,12 +136,12 @@ in them.
 
 Run these from the repository root. Each MUST pass before you finish:
 
-| Check                                    | Command                                                     | Pass condition                                                     |
-| ---------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------ |
-| Packages are current                     | `pnpm build`                                                | Exit code 0. Run it first if you changed or pulled package source. |
-| Samples, links, and diagnostic reference | `pnpm exec vitest run --project @rezejs/docs`               | All tests pass                                                     |
-| Site builds                              | `pnpm --filter @rezejs/docs build`                          | Exit code 0                                                        |
-| Formatting                               | `pnpm exec oxfmt docs`, then `pnpm exec oxfmt --check docs` | No changes reported                                                |
+| Check                                    | Command                                                       | Pass condition                                                     |
+| ---------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Packages are current                     | `pnpm build`                                                  | Exit code 0. Run it first if you changed or pulled package source. |
+| Samples, links, and diagnostic reference | `pnpm exec vp test run --project @rezejs/docs`                | All tests pass                                                     |
+| Site builds                              | `pnpm --filter @rezejs/docs build`                            | Exit code 0                                                        |
+| Formatting                               | `pnpm exec vp fmt docs`, then `pnpm exec vp fmt --check docs` | No changes reported                                                |
 
 A failing sample test prints the compiler's rendered diagnostic or the TypeScript error with the
 sample's page and line. Fix the sample or the claim. NEVER silence a failure by adding `fragment`
@@ -218,9 +218,9 @@ or `expect=` to a sample that should compile cleanly.
 ## Done checklist
 
 - [ ] Every claim traces to a file you read or a test you ran.
-- [ ] `pnpm exec vitest run --project @rezejs/docs` passes.
+- [ ] `pnpm exec vp test run --project @rezejs/docs` passes.
 - [ ] `pnpm --filter @rezejs/docs build` passes.
-- [ ] `pnpm exec oxfmt --check docs` passes.
+- [ ] `pnpm exec vp fmt --check docs` passes.
 - [ ] No `fragment` or `expect=` hides a sample that should compile cleanly.
 - [ ] The topic lives on its owning page; other pages link to it.
 - [ ] Title and `description` are present; headings follow [Page structure](#page-structure).

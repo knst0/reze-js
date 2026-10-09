@@ -26,8 +26,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown",
-    "test": "vitest run"
+    "build": "vp pack",
+    "test": "vp test run"
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",
@@ -44,7 +44,8 @@
     "remark-frontmatter": "^5.0.0",
     "remark-mdx-frontmatter": "^6.0.0",
     "reze-js": "workspace:*",
-    "vite": "^8.3.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   },
   "peerDependencies": {
     "@rezejs/router": "*",

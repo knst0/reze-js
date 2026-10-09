@@ -23,8 +23,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown",
-    "test": "vitest run"
+    "build": "vp pack",
+    "test": "vp test run"
   },
   "dependencies": {
     "reze-js": "workspace:*"

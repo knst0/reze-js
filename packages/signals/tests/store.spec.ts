@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { computed, effect, flush, readonly, store } from "../src";
 import { renderEffect } from "../src/render";

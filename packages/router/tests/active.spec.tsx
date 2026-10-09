@@ -1,7 +1,7 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import { Show, type JSX } from "reze-js";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 import {
   createBrowserHistory,

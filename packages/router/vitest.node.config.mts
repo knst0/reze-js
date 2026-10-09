@@ -1,9 +1,9 @@
 import { join } from "node:path";
 
-import { defineConfig } from "vitest/config";
+import { defineConfig } from "vite-plus";
 
 import { nodeSpecs, sourceAliases } from "../../vitest.shared";
-import { rezeCompiler } from "./tsdown.config.mjs";
+import { rezeCompiler } from "./reze-compiler-plugin";
 
 const root = join(import.meta.dirname, "..", "..");
 export default defineConfig({

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import type { Nodes, Table } from "mdast";
 import { toString } from "mdast-util-to-string";
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { readPages } from "./pages";
 

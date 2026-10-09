@@ -3,13 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "build": "vp build"
   },
   "dependencies": {
     "solid-js": "1.9.15"
   },
   "devDependencies": {
-    "vite": "^8.3.0",
-    "vite-plugin-solid": "2.11.14"
+    "vite": "catalog:",
+    "vite-plugin-solid": "2.11.14",
+    "vite-plus": "catalog:"
   }
 }

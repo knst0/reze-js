@@ -9,7 +9,7 @@ import type { Browser, Page } from "playwright";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkMdxFrontmatter from "remark-mdx-frontmatter";
 import { createServer, type Plugin } from "vite";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 
 import reze, { DEFAULT_ROUTE_EXTENSIONS } from "../src/index";
 import {

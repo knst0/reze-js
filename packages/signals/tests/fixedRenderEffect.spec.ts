@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vite-plus/test";
 
 import { catchError, flush, root, signal } from "../src/index";
 import { fixedRenderEffect } from "../src/render";

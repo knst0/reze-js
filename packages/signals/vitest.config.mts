@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { rolldown } from "rolldown";
-import { configDefaults, defineConfig, type Plugin } from "vitest/config";
+import { configDefaults, defineConfig, type Plugin } from "vite-plus";
 
 import { browserConfig, nodeSpecs } from "../../vitest.shared";
 

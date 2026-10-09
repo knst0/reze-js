@@ -3,13 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "build": "vp build"
   },
   "dependencies": {
     "octane": "0.6.1"
   },
   "devDependencies": {
     "@octanejs/vite-plugin": "0.1.61",
-    "vite": "^8.3.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

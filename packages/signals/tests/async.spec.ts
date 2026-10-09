@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { asyncComputed, effect, flush, root, signal, type AsyncComputed } from "../src";
 

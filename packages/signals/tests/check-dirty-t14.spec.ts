@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { FlagDirty, FlagMutable, FlagNone, FlagPending } from "../src/flags";
 import { checkDirty, link, type ReactiveNode } from "../src/graph";

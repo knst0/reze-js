@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "build": "vp build"
   },
   "dependencies": {
     "mobx": "7.0.5",
@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "6.1.1",
-    "vite": "^8.3.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

@@ -2,7 +2,7 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { createBuilder } from "vite";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test } from "vite-plus/test";
 
 import reze from "../src/index";
 import { expectBuildFails } from "./ssg-harness";

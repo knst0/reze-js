@@ -1,7 +1,7 @@
 import { signal as make } from "@rezejs/signals";
 import { cleanup, mount, tick } from "@rezejs/testing-library";
 import { signal } from "reze-js";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 import { ExternalCounter, setExtCount } from "./fixtures/exported-signals";
 

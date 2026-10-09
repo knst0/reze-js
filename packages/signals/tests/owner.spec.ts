@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { effect, flush, getOwner, onCleanup, root, runWithOwner, signal, untrack, type Owner } from "../src";
 

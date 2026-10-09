@@ -1,6 +1,6 @@
 import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
 import { island, type JSX } from "reze-js";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vite-plus/test";
 
 afterEach(() => {
   try {

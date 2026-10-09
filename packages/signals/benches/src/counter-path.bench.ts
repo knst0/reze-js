@@ -1,5 +1,5 @@
 import { computed, effect, flush, root, signal } from "@rezejs/signals";
-import { test } from "vitest";
+import { test } from "vite-plus/test";
 
 import { measure } from "./_baseline";
 

@@ -1,7 +1,7 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
 import { effect, mergeProps, omitProps, render, splitProps, type ClassValue, type JSX } from "reze-js";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 

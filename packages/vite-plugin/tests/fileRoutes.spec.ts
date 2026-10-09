@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vite-plus/test";
 
 import reze, { type FileRoutesOptions } from "../src";
 import { buildSsgFixture, listBuiltFiles } from "./ssg-harness";

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { parse } from "parse5";
 import type { DefaultTreeAdapterMap } from "parse5";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vite-plus/test";
 
 import { buildClientRegistry } from "../src/server/assets";
 import { resolveAppMode } from "../src/server/export-graph";

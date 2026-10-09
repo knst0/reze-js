@@ -1,5 +1,5 @@
 import { cleanup, mount, tick } from "@rezejs/testing-library";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 import { View } from "./fixtures/cross-module/view";
 afterEach(cleanup);

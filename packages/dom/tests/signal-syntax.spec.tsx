@@ -2,7 +2,7 @@ import { computed as rawComputed, signal as rawSignal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
 import * as R from "reze-js";
 import { computed, computed as derive, signal, signal as sig, effect, For, Show, type JSX } from "reze-js";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 

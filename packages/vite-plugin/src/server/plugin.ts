@@ -33,13 +33,7 @@ import { captureOutput } from "./capture";
 import { createDevDocumentMiddleware } from "./dev";
 import { resolveAppMode } from "./export-graph";
 import type { AppMode } from "./export-graph";
-import {
-  ClientOutDirDefault,
-  assertDisjointOutDirs,
-  assertSharedServerOptions,
-  resolveSsgOptions,
-  resolveSsrOptions,
-} from "./options";
+import { ClientOutDirDefault, assertDisjointOutDirs, assertSharedServerOptions, resolveSsgOptions, resolveSsrOptions } from "./options";
 import type { ResolvedSsgOptions, ResolvedSsrOptions, SsgOptions, SsrOptions } from "./options";
 import { validateTemplate } from "./template";
 

@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { computed, effect, flush, root, signal } from "../src";
 import { profileComponent, setProfileHook, startProfileSession, stopProfileSession, type ProfileEvent } from "../src/profile";

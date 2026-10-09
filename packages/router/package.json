@@ -36,8 +36,8 @@
   },
   "scripts": {
     "bench:codspeed": "node --import ../../benches/kit/production-env.mjs benches/codspeed.ts",
-    "build": "tsdown",
-    "test": "vitest run && vitest run --config vitest.node.config.mts"
+    "build": "vp pack",
+    "test": "vp test run && vp test run --config vitest.node.config.mts"
   },
   "dependencies": {
     "@rezejs/dom": "workspace:^",
@@ -49,6 +49,7 @@
     "@rezejs/compiler": "workspace:*",
     "@rezejs/testing-library": "workspace:*",
     "tinybench": "^6.2.0",
-    "vite": "^8.3.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

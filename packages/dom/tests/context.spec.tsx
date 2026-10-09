@@ -1,7 +1,7 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
 import { createContext, useContext } from "reze-js";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 

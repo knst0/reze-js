@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "build": "vp build"
   },
   "dependencies": {
     "@rezejs/signals": "workspace:*",
@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@rezejs/vite-plugin": "workspace:*",
-    "vite": "^8.3.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

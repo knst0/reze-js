@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 import { rolldown } from "rolldown";
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 const entry = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const profile = fileURLToPath(new URL("../src/profile.ts", import.meta.url));

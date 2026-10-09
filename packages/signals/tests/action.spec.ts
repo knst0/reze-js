@@ -1,5 +1,5 @@
 import { settle } from "@rezejs/testing-library";
-import { expect, test, vi } from "vitest";
+import { expect, test, vi } from "vite-plus/test";
 
 import { action, computed, effect, flush, store, type Action, type Run } from "../src";
 

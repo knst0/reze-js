@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 
 import { compile, type CompileTarget } from "@rezejs/compiler";
 import { DEFAULT_ROUTE_EXTENSIONS, routesDts, scanRoutes } from "@rezejs/router/fs";
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { collectExamples, readPages, type Example } from "./pages";
 

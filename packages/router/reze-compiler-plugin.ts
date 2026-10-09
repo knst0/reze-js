@@ -1,5 +1,5 @@
 import { compile } from "@rezejs/compiler";
-import { defineConfig, type Rolldown } from "tsdown";
+import type { Rolldown } from "vite-plus";
 
 export const rezeCompiler: Rolldown.Plugin = {
   name: "reze-compiler",
@@ -15,12 +15,3 @@ export const rezeCompiler: Rolldown.Plugin = {
     return { code: result.code ?? code, map: result.map };
   },
 };
-
-export default defineConfig({
-  entry: ["src/index.ts", "src/fs/index.ts", "src/internal/server.ts", "src/internal/swap.ts"],
-  platform: "neutral",
-  unbundle: true,
-  deps: { neverBundle: [/^node:/] },
-  plugins: [rezeCompiler],
-  dts: { tsconfig: "./tsconfig.build.json" },
-});

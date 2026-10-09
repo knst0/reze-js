@@ -1,7 +1,7 @@
 import reze from "@rezejs/vite-plugin";
-import { defineConfig } from "vite";
+import { defineConfig, lazyPlugins } from "vite-plus";
 
 export default defineConfig({
-  plugins: [reze({ ssg: { entry: "src/app.tsx" } })],
+  plugins: lazyPlugins(() => [reze({ ssg: { entry: "src/app.tsx" } })]),
   build: { modulePreload: { polyfill: false } },
 });

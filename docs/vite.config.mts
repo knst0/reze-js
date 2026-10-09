@@ -5,14 +5,14 @@ import rehypeSlug from "rehype-slug";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
 import remarkMdxFrontmatter from "remark-mdx-frontmatter";
-import { defineConfig } from "vite";
+import { defineConfig, lazyPlugins } from "vite-plus";
 
 import frontmatterRoute from "./plugins/frontmatter-route.ts";
 import llms from "./plugins/llms.ts";
 import rehypeSugarHigh from "./plugins/rehype-sugar-high.ts";
 
 export default defineConfig({
-  plugins: [
+  plugins: lazyPlugins(() => [
     {
       ...mdx({
         jsx: true,
@@ -26,7 +26,7 @@ export default defineConfig({
     reze({ fileRoutes: true, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"], ssg: { entry: "src/app.tsx" } }),
     tailwindcss(),
     llms(),
-  ],
+  ]),
   server: {
     port: 3000,
   },

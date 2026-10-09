@@ -1,5 +1,5 @@
 import { testSuite, SkipTest, setExpect, type ReactiveFramework } from "reactive-framework-test-suite";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "vite-plus/test";
 
 import { computed, effect, effectScope, flush, signal, untrack } from "../src";
 

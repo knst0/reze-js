@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { headingAnchors, internalLinks, readPages } from "./pages";
 

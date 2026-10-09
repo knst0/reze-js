@@ -1,7 +1,7 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, fire, mount, tick } from "@rezejs/testing-library";
 import { dynamic, dynamicElement, onCleanup } from "reze-js";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 

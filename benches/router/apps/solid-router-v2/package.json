@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@solidjs/vite-plugin": "3.0.0-next.46",
-    "vite": "^8.3.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

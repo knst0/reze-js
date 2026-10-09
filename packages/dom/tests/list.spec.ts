@@ -1,6 +1,6 @@
 import { signal } from "@rezejs/signals";
 import { setProfileHook, type ProfileNodeKind } from "@rezejs/signals/profile";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test } from "vite-plus/test";
 
 import { render } from "../src/component";
 import { list } from "../src/list";
