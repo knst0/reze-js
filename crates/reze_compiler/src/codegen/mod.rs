@@ -1,10 +1,10 @@
 mod calls;
+mod components;
 mod client;
 mod composite;
 mod continuation;
 pub mod hot;
 mod html;
-mod hydrate;
 mod module_scope;
 mod native;
 mod optimize;
@@ -81,20 +81,11 @@ impl<'a, 'm> EmitContext<'a, 'm> {
 
     pub fn emit(mut self, program: &mut Program<'a>, hot_plan: Option<&hot::HotPlan>) -> bool {
         Replace { ctx: &mut self }.visit_program(program);
-        if self.options.target != CompileTarget::Client {
+        if self.options.target == CompileTarget::Html {
             module_scope::apply(&mut self, program);
-            let ast = Ast::new(self.allocator);
-            let module = ast.string(
-                self.ir.module_id.as_deref().expect("managed target has canonical module identity"),
-            );
-            let source = if self.options.target == CompileTarget::Html {
-                "reze-js/internal/html"
-            } else {
-                "reze-js/internal/hydrate"
-            };
-            let mark = self.call(source, "markModule", [module]);
-            self.hoisted.push(ast.stmt(mark));
-            self.changed = true;
+        }
+        if self.options.target != CompileTarget::Client {
+            components::register(&mut self, program);
         }
         program.body.retain(|statement| !matches!(statement,
             Statement::ImportDeclaration(import) if self.ir.islands.prunes_import(import) || self.facts.prunes_import(import)
@@ -102,17 +93,7 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         if !self.delegated.is_empty() {
             let ast = Ast::new(self.allocator);
             let events = ast.array(self.delegated.iter().map(|event| ast.string(event)));
-            let call = if self.options.target == CompileTarget::Hydrate {
-                let module = ast.string(
-                    self.ir
-                        .module_id
-                        .as_deref()
-                        .expect("managed target has canonical module identity"),
-                );
-                self.call("reze-js/internal/hydrate", "stageDelegation", [module, events])
-            } else {
-                self.call(RUNTIME_MODULE, "delegateEvents", [events])
-            };
+            let call = self.call(RUNTIME_MODULE, "delegateEvents", [events]);
             program.body.push(ast.stmt(call));
         }
         if let Some(plan) = hot_plan {
@@ -160,9 +141,12 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         self.allocator.alloc_str(&self.namer.fresh(base))
     }
 
+    pub fn helper_name(&mut self, source: &str, export: &str) -> &'a str {
+        self.helpers.require(self.allocator, &mut self.namer, source, export)
+    }
+
     pub fn helper(&mut self, source: &str, export: &str) -> Expression<'a> {
-        let name = self.helpers.require(self.allocator, &mut self.namer, source, export);
-        Ast::new(self.allocator).ident(name)
+        Ast::new(self.allocator).ident(self.helper_name(source, export))
     }
 
     pub fn call(
@@ -194,8 +178,7 @@ impl<'a, 'm> EmitContext<'a, 'm> {
                 unreachable!("composite view emitted above")
             };
             match self.options.target {
-                CompileTarget::Client => client::emit(self, element),
-                CompileTarget::Hydrate => hydrate::emit(self, view, element),
+                CompileTarget::Client | CompileTarget::Island => client::emit(self, element),
                 CompileTarget::Html => html::emit(self, view, element),
             }
         };
@@ -283,7 +266,7 @@ impl<'a, 'm> EmitContext<'a, 'm> {
                 let test = self.expr(branch.test);
                 let consequent = self.child(&branch.consequent);
                 let alternate = branch.alternate.as_ref().map(|child| self.child(child));
-                if self.options.target == CompileTarget::Client {
+                if self.options.target.runs_in_browser() {
                     let test = if branch.test_is_boolean {
                         test
                     } else {
@@ -315,14 +298,10 @@ impl<'a, 'm> EmitContext<'a, 'm> {
                         [],
                     );
                 }
-                let site = self.range_site(branch.origin, "branch");
+                let site = self.origin_site(branch.origin);
                 let mut args = vec![site, ast.arrow([], test), ast.arrow([], consequent)];
                 args.extend(alternate.map(|value| ast.arrow([], value)));
-                if self.options.target == CompileTarget::Html {
-                    self.call("reze-js/internal/html", "hShow", args)
-                } else {
-                    self.call("reze-js/internal/hydrate", "prepareShow", args)
-                }
+                self.call("reze-js/internal/html", "hShow", args)
             }
         }
     }
@@ -373,8 +352,7 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         if let Some(&name) = self.sites.get(&site.ordinal) {
             return name;
         }
-        let layout = layout(Ast::new(self.allocator), view);
-        self.hoist_site(site, view.origin, layout)
+        self.hoist_site(site, view.origin)
     }
 
     fn origin_site(&mut self, origin: Span) -> Expression<'a> {
@@ -386,36 +364,25 @@ impl<'a, 'm> EmitContext<'a, 'm> {
         let name = if let Some(&name) = self.sites.get(&site.ordinal) {
             name
         } else {
-            self.hoist_site(site, origin, None)
+            self.hoist_site(site, origin)
         };
         Ast::new(self.allocator).ident(name)
     }
 
-    fn range_site(&mut self, origin: Span, kind: &str) -> Expression<'a> {
+    fn site_key(&self, origin: Span) -> String {
         let site = self
             .ir
             .callback_sites
             .get(&(origin.start, origin.end))
-            .expect("optimized range retains its original source site");
-        let name = if let Some(&name) = self.sites.get(&site.ordinal) {
-            name
-        } else {
-            let ast = Ast::new(self.allocator);
-            self.hoist_site(site, origin, Some(ast.object([ast.prop("range", ast.string(kind))])))
-        };
-        Ast::new(self.allocator).ident(name)
+            .expect("managed call retains its original source site");
+        self.ir.sites.as_ref().expect("managed target has source sites").key(*site)
     }
 
-    fn hoist_site(
-        &mut self,
-        site: &SiteId,
-        origin: Span,
-        layout: Option<Expression<'a>>,
-    ) -> &'a str {
+    fn hoist_site(&mut self, site: &SiteId, origin: Span) -> &'a str {
         let ast = Ast::new(self.allocator);
         let name = self.fresh("_site$");
         let (line, column) = self.positions[&origin.start];
-        let mut fields = vec![
+        let fields = vec![
             ast.prop(
                 "key",
                 ast.string(
@@ -435,9 +402,6 @@ impl<'a, 'm> EmitContext<'a, 'm> {
             ast.prop("line", ast.number(f64::from(line))),
             ast.prop("column", ast.number(f64::from(column))),
         ];
-        if let Some(layout) = layout {
-            fields.push(ast.prop("layout", layout));
-        }
         let value = ast.object(fields);
         self.hoisted.push(ast.declaration(VariableDeclarationKind::Const, name, Some(value)));
         self.sites.insert(site.ordinal, name);
@@ -457,74 +421,6 @@ fn unparenthesize(mut expression: Expression<'_>) -> Expression<'_> {
         expression = parenthesized.unbox().expression;
     }
     expression
-}
-
-fn namespace(namespace: Namespace) -> &'static str {
-    match namespace {
-        Namespace::Html => "",
-        Namespace::Svg => "svg",
-        Namespace::MathMl => "math",
-    }
-}
-
-fn layout<'a>(ast: Ast<'a>, view: &View) -> Option<Expression<'a>> {
-    let range = match &view.kind {
-        ViewKind::Element(element) => {
-            let nodes = element.statics.nodes.iter().enumerate().map(|(index, node)| {
-                let mut fields = vec![
-                    ast.prop("parent", node.parent.map_or_else(|| ast.null(), |parent| ast.number(f64::from(parent)))),
-                    ast.prop("children", ast.array(node.children.iter().map(|child| ast.number(f64::from(*child))))),
-                    ast.prop("kind", ast.string(match node.kind { StaticNodeKind::Element => "element", StaticNodeKind::Text => "text", StaticNodeKind::Marker => "marker" })),
-                ];
-                match node.kind {
-                    StaticNodeKind::Element => {
-                        fields.push(ast.prop("tag", ast.string(&node.tag)));
-                        fields.push(ast.prop("ns", ast.string(namespace(node.ns))));
-                        fields.push(ast.prop("attrs", ast.array(node.attrs.iter().map(|attr| ast.array([
-                            ast.string(&attr.name), attr.value.as_ref().map_or_else(|| ast.null(), |value| ast.string(value)),
-                        ])))));
-                    }
-                    StaticNodeKind::Text => {
-                        fields.push(ast.prop("text", ast.string(&node.text)));
-                        if element.props.iter().any(|prop| matches!(prop, ElementProp::Attr(attr) if attr.node as usize == index && matches!(attr.target, AttrTarget::Text))) {
-                            fields.push(ast.prop("dynamic", ast.boolean(true)));
-                        }
-                    }
-                    StaticNodeKind::Marker => {}
-                }
-                ast.object(fields)
-            });
-            let inserts = element.inserts.iter().map(|insert| {
-                ast.object([
-                    ast.prop("slot", ast.number(f64::from(insert.slot))),
-                    ast.prop("parent", ast.number(f64::from(insert.parent))),
-                    ast.prop(
-                        "anchor",
-                        match insert.anchor {
-                            Anchor::Only => ast.string("only"),
-                            Anchor::End => ast.string("end"),
-                            Anchor::Before(index) => ast.number(f64::from(index)),
-                        },
-                    ),
-                ])
-            });
-            return Some(ast.object([
-                ast.prop("tag", ast.string(&element.tag)),
-                ast.prop("ns", ast.string(namespace(element.namespace))),
-                ast.prop("nodes", ast.array(nodes)),
-                ast.prop("inserts", ast.array(inserts)),
-            ]));
-        }
-        ViewKind::Fragment(_) => "fragment",
-        ViewKind::Component(component) if component.island.is_some() => "island",
-        ViewKind::Component(_) => return None,
-        ViewKind::Flow(FlowView::For { .. } | FlowView::Repeat { .. } | FlowView::Rows { .. }) => {
-            "list"
-        }
-        ViewKind::Flow(FlowView::Portal { .. }) => "portal",
-        ViewKind::Flow(_) => "branch",
-    };
-    Some(ast.object([ast.prop("range", ast.string(range))]))
 }
 
 fn source_positions(source: &str, ir: &ModuleIr) -> HashMap<u32, (u32, u32)> {

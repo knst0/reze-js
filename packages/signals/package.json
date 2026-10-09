@@ -19,10 +19,6 @@
         "types": "./dist/index.d.ts",
         "import": "./dist/html/index.js"
       },
-      "reze-hydrate": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/hydrate/index.js"
-      },
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
@@ -30,10 +26,6 @@
       "reze-html": {
         "types": "./dist/profile.d.ts",
         "import": "./dist/html/profile.js"
-      },
-      "reze-hydrate": {
-        "types": "./dist/profile.d.ts",
-        "import": "./dist/hydrate/profile.js"
       },
       "types": "./dist/profile.d.ts",
       "import": "./dist/profile.js"
@@ -43,10 +35,6 @@
         "types": "./dist/render.d.ts",
         "import": "./dist/html/render.js"
       },
-      "reze-hydrate": {
-        "types": "./dist/render.d.ts",
-        "import": "./dist/hydrate/render.js"
-      },
       "types": "./dist/render.d.ts",
       "import": "./dist/render.js"
     },
@@ -54,10 +42,6 @@
       "reze-html": {
         "types": "./dist/internal/continuation.d.ts",
         "import": "./dist/html/internal/continuation.js"
-      },
-      "reze-hydrate": {
-        "types": "./dist/internal/continuation.d.ts",
-        "import": "./dist/hydrate/internal/continuation.js"
       },
       "types": "./dist/internal/continuation.d.ts",
       "import": "./dist/internal/continuation.js"
@@ -67,10 +51,6 @@
         "types": "./dist/internal/scope.d.ts",
         "import": "./dist/html/internal/scope.js"
       },
-      "reze-hydrate": {
-        "types": "./dist/internal/scope.d.ts",
-        "import": "./dist/hydrate/internal/scope.js"
-      },
       "types": "./dist/internal/scope.d.ts",
       "import": "./dist/internal/scope.js"
     },
@@ -78,10 +58,6 @@
       "reze-html": {
         "types": "./dist/internal/resource.d.ts",
         "import": "./dist/html/internal/resource.js"
-      },
-      "reze-hydrate": {
-        "types": "./dist/internal/resource.d.ts",
-        "import": "./dist/hydrate/internal/resource.js"
       },
       "types": "./dist/internal/resource.d.ts",
       "import": "./dist/internal/resource.js"
@@ -93,8 +69,8 @@
   "scripts": {
     "bench": "vitest bench --run",
     "bench:accessor": "node benches/bundled.mjs benches/accessor.ts",
-    "bench:fixed-render": "node benches/bundled.mjs benches/fixed-render.ts",
     "bench:codspeed": "node --import ../../benches/kit/production-env.mjs benches/codspeed.ts",
+    "bench:fixed-render": "node benches/bundled.mjs benches/fixed-render.ts",
     "bench:update": "REZE_BENCH_UPDATE=1 vitest bench --run",
     "build": "tsdown",
     "test": "vitest run && vitest run --config vitest.node.config.mts"

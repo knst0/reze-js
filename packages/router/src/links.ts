@@ -3,14 +3,14 @@ import { isThenable, loadBranch, matchPathname, navigate, parseLocation, pathnam
 const SvgNamespace = "http://www.w3.org/2000/svg";
 const HoverDelayMs = 20;
 
-function anchorOf(event: Event): Element | undefined {
+export function anchorOf(event: Event): Element | undefined {
   for (const node of event.composedPath()) {
     if ((node as Node).nodeName?.toUpperCase() === "A") return node as Element;
   }
   return undefined;
 }
 
-function anchorPath(state: RouterState, anchor: Element): string | undefined {
+export function anchorPath(state: RouterState, anchor: Element): string | undefined {
   const isSvg = anchor.namespaceURI === SvgNamespace;
   const href = isSvg ? (anchor as SVGAElement).href.baseVal : anchor.getAttribute("href");
   const target = isSvg ? (anchor as SVGAElement).target.baseVal : (anchor as HTMLAnchorElement).target;

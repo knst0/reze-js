@@ -16,7 +16,7 @@ The compiler recognizes a fixed set of names that you import from `reze-js`, and
 - Control-flow tags: `Show`, `For`, `Repeat`, `Switch`, `Match`, and `Portal`. The compiler compiles them as JSX tags, so they have no runtime value. See [Control-flow tags](#control-flow-tags) below.
 - Props helpers: `mergeProps`, `splitProps`, and `omitProps`. The compiler refuses them as values, so you call them. [Components](/components) covers props.
 
-Other `reze-js` exports, such as `store` and `effect`, are runtime functions. The compiler rewrites their import source to the runtime module, which is private, so you import them from `reze-js` as usual. [Lifecycle](/lifecycle) covers `effect`, and [Reactivity](/reactivity) covers `store`. `render` and `hydrate` are the two value exports that mount an app.
+Other `reze-js` exports, such as `store` and `effect`, are runtime functions. The compiler rewrites their import source to the runtime module, which is private, so you import them from `reze-js` as usual. [Lifecycle](/lifecycle) covers `effect`, and [Reactivity](/reactivity) covers `store`. `render` is the one value export that mounts an app in the browser.
 
 Do not import the lowered primitives from `reze-js/internal/reactivity`. That path is private compiler output. The compiler refuses such an import with `INTERNAL_REACTIVITY_IMPORT`:
 
@@ -41,7 +41,7 @@ The Vite plugin decides which imported modules have facts:
 - A package in `node_modules` is opaque unless it ships a `reze.manifest` whose hashes match its files, or you list the package in the plugin's `analyze` option.
 - When a manifest is stale, the plugin warns once. Regenerate the manifest by running `reze-manifest` in that package, or add the package to `analyze`.
 
-Each module has a canonical module ID. For application files, the ID is the POSIX path relative to the project root. For files in a package, the ID is the package name followed by the path inside the package. The `hydrate` and `html` targets key their output by module, so they need a nonempty module ID. Without one, the compiler reports `MISSING_MODULE_ID` and compiles nothing. The plugin rejects a second, different compiler input for the same ID, so the source of each module must match across the builds that share its output.
+Each module has a canonical module ID. For application files, the ID is the POSIX path relative to the project root. For files in a package, the ID is the package name followed by the path inside the package. The `island` and `html` targets key their output by module, so they need a nonempty module ID. Without one, the compiler reports `MISSING_MODULE_ID` and compiles nothing. The plugin rejects a second, different compiler input for the same ID, so the source of each module must match across the builds that share its output.
 
 ## Control-flow tags
 
@@ -208,8 +208,8 @@ for (const diagnostic of result.diagnostics) {
 
 | Option       | Default    | Meaning                                                                                                                                        |
 | ------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `target`     | `"client"` | Output to produce: `"client"`, `"hydrate"`, or `"html"`.                                                                                       |
-| `moduleId`   | none       | Canonical module ID. Required and nonempty for `hydrate` and `html`.                                                                           |
+| `target`     | `"client"` | Output to produce: `"client"`, `"island"`, or `"html"`.                                                                                        |
+| `moduleId`   | none       | Canonical module ID. Required and nonempty for `island` and `html`.                                                                            |
 | `sourceMap`  | `true`     | Produces a source map in `map`.                                                                                                                |
 | `debugNames` | `false`    | Passes `{ name }` to `signal`, `computed`, and `action` for profiling.                                                                         |
 | `hot`        | `false`    | Registers components for hot swapping through `import.meta.hot`.                                                                               |
@@ -295,7 +295,7 @@ Errors:
 | `ISLAND_MEDIA_MISSING`        | `island="media"` lacks `islandMedia`.                                                                      |
 | `ISLAND_ON_ELEMENT`           | `island` is set on a native element.                                                                       |
 | `ISLAND_ORPHAN`               | An island companion attribute appears on a component without `island`.                                     |
-| `MISSING_MODULE_ID`           | A `hydrate` or `html` build has no `moduleId`.                                                             |
+| `MISSING_MODULE_ID`           | An `island` or `html` build has no `moduleId`.                                                             |
 | `ASYNC_COMPONENT_SHAPE`       | An async component has a form the compiler cannot rewrite.                                                 |
 | `ASYNC_VIEW_TARGET`           | A view is assigned to a name that is not an async component declared in the same block.                    |
 | `INTERNAL_REACTIVITY_IMPORT`  | A reactive primitive is imported from `reze-js/internal/reactivity`.                                       |

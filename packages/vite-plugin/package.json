@@ -8,13 +8,13 @@
     "url": "git+https://github.com/knst0/reze-js.git",
     "directory": "packages/vite-plugin"
   },
+  "bin": {
+    "reze-manifest": "./dist/manifest-cli.js"
+  },
   "files": [
     "dist"
   ],
   "type": "module",
-  "bin": {
-    "reze-manifest": "./dist/manifest-cli.js"
-  },
   "sideEffects": false,
   "exports": {
     ".": {

@@ -1,5 +1,6 @@
 import { cleanup, mount, tick } from "@rezejs/testing-library";
 import { afterEach, expect, test } from "vitest";
+
 import { View } from "./fixtures/cross-module/view";
 afterEach(cleanup);
 test("an importer reads an imported signal through named, namespace and function bindings", () => {

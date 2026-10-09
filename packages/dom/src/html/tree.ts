@@ -77,6 +77,13 @@ export interface HtmlRange {
   children: HtmlNode[];
   parent: HtmlParent | undefined;
   meta: HtmlMeta;
+  marked: boolean;
+  wire: string | undefined;
+  sink: DirtySink | undefined;
+}
+
+export interface DirtySink {
+  add(range: HtmlRange): void;
 }
 
 /** Source-aware failure for unsupported values and unrepresentable layouts. */
@@ -124,10 +131,6 @@ const RcdataTags: Record<string, true> = { textarea: true, title: true };
 const LfStripTags: Record<string, true> = { pre: true, listing: true, textarea: true };
 
 const TagPattern = /^[A-Za-z][A-Za-z0-9._:-]*$/;
-
-export function isValidToken(token: string): boolean {
-  return /^[A-Za-z0-9_.]+$/.test(token);
-}
 
 export function isVoidTag(tag: string, ns: HtmlNamespaceKey): boolean {
   return ns === "" && Object.hasOwn(VoidElements, tag.toLowerCase());
@@ -196,16 +199,28 @@ export function createMarker(meta?: HtmlMeta): HtmlMarker {
   return { kind: "marker", parent: undefined, meta: meta ?? {} };
 }
 
-/** Named range record serializing as a paired `rz:1` comment range. */
+/** Range record; serializes as a comment pair only when `marked`. */
 export function createRange(token: string, meta?: HtmlMeta): HtmlRange {
-  if (!isValidToken(token)) {
-    throw new HtmlRecordError(
-      `Invalid range token "${token}"; expected letters, digits, underscore or dot`,
-      formatSite(meta?.site),
-      meta?.site,
-    );
+  return { kind: "range", token, children: [], parent: undefined, meta: meta ?? {}, marked: false, wire: undefined, sink: undefined };
+}
+
+let trackedSinks = 0;
+
+export function trackSink(delta: 1 | -1): void {
+  trackedSinks += delta;
+}
+
+export function markDirty(node: HtmlParent | HtmlText): void {
+  if (trackedSinks === 0) return;
+  let target: HtmlRange | undefined;
+  let current: HtmlNode = node;
+  for (;;) {
+    if (target === undefined && current.kind === "range" && current.wire !== undefined) target = current;
+    const parent: HtmlParent | undefined = current.parent;
+    if (parent === undefined) break;
+    current = parent;
   }
-  return { kind: "range", token, children: [], parent: undefined, meta: meta ?? {} };
+  if (target !== undefined && current.kind === "range") current.sink?.add(target);
 }
 
 function describeParent(parent: HtmlParent): string {
@@ -265,6 +280,7 @@ export function attachChild(parent: HtmlParent, child: HtmlNode, site?: unknown)
   checkPlaceable(parent, child, site ?? child.meta.site);
   child.parent = parent;
   parent.children.push(child);
+  markDirty(parent);
 }
 
 /** Inserts `child` before the direct child `anchor`. */
@@ -276,6 +292,7 @@ export function insertBefore(parent: HtmlParent, child: HtmlNode, anchor: HtmlNo
   }
   child.parent = parent;
   parent.children.splice(index, 0, child);
+  markDirty(parent);
 }
 
 /** Removes a direct child and clears its linkage. */
@@ -290,6 +307,7 @@ export function removeChild(parent: HtmlParent, child: HtmlNode): void {
   }
   parent.children.splice(index, 1);
   child.parent = undefined;
+  markDirty(parent);
 }
 
 /** Detaches `node` from its parent, if any. */
@@ -301,13 +319,17 @@ export function detach(node: HtmlNode): void {
 
 /** Removes every child of `parent` and clears their linkage. */
 export function clearChildren(parent: HtmlParent): void {
+  if (parent.children.length === 0) return;
   for (const child of parent.children) {
     child.parent = undefined;
   }
   parent.children.length = 0;
+  markDirty(parent);
 }
 
 /** Replaces the data of a text record. */
 export function setTextData(node: HtmlText, data: string): void {
+  if (node.data === data) return;
   node.data = data;
+  markDirty(node);
 }

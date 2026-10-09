@@ -73,7 +73,7 @@ export interface RouteModule {
 
 export interface RouteDefinition extends RouteConfig<any> {
   path: string;
-  /** Stable identity for hydration seeds and SSG descriptors: the plugin sets it to the file route id, hand-written tables may. Otherwise the factory assigns a structural index chain (`"2"`, `"2/0"`). */
+  /** Stable identity for server route matches and SSG descriptors: the plugin sets it to the file route id, hand-written tables may. Otherwise the factory assigns a structural index chain (`"2"`, `"2/0"`). */
   id?: string;
   /** Node key in `Router.paths`, from the file segment (`blog/[id]` → `byId`) or derived from `path`; the plugin sets it, hand-written tables may. Siblings sharing a key throw at factory creation. */
   name?: string;

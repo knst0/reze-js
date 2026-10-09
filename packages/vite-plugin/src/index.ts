@@ -9,10 +9,10 @@ import { ModuleFactsStore, staticImportSpecifiers, type Resolver } from "./facts
 import { profileHash } from "./hash";
 import { canonicalModuleId } from "./module-identity";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
-import { SsgClientId, SsgHtmlAdapterId, SsgRedirectId, SsgViewId } from "./ssg/adapter";
-import type { SsgOptions } from "./ssg/options";
-import { HtmlEnv, createSsgPlugin, createSsgShared } from "./ssg/ssg";
-import type { SsgShared } from "./ssg/ssg";
+import { GeneratedIds, HtmlEnv, SsgViewId } from "./server/adapter";
+import type { SsgOptions, SsrOptions } from "./server/options";
+import { createServerPlugin, createServerShared } from "./server/plugin";
+import type { ServerShared } from "./server/plugin";
 export interface Options {
   diagnostics?: {
     /** File every diagnostic, `info` included, is appended to as one JSON line. */
@@ -24,8 +24,10 @@ export interface Options {
   extensions?: string[];
   /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. The result is awaitable in `plugins`. */
   fileRoutes?: boolean | FileRoutesOptions;
-  /** Static-site generation: two-target production build (HTML execution + hydration). Absent by default. */
+  /** Static-site generation: a production build that prerenders each page with the server renderer. Absent by default. */
   ssg?: SsgOptions;
+  /** Request-time rendering: builds `dist-server/entry.js`, exporting a web `fetch` handler. Absent by default. */
+  ssr?: SsrOptions;
   profile?: {
     /** Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. */
     dir: string;
@@ -190,7 +192,7 @@ function resolverOf(resolveById: ResolveById): Resolver {
   };
 }
 
-function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
+function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
   const jsonl = options.diagnostics?.jsonl;
   const seenCodes = new Set<string>();
   let jsonlDirReady = false;
@@ -273,18 +275,17 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
     async transform(code, id) {
       const file = id.replace(QueryOrHash, "");
       if (id !== SsgViewId && (!filter.include.test(id) || (filter.exclude.test(id) && !moduleFacts.declaresReze(file)))) return null;
-      if (runtimeEntries.has(file) || id === SsgClientId || id === SsgHtmlAdapterId || id === SsgRedirectId) return;
+      if (runtimeEntries.has(file) || GeneratedIds.includes(id)) return;
       if (id.startsWith("\0vite/") || id.startsWith("\0rolldown/")) return;
       for (const directory of runtimeDirectories) if (file.startsWith(directory)) return;
       const profile = profileDir === undefined ? undefined : readProfileFacts(resolve(root, profileDir), file, code);
       if (profileDir !== undefined) profileHashes.set(file, profileHash(code));
       const envName = this.environment.name;
-      const ssgTarget =
-        shared.enabled && shared.root !== "" ? (envName === HtmlEnv ? "html" : shared.isServe ? undefined : "hydrate") : undefined;
-      const moduleId = ssgTarget === undefined ? undefined : canonicalModuleId(id, shared.root);
+      const target = shared.enabled && shared.root !== "" ? (envName === HtmlEnv ? "html" : "island") : undefined;
+      const moduleId = target === undefined ? undefined : canonicalModuleId(id, shared.root);
       if (moduleId !== undefined) {
         shared.registry.register(moduleId, code);
-        if (ssgTarget === "hydrate") shared.moduleFiles.set(moduleId, id);
+        if (target === "html" && id !== SsgViewId) shared.moduleFiles.set(moduleId, file);
       }
       const imported = await moduleFacts.factsFor(
         file,
@@ -297,7 +298,7 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
         hot,
         links,
         ...(profile === undefined ? {} : { profile }),
-        ...(ssgTarget === undefined ? {} : { target: ssgTarget, moduleId }),
+        ...(target === undefined ? {} : { target, moduleId }),
         facts: imported,
       });
       if (result === null) return null;
@@ -362,21 +363,25 @@ function rezePlugin(options: Options, shared: SsgShared): Plugin<RezeApi> {
 }
 
 export type { FileRoutesOptions } from "./routes";
-export type { SsgOptions, StaticParams, StaticPathsValue } from "./ssg/options";
+export type { SsgOptions, SsrOptions, StaticParams, StaticPathsValue } from "./server/options";
 
-export default function reze(options?: Options & { fileRoutes?: false | undefined; ssg?: undefined }): Plugin<RezeApi>;
-export default function reze(options: Options & { ssg: SsgOptions; fileRoutes?: false | undefined }): Plugin[];
-export default function reze(options: Options & { fileRoutes: true | FileRoutesOptions }): Promise<Plugin[]>;
-export default function reze(options: Options & { ssg: SsgOptions; fileRoutes: true | FileRoutesOptions }): Promise<Plugin[]>;
+export default function reze(options?: Options & { fileRoutes?: false | undefined; ssg?: undefined; ssr?: undefined }): Plugin<RezeApi>;
+export default function reze(options: Options & { ssg?: SsgOptions; ssr?: SsrOptions; fileRoutes?: false | undefined }): Plugin[];
+export default function reze(
+  options: Options & { ssg?: SsgOptions; ssr?: SsrOptions; fileRoutes: true | FileRoutesOptions },
+): Promise<Plugin[]>;
 export default function reze(options: Options = {}): Plugin<RezeApi> | Plugin[] | Promise<Plugin[]> {
-  const shared = createSsgShared();
+  const shared = createServerShared();
   const plugin = rezePlugin(options, shared);
-  const ssg = options.ssg === undefined ? [] : createSsgPlugin(options.ssg, shared, options.fileRoutes === true ? {} : options.fileRoutes);
+  const server =
+    options.ssg === undefined && options.ssr === undefined
+      ? []
+      : createServerPlugin({ ssg: options.ssg, ssr: options.ssr }, shared, options.fileRoutes === true ? {} : options.fileRoutes);
   if (options.fileRoutes === undefined || options.fileRoutes === false) {
-    return options.ssg === undefined ? plugin : [plugin, ...ssg];
+    return server.length === 0 ? plugin : [plugin, ...server];
   }
   const routesOptions = options.fileRoutes === true ? {} : options.fileRoutes;
-  return routesPlugins(plugin, routesOptions, options.extensions).then((plugins) => [...ssg, ...plugins]);
+  return routesPlugins(plugin, routesOptions, options.extensions).then((plugins) => [...server, ...plugins]);
 }
 
 async function loadRouterFs(): Promise<FileRoutesApi> {

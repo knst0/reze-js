@@ -26,7 +26,7 @@ pub struct ProfileFacts {
 #[napi(string_enum = "lowercase")]
 pub enum CompileTarget {
     Client,
-    Hydrate,
+    Island,
     Html,
 }
 
@@ -42,7 +42,7 @@ pub struct CompileOptions {
     pub links: Option<String>,
     /// Which output to produce. Default: `"client"`.
     pub target: Option<CompileTarget>,
-    /// Stable canonical module id; required (nonempty) for `hydrate` and `html`. Default: none.
+    /// Stable canonical module id; required (nonempty) for `island` and `html`. Default: none.
     pub module_id: Option<String>,
     /// Profiling facts for this file, from the profile store. Default: none.
     pub profile: Option<ProfileFacts>,
@@ -183,7 +183,7 @@ pub fn compile(
         opts.hot = o.hot.unwrap_or(opts.hot);
         opts.links = o.links.or(opts.links);
         opts.target = match o.target {
-            Some(CompileTarget::Hydrate) => reze_compiler::CompileTarget::Hydrate,
+            Some(CompileTarget::Island) => reze_compiler::CompileTarget::Island,
             Some(CompileTarget::Html) => reze_compiler::CompileTarget::Html,
             Some(CompileTarget::Client) | None => reze_compiler::CompileTarget::Client,
         };

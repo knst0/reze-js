@@ -16,7 +16,6 @@ async function buildProductionBundle(): Promise<void> {
       define: {
         "process.env.NODE_ENV": '"production"',
         __REZE_HTML__: "false",
-        __REZE_HYDRATE__: "false",
       },
     },
   });
@@ -41,7 +40,6 @@ export default defineConfig({
   plugins: [resolveSignals],
   define: {
     __REZE_HTML__: "false",
-    __REZE_HYDRATE__: "false",
   },
   test: {
     name: "@rezejs/signals",

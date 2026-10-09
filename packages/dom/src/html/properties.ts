@@ -122,7 +122,7 @@ function valueHosts(el: HtmlElement): boolean {
  * value resolves onto the matching option, `checked` on `input` and
  * `selected` on `option` become bare attributes, `textContent` replaces
  * children and `innerHTML` goes opaque. Every other `prop:` becomes
- * client-only state reapplied by the parent layer after hydration and never
+ * client-only state the browser render reapplies and never
  * reaches the HTML bytes.
  */
 export function setProperty(el: HtmlElement, name: string, value: unknown, site?: unknown): void {

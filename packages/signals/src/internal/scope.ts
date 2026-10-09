@@ -1,9 +1,7 @@
-import { setActiveOwner, setActiveSub } from "../context";
 import { FlagRecursed, FlagWatching } from "../flags";
 import { disposeNode, unlink, type ReactiveNode } from "../graph";
-import { root } from "../owner";
+import { root, untrack } from "../owner";
 import type { ContinuationEvent, ContinuationHandle } from "./continuation";
-import type { ResourceRecord, ResourceSnapshot } from "./resource";
 
 export type { ReactiveNode };
 export { parentOwner } from "../context";
@@ -49,19 +47,8 @@ export class ScopeDisposedError extends Error {
 }
 
 let activeScope: ExecutionScope | undefined;
-let activeModuleId: string | undefined;
 let scopes: Set<ExecutionScope> | undefined;
 let nodeScopes: WeakMap<ReactiveNode, ExecutionScope> | undefined;
-let moduleScopes:
-  | Map<
-      string,
-      {
-        scope: ExecutionScope;
-        owner: ReactiveNode | undefined;
-        createOwner?: (moduleId: string) => ReactiveNode;
-      }
-    >
-  | undefined;
 let observer: ScopeObserver | undefined;
 
 export function setScopeObserver(next: ScopeObserver | undefined): void {
@@ -76,25 +63,18 @@ export function getActiveScope(): ExecutionScope | undefined {
   return activeScope;
 }
 
-export function currentModuleId(): string | undefined {
-  return activeModuleId;
-}
-
 export interface ScopeContext {
   readonly scope: ExecutionScope | undefined;
-  readonly moduleId: string | undefined;
 }
 
-export function enterScopeContext(scope: ExecutionScope | undefined, moduleId: string | undefined): ScopeContext {
-  const prev: ScopeContext = { scope: activeScope, moduleId: activeModuleId };
+export function enterScopeContext(scope: ExecutionScope | undefined): ScopeContext {
+  const prev: ScopeContext = { scope: activeScope };
   activeScope = scope;
-  activeModuleId = moduleId;
   return prev;
 }
 
 export function restoreScopeContext(prev: ScopeContext): void {
   activeScope = prev.scope;
-  activeModuleId = prev.moduleId;
 }
 export function scopeOfNode(node: ReactiveNode): ExecutionScope | undefined {
   return nodeScopes?.get(node);
@@ -123,98 +103,19 @@ export function registerNodeScope(node: ReactiveNode, owner?: ReactiveNode | und
 
 export function notifyNodeDisposed(node: ReactiveNode): void {
   nodeScopes?.get(node)?.removeOwnedNode(node);
-  observer?.onNodeDisposed?.(node);
-}
-
-export function registerModuleScope(
-  moduleId: string,
-  scope: ExecutionScope,
-  owner?: ReactiveNode,
-  createOwner?: (moduleId: string) => ReactiveNode,
-): void {
-  if (moduleScopes === undefined) {
-    moduleScopes = new Map();
-  }
-  moduleScopes.set(moduleId, { scope, owner, createOwner });
-}
-
-export function moduleScopeOf(moduleId: string): ExecutionScope | undefined {
-  return moduleScopes?.get(moduleId)?.scope;
-}
-
-export function moduleOwnerOf(moduleId: string): ReactiveNode | undefined {
-  const entry = moduleScopes?.get(moduleId);
-  if (entry?.createOwner !== undefined) {
-    entry.owner = entry.createOwner(moduleId);
-    entry.createOwner = undefined;
-  }
-  return entry?.owner;
-}
-
-export function withModuleScope<T, A extends unknown[]>(moduleId: string, fn: (...args: A) => T, ...args: A): T {
-  if (!(__REZE_HTML__ || __REZE_HYDRATE__)) {
-    return fn(...args);
-  }
-  const scope = moduleScopeOf(moduleId) ?? activeScope;
-  if (scope === undefined) {
-    return fn(...args);
-  }
-  const prevScope = activeScope;
-  const prevModule = activeModuleId;
-  activeScope = scope;
-  activeModuleId = moduleId;
-  const owner = moduleOwnerOf(moduleId);
-  if (owner === undefined) {
-    try {
-      return fn(...args);
-    } finally {
-      activeScope = prevScope;
-      activeModuleId = prevModule;
-    }
-  }
-  const prevSub = setActiveSub(undefined);
-  const prevOwner = setActiveOwner(owner);
-  try {
-    return fn(...args);
-  } finally {
-    setActiveSub(prevSub);
-    setActiveOwner(prevOwner);
-    activeScope = prevScope;
-    activeModuleId = prevModule;
-  }
 }
 
 export interface UniqueIdRequest {
   readonly site: SourceSite | undefined;
-  readonly moduleId: string | undefined;
   readonly owner: ReactiveNode | undefined;
   readonly scope: ExecutionScope | undefined;
 }
 
 export interface ScopeObserver {
   onNodeCreated?(node: ReactiveNode, scope: ExecutionScope | undefined, owner: ReactiveNode | undefined): void;
-  onNodeDisposed?(node: ReactiveNode): void;
-  onFlushBoundary?(scope: ExecutionScope, delivery: FlushDelivery, phase: "before" | "after"): void;
-  onScopeWork?(scope: ExecutionScope): void;
-  onResourceRegistered?(record: ResourceRecord): void;
-  shouldSkipInitialProducer?(record: ResourceRecord): boolean;
-  onResourceState?(record: ResourceRecord, snapshot: ResourceSnapshot): void;
-  shouldHoldSettlement?(record: ResourceRecord): boolean;
-  onModuleAwait?(frame: ModuleScopeFrame, site: SourceSite): void;
-  interceptModuleAwait?(frame: ModuleScopeFrame, value: unknown): Promise<unknown> | undefined;
-  onModuleResume?(frame: ModuleScopeFrame): void;
   onContinuationEvent?(handle: ContinuationHandle, event: ContinuationEvent, site: SourceSite | undefined, value: unknown): void;
-  interceptSuspend?(
-    handle: ContinuationHandle,
-    site: SourceSite | undefined,
-    value: unknown,
-  ): { readonly held: true; readonly promise: Promise<unknown> } | undefined;
-  interceptContinuationValue?(
-    handle: ContinuationHandle,
-    event: "resume" | "reject",
-    value: unknown,
-  ): { readonly value: unknown } | undefined;
   resolveUniqueId?(request: UniqueIdRequest): string | undefined;
+  renderComponent?(component: (props: never) => unknown, props: unknown): unknown;
 }
 
 interface QueueState {
@@ -328,7 +229,6 @@ export class ExecutionScope {
     const previousScope = activeScope;
     activeScope = this;
     try {
-      observer?.onFlushBoundary?.(this, delivery, "before");
       while (queue.index < queue.length) {
         if (Date.now() > deadlineTs) {
           return false;
@@ -346,7 +246,6 @@ export class ExecutionScope {
       queue.index = 0;
       queue.length = 0;
       activeScope = previousScope;
-      observer?.onFlushBoundary?.(this, delivery, "after");
     }
     return true;
   }
@@ -395,11 +294,10 @@ export class ExecutionScope {
   }
 
   private wake(): void {
-    observer?.onScopeWork?.(this);
     if (this.waiters !== undefined) for (const wake of this.waiters) wake();
   }
 
-  private waitForWork(timeoutMs: number): Promise<void> {
+  waitForWork(timeoutMs: number): Promise<void> {
     const { promise, resolve } = Promise.withResolvers<void>();
     const wake = (): void => {
       clearTimeout(timer);
@@ -453,13 +351,6 @@ export class ExecutionScope {
     this.pending?.clear();
     this.wake();
     scopes?.delete(this);
-    if (moduleScopes !== undefined) {
-      for (const [moduleId, registration] of moduleScopes) {
-        if (registration.scope === this) {
-          moduleScopes.delete(moduleId);
-        }
-      }
-    }
     let failure: unknown;
     let hasFailure = false;
     const disposables = this.disposables;
@@ -507,9 +398,7 @@ export function createScope(options?: ScopeOptions): ExecutionScope {
 function scopedRenderRoot<T>(fn: (dispose: () => void) => T): T {
   const scope = createScope();
   const previousScope = activeScope;
-  const previousModule = activeModuleId;
   activeScope = scope;
-  activeModuleId = undefined;
   try {
     return root(() => fn(() => scope.dispose()));
   } catch (error) {
@@ -521,136 +410,15 @@ function scopedRenderRoot<T>(fn: (dispose: () => void) => T): T {
     throw error;
   } finally {
     activeScope = previousScope;
-    activeModuleId = previousModule;
   }
 }
 
-export const renderRoot = __REZE_HTML__ || __REZE_HYDRATE__ ? scopedRenderRoot : root;
+export const renderRoot = __REZE_HTML__ ? scopedRenderRoot : root;
 
-export interface ModuleScopeFrame {
-  readonly scope: ExecutionScope | undefined;
-  readonly moduleId: string;
-  readonly moduleOwner: ReactiveNode | undefined;
-  suspend<T>(value: T, site?: SourceSite): T | Promise<unknown>;
-  resume<T>(value: T): T;
-  reject<T>(error: T): T;
-  end(): void;
+function hostedComponent<P, R>(component: (props: P) => R, props: P): R {
+  const hosted = observer?.renderComponent;
+  if (hosted !== undefined) return hosted.call(observer, component as (props: never) => unknown, props) as R;
+  return untrack(component, props);
 }
 
-enum ModuleFrameState {
-  Entered = 0,
-  Suspended = 1,
-  Ended = 2,
-}
-
-class ModuleScopeFrameImpl implements ModuleScopeFrame {
-  readonly scope: ExecutionScope | undefined;
-  readonly moduleId: string;
-  readonly moduleOwner: ReactiveNode | undefined;
-  private readonly prevScope: ExecutionScope | undefined;
-  private readonly prevModule: string | undefined;
-  private previousSub: ReactiveNode | undefined;
-  private previousOwner: ReactiveNode | undefined;
-  private state: ModuleFrameState = ModuleFrameState.Entered;
-  private observedAwait = false;
-
-  constructor(moduleId: string) {
-    this.moduleId = moduleId;
-    const scope = moduleScopeOf(moduleId) ?? activeScope;
-    this.scope = scope;
-    const moduleOwner = moduleOwnerOf(moduleId);
-    this.moduleOwner = moduleOwner;
-    this.prevScope = activeScope;
-    this.prevModule = activeModuleId;
-    activeScope = scope;
-    activeModuleId = moduleId;
-    if (moduleOwner !== undefined) {
-      this.previousSub = setActiveSub(undefined);
-      this.previousOwner = setActiveOwner(moduleOwner);
-    }
-  }
-
-  suspend<T>(value: T, site?: SourceSite): T | Promise<unknown> {
-    if (this.state === ModuleFrameState.Entered) {
-      activeScope = this.prevScope;
-      activeModuleId = this.prevModule;
-      if (this.moduleOwner !== undefined) {
-        setActiveSub(this.previousSub);
-        setActiveOwner(this.previousOwner);
-        this.previousSub = undefined;
-        this.previousOwner = undefined;
-      } else {
-        this.previousSub = setActiveSub(undefined);
-        this.previousOwner = setActiveOwner(undefined);
-      }
-      this.state = ModuleFrameState.Suspended;
-    }
-    if (site !== undefined) {
-      this.observedAwait = true;
-      const observer = getScopeObserver();
-      observer?.onModuleAwait?.(this, site);
-      const held = observer?.interceptModuleAwait?.(this, value);
-      if (held !== undefined) return held;
-    }
-    return value;
-  }
-
-  resume<T>(value: T): T {
-    if (this.state === ModuleFrameState.Suspended) {
-      activeScope = this.scope;
-      activeModuleId = this.moduleId;
-      if (this.moduleOwner !== undefined) {
-        this.previousSub = setActiveSub(undefined);
-        this.previousOwner = setActiveOwner(this.moduleOwner);
-      } else {
-        setActiveSub(this.previousSub);
-        setActiveOwner(this.previousOwner);
-      }
-      this.state = ModuleFrameState.Entered;
-      if (this.observedAwait) {
-        this.observedAwait = false;
-        getScopeObserver()?.onModuleResume?.(this);
-      }
-    }
-    return value;
-  }
-
-  reject<T>(error: T): T {
-    if (this.state === ModuleFrameState.Suspended) {
-      this.resume(error);
-    }
-    return error;
-  }
-
-  end(): void {
-    if (this.state === ModuleFrameState.Ended) {
-      return;
-    }
-    if (this.state === ModuleFrameState.Entered || this.state === ModuleFrameState.Suspended) {
-      activeScope = this.prevScope;
-      activeModuleId = this.prevModule;
-      if (this.moduleOwner !== undefined || this.state === ModuleFrameState.Suspended) {
-        setActiveSub(this.previousSub);
-        setActiveOwner(this.previousOwner);
-        this.previousSub = undefined;
-        this.previousOwner = undefined;
-      }
-    }
-    this.state = ModuleFrameState.Ended;
-  }
-}
-
-export function beginModuleScope(moduleId: string): ModuleScopeFrame {
-  if (!(__REZE_HTML__ || __REZE_HYDRATE__)) {
-    return {
-      scope: undefined,
-      moduleId,
-      moduleOwner: undefined,
-      suspend: <T>(value: T): T => value,
-      resume: <T>(value: T): T => value,
-      reject: <T>(error: T): T => error,
-      end: (): void => {},
-    };
-  }
-  return new ModuleScopeFrameImpl(moduleId);
-}
+export const runComponent: <P, R>(component: (props: P) => R, props: P) => R = __REZE_HTML__ ? hostedComponent : untrack;

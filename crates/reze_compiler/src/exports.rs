@@ -5,6 +5,7 @@ use crate::frontend::props::PropsMethod;
 pub const PUBLIC: &str = "reze-js";
 pub const RUNTIME: &str = "reze-js/internal/runtime";
 pub const REACTIVITY: &str = "reze-js/internal/reactivity";
+pub const ROUTER: &str = "@rezejs/router";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {

@@ -2,7 +2,7 @@ use reze_compiler::{Code, CompileTarget, Options, Severity, compile};
 
 #[test]
 fn nonclient_targets_require_identity_even_without_transformable_source() {
-    for (target, name) in [(CompileTarget::Hydrate, "hydrate"), (CompileTarget::Html, "html")] {
+    for (target, name) in [(CompileTarget::Island, "island"), (CompileTarget::Html, "html")] {
         for module_id in [None, Some(String::new())] {
             for source in ["const value = 1;", "const view = <div />;", "const ="] {
                 let options =

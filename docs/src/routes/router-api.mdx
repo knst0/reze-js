@@ -103,18 +103,18 @@ A route table is an array of `RouteDefinition` values passed to `routes`. Build 
 
 ### Route definition fields
 
-| Field       | Type                                                                 | Purpose                                                                                                                                                     |
-| ----------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`      | `string`                                                             | The route pattern, relative to the parent route. Segments are static text, `:param`, `:param?`, or `*splat`.                                                |
-| `component` | `RouteComponent`                                                     | Renders the route. The router passes `params`, `location`, `data`, and `children`.                                                                          |
-| `children`  | `readonly RouteDefinition[]`                                         | Nested routes. The matched child renders through the parent's `children` prop.                                                                              |
-| `load`      | `() => Promise<RouteModule>`                                         | Loads the route module on demand. When it resolves, its `default` and `route` override `component`, `preload`, `meta`, `redirect`, and `info`.              |
-| `id`        | `string`                                                             | Stable identity for hydration seeds and static generation. The plugin sets it for file routes. Otherwise the router assigns an index chain such as `"2/0"`. |
-| `name`      | `string`                                                             | The key of this route in the `paths` builder tree. Siblings that share a key throw when the router is created.                                              |
-| `preload`   | `(args: PreloadArgs) => unknown`                                     | Starts the route's data. See [preload, metadata, and redirects](#preload-metadata-and-redirects).                                                           |
-| `meta`      | `PageMetadata \| ((args) => Awaitable<PageMetadata>)`                | Page metadata for the route. Its behavior is covered under Preload, metadata, and redirects.                                                                |
-| `redirect`  | `RouteRedirect \| ((args) => Awaitable<RouteRedirect \| undefined>)` | Sends the navigation somewhere else. Its behavior is covered under Preload, metadata, and redirects.                                                        |
-| `info`      | `Readonly<Record<string, unknown>>`                                  | Free-form data attached to the route. `useCurrentMatches` returns it for each match.                                                                        |
+| Field       | Type                                                                 | Purpose                                                                                                                                                          |
+| ----------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`      | `string`                                                             | The route pattern, relative to the parent route. Segments are static text, `:param`, `:param?`, or `*splat`.                                                     |
+| `component` | `RouteComponent`                                                     | Renders the route. The router passes `params`, `location`, `data`, and `children`.                                                                               |
+| `children`  | `readonly RouteDefinition[]`                                         | Nested routes. The matched child renders through the parent's `children` prop.                                                                                   |
+| `load`      | `() => Promise<RouteModule>`                                         | Loads the route module on demand. When it resolves, its `default` and `route` override `component`, `preload`, `meta`, `redirect`, and `info`.                   |
+| `id`        | `string`                                                             | Stable identity for server route matches and static generation. The plugin sets it for file routes. Otherwise the router assigns an index chain such as `"2/0"`. |
+| `name`      | `string`                                                             | The key of this route in the `paths` builder tree. Siblings that share a key throw when the router is created.                                                   |
+| `preload`   | `(args: PreloadArgs) => unknown`                                     | Starts the route's data. See [preload, metadata, and redirects](#preload-metadata-and-redirects).                                                                |
+| `meta`      | `PageMetadata \| ((args) => Awaitable<PageMetadata>)`                | Page metadata for the route. Its behavior is covered under Preload, metadata, and redirects.                                                                     |
+| `redirect`  | `RouteRedirect \| ((args) => Awaitable<RouteRedirect \| undefined>)` | Sends the navigation somewhere else. Its behavior is covered under Preload, metadata, and redirects.                                                             |
+| `info`      | `Readonly<Record<string, unknown>>`                                  | Free-form data attached to the route. `useCurrentMatches` returns it for each match.                                                                             |
 
 The following table defines a layout route with a nested child:
 

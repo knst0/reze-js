@@ -89,7 +89,7 @@ export function disposeNode(node: ReactiveNode): void {
   if (sub !== undefined) {
     unlink(sub);
   }
-  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+  if (__REZE_HTML__) {
     notifyNodeDisposed(node);
   }
 }

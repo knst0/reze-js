@@ -6,11 +6,18 @@ import { parse } from "parse5";
 import type { DefaultTreeAdapterMap } from "parse5";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
-import { buildClientRegistry } from "../src/ssg/assets";
-import { resolveAppMode } from "../src/ssg/export-graph";
-import { resolvePathsCallbacks, resolveSsgOptions } from "../src/ssg/options";
-import { bootstrapScriptSrc, buildPage, buildRedirectPage, countRootIds, readHeadDefaults, validateTemplate } from "../src/ssg/template";
-import { canonicalPageUrl, joinBase, normalizePageUrl, outputFileFor, planOutputs } from "../src/ssg/urls";
+import { buildClientRegistry } from "../src/server/assets";
+import { resolveAppMode } from "../src/server/export-graph";
+import { resolvePathsCallbacks, resolveSsgOptions } from "../src/server/options";
+import {
+  bootstrapScriptSrc,
+  buildRedirectPage,
+  countRootIds,
+  prepareTemplate,
+  rebaseParts,
+  validateTemplate,
+} from "../src/server/template";
+import { canonicalPageUrl, joinBase, normalizePageUrl, outputFileFor, planOutputs } from "../src/server/urls";
 
 let dir: string;
 
@@ -35,12 +42,12 @@ afterEach(() => {
 });
 
 test("ssg options reject a missing entry, a loose selector and a dead timeout", () => {
-  expect(() => resolveSsgOptions({ entry: "" }, "/root")).toThrow(/ssg\.entry/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", selector: ".app" as `#${string}` }, "/root")).toThrow(/selector/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", selector: "#a b" as `#${string}` }, "/root")).toThrow(/selector/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: 0 }, "/root")).toThrow(/timeoutMs/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: Number.NaN }, "/root")).toThrow(/timeoutMs/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", trailingSlash: "sometimes" as "always" }, "/root")).toThrow(/trailingSlash/);
+  expect(() => resolveSsgOptions({ entry: "" })).toThrow(/ssg\.entry/);
+  expect(() => resolveSsgOptions({ entry: "src/app.tsx", selector: ".app" as `#${string}` })).toThrow(/selector/);
+  expect(() => resolveSsgOptions({ entry: "src/app.tsx", selector: "#a b" as `#${string}` })).toThrow(/selector/);
+  expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: 0 })).toThrow(/timeoutMs/);
+  expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: Number.NaN })).toThrow(/timeoutMs/);
+  expect(() => resolveSsgOptions({ entry: "src/app.tsx", trailingSlash: "sometimes" as "always" })).toThrow(/trailingSlash/);
 });
 
 test("paths callbacks resolve once and validate every param shape", async () => {
@@ -54,56 +61,30 @@ test("paths callbacks resolve once and validate every param shape", async () => 
 });
 
 test("the template requires one bootstrap script and one mount root", () => {
-  const html = `<html><head></head><body><div id="app"></div><script type="module" src="/@reze/ssg-client.js"></script></body></html>`;
-  validateTemplate(html, "index.html", "app", "/@reze/ssg-client.js");
-  expect(() => validateTemplate(html.replace("ssg-client", "other"), "index.html", "app", "/@reze/ssg-client.js")).toThrow(/exactly one/);
+  const html = `<html><head></head><body><div id="app"></div><script type="module" src="/@reze/client.js"></script></body></html>`;
+  validateTemplate(html, "index.html", "app", "/@reze/client.js");
+  expect(() => validateTemplate(html.replace("client", "other"), "index.html", "app", "/@reze/client.js")).toThrow(/exactly one/);
   expect(() =>
-    validateTemplate(`${html}<script type="module" src="/@reze/ssg-client.js"></script>`, "index.html", "app", "/@reze/ssg-client.js"),
+    validateTemplate(`${html}<script type="module" src="/@reze/client.js"></script>`, "index.html", "app", "/@reze/client.js"),
   ).toThrow(/exactly one/);
-  expect(() => validateTemplate(html.replace('id="app"', 'id="root"'), "index.html", "app", "/@reze/ssg-client.js")).toThrow(/mount|id/);
+  expect(() => validateTemplate(html.replace('id="app"', 'id="root"'), "index.html", "app", "/@reze/client.js")).toThrow(/mount|id/);
 });
 
-test("page assembly preserves nested roots, raw text and decoded head values", () => {
-  const templateHtml = `<html><head><title>Base &amp; title</title><meta name=description content="base &amp; description"><script>globalThis.fake = '<div id="app"></div>';</script></head><body><!-- <div id=app></div> --><template><div id=app></div></template><div id=app data-note=">"><div>old</div><div>old second</div></div><aside id=after>kept</aside><script type=module src=./assets/boot.js></script></body></html>`;
+test("template preparation keeps nested roots out of the shell and reads head defaults", () => {
+  const templateHtml = `<html><head><title>Base &amp; title</title><meta name=description content="base &amp; description"><script>globalThis.fake = '<div id="app"></div>';</script><script type=module src=./assets/boot.js></script></head><body><!-- <div id=app></div> --><template><div id=app></div></template><div id=app data-note=">"><div>old</div><div>old second</div></div><aside id=after>kept</aside></body></html>`;
   validateTemplate(templateHtml, "index.html", "app", "./assets/boot.js");
   expect(countRootIds(templateHtml, "app")).toBe(1);
-  const baseline = readHeadDefaults(templateHtml);
-  expect(baseline).toEqual({ title: "Base & title", description: "base & description" });
-  const payload = { message: "</script><script>alert(1)</script>&\u2028\u2029" };
-  const page = buildPage({
-    templateHtml,
-    templateFile: "index.html",
-    baseline,
-    rootId: "app",
-    base: "./",
-    pathname: "/a/b/",
-    metadata: { title: "Page $& <x>" },
-    content: "<p>new</p>",
-    payload: JSON.stringify(payload),
-    portals: [],
-    assets: { css: ["../../assets/a.css", "../../assets/b.css"], js: ["../../assets/shared.js"] },
-  });
-  const nodes = elements(parse(page));
-  const root = nodes.find((node) => attribute(node, "id") === "app")!;
-  expect(text(root)).toBe("new");
+  const { parts, headDefaults } = prepareTemplate(templateHtml, "app");
+  expect(headDefaults).toEqual({ title: "Base & title", description: "base & description" });
+  const nodes = elements(parse(parts.beforeHeadEnd + parts.headEndToRoot + parts.rootEndToBodyEnd + parts.bodyEndToEnd));
+  expect(text(nodes.find((node) => attribute(node, "id") === "app")!)).toBe("");
   expect(text(nodes.find((node) => attribute(node, "id") === "after")!)).toBe("kept");
-  expect(text(nodes.find((node) => node.tagName === "title")!)).toBe("Page $& <x>");
-  expect(
-    attribute(
-      nodes.find((node) => attribute(node, "name") === "description")!,
-      "content",
-    ),
-  ).toBe("base & description");
   const scripts = nodes.filter((node) => node.tagName === "script");
-  expect(scripts).toHaveLength(3);
+  expect(scripts).toHaveLength(2);
   expect(text(scripts[0]!)).toBe(`globalThis.fake = '<div id="app"></div>';`);
-  expect(attribute(scripts[1]!, "src")).toBe("../../assets/boot.js");
-  expect(JSON.parse(text(scripts[2]!))).toEqual(payload);
-  expect(nodes.filter((node) => node.tagName === "link").map((node) => [attribute(node, "rel"), attribute(node, "href")])).toEqual([
-    ["stylesheet", "../../assets/a.css"],
-    ["stylesheet", "../../assets/b.css"],
-    ["modulepreload", "../../assets/shared.js"],
-  ]);
+  expect(attribute(scripts[1]!, "src")).toBe("./assets/boot.js");
+  expect(attribute(scripts[1]!, "async")).toBe("");
+  expect(rebaseParts(parts, 2).beforeHeadEnd).toContain('src="../../assets/boot.js"');
 });
 
 test("the built bootstrap is matched by file name, not by guesswork", () => {
@@ -115,18 +96,8 @@ test("the built bootstrap is matched by file name, not by guesswork", () => {
 test("redirect pages drop the bootstrap and carry an accessible target", () => {
   const html = `<html><head><title>T</title></head><body><div id="app"></div><script type="module" src="/docs/assets/ssg-abc.js"></script></body></html>`;
   const to = "/b/?query=</script>&\u2028\u2029";
-  const page = buildRedirectPage({
-    templateHtml: html,
-    templateFile: "index.html",
-    baseline: {},
-    canonical: to,
-    to,
-    replace: true,
-    rootId: "app",
-    base: "/docs/",
-    pathname: "/old/",
-    redirectSrc: "/docs/assets/redirect-def.js",
-  });
+  const { parts } = prepareTemplate(html, "app");
+  const page = buildRedirectPage({ parts, to, replace: true, redirectSrc: "/docs/assets/redirect-def.js" });
   const nodes = elements(parse(page));
   expect(nodes.filter((node) => node.tagName === "script").map((node) => attribute(node, "src"))).toEqual([
     undefined,
@@ -144,7 +115,7 @@ test("redirect pages drop the bootstrap and carry an accessible target", () => {
       "content",
     ),
   ).toBe(`0;url=${to}`);
-  expect(JSON.parse(text(nodes.find((node) => attribute(node, "data-reze-redirect") === "app")!))).toEqual({ to, replace: true });
+  expect(JSON.parse(text(nodes.find((node) => attribute(node, "data-reze-redirect") !== undefined)!))).toEqual({ to, replace: true });
 });
 
 test("the export graph tells router apps from standalone ones", () => {
@@ -246,8 +217,8 @@ test("the client registry maps canonical assets and selects page closures", () =
         type: "chunk",
         fileName: "assets/boot-1.js",
         isEntry: true,
-        facadeModuleId: "\0reze:ssg-client.js",
-        moduleIds: ["\0reze:ssg-client.js"],
+        facadeModuleId: "\0reze:client.js",
+        moduleIds: ["\0reze:client.js"],
         imports: ["assets/view-1.js"],
         dynamicImports: [],
         viteMetadata: {},
@@ -256,7 +227,7 @@ test("the client registry maps canonical assets and selects page closures", () =
     "/root",
   );
   expect(registry.assetFile("src/a.png")).toBe("assets/a-1.png");
-  expect(registry.entryChunk("\0reze:ssg-client.js").fileName).toBe("assets/boot-1.js");
+  expect(registry.entryChunk("\0reze:client.js").fileName).toBe("assets/boot-1.js");
   expect(() => registry.assetFile("src/missing.png")).toThrow(/no client output/);
   const closure = registry.staticClosure(["assets/view-1.js", "assets/route-1.js"]);
   expect(closure.js).toEqual(["assets/view-1.js", "assets/route-1.js", "assets/shared-1.js"]);

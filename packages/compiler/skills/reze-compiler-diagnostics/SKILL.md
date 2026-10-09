@@ -716,9 +716,9 @@ export const view = <Counter island="media" islandMedia="(max-width: 40rem)" />;
 
 Automatic fix: no
 
-`hydrate` and `html` outputs are keyed by module: compiler sites, hydration ranges and payloads all reference the canonical module id the build driver passes. An absent or empty `moduleId` would make those keys unstable, so compilation stops before parsing. The `client` target needs no `moduleId`. `data.target` is the requested target.
+`island` and `html` outputs are keyed by module: compiler sites, island descriptors and component registrations reference the canonical module id the build driver passes. An absent or empty `moduleId` would make those keys unstable, so compilation stops before parsing. The `client` target needs no `moduleId`. `data.target` is the requested target.
 
-**Repair:** Pass `moduleId` alongside `target`, for example `compile(source, filename, { target: "hydrate", moduleId: "src/view.tsx" })`. The id itself is opaque to the compiler: the build driver owns its canonical form.
+**Repair:** Pass `moduleId` alongside `target`, for example `compile(source, filename, { target: "island", moduleId: "src/view.tsx" })`. The id itself is opaque to the compiler: the build driver owns its canonical form.
 
 Example:
 
@@ -1023,13 +1023,13 @@ export const view = <p>{count}</p>;
 
 **Props read inside an await** · severity `error`
 
-> `{component}` reads its props inside an `await` operand, which hydration replays without tracking the read, so the load can keep a stale value. Hoist the read into a `const` before the first `await`.
+> `{component}` reads its props inside an `await` operand, which the load does not track, so it can keep a stale value. Hoist the read into a `const` before the first `await`.
 
 `data` keys: `component`
 
 Automatic fix: no
 
-An async component re-runs its load when a tracked read changes. On hydrate, an await operand is replayed, and a props read inside it is not tracked, so the load would keep a stale value. The compiler refuses the shape instead of guessing. Reads inside functions the operand calls are not tracked on hydrate either. `data.component` is the component.
+An async component re-runs its load when a tracked read changes. A props read inside an `await` operand is not tracked, so the load would keep a stale value. The compiler refuses the shape instead of guessing. `data.component` is the component.
 
 **Repair:** Read the prop into a `const` before the first `await`, then pass that constant to the awaited call.
 

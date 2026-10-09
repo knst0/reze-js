@@ -228,7 +228,7 @@ impl Builder<'_> {
     }
 }
 
-fn is_native_name(name: &str) -> bool {
+pub(crate) fn is_native_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_ascii_lowercase()) || name.contains('-')
 }
 

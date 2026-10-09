@@ -33,8 +33,14 @@ pub const RUNTIME_MODULE: &str = exports::RUNTIME;
 pub enum CompileTarget {
     #[default]
     Client,
-    Hydrate,
+    Island,
     Html,
+}
+
+impl CompileTarget {
+    pub(crate) fn runs_in_browser(self) -> bool {
+        matches!(self, Self::Client | Self::Island)
+    }
 }
 
 pub struct Options {
@@ -49,7 +55,7 @@ pub struct Options {
     pub links: Option<String>,
     /// Default: `Client`.
     pub target: CompileTarget,
-    /// Nonempty canonical identity required by `Hydrate` and `Html`.
+    /// Nonempty canonical identity required by `Island` and `Html`.
     pub module_id: Option<String>,
     /// Profiling record for this file, in the session-tree shape the host stores. The file is
     /// specialized only when the record names this file with a matching schema and source hash;
@@ -140,7 +146,7 @@ pub struct Compiled {
 /// Compiles `source`. `Ok(None)` when nothing in the file is rewritten; `Err` holds every
 /// diagnostic when at least one is an `error`. `filename` picks the dialect (unknown extensions
 /// parse as TSX) and names the source in diagnostics, source maps and hot-swap ids.
-/// `Hydrate` and `Html` require a nonempty `Options.module_id`; missing identity reports
+/// `Island` and `Html` require a nonempty `Options.module_id`; missing identity reports
 /// `MISSING_MODULE_ID` before parsing.
 pub fn compile(
     source: &str,
@@ -156,11 +162,11 @@ pub fn compile_with_facts(
     filename: &str,
     options: &Options,
 ) -> Result<Compiled, Vec<Diagnostic>> {
-    if matches!(options.target, CompileTarget::Hydrate | CompileTarget::Html)
+    if matches!(options.target, CompileTarget::Island | CompileTarget::Html)
         && options.module_id.as_deref().is_none_or(str::is_empty)
     {
         let target = match options.target {
-            CompileTarget::Hydrate => "hydrate",
+            CompileTarget::Island => "island",
             CompileTarget::Html => "html",
             CompileTarget::Client => "client",
         };

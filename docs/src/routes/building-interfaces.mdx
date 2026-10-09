@@ -402,7 +402,7 @@ export function Field(props: { label: string }) {
 }
 ```
 
-Each call returns a new id, so call it once per instance. In a client-only build, ids are `r` followed by a number from a module-level counter. In a built page, the id comes from the component's position in the render tree. In the fixture checked for this page, the browser ids after hydration matched the built HTML.
+Each call returns a new id, so call it once per instance. In a client-only build, ids are `r` followed by a number from a module-level counter. In server-rendered output, an id created inside an island is `i<island>-<n>` on the server and in the browser, so the island keeps the id its markup was built with. Outside an island the id comes from the component's position in the render tree.
 
 ## Element references
 
@@ -635,11 +635,13 @@ export function Dashboard() {
 
 The attribute form moves the component's code into its own chunk when the import line names only that component, the importing file does not export that name, and every use is an island. The compiler then lowers the loader to a dynamic `import()` of that module. Otherwise it reports ISLAND_NOT_SPLIT and keeps the static import.
 
-### Render islands in static output
+### Render islands on the server
 
-During a build, an `eager` island renders its component into the HTML. Every other trigger renders only its fallback, inside the `<span data-island>` shell for `visible` and `interaction`, and never calls `load`. The component loads in the browser when its trigger fires. Hydration renders the same shell and arms the trigger.
+In server-rendered and statically generated output, an `eager` island renders its component into the HTML and the browser boots it at once. Every other trigger renders only its fallback, inside the `<span data-island>` shell for `visible` and `interaction`, and never renders the component. The server still calls `load` to learn which module the island boots from, and it sends the trigger and the `islandMedia` and `islandRootMargin` values with the island. The browser arms the trigger and loads the component when it fires.
 
-For `<Counter island="visible" islandFallback={<p>loading counter</p>} />`, the built HTML contains the `data-island="visible"` span with the paragraph inside, and no markup from `Counter`. Static output ignores `islandMedia` and `islandRootMargin`, since the build never loads a non-eager component. To build a site with static output, see [Static site generation](/vite-plugin#static-site-generation).
+For `<Counter island="visible" islandFallback={<p>loading counter</p>} />`, the HTML contains the `data-island="visible"` span with the paragraph inside, and no markup from `Counter`. To produce this output, see [Server rendering](/vite-plugin#server-rendering) and [Static site generation](/vite-plugin#static-site-generation).
+
+The `island` attribute is optional in server-rendered output. The compiler already finds the components that need the browser, and only those load. The attribute chooses when a component loads, and it keeps a component out of the HTML.
 
 ### Check island diagnostics
 
@@ -681,7 +683,7 @@ export function Orphan() {
 }
 ```
 
-A component that is also used outside an island stays in the main chunk, and the compiler reports ISLAND_NOT_SPLIT:
+A component that is also used outside an island stays in the main chunk, and the compiler reports `ISLAND_NOT_SPLIT`:
 
 ```tsx file=src/Shared.tsx expect=ISLAND_NOT_SPLIT
 import { Counter } from "./Counter";

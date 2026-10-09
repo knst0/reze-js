@@ -202,7 +202,7 @@ async function checkTypes(project) {
   );
   const source = `import reze, { type SsgOptions } from "@rezejs/vite-plugin";
 import { defineRoute, defineRoutes, type DataOf } from "@rezejs/router";
-import { hydrate, signal, type JSX } from "reze-js";
+import { render, signal, type JSX } from "reze-js";
 import { signal as runtimeSignal } from "@rezejs/signals";
 export const post = defineRoute({
   path: "/blog/:id",
@@ -217,7 +217,7 @@ export const config: SsgOptions = { entry: "src/app.tsx", selector: "#app", path
 export const plugins = reze({ ssg: config });
 export const count = runtimeSignal(0);
 export const dsl = signal(0);
-export const mount: (view: () => JSX.Element, root: Element) => Promise<() => void> = hydrate;
+export const mount: (view: () => JSX.Element, root: Element) => () => void = render;
 `;
   await writeFile(join(project, "consumer.ts"), source);
   const tsc = join(project, "node_modules/.bin/tsc");
@@ -337,7 +337,7 @@ async function checkPage(browser, origin, name, path) {
 async function main() {
   if (options.help) {
     console.log(
-      "Pack real native/JS tarballs; install, typecheck, build and hydrate outside the workspace.\n--vite 6.4.0,7.0.0,8.0.0 --browsers chromium,firefox,webkit\n--fixtures standalone-basics,router-full,mdx-post --artifacts-dir <staged compiler> --keep",
+      "Pack real native/JS tarballs; install, typecheck, build and boot outside the workspace.\n--vite 6.4.0,7.0.0,8.0.0 --browsers chromium,firefox,webkit\n--fixtures standalone-basics,router-full,mdx-post --artifacts-dir <staged compiler> --keep",
     );
     return;
   }

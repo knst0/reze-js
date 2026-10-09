@@ -129,7 +129,12 @@ test("an async component without a failure view passes its rejected await to the
     const name = await request.promise;
     return <b>{name}</b>;
   }
-  mount(() => catchError(() => <User />, (error) => errors.push(error)));
+  mount(() =>
+    catchError(
+      () => <User />,
+      (error) => errors.push(error),
+    ),
+  );
   request.reject(new Error("nope"));
   await settle();
   expect(errors.map(message)).toEqual(["nope"]);
@@ -147,7 +152,12 @@ test("an error thrown by the failure view goes to the surrounding handler", asyn
   Page.failure = (error: unknown) => {
     throw new Error(`${message(error)} then second`);
   };
-  mount(() => catchError(() => <Page />, (error) => errors.push(error)));
+  mount(() =>
+    catchError(
+      () => <Page />,
+      (error) => errors.push(error),
+    ),
+  );
   await settle();
   expect(errors.map(message)).toEqual(["first then second"]);
 });

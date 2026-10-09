@@ -31,7 +31,7 @@ function flushGlobal(): void {
 
 /** Runs every queued subscriber now, including those queued while it runs. */
 export function flush(): void {
-  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+  if (__REZE_HTML__) {
     const active = getActiveScope();
     if (active !== undefined && !active.disposed && !active.usesNormalScheduling()) {
       active.flush("inline");
@@ -69,7 +69,7 @@ function scopedTarget(node: ReactiveNode): ExecutionScope | undefined {
  * subscriber. Signal values still update synchronously on write.
  */
 export function scheduleFlush(): void {
-  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+  if (__REZE_HTML__) {
     const active = getActiveScope();
     if (active !== undefined && !active.disposed && !active.usesNormalScheduling()) {
       active.scheduleFlush();
@@ -105,7 +105,7 @@ function enqueueGlobal(node: ReactiveNode): void {
 
 /** Queues a watching node and its watching owners, outermost first. */
 export function scheduleNode(node: ReactiveNode): void {
-  if (!(__REZE_HTML__ || __REZE_HYDRATE__)) {
+  if (!__REZE_HTML__) {
     enqueueGlobal(node);
     return;
   }

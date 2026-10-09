@@ -8,9 +8,17 @@ import logo2x from "./logo café@2x.svg?no-inline";
 
 import "./styles.css";
 
+function Home() {
+  return <h1 id="tiny-home">tiny home</h1>;
+}
+
+function Deep() {
+  return <h1 id="tiny-deep">tiny deep</h1>;
+}
+
 export const routes = defineRoutes([
-  defineRoute({ path: "/", meta: { title: "Tiny" }, component: () => <h1 id="tiny-home">tiny home</h1> }),
-  defineRoute({ path: "/a/b", meta: { title: "Deep" }, component: () => <h1 id="tiny-deep">tiny deep</h1> }),
+  defineRoute({ path: "/", meta: { title: "Tiny" }, component: Home }),
+  defineRoute({ path: "/a/b", meta: { title: "Deep" }, component: Deep }),
 ]);
 
 export default function Shell(props: { children: JSX.Element }) {

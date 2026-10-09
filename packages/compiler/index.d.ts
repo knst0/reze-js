@@ -39,7 +39,7 @@ export interface CompileOptions {
   links?: string
   /** Which output to produce. Default: `"client"`. */
   target?: CompileTarget
-  /** Stable canonical module id; required (nonempty) for `hydrate` and `html`. Default: none. */
+  /** Stable canonical module id; required (nonempty) for `island` and `html`. Default: none. */
   moduleId?: string
   /** Profiling facts for this file, from the profile store. Default: none. */
   profile?: ProfileFacts
@@ -60,7 +60,7 @@ export interface CompileResult {
   facts?: any
 }
 
-export type CompileTarget = 'client' | 'hydrate' | 'html'
+export type CompileTarget = 'client' | 'island' | 'html'
 
 export interface Diagnostic {
   /** Stable code; see `skills/reze-compiler-diagnostics/SKILL.md`. */

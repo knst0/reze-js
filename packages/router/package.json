@@ -22,13 +22,13 @@
       "types": "./dist/fs/index.d.ts",
       "import": "./dist/fs/index.js"
     },
-    "./internal/ssg": {
-      "types": "./dist/internal/ssg.d.ts",
-      "import": "./dist/internal/ssg.js"
+    "./internal/swap": {
+      "types": "./dist/internal/swap.d.ts",
+      "import": "./dist/internal/swap.js"
     },
-    "./internal/hydrate": {
-      "types": "./dist/internal/hydrate.d.ts",
-      "import": "./dist/internal/hydrate.js"
+    "./internal/server": {
+      "types": "./dist/internal/server.d.ts",
+      "import": "./dist/internal/server.js"
     }
   },
   "publishConfig": {

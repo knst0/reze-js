@@ -14,10 +14,10 @@ fn diagnostics(source: &str) -> Vec<Diagnostic> {
 
 /// Options that trigger `code` for its catalog example. Every code is source-gated under the
 /// default options except `MISSING_MODULE_ID`, which is option-gated: its example only reports
-/// with a `hydrate`/`html` target and no `moduleId`.
+/// with an `island`/`html` target and no `moduleId`.
 fn example_options(code: Code) -> Options {
     match code {
-        Code::MissingModuleId => Options { target: CompileTarget::Hydrate, ..Options::default() },
+        Code::MissingModuleId => Options { target: CompileTarget::Island, ..Options::default() },
         _ => Options::default(),
     }
 }

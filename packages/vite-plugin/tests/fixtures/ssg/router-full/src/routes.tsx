@@ -199,6 +199,30 @@ interface CodecData {
   proto: Record<string, unknown>;
 }
 
+function IntroPage() {
+  return <p id="intro">intro</p>;
+}
+
+function ApiPage() {
+  return <p id="api">api</p>;
+}
+
+function CondPage() {
+  return <p>cond</p>;
+}
+
+function AssetsPage() {
+  return (
+    <article>
+      <img id="asset-img" src={logoUrl} alt="asset" />
+      <img id="asset-inline" src={inlineLogo} alt="inline" />
+      <img id="asset-emitted" src={emittedLogo} alt="emitted" />
+      <img id="asset-meta" src={metaLogo} alt="meta" />
+      <img id="asset-inline-meta" src={inlineMetaLogo} alt="inline meta" />
+    </article>
+  );
+}
+
 export const routes = defineRoutes([
   defineRoute({
     path: "/",
@@ -239,8 +263,8 @@ export const routes = defineRoutes([
     path: "/docs",
     component: DocsLayout,
     children: [
-      defineRoute({ path: "/intro", meta: { title: "Intro" }, component: () => <p id="intro">intro</p> }),
-      defineRoute({ path: "/api", meta: { title: "Api" }, component: () => <p id="api">api</p> }),
+      defineRoute({ path: "/intro", meta: { title: "Intro" }, component: IntroPage }),
+      defineRoute({ path: "/api", meta: { title: "Api" }, component: ApiPage }),
     ],
   }),
   defineRoute({ path: "/lazy", load: () => import("./LazyPage") }),
@@ -298,21 +322,13 @@ export const routes = defineRoutes([
     path: "/cond",
     preload: () => ({ go: true }),
     redirect: ({ data }) => (data.go ? { to: "/about" } : undefined),
-    component: () => <p>cond</p>,
+    component: CondPage,
   }),
   defineRoute({ path: "/external", redirect: { to: "https://example.test/out" } }),
   defineRoute({ path: "/redirect-only", redirect: { to: "/about", replace: true } }),
   defineRoute({ path: "/admin", component: AdminPage }),
   defineRoute({
     path: "/assets",
-    component: () => (
-      <article>
-        <img id="asset-img" src={logoUrl} alt="asset" />
-        <img id="asset-inline" src={inlineLogo} alt="inline" />
-        <img id="asset-emitted" src={emittedLogo} alt="emitted" />
-        <img id="asset-meta" src={metaLogo} alt="meta" />
-        <img id="asset-inline-meta" src={inlineMetaLogo} alt="inline meta" />
-      </article>
-    ),
+    component: AssetsPage,
   }),
 ]);

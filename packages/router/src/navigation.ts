@@ -18,13 +18,11 @@ export interface ActiveMatch {
   readonly info: Readonly<Record<string, unknown>> | undefined;
 }
 
-/** Where the router runs: page browser, SSG page preparation, or hydration preparation. */
-export type RouterEnv = "browser" | "html" | "hydrate";
+/** Where the router runs: page browser or server-side route preparation. */
+export type RouterEnv = "browser" | "html";
 
-/** Staged-session hook the browser hydration boot passes through; cleared after the initial commit. */
-export interface RouterCommitHost {
-  deferCommit(fn: () => void | (() => void)): void;
-}
+/** Settles a navigation by fetching the next page from the server instead of matching client routes. */
+export type RouterSwap = (generation: number, entry: HistoryEntry, location: Location, scrollMode: ScrollMode) => void;
 
 /** `initial` restores a position saved by an earlier document, else scrolls to the hash target only. */
 export type ScrollMode = "top" | "restore" | "initial" | "none";
@@ -40,11 +38,11 @@ export interface LinkSelectors {
 export interface RouterState {
   readonly history: RouterHistory;
   readonly branches: readonly Branch[];
-  /** Browser page, SSG page preparation, or hydration preparation; hydration flips to browser on its initial commit. */
+  /** Browser page or server-side route preparation. */
   env: RouterEnv;
-  /** Set during hydration preparation; framework writes and listeners defer through it until the initial commit clears it. */
-  commitHost: RouterCommitHost | undefined;
-  /** Imperative navigation captured during SSG preparation instead of touching history. */
+  /** Set by the swap runtime: navigations fetch the next page instead of matching client routes. */
+  swap: RouterSwap | undefined;
+  /** Imperative navigation captured during server preparation instead of touching history. */
   redirectCaptured: { to: string; replace: boolean } | undefined;
   /** Template metadata the merged page metadata restores absent fields to; from config or captured on first apply. */
   headBaseline: PageMetadata | undefined;
@@ -87,7 +85,7 @@ export interface RouterStateInit {
   readonly branches: readonly Branch[];
   readonly env: RouterEnv;
   readonly headBaseline?: PageMetadata;
-  readonly commitHost?: RouterCommitHost;
+  readonly swap?: RouterSwap;
 }
 
 /** Builds a `RouterState` for any environment; the caller sets `owner` inside the router component setup. */
@@ -100,7 +98,7 @@ export function initRouterState(init: RouterStateInit): RouterState {
     history: init.history,
     branches: init.branches,
     env: init.env,
-    commitHost: init.commitHost,
+    swap: init.swap,
     redirectCaptured: undefined,
     headBaseline: init.headBaseline,
     warming: 0,
@@ -285,6 +283,12 @@ export function start(state: RouterState, entry: HistoryEntry, intent: PreloadIn
     };
     if (state.renderDepth > 0) queueMicrotask(apply);
     else apply();
+    return;
+  }
+  if (state.swap !== undefined) {
+    state.setIsRouting(true);
+    state.setPendingKey(pathKey(location.pathname));
+    state.swap(generation, entry, location, scrollMode);
     return;
   }
   const match = matchPathname(state, location.pathname);
@@ -515,7 +519,7 @@ function settleData(
   return afterMeta(produced ?? {});
 }
 
-/** Commits settled matches; SSG and hydration preparation share this with `start`. `metadata: undefined` skips head writes (hash changes, hydrated initial commit). */
+/** Commits settled matches; server preparation and swap navigation share this with `start`. `metadata: undefined` skips head writes (hash changes, swapped pages). */
 export function commit(
   state: RouterState,
   entry: HistoryEntry,
@@ -531,16 +535,7 @@ export function commit(
   state.setMatches(matches);
   state.setIsRouting(false);
   state.setPendingKey(undefined);
-  const host = state.commitHost;
-  if (host !== undefined)
-    host.deferCommit(() => {
-      state.commitHost = undefined;
-      state.env = "browser";
-    });
-  if (metadata !== undefined) {
-    if (host !== undefined) host.deferCommit(() => applyMetadata(state, metadata));
-    else applyMetadata(state, metadata);
-  }
+  if (metadata !== undefined) applyMetadata(state, metadata);
   flush();
   if (!isScrollManaged || scrollMode === "none") return;
   if ((scrollMode === "restore" || scrollMode === "initial") && restorePosition(state, entry.index)) return;

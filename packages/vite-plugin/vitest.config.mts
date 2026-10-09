@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  define: { __REZE_HTML__: "false", __REZE_HYDRATE__: "false" },
+  define: { __REZE_HTML__: "false" },
   test: {
     name: "@rezejs/vite-plugin",
     alias: {

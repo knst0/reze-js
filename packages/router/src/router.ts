@@ -28,8 +28,8 @@ export interface RouterConfig {
   /** Default `true`: load and preload a link's route on hover, focus or touch. Needs `links`. */
   preload?: boolean;
   /**
-   * Template head metadata the merged page metadata restores absent fields to. The hydration boot passes the payload
-   * `headDefaults`; without it the router captures the live document on first apply.
+   * Template head metadata the merged page metadata restores absent fields to; without it the router captures the live
+   * document on first apply.
    */
   headDefaults?: PageMetadata;
 }
@@ -81,7 +81,7 @@ function outlet(state: RouterState, depth: number): () => JSX.Element {
   return () => view;
 }
 /**
- * Binds an already-settled SSG state to the router outlet without starting a navigation, installing listeners, or
+ * Binds an already-settled server state to the router outlet without starting a navigation, installing listeners, or
  * touching history. Preparation owns matching, data and redirect capture; mount the result inside the page scope.
  */
 export function createSettledRouter(
@@ -91,16 +91,6 @@ export function createSettledRouter(
     const root = props.root;
     return provideContext(RouterContext, state, () => {
       state.owner = getOwner();
-      const host = state.commitHost;
-      if (host !== undefined) {
-        onCleanup(() => {
-          state.generation++;
-        });
-        host.deferCommit(() => {
-          if (state.history.scroll) loadPositions(state);
-          installRouterListeners(state, true, true, state.history.scroll);
-        });
-      }
       if (root === undefined) return outlet(state, 0);
       let children: JSX.Element;
       return createComponent(root, {

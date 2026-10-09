@@ -2,16 +2,13 @@ import { adopt, enterEffect, exitEffect, getOwner, reportError, setActiveSub, st
 import { FlagDirty, FlagNone, FlagOwnsChildren, FlagPending, FlagRecursedCheck, FlagWatching } from "./flags";
 import { checkDirty, disposeChildren, disposeNode, type Link, purgeDeps, type ReactiveNode } from "./graph";
 import {
-  beforeResourcePending,
-  beforeResourceSettle,
   disposeResource,
-  parkSkippedProducer,
   registerResource,
   resourceRecordOf,
+  settleResource,
   supersedeResource,
   trackResourceStart,
 } from "./internal/resource";
-import { getScopeObserver } from "./internal/scope";
 import { profileCreated, profileReran } from "./profile";
 import { enterReload, leaveReload, type ReloadScope } from "./reload";
 import { SignalNode } from "./signal";
@@ -149,12 +146,9 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
     if (generation > 1 && process.env.NODE_ENV !== "production") {
       profileReran(this);
     }
-    if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    if (__REZE_HTML__) {
       const record = resourceRecordOf(this);
-      if (record !== undefined) {
-        supersedeResource(record, generation);
-        beforeResourcePending(record);
-      }
+      if (record !== undefined) supersedeResource(record, generation);
     }
     if (this.hasSettled && this.reloadScopes === undefined) {
       this.reloadScopes = enterReload(this);
@@ -176,7 +170,7 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
       this.flags &= ~FlagRecursedCheck;
     }
     const promise = Promise.resolve(result);
-    if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    if (__REZE_HTML__) {
       const record = resourceRecordOf(this);
       if (record !== undefined) {
         trackResourceStart(record, generation, promise);
@@ -185,21 +179,11 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
     promise.then(
       (value) => {
         if (generation === this.generation) {
-          if (__REZE_HTML__ || __REZE_HYDRATE__) {
+          if (__REZE_HTML__) {
             const record = resourceRecordOf(this);
             if (record !== undefined) {
-              if (
-                !beforeResourceSettle(record, generation, {
-                  pending: false,
-                  hasResolved: true,
-                  resolved: value,
-                  hasRejection: false,
-                  rejection: undefined,
-                })
-              ) {
-                return;
-              }
-              if (record.scope !== undefined && !record.scope.disposed) {
+              if (!settleResource(record, generation, this.generation)) return;
+              if (record.scope !== undefined) {
                 record.scope.run(() => {
                   this.commitResolution(value);
                 });
@@ -212,21 +196,11 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
       },
       (error: unknown) => {
         if (generation === this.generation) {
-          if (__REZE_HTML__ || __REZE_HYDRATE__) {
+          if (__REZE_HTML__) {
             const record = resourceRecordOf(this);
             if (record !== undefined) {
-              if (
-                !beforeResourceSettle(record, generation, {
-                  pending: false,
-                  hasResolved: false,
-                  resolved: undefined,
-                  hasRejection: true,
-                  rejection: error,
-                })
-              ) {
-                return;
-              }
-              if (record.scope !== undefined && !record.scope.disposed) {
+              if (!settleResource(record, generation, this.generation)) return;
+              if (record.scope !== undefined) {
                 record.scope.run(() => {
                   this.commitRejection(error);
                 });
@@ -270,7 +244,7 @@ class AsyncComputedNode<T> implements ReactiveNode, AsyncComputed<T> {
   }
 
   dispose(): void {
-    if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    if (__REZE_HTML__) {
       disposeResource(this);
     }
     ++this.generation;
@@ -292,32 +266,7 @@ export function asyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> | T): A
     profileCreated(node, "async", undefined);
   }
   const owner = getOwner();
-  if (__REZE_HTML__ || __REZE_HYDRATE__) {
-    const record = registerResource(node, owner, "public", {
-      writeResolved: (value): void => {
-        node.resolved.write(value as T | undefined);
-      },
-      writeRejection: (value): void => {
-        node.rejection.write(value);
-      },
-      writePending: (value): void => {
-        node.pending.write(value);
-      },
-      purge: (): void => {
-        purgeDeps(node);
-      },
-    });
-    if (owner !== undefined) {
-      adopt(node, owner);
-    }
-    if (getScopeObserver()?.shouldSkipInitialProducer?.(record) === true) {
-      parkSkippedProducer(record);
-      beforeResourcePending(record);
-      return node;
-    }
-    node.start();
-    return node;
-  }
+  if (__REZE_HTML__) registerResource(node, owner, true);
   if (owner !== undefined) {
     adopt(node, owner);
   }
@@ -325,7 +274,7 @@ export function asyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> | T): A
   return node;
 }
 
-export const internalAsyncComputed = __REZE_HTML__ || __REZE_HYDRATE__ ? createInternalAsyncComputed : asyncComputed;
+export const internalAsyncComputed = __REZE_HTML__ ? createInternalAsyncComputed : asyncComputed;
 
 function createInternalAsyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> | T): AsyncComputed<T> {
   const node = new AsyncComputedNode(fn);
@@ -333,22 +282,7 @@ function createInternalAsyncComputed<T>(fn: (c: AsyncContext) => PromiseLike<T> 
     profileCreated(node, "async", undefined);
   }
   const owner = getOwner();
-  if (__REZE_HTML__ || __REZE_HYDRATE__) {
-    registerResource(node, owner, "internal", {
-      writeResolved: (value): void => {
-        node.resolved.write(value as T | undefined);
-      },
-      writeRejection: (value): void => {
-        node.rejection.write(value);
-      },
-      writePending: (value): void => {
-        node.pending.write(value);
-      },
-      purge: (): void => {
-        purgeDeps(node);
-      },
-    });
-  }
+  if (__REZE_HTML__) registerResource(node, owner, false);
   if (owner !== undefined) {
     adopt(node, owner);
   }

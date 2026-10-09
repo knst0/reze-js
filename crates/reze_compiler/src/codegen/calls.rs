@@ -6,7 +6,7 @@ use crate::ast::Ast;
 use crate::frontend::analysis::RuntimeCallKind;
 use crate::frontend::dynamic::DynamicTag;
 use crate::ir::view::Namespace;
-use crate::{CompileTarget, RUNTIME_MODULE};
+use crate::RUNTIME_MODULE;
 
 pub fn rewrite<'a>(
     ctx: &mut EmitContext<'a, '_>,
@@ -20,15 +20,12 @@ pub fn rewrite<'a>(
     if kind == RuntimeCallKind::AsyncComponent {
         continuation::prepare(ctx, call);
     }
-    if ctx.options.target == CompileTarget::Client {
+    if ctx.options.target.runs_in_browser() {
         return;
     }
     let ast = Ast::new(ctx.allocator);
     let site = ctx.origin_site(call.span);
-    let mut arguments = call.arguments.take_in(&ctx.allocator);
-    if kind == RuntimeCallKind::AsyncViews {
-        arguments.remove(1);
-    }
+    let arguments = call.arguments.take_in(&ctx.allocator);
     let mut next = ArenaVec::with_capacity_in(arguments.len() + 3, &ast.builder);
     next.push(Argument::from(site));
     let callee = match kind {
@@ -52,40 +49,17 @@ pub fn rewrite<'a>(
         | RuntimeCallKind::Dynamic
         | RuntimeCallKind::DynamicElement
         | RuntimeCallKind::Island => {
-            let (source, export) = match (ctx.options.target, kind) {
-                (CompileTarget::Html, RuntimeCallKind::AsyncComponent) => {
-                    ("reze-js/internal/html", "hAsyncComponent")
+            let export = match kind {
+                RuntimeCallKind::AsyncComponent => "hAsyncComponent",
+                RuntimeCallKind::AsyncViews => "hAsyncViews",
+                RuntimeCallKind::Dynamic => "hDynamic",
+                RuntimeCallKind::DynamicElement => "hDynamicElement",
+                RuntimeCallKind::Island => "hIsland",
+                RuntimeCallKind::Resource | RuntimeCallKind::UniqueId => {
+                    unreachable!("handled before the runtime helper lookup")
                 }
-                (CompileTarget::Html, RuntimeCallKind::AsyncViews) => {
-                    ("reze-js/internal/html", "hAsyncViews")
-                }
-                (CompileTarget::Html, RuntimeCallKind::Dynamic) => {
-                    ("reze-js/internal/html", "hDynamic")
-                }
-                (CompileTarget::Html, RuntimeCallKind::DynamicElement) => {
-                    ("reze-js/internal/html", "hDynamicElement")
-                }
-                (CompileTarget::Html, RuntimeCallKind::Island) => {
-                    ("reze-js/internal/html", "hIsland")
-                }
-                (CompileTarget::Hydrate, RuntimeCallKind::AsyncComponent) => {
-                    ("reze-js/internal/hydrate", "prepareAsyncComponent")
-                }
-                (CompileTarget::Hydrate, RuntimeCallKind::AsyncViews) => {
-                    ("reze-js/internal/hydrate", "prepareAsyncViews")
-                }
-                (CompileTarget::Hydrate, RuntimeCallKind::Dynamic) => {
-                    ("reze-js/internal/hydrate", "prepareDynamic")
-                }
-                (CompileTarget::Hydrate, RuntimeCallKind::DynamicElement) => {
-                    ("reze-js/internal/hydrate", "prepareDynamicElement")
-                }
-                (CompileTarget::Hydrate, RuntimeCallKind::Island) => {
-                    ("reze-js/internal/hydrate", "prepareIsland")
-                }
-                _ => unreachable!("managed call has a non-client target"),
             };
-            ctx.helper(source, export)
+            ctx.helper("reze-js/internal/html", export)
         }
     };
     next.extend(arguments);
@@ -96,7 +70,7 @@ pub fn rewrite<'a>(
 
 fn rewrite_resource<'a>(ctx: &mut EmitContext<'a, '_>, call: &mut CallExpression<'a>) {
     let resource = ctx.helper("reze-js/internal/reactivity", "resource");
-    if ctx.options.target == CompileTarget::Client {
+    if ctx.options.target.runs_in_browser() {
         call.callee = resource;
     } else {
         let ast = Ast::new(ctx.allocator);
@@ -123,15 +97,10 @@ pub fn native_type<'a>(
         Namespace::Svg => ("elementSVG", "svg"),
         Namespace::MathMl => ("elementMathML", "math"),
     };
-    if ctx.options.target == CompileTarget::Client {
+    if ctx.options.target.runs_in_browser() {
         return ctx.call(RUNTIME_MODULE, client, [value]);
     }
     let ast = Ast::new(ctx.allocator);
     let site = ctx.origin_site(tag.source);
-    let (source, helper) = match ctx.options.target {
-        CompileTarget::Html => ("reze-js/internal/html", "hElementType"),
-        CompileTarget::Hydrate => ("reze-js/internal/hydrate", "prepareElementType"),
-        CompileTarget::Client => unreachable!(),
-    };
-    ctx.call(source, helper, [site, value, ast.string(namespace)])
+    ctx.call("reze-js/internal/html", "hElementType", [site, value, ast.string(namespace)])
 }

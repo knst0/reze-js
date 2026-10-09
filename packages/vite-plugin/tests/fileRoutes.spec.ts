@@ -14,7 +14,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "reze-file-routes-"));
   mkdirSync(join(root, "src"));
   symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "dir");
-  writeFileSync(join(root, "index.html"), '<!doctype html><div id="app"></div><script type="module" src="/@reze/ssg-client.js"></script>');
+  writeFileSync(join(root, "index.html"), '<!doctype html><div id="app"></div><script type="module" src="/@reze/client.js"></script>');
   writeFileSync(join(root, "src", "app.tsx"), 'export { routes, paths } from "virtual:reze-routes";');
 });
 

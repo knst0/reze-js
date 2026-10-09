@@ -98,8 +98,7 @@ export function link(el: Element, href?: () => string): void {
   const plain = value === undefined ? staticHref(el) : undefined;
   renderEffect((previous: number) => {
     const flags = linkFlags(state, linkKey(state, value === undefined ? plain : value()));
-    if (state.commitHost !== undefined) applyFlags(el, flags, flags ^ (Current | Active | Pending));
-    else if (flags !== previous) applyFlags(el, flags, previous);
+    if (flags !== previous) applyFlags(el, flags, previous);
     return flags;
   }, 0);
 }

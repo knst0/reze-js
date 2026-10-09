@@ -44,7 +44,7 @@ export function isPureRun(): boolean {
 export function adopt(node: ReactiveNode, owner: ReactiveNode): void {
   link(node, owner, 0);
   owner.flags |= FlagOwnsChildren;
-  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+  if (__REZE_HTML__) {
     registerNodeScope(node, owner);
   }
 }
@@ -55,7 +55,7 @@ export function enterOwner(sub: ReactiveNode): ReactiveNode | undefined {
   activeSub = sub;
   if (owner !== undefined) {
     adopt(sub, owner);
-  } else if (__REZE_HTML__ || __REZE_HYDRATE__) {
+  } else if (__REZE_HTML__) {
     registerNodeScope(sub, undefined);
   }
   return prevSub;

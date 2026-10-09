@@ -8,7 +8,6 @@ export { element, elementMathML, elementSVG } from "./element";
 export { addEventListener, delegateEvents } from "./events";
 export { branch, choose } from "./flow";
 export { hotComponent } from "./hot";
-export { hydrate } from "./hydrate";
 export { append, insert } from "./insert";
 export {
   type ForProps,

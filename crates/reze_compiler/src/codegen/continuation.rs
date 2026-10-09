@@ -59,13 +59,19 @@ fn prepare_body<'a>(
     let ast = Ast::new(ctx.allocator);
     let run = ctx.fresh("_continuation$");
     let error = ctx.fresh("_error$");
-    let start = if ctx.options.target == CompileTarget::Client {
-        ctx.call("reze-js/internal/reactivity", "beginContinuation", [])
-    } else {
-        let site = ctx.origin_site(origin);
-        ctx.call("reze-js/internal/reactivity", "beginContinuation", [site])
+    let start = match ctx.options.target {
+        CompileTarget::Html => {
+            let site = ctx.origin_site(origin);
+            ctx.call("reze-js/internal/reactivity", "beginContinuation", [site])
+        }
+        CompileTarget::Island => {
+            let key = ctx.site_key(origin);
+            let site = ast.string(&key);
+            ctx.call("reze-js/internal/reactivity", "beginContinuation", [site])
+        }
+        CompileTarget::Client => ctx.call("reze-js/internal/reactivity", "beginContinuation", []),
     };
-    let mut awaits = Awaits { ctx, run, action_run, await_count: 0, replay_sites: Vec::new() };
+    let mut awaits = Awaits { ctx, run, action_run, await_count: 0 };
     for statement in &mut body.statements {
         awaits.visit_statement(statement);
     }
@@ -124,7 +130,6 @@ struct Awaits<'c, 'a, 'm> {
     run: &'a str,
     action_run: Option<&'a str>,
     await_count: usize,
-    replay_sites: Vec<Span>,
 }
 
 impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
@@ -136,7 +141,6 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
         walk_mut::walk_catch_clause(self, clause);
         let ast = Ast::new(self.ctx.allocator);
         let error;
-        let binds_error = clause.param.is_some();
         let pattern = if let Some(parameter) = &mut clause.param {
             match &parameter.pattern {
                 BindingPattern::BindingIdentifier(binding) => {
@@ -182,9 +186,6 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
                     &ast.builder,
                 )
             }
-            None if binds_error && self.ctx.options.target == CompileTarget::Hydrate => {
-                ast.stmt(ast.assign(ast.ident(error), rejected))
-            }
             None => ast.stmt(rejected),
         };
         clause.body.body.insert(0, statement);
@@ -229,7 +230,6 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
     }
 
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
-        let nested_start = self.replay_sites.len();
         walk_mut::walk_expression(self, expression);
         let Expression::AwaitExpression(awaited) = expression else { return };
         self.await_count += 1;
@@ -247,68 +247,20 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
             value = call.arguments.remove(0).into_expression();
             action_suspend = Some(call);
         }
-        if self.ctx.options.target == CompileTarget::Hydrate {
-            let mut replayed = ArenaVec::new_in(&ast.builder);
-            for index in nested_start..self.replay_sites.len() {
-                let span = self.replay_sites[index];
-                let site = self.ctx.origin_site(span);
-                let expected = self.ctx.call(
-                    "reze-js/internal/hydrate",
-                    "willReplayAwait",
-                    [ast.ident(self.run), site],
-                );
-                let site = self.ctx.origin_site(span);
-                let operand = self.ctx.call(
-                    "reze-js/internal/hydrate",
-                    "replayAwaitOperand",
-                    [ast.ident(self.run), site],
-                );
-                let site = self.ctx.origin_site(span);
-                let mut suspended =
-                    ast.call(ast.member(ast.ident(self.run), "suspend"), [operand, site]);
-                if let Some(action_run) = self.action_run {
-                    suspended = ast.call(ast.member(ast.ident(action_run), "suspend"), [suspended]);
-                }
-                let awaited = Expression::new_await_expression(span, suspended, &ast.builder);
-                let mut resumed = ast.call(ast.member(ast.ident(self.run), "resume"), [awaited]);
-                if let Some(action_run) = self.action_run {
-                    resumed = ast.call(ast.member(ast.ident(action_run), "resume"), [resumed]);
-                }
-                replayed.push(ast.conditional(expected, resumed, ast.undefined()));
+        let suspended = match self.ctx.options.target {
+            CompileTarget::Html => {
+                let suspend = ast.member(ast.ident(self.run), "suspend");
+                let site = self.ctx.origin_site(awaited.span);
+                ast.call(suspend, [value, site])
             }
-            let site = self.ctx.origin_site(awaited.span);
-            let operand = self.ctx.call(
-                "reze-js/internal/hydrate",
-                "replayAwaitOperand",
-                [ast.ident(self.run), site],
-            );
-            let replayed = if replayed.is_empty() {
-                operand
-            } else {
-                replayed.push(operand);
-                Expression::new_sequence_expression(SPAN, replayed, &ast.builder)
-            };
-            self.replay_sites.push(awaited.span);
-            value = ast.conditional(ast.member(ast.ident(self.run), "replaying"), replayed, value);
-        } else if self.ctx.options.target == CompileTarget::Html {
-            let site = self.ctx.origin_site(awaited.span);
-            let begin = self.ctx.call(
-                "reze-js/internal/html",
-                "beginAwaitOperand",
-                [ast.ident(self.run), site],
-            );
-            value = Expression::new_sequence_expression(
-                SPAN,
-                ArenaVec::from_array_in([begin, value], &ast.builder),
-                &ast.builder,
-            );
-        }
-        let suspend = ast.member(ast.ident(self.run), "suspend");
-        let suspended = if self.ctx.options.target == CompileTarget::Client {
-            ast.call(suspend, [value])
-        } else {
-            let site = self.ctx.origin_site(awaited.span);
-            ast.call(suspend, [value, site])
+            CompileTarget::Island => {
+                let suspend = ast.member(ast.ident(self.run), "suspendLazy");
+                ast.call(suspend, [ast.arrow(Vec::new(), value)])
+            }
+            CompileTarget::Client => {
+                let suspend = ast.member(ast.ident(self.run), "suspend");
+                ast.call(suspend, [value])
+            }
         };
         awaited.argument = if let Some(mut call) = action_suspend {
             call.arguments.push(Argument::from(suspended));
@@ -321,11 +273,7 @@ impl<'a> VisitMut<'a> for Awaits<'_, 'a, '_> {
     }
 }
 
-fn reject<'a>(ctx: &mut EmitContext<'a, '_>, run: &'a str, error: &'a str) -> Expression<'a> {
+fn reject<'a>(ctx: &EmitContext<'a, '_>, run: &'a str, error: &'a str) -> Expression<'a> {
     let ast = Ast::new(ctx.allocator);
-    if ctx.options.target == CompileTarget::Html {
-        ctx.call("reze-js/internal/html", "rejectAwaitOperand", [ast.ident(run), ast.ident(error)])
-    } else {
-        ast.call(ast.member(ast.ident(run), "reject"), [ast.ident(error)])
-    }
+    ast.call(ast.member(ast.ident(run), "reject"), [ast.ident(error)])
 }

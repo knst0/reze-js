@@ -206,16 +206,6 @@ export function readManifest(distDir: string): ViteManifest {
   return raw as ViteManifest;
 }
 
-export function payloadScript(html: string, rootId: string): string {
-  const marker = `data-reze-state="${rootId}"`;
-  const scriptIndex = html.indexOf(marker);
-  if (scriptIndex < 0) throw new Error(`[reze-test] built page has no hydration payload for root ${JSON.stringify(rootId)}`);
-  const openEnd = html.indexOf(">", scriptIndex);
-  const closeStart = html.indexOf("</script>", openEnd);
-  if (openEnd < 0 || closeStart < 0) throw new Error("[reze-test] hydration payload script is truncated");
-  return html.slice(openEnd + 1, closeStart);
-}
-
 export interface OpenPageResult {
   page: Page;
   errors: unknown[];

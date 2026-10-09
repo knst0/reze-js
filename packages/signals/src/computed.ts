@@ -3,7 +3,6 @@ import { endTracking, getOwner, isErrorHandled, markPure, setActiveSub, startTra
 import { FlagDirty, FlagMutable, FlagNone, FlagOwnsChildren, FlagPending, FlagRecursedCheck } from "./flags";
 import { checkDirty, disposeAllDepsInReverse, disposeChildren, type Link, type ReactiveNode, shallowPropagate } from "./graph";
 import {
-  currentModuleId,
   enterScopeContext,
   getActiveScope,
   registerNodeScope,
@@ -43,10 +42,10 @@ class ComputedNode<T = unknown> implements ReactiveNode {
     }
     const prevSub = startTracking(this, FlagMutable);
     let prevScope: ScopeContext | undefined = undefined;
-    if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    if (__REZE_HTML__) {
       const construction = scopeOfNode(this);
       if (construction !== undefined && construction !== getActiveScope()) {
-        prevScope = enterScopeContext(construction, currentModuleId());
+        prevScope = enterScopeContext(construction);
       }
     }
     try {
@@ -89,10 +88,10 @@ class ComputedNode<T = unknown> implements ReactiveNode {
       this.flags = FlagMutable | FlagRecursedCheck;
       const prevSub = setActiveSub(this);
       let prevScope: ScopeContext | undefined = undefined;
-      if (__REZE_HTML__ || __REZE_HYDRATE__) {
+      if (__REZE_HTML__) {
         const construction = scopeOfNode(this);
         if (construction !== undefined && construction !== getActiveScope()) {
-          prevScope = enterScopeContext(construction, currentModuleId());
+          prevScope = enterScopeContext(construction);
         }
       }
       try {
@@ -125,7 +124,7 @@ export interface ComputedOptions {
 export function computed<T>(getter: (previousValue?: T) => T, options?: ComputedOptions): () => T {
   const owner = getOwner();
   const node = new ComputedNode(getter, owner);
-  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+  if (__REZE_HTML__) {
     registerNodeScope(node, owner);
   }
   if (process.env.NODE_ENV !== "production") {

@@ -17,7 +17,7 @@ export const rezeCompiler: Rolldown.Plugin = {
 };
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/fs/index.ts", "src/internal/ssg.ts", "src/internal/hydrate.ts"],
+  entry: ["src/index.ts", "src/fs/index.ts", "src/internal/server.ts", "src/internal/swap.ts"],
   platform: "neutral",
   unbundle: true,
   deps: { neverBundle: [/^node:/] },

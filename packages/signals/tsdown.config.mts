@@ -16,7 +16,7 @@ export default defineConfig([
     unbundle: true,
     outDir: "dist",
     dts: { tsconfig: "./tsconfig.build.json" },
-    define: { __REZE_HTML__: "false", __REZE_HYDRATE__: "false" },
+    define: { __REZE_HTML__: "false" },
   },
   {
     entry,
@@ -24,14 +24,6 @@ export default defineConfig([
     unbundle: true,
     outDir: "dist/html",
     dts: false,
-    define: { __REZE_HTML__: "true", __REZE_HYDRATE__: "false" },
-  },
-  {
-    entry,
-    platform: "neutral",
-    unbundle: true,
-    outDir: "dist/hydrate",
-    dts: false,
-    define: { __REZE_HTML__: "false", __REZE_HYDRATE__: "true" },
+    define: { __REZE_HTML__: "true" },
   },
 ]);

@@ -244,15 +244,16 @@ fn a_group_is_fixed_only_when_every_member_is() {
 }
 
 #[test]
-fn hydrate_bindings_are_never_fixed() {
+fn island_binding_fixing_matches_client() {
     let source = "import { signal } from \"reze-js\";\nexport function C() {\n  let a = signal(0);\n  let b = signal(0);\n  return <div title={a + \"-\" + b} onClick={() => { a += 1; b += 1; }} />;\n}";
     let options = Options {
-        target: reze_compiler::CompileTarget::Hydrate,
+        target: reze_compiler::CompileTarget::Island,
         module_id: Some("m".into()),
         ..Options::default()
     };
-    let code = output_for(source, "test.tsx", &options).code;
-    assert!(!code.contains("fixedRenderEffect"), "{code}");
+    let client = output_for(source, "test.tsx", &Options::default()).code;
+    let island = output_for(source, "test.tsx", &options).code;
+    assert_eq!(island.matches("fixedRenderEffect").count(), client.matches("fixedRenderEffect").count(), "{island}");
 }
 
 fn client_body(declarations: &str, view: &str) -> String {

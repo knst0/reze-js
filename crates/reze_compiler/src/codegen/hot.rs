@@ -33,7 +33,7 @@ impl HotPlan {
 }
 
 /// Whether hot-swap output applies: client target with `options.hot` only,
-/// never `html` or `hydrate`.
+/// never `html` or `island`.
 pub fn should_apply(options: &Options) -> bool {
     options.hot && options.target == CompileTarget::Client
 }

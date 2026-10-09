@@ -450,7 +450,7 @@ The setter follows these rules:
 
 ## Deploy the router
 
-A Reze router app deploys in one of two ways. You can prerender each route to its own HTML file, or you can host a client-only build. Prerendering gives each route a document the server can return before the script runs. A client-only build needs the host to serve `index.html` for every route.
+A Reze router app deploys in one of three ways. You can render each request on a server with `ssr`, prerender each route to its own HTML file, or host a client-only build. [Server rendering](/vite-plugin#server-rendering) describes the first. Prerendering gives each route a document the server can return before the script runs. A client-only build needs the host to serve `index.html` for every route.
 
 ### Prerender pages
 
@@ -499,12 +499,21 @@ Every dynamic route needs an entry in `paths`. Map a route to `[]` to skip it. A
 Prerendering rejects these setups:
 
 - `fileRoutes.history: "hash"`, because hash routes have no server path to render.
-- Library builds, `build.watch` builds, and explicit `ssr` builds.
+- Library builds, `build.watch` builds, and explicit Vite `build.ssr` builds.
 - `ssg.paths` with a standalone entry that has no `routes` export.
 - A missing `entry` file.
 - A redirect to a path under the base that does not match a prerendered page, or to a path outside the base.
 - A redirect to a URL with a scheme other than `http:` or `https:`. Absolute `http:` and `https:` targets, and protocol-relative `//` targets, are left as they are.
 - A cycle of redirects.
+
+### Navigate in server-rendered and prerendered apps
+
+With `ssr` or `ssg` set, the browser does not run the route table. A click on a link to another page of the app fetches that page's HTML and replaces the content of the mount element, then updates the address bar, the title, and the page metadata. Nothing else in the document reloads, so state outside the mount element survives. Everything inside the mount element is new, including the DOM of a layout that appeared on both pages.
+
+- `preload`, `meta`, and `redirect` run on the server for each request, or once for each page at build time. They do not run in the browser. A component receives the result through `props.data`.
+- Hovering, focusing, or touching a link fetches its page ahead of the click, once for each link within 10 seconds. `useIsRouting()` is `true` while a navigation waits for its page.
+- A response that is not HTML, a failed fetch, or a build ID that differs from the current page's loads the destination as an ordinary navigation.
+- `useLocation`, `useParams`, `useNavigate`, `useSearchParams`, `useIsRouting`, `useBeforeLeave`, and `link` work inside islands. `useCurrentMatches` returns each match's `path` and `params`, and `data` is `undefined` there.
 
 ### Host a client-only build
 

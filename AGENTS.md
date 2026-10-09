@@ -18,7 +18,7 @@ into direct DOM code that calls a private runtime. There is no uncompiled mode t
   are versioned and checked against the source they describe; missing or stale facts select
   the conservative path.
 - **Async is first-party.** Awaiting, pending, and failure are handled by the compiler and
-  runtime together, identically for the client, HTML, and hydrate targets.
+  runtime together, identically for the client, island, and HTML targets.
 
 ## Priorities
 

@@ -13,7 +13,7 @@ const docsDir = join(import.meta.dirname, "..");
 const workspaceDir = join(docsDir, "..");
 const projectsDir = join(docsDir, "node_modules/.cache/examples");
 const examples = (await readPages(join(docsDir, "src/routes"))).flatMap(collectExamples);
-const targets: CompileTarget[] = ["client", "hydrate", "html"];
+const targets: CompileTarget[] = ["client", "island", "html"];
 const runFile = promisify(execFile);
 
 const genericRoutes = `declare module "virtual:reze-routes" {
@@ -22,7 +22,7 @@ const genericRoutes = `declare module "virtual:reze-routes" {
   export const paths: PathsTree;
 }
 `;
-const buildConstants = "declare const __REZE_HTML__: boolean;\ndeclare const __REZE_HYDRATE__: boolean;\n";
+const buildConstants = "declare const __REZE_HTML__: boolean;\n";
 
 test.each(examples.flatMap((example) => targets.map((target) => ({ ...example, target }))))(
   "$id compiles for $target with diagnostics $expectedCodes",

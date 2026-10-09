@@ -38,9 +38,13 @@
       "types": "./dist/internal/html.d.ts",
       "import": "./dist/internal/html.js"
     },
-    "./internal/hydrate": {
-      "types": "./dist/internal/hydrate.d.ts",
-      "import": "./dist/internal/hydrate.js"
+    "./internal/client": {
+      "types": "./dist/internal/client.d.ts",
+      "import": "./dist/internal/client.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     }
   },
   "publishConfig": {

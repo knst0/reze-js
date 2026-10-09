@@ -1,7 +1,7 @@
 import { getOwner, setActiveOwner, setActiveSub } from "../context";
 import type { ReactiveNode } from "../graph";
+import { takeSeed, type Seed } from "../island";
 import {
-  currentModuleId,
   enterScopeContext,
   getActiveScope,
   getScopeObserver,
@@ -17,10 +17,9 @@ export type ContinuationEvent = "begin" | "suspend" | "resume" | "reject" | "end
 export interface ContinuationHandle {
   readonly site: SourceSite | undefined;
   readonly scope: ExecutionScope | undefined;
-  readonly moduleId: string | undefined;
   readonly owner: ReactiveNode | undefined;
-  replaying?: boolean;
   suspend<T>(value: T, awaitSite?: SourceSite): T | Promise<T>;
+  suspendLazy<T>(operand: () => T, awaitSite?: SourceSite): T | Promise<unknown>;
   resume<T>(value: T): T;
   reject<T>(error: T): T;
   end(): void;
@@ -36,34 +35,43 @@ enum State {
 class Continuation implements ContinuationHandle {
   declare readonly site: SourceSite | undefined;
   declare readonly scope: ExecutionScope | undefined;
-  declare readonly moduleId: string | undefined;
   readonly owner: ReactiveNode | undefined;
-  declare replaying?: boolean;
   private previousOwner: ReactiveNode | undefined;
   private previousSubscriber: ReactiveNode | undefined;
   declare private previousScope: ScopeContext | undefined;
   private state: State = State.Idle;
+  declare private replay: Seed | undefined;
+  private position = 0;
 
-  constructor(site: SourceSite | undefined) {
+  constructor(site: SourceSite | string | undefined) {
     const owner = getOwner();
     this.owner = owner;
-    if (__REZE_HTML__ || __REZE_HYDRATE__) {
-      this.site = site;
-      this.replaying = false;
+    if (__REZE_HTML__) {
+      this.site = site as SourceSite | undefined;
       this.scope = getActiveScope() ?? (owner !== undefined ? scopeOfNode(owner) : undefined);
-      this.moduleId = currentModuleId() ?? site?.module;
-      getScopeObserver()?.onContinuationEvent?.(this, "begin", site, undefined);
+      getScopeObserver()?.onContinuationEvent?.(this, "begin", this.site, undefined);
+    } else if (typeof site === "string") {
+      this.replay = takeSeed(site);
     }
   }
 
+  suspendLazy<T>(operand: () => T, awaitSite?: SourceSite): T | Promise<unknown> {
+    const replay = this.replay;
+    let recorded: Promise<unknown> | undefined;
+    if (replay !== undefined) {
+      if (this.position < replay.values.length) recorded = Promise.resolve(replay.values[this.position++]);
+      else if (replay.rejection !== undefined) recorded = Promise.reject(replay.rejection.error);
+    }
+    return this.suspend(recorded ?? operand(), awaitSite);
+  }
+
   suspend<T>(value: T, awaitSite?: SourceSite): T | Promise<T> {
-    const selected = __REZE_HTML__ || __REZE_HYDRATE__;
     if (this.state === State.Resumed) {
       setActiveSub(this.previousSubscriber);
       setActiveOwner(this.previousOwner);
       this.previousSubscriber = undefined;
       this.previousOwner = undefined;
-      if (selected && this.previousScope !== undefined) {
+      if (__REZE_HTML__ && this.previousScope !== undefined) {
         restoreScopeContext(this.previousScope);
         this.previousScope = undefined;
       }
@@ -71,13 +79,8 @@ class Continuation implements ContinuationHandle {
     } else if (this.state === State.Idle) {
       this.state = State.Suspended;
     }
-    if (selected && this.state === State.Suspended) {
-      const observer = getScopeObserver();
-      observer?.onContinuationEvent?.(this, "suspend", awaitSite ?? this.site, value);
-      const held = observer?.interceptSuspend?.(this, awaitSite ?? this.site, value);
-      if (held !== undefined) {
-        return held.promise as Promise<T>;
-      }
+    if (__REZE_HTML__ && this.state === State.Suspended) {
+      getScopeObserver()?.onContinuationEvent?.(this, "suspend", awaitSite ?? this.site, value);
     }
     return value;
   }
@@ -87,12 +90,9 @@ class Continuation implements ContinuationHandle {
       this.previousSubscriber = setActiveSub(undefined);
       this.previousOwner = setActiveOwner(this.owner);
       this.state = State.Resumed;
-      if (__REZE_HTML__ || __REZE_HYDRATE__) {
-        this.previousScope = enterScopeContext(this.scope, this.moduleId);
-        const observer = getScopeObserver();
-        const intercepted = observer?.interceptContinuationValue?.(this, "resume", value);
-        if (intercepted !== undefined) value = intercepted.value as T;
-        observer?.onContinuationEvent?.(this, "resume", this.site, value);
+      if (__REZE_HTML__) {
+        this.previousScope = enterScopeContext(this.scope);
+        getScopeObserver()?.onContinuationEvent?.(this, "resume", this.site, value);
       }
     }
     return value;
@@ -103,12 +103,9 @@ class Continuation implements ContinuationHandle {
       this.previousSubscriber = setActiveSub(undefined);
       this.previousOwner = setActiveOwner(this.owner);
       this.state = State.Resumed;
-      if (__REZE_HTML__ || __REZE_HYDRATE__) {
-        this.previousScope = enterScopeContext(this.scope, this.moduleId);
-        const observer = getScopeObserver();
-        const intercepted = observer?.interceptContinuationValue?.(this, "reject", error);
-        if (intercepted !== undefined) error = intercepted.value as T;
-        observer?.onContinuationEvent?.(this, "reject", this.site, error);
+      if (__REZE_HTML__) {
+        this.previousScope = enterScopeContext(this.scope);
+        getScopeObserver()?.onContinuationEvent?.(this, "reject", this.site, error);
       }
     }
     return error;
@@ -123,22 +120,18 @@ class Continuation implements ContinuationHandle {
       setActiveOwner(this.previousOwner);
       this.previousSubscriber = undefined;
       this.previousOwner = undefined;
-      if ((__REZE_HTML__ || __REZE_HYDRATE__) && this.previousScope !== undefined) {
+      if (__REZE_HTML__ && this.previousScope !== undefined) {
         restoreScopeContext(this.previousScope);
         this.previousScope = undefined;
       }
     }
     this.state = State.Ended;
-    if (__REZE_HTML__ || __REZE_HYDRATE__) {
+    if (__REZE_HTML__) {
       getScopeObserver()?.onContinuationEvent?.(this, "end", this.site, undefined);
     }
   }
 }
 
-export function beginContinuation(site?: SourceSite): ContinuationHandle {
+export function beginContinuation(site?: SourceSite | string): ContinuationHandle {
   return new Continuation(site);
-}
-
-export function setContinuationReplaying(handle: ContinuationHandle, replaying: boolean): void {
-  handle.replaying = replaying;
 }

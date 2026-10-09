@@ -19,7 +19,6 @@ use crate::ir::view::{
 };
 
 const HTML: &str = "reze-js/internal/html";
-const HYDRATE: &str = "reze-js/internal/hydrate";
 
 pub fn emit<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, view: &'m View) -> Option<Expression<'a>> {
     match &view.kind {
@@ -40,7 +39,7 @@ fn component<'a, 'm>(
     match &component.island {
         Some(island) => island_call(ctx, view, component, island, props, target),
         None => match target {
-            CompileTarget::Client => {
+            CompileTarget::Client | CompileTarget::Island => {
                 let mut args = vec![ctx.expr(component.callee), props];
                 if ctx.options.debug_names {
                     let span = component.callee.span;
@@ -53,10 +52,6 @@ fn component<'a, 'm>(
             CompileTarget::Html => {
                 let site = ctx.site(view);
                 ctx.call(HTML, "hComponent", vec![ctx.expr(component.callee), props, site])
-            }
-            CompileTarget::Hydrate => {
-                let site = ctx.site(view);
-                ctx.call(HYDRATE, "prepareComponent", vec![site, ctx.expr(component.callee), props])
             }
         },
     }
@@ -334,14 +329,10 @@ fn fragment<'a, 'm>(
         _ => ast.array(children.iter().map(|child| ctx.child(child))),
     };
     match ctx.options.target {
-        CompileTarget::Client => value,
+        CompileTarget::Client | CompileTarget::Island => value,
         CompileTarget::Html => {
             let site = ctx.site(view);
             ctx.call(HTML, "hFragment", [site, ast.arrow([], value)])
-        }
-        CompileTarget::Hydrate => {
-            let site = ctx.site(view);
-            ctx.call(HYDRATE, "prepareFragment", [site, ast.arrow([], value)])
         }
     }
 }
@@ -358,7 +349,7 @@ fn flow<'a, 'm>(
             let child = render_flow(ctx, &branch.child);
             let fallback = branch.fallback.as_ref().map(|fallback| render_flow(ctx, fallback));
             match ctx.options.target {
-                CompileTarget::Client => {
+                CompileTarget::Client | CompileTarget::Island => {
                     let mut args = vec![when, child];
                     args.extend(fallback);
                     ctx.call(RUNTIME_MODULE, "branch", args)
@@ -369,12 +360,6 @@ fn flow<'a, 'm>(
                     args.push(fallback.unwrap_or_else(|| ast.undefined()));
                     ctx.call(HTML, "hShow", args)
                 }
-                CompileTarget::Hydrate => {
-                    let site = ctx.site(view);
-                    let mut args = vec![site, when, child];
-                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
-                    ctx.call(HYDRATE, "prepareShow", args)
-                }
             }
         }
         FlowView::Switch { whens, children, fallback } => {
@@ -384,7 +369,7 @@ fn flow<'a, 'm>(
                 children.iter().map(|child| render_flow(ctx, child)).collect();
             let fallback = fallback.as_ref().map(|fallback| render_flow(ctx, fallback));
             match ctx.options.target {
-                CompileTarget::Client => {
+                CompileTarget::Client | CompileTarget::Island => {
                     let mut args = vec![ast.array(whens), ast.array(children)];
                     args.extend(fallback);
                     ctx.call(RUNTIME_MODULE, "choose", args)
@@ -395,12 +380,6 @@ fn flow<'a, 'm>(
                     args.push(fallback.unwrap_or_else(|| ast.undefined()));
                     ctx.call(HTML, "hChoose", args)
                 }
-                CompileTarget::Hydrate => {
-                    let site = ctx.site(view);
-                    let mut args = vec![site, ast.array(whens), ast.array(children)];
-                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
-                    ctx.call(HYDRATE, "prepareChoose", args)
-                }
             }
         }
         FlowView::For { each, map, fallback, key } => {
@@ -409,7 +388,7 @@ fn flow<'a, 'm>(
             let fallback = fallback.as_ref().map(|fallback| render_flow(ctx, fallback));
             let key = key.as_ref().map(|key| flow_key(ctx, key));
             match ctx.options.target {
-                CompileTarget::Client => {
+                CompileTarget::Client | CompileTarget::Island => {
                     let mut args = vec![each, map];
                     match fallback {
                         Some(fallback) => args.push(fallback),
@@ -426,13 +405,6 @@ fn flow<'a, 'm>(
                     args.extend(key);
                     ctx.call(HTML, "hList", args)
                 }
-                CompileTarget::Hydrate => {
-                    let site = ctx.site(view);
-                    let mut args = vec![site, each, map];
-                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
-                    args.extend(key);
-                    ctx.call(HYDRATE, "prepareList", args)
-                }
             }
         }
         FlowView::Repeat { count, map, fallback } => {
@@ -440,7 +412,7 @@ fn flow<'a, 'm>(
             let map = ctx.expr(*map);
             let fallback = fallback.as_ref().map(|fallback| render_flow(ctx, fallback));
             match ctx.options.target {
-                CompileTarget::Client => {
+                CompileTarget::Client | CompileTarget::Island => {
                     let mut args = vec![count, map];
                     args.extend(fallback);
                     ctx.call(RUNTIME_MODULE, "repeat", args)
@@ -451,32 +423,21 @@ fn flow<'a, 'm>(
                     args.push(fallback.unwrap_or_else(|| ast.undefined()));
                     ctx.call(HTML, "hRepeat", args)
                 }
-                CompileTarget::Hydrate => {
-                    let site = ctx.site(view);
-                    let mut args = vec![site, count, map];
-                    args.push(fallback.unwrap_or_else(|| ast.undefined()));
-                    ctx.call(HYDRATE, "prepareRepeat", args)
-                }
             }
         }
         FlowView::Rows { times, map } => match ctx.options.target {
-            CompileTarget::Client => rows(ctx, *times, *map),
-            CompileTarget::Html | CompileTarget::Hydrate => {
+            CompileTarget::Client | CompileTarget::Island => rows(ctx, *times, *map),
+            CompileTarget::Html => {
                 let site = ctx.site(view);
                 let map = ctx.expr(*map);
-                let (source, helper) = if ctx.options.target == CompileTarget::Html {
-                    (HTML, "hRows")
-                } else {
-                    (HYDRATE, "prepareRows")
-                };
-                ctx.call(source, helper, [site, ast.number(f64::from(*times)), map])
+                ctx.call(HTML, "hRows", [site, ast.number(f64::from(*times)), map])
             }
         },
         FlowView::Portal { child, mount } => {
             let child = render_flow(ctx, child);
             let mount = mount.as_ref().map(|mount| ctx.flow_getter(mount));
             match ctx.options.target {
-                CompileTarget::Client => {
+                CompileTarget::Client | CompileTarget::Island => {
                     let mut args = vec![child];
                     args.extend(mount);
                     ctx.call(RUNTIME_MODULE, "portal", args)
@@ -486,12 +447,6 @@ fn flow<'a, 'm>(
                     let mut args = vec![site, child];
                     args.extend(mount);
                     ctx.call(HTML, "hPortal", args)
-                }
-                CompileTarget::Hydrate => {
-                    let site = ctx.site(view);
-                    let mut args = vec![site, child];
-                    args.extend(mount);
-                    ctx.call(HYDRATE, "claimPortal", args)
                 }
             }
         }
@@ -574,18 +529,12 @@ fn island_call<'a, 'm>(
         args.push(ast.object(options));
     }
     match target {
-        CompileTarget::Client => ctx.call(RUNTIME_MODULE, "island", args),
+        CompileTarget::Client | CompileTarget::Island => ctx.call(RUNTIME_MODULE, "island", args),
         CompileTarget::Html => {
             let site = ctx.site(view);
             let mut full = vec![site];
             full.extend(args);
             ctx.call(HTML, "hIsland", full)
-        }
-        CompileTarget::Hydrate => {
-            let site = ctx.site(view);
-            let mut full = vec![site];
-            full.extend(args);
-            ctx.call(HYDRATE, "prepareIsland", full)
         }
     }
 }

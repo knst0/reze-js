@@ -21,13 +21,13 @@ The documentation site lives in [`docs/`](docs). Start with
 
 ## Packages
 
-| Package                                               | Purpose                                                                |
-| ----------------------------------------------------- | ---------------------------------------------------------------------- |
-| [`reze-js`](packages/reze-js)                         | Compiler syntax declarations, `render`, and `hydrate` for applications |
-| [`@rezejs/vite-plugin`](packages/vite-plugin)         | Runs the compiler in Vite; file routes and static site generation      |
-| [`@rezejs/router`](packages/router)                   | Typed client router                                                    |
-| [`@rezejs/compiler`](packages/compiler)               | Native compiler bindings (`compile`, `analyze`)                        |
-| [`@rezejs/testing-library`](packages/testing-library) | Test helpers for compiled components                                   |
+| Package                                               | Purpose                                                           |
+| ----------------------------------------------------- | ----------------------------------------------------------------- |
+| [`reze-js`](packages/reze-js)                         | Compiler syntax declarations and `render` for applications        |
+| [`@rezejs/vite-plugin`](packages/vite-plugin)         | Runs the compiler in Vite; file routes and static site generation |
+| [`@rezejs/router`](packages/router)                   | Typed client router                                               |
+| [`@rezejs/compiler`](packages/compiler)               | Native compiler bindings (`compile`, `analyze`)                   |
+| [`@rezejs/testing-library`](packages/testing-library) | Test helpers for compiled components                              |
 
 `@rezejs/signals` and `@rezejs/dom` are the private runtime that compiled code calls.
 

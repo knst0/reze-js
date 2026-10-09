@@ -42,7 +42,7 @@ class CleanupNode implements ReactiveNode {
       this.fn();
     } finally {
       setActiveSub(prevSub);
-      if (__REZE_HTML__ || __REZE_HYDRATE__) notifyNodeDisposed(this);
+      if (__REZE_HTML__) notifyNodeDisposed(this);
     }
   }
 }
@@ -58,7 +58,7 @@ export function root<T>(fn: (dispose: () => void) => T): T {
   }
   let scope: ExecutionScope | undefined;
   let scopeDispose: (() => void) | undefined;
-  if (__REZE_HTML__ || __REZE_HYDRATE__) {
+  if (__REZE_HTML__) {
     scope = registerNodeScope(node, node.parent);
     if (scope !== undefined) {
       scopeDispose = (): void => {

@@ -58,7 +58,7 @@ export type {
   SwitchProps,
 };
 
-export { hydrate, render } from "@rezejs/dom";
+export { render } from "@rezejs/dom";
 
 /**
  * Compiler syntax for a reactive variable: `let count = signal(0)`. The compiler turns reads

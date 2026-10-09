@@ -14,6 +14,7 @@ use oxc_syntax::symbol::SymbolId;
 use super::keyed;
 use super::pure::{format_integer, has_jsx, is_component_name, is_declared_component};
 use crate::diagnostic::{Code, Report};
+use crate::ir::is_native_name;
 use crate::kind::{Kind, STRING_METHODS};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -70,6 +71,10 @@ pub struct SharedFacts {
     pub signal_setters: HashMap<SymbolId, Option<SymbolId>>,
     pub computed_getters: HashSet<SymbolId>,
     pub callee_kinds: HashMap<SymbolId, Kind>,
+    pub reze_imports: HashMap<SymbolId, &'static str>,
+    pub router_hooks: HashSet<SymbolId>,
+    pub router_namespaces: HashSet<SymbolId>,
+    pub client_work: HashMap<String, bool>,
 }
 
 impl SharedFacts {
@@ -91,6 +96,35 @@ impl SharedFacts {
                 crate::exports::primitive_named(source, name)
             }
             _ => None,
+        }
+    }
+
+    pub fn imported(&self, scoping: &Scoping, callee: &Expression<'_>) -> Option<&'static str> {
+        match callee.without_parentheses() {
+            Expression::Identifier(id) => {
+                self.reze_imports.get(&Self::symbol(scoping, id)?).copied()
+            }
+            Expression::StaticMemberExpression(member) if !member.optional => {
+                let Expression::Identifier(namespace) = &member.object else { return None };
+                let source = self.namespaces.get(&Self::symbol(scoping, namespace)?)?;
+                crate::exports::lookup(source, member.property.name.as_str()).map(|entry| entry.name)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn is_before_leave(&self, scoping: &Scoping, callee: &Expression<'_>) -> bool {
+        match callee.without_parentheses() {
+            Expression::Identifier(id) => {
+                Self::symbol(scoping, id).is_some_and(|symbol| self.router_hooks.contains(&symbol))
+            }
+            Expression::StaticMemberExpression(member) if !member.optional => {
+                let Expression::Identifier(namespace) = &member.object else { return false };
+                member.property.name.as_str() == "useBeforeLeave"
+                    && Self::symbol(scoping, namespace)
+                        .is_some_and(|symbol| self.router_namespaces.contains(&symbol))
+            }
+            _ => false,
         }
     }
 
@@ -397,8 +431,22 @@ pub fn collect(
         signal_setters: HashMap::new(),
         computed_getters: HashSet::new(),
         callee_kinds: HashMap::new(),
+        reze_imports: HashMap::new(),
+        router_hooks: HashSet::new(),
+        router_namespaces: HashSet::new(),
+        client_work: HashMap::new(),
     };
-    collect_primitives(program, &mut facts);
+    collect_imports(program, &mut facts);
+    for statement in &program.body {
+        let components = components_of(statement);
+        if components.is_empty() {
+            continue;
+        }
+        let work = has_client_work(&facts, scoping, statement);
+        for (name, _) in components {
+            facts.client_work.insert(name.to_owned(), work);
+        }
+    }
     if facts.named.is_empty() && facts.namespaces.is_empty() {
         return facts;
     }
@@ -493,6 +541,146 @@ pub fn collect(
     facts
 }
 
+#[derive(Clone, Copy)]
+pub enum ComponentExport {
+    Local,
+    Named,
+    Default,
+}
+
+pub fn components_of<'s>(statement: &'s Statement<'_>) -> Vec<(&'s str, ComponentExport)> {
+    match statement {
+        Statement::FunctionDeclaration(function) => {
+            tagged(declared_function(function).into_iter().collect(), ComponentExport::Local)
+        }
+        Statement::VariableDeclaration(declaration) => {
+            tagged(declared_declarators(declaration), ComponentExport::Local)
+        }
+        Statement::ExportDeclaration(export) => match &export.declaration {
+            Declaration::FunctionDeclaration(function) => {
+                tagged(declared_function(function).into_iter().collect(), ComponentExport::Named)
+            }
+            Declaration::VariableDeclaration(declaration) => {
+                tagged(declared_declarators(declaration), ComponentExport::Named)
+            }
+            _ => Vec::new(),
+        },
+        Statement::ExportDefaultDeclaration(export) => match &export.declaration {
+            ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
+                tagged(declared_function(function).into_iter().collect(), ComponentExport::Default)
+            }
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+fn tagged<'s>(names: Vec<&'s str>, export: ComponentExport) -> Vec<(&'s str, ComponentExport)> {
+    names.into_iter().map(|name| (name, export)).collect()
+}
+
+fn declared_function<'s>(function: &'s Function<'_>) -> Option<&'s str> {
+    let name = function.id.as_ref()?.name.as_str();
+    is_component_name(name).then_some(name)
+}
+
+fn declared_declarators<'s>(declaration: &'s VariableDeclaration<'_>) -> Vec<&'s str> {
+    declaration.declarations.iter().filter_map(component_declarator).collect()
+}
+
+fn component_declarator<'s>(declarator: &'s VariableDeclarator<'_>) -> Option<&'s str> {
+    let BindingPattern::BindingIdentifier(id) = &declarator.id else { return None };
+    let function = matches!(
+        declarator.init.as_ref().map(Expression::without_parentheses),
+        Some(Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_))
+    );
+    (function && is_component_name(id.name.as_str())).then(|| id.name.as_str())
+}
+
+pub fn has_client_work(facts: &SharedFacts, scoping: &Scoping, statement: &Statement<'_>) -> bool {
+    let mut work = ClientWork { facts, scoping, depth: 0, found: false };
+    work.visit_statement(statement);
+    work.found
+}
+
+struct ClientWork<'f> {
+    facts: &'f SharedFacts,
+    scoping: &'f Scoping,
+    depth: usize,
+    found: bool,
+}
+
+impl<'a> Visit<'a> for ClientWork<'_> {
+    fn visit_jsx_opening_element(&mut self, element: &JSXOpeningElement<'a>) {
+        let interactive = element.attributes.iter().any(|item| match item {
+            JSXAttributeItem::Attribute(attribute) => is_event_or_ref(attribute),
+            JSXAttributeItem::SpreadAttribute(_) => false,
+        });
+        if interactive && is_native_element(&element.name) {
+            self.found = true;
+        }
+        walk::walk_jsx_opening_element(self, element);
+    }
+
+    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+        if self.facts.imported(self.scoping, &call.callee) == Some("effect")
+            || self.facts.is_before_leave(self.scoping, &call.callee)
+        {
+            self.found = true;
+        }
+        walk::walk_call_expression(self, call);
+    }
+
+    fn visit_function(&mut self, function: &Function<'a>, flags: ScopeFlags) {
+        if self.depth > 0 && function.id.as_ref().is_some_and(|id| is_component_name(id.name.as_str())) {
+            return;
+        }
+        self.depth += 1;
+        walk::walk_function(self, function, flags);
+        self.depth -= 1;
+    }
+
+    fn visit_arrow_function_expression(&mut self, arrow: &ArrowFunctionExpression<'a>) {
+        self.depth += 1;
+        walk::walk_arrow_function_expression(self, arrow);
+        self.depth -= 1;
+    }
+
+    fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
+        if self.depth > 0 && component_declarator(declarator).is_some() {
+            return;
+        }
+        walk::walk_variable_declarator(self, declarator);
+    }
+}
+
+fn is_native_element(name: &JSXElementName<'_>) -> bool {
+    match name {
+        JSXElementName::Identifier(id) => is_native_name(id.name.as_str()),
+        JSXElementName::IdentifierReference(id) => is_native_name(id.name.as_str()),
+        JSXElementName::NamespacedName(_) => true,
+        _ => false,
+    }
+}
+
+fn is_event_or_ref(attribute: &JSXAttribute<'_>) -> bool {
+    match &attribute.name {
+        JSXAttributeName::Identifier(id) => {
+            let name = id.name.as_str();
+            if name == "ref" {
+                return true;
+            }
+            let Some(third) = name.strip_prefix("on").and_then(|rest| rest.bytes().next()) else {
+                return false;
+            };
+            third.is_ascii_uppercase()
+                || (third.is_ascii_lowercase()
+                    && matches!(attribute.value, Some(JSXAttributeValue::ExpressionContainer(_))))
+        }
+        JSXAttributeName::NamespacedName(name) => name.namespace.name.as_str() == "on",
+    }
+}
+
 fn named_primitives(program: &Program<'_>) -> HashMap<SymbolId, Primitive> {
     let mut named = HashMap::new();
     for statement in &program.body {
@@ -517,17 +705,39 @@ fn named_primitives(program: &Program<'_>) -> HashMap<SymbolId, Primitive> {
     named
 }
 
-fn collect_primitives(program: &Program<'_>, facts: &mut SharedFacts) {
+fn collect_imports(program: &Program<'_>, facts: &mut SharedFacts) {
     facts.named = named_primitives(program);
     for statement in &program.body {
         let Statement::ImportDeclaration(import) = statement else { continue };
         if import.import_kind.is_type() {
             continue;
         }
-        let Some(home) = crate::exports::module(import.source.value.as_str()) else { continue };
+        let source = import.source.value.as_str();
+        let home = crate::exports::module(source);
         for specifier in import.specifiers.iter().flatten() {
-            if let ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) = specifier {
-                facts.namespaces.insert(specifier.local.symbol_id(), home);
+            match specifier {
+                ImportDeclarationSpecifier::ImportSpecifier(specifier)
+                    if !specifier.import_kind.is_type() =>
+                {
+                    let local = specifier.local.symbol_id();
+                    let name = specifier.imported.name();
+                    if let Some(entry) = home.and_then(|home| crate::exports::lookup(home, name.as_str())) {
+                        facts.reze_imports.insert(local, entry.name);
+                    }
+                    if source == crate::exports::ROUTER && name.as_str() == "useBeforeLeave" {
+                        facts.router_hooks.insert(local);
+                    }
+                }
+                ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
+                    let local = specifier.local.symbol_id();
+                    if let Some(home) = home {
+                        facts.namespaces.insert(local, home);
+                    }
+                    if source == crate::exports::ROUTER {
+                        facts.router_namespaces.insert(local);
+                    }
+                }
+                _ => {}
             }
         }
     }

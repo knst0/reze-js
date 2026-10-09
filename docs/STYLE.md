@@ -15,7 +15,7 @@ then [Merriam-Webster](https://www.merriam-webster.com/) for spelling.
 - Every claim MUST match the code in this repository at the time you write it. A claim you have not
   verified against source or by running code MUST NOT ship.
 - Every `ts` and `tsx` sample MUST pass `docs/plugins/examples.spec.ts`: it compiles for the
-  `client`, `hydrate`, and `html` targets with exactly the diagnostics its fence declares, and it
+  `client`, `island`, and `html` targets with exactly the diagnostics its fence declares, and it
   typechecks. Mark incomplete code as a fragment instead of letting it fail.
 - NEVER document an API from memory, from another framework, or from a test name. Read the export.
 - NEVER document runtime internals: `@rezejs/signals`, `@rezejs/dom` compiler helpers, and
@@ -50,7 +50,7 @@ then [Merriam-Webster](https://www.merriam-webster.com/) for spelling.
 | User-facing exports of `reze-js`                        | `packages/reze-js/src/index.ts` and the files it re-exports                                       |
 | JSX attribute types, intrinsic elements                 | `packages/dom/src/jsx.ts`, `packages/dom/src/intrinsics.ts`, `packages/dom/src/jsx-properties.ts` |
 | Signal, store, action, effect, owner, context semantics | `packages/signals/src/` and `packages/signals/tests/`                                             |
-| DOM behavior: lists, portals, async views, hydration    | `packages/dom/src/` and `packages/dom/tests/`                                                     |
+| DOM behavior: lists, portals, async views, islands      | `packages/dom/src/` and `packages/dom/tests/`                                                     |
 | What the compiler accepts, rewrites, or refuses         | `crates/reze_compiler/src/` and `crates/reze_compiler/tests/`                                     |
 | Diagnostic codes, severities, messages, and fixes       | `packages/compiler/skills/reze-compiler-diagnostics/SKILL.md`                                     |
 | Direct compiler API                                     | `packages/compiler/index.d.ts`                                                                    |
@@ -210,7 +210,7 @@ or `expect=` to a sample that should compile cleanly.
 | `reze-js`                                                   | Code font  | The npm package applications import.                                                                |
 | `@rezejs/vite-plugin`, `@rezejs/router`, `@rezejs/compiler` | Code font  | Packages a user installs or calls.                                                                  |
 | `signal`, `computed`, `store`, `action`, `mergeProps`       | Code font  | Compiler syntax. Describe them as syntax the compiler lowers, not as functions with a runtime body. |
-| `render`, `hydrate`                                         | Code font  | The value exports of `reze-js` that run as written.                                                 |
+| `render`                                                    | Code font  | The value exports of `reze-js` that run as written.                                                 |
 | compiler                                                    | Plain text | The Reze compiler.                                                                                  |
 | component                                                   | Plain text | A function that returns JSX and runs once.                                                          |
 | binding                                                     | Plain text | A compiled reactive update of one DOM attribute, property, or text node.                            |

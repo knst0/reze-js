@@ -8,7 +8,7 @@ import { rezeCompiler } from "./tsdown.config.mjs";
 const root = join(import.meta.dirname, "..", "..");
 export default defineConfig({
   plugins: [{ ...rezeCompiler, enforce: "pre" }],
-  define: { __REZE_HTML__: "false", __REZE_HYDRATE__: "false" },
+  define: { __REZE_HTML__: "false" },
   test: {
     name: "@rezejs/router (node)",
     include: [nodeSpecs],

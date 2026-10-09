@@ -104,25 +104,6 @@ pub fn path_steps(tree: &StaticTree, ancestor: u32, node: u32) -> Vec<PathStep> 
     reversed
 }
 
-pub fn logical_path(tree: &StaticTree, node: u32) -> String {
-    let mut parts = Vec::new();
-    let mut current = node;
-    while let Some(parent) = tree.nodes[current as usize].parent {
-        let position = tree.nodes[parent as usize]
-            .children
-            .iter()
-            .position(|&child| child == current)
-            .expect("static children contain every node");
-        parts.push(position.to_string());
-        if is_content_host(&tree.nodes[parent as usize]) {
-            parts.push("c".to_string());
-        }
-        current = parent;
-    }
-    parts.reverse();
-    parts.join(".")
-}
-
 pub(crate) fn serialize_static(tree: &StaticTree) -> String {
     let mut html = String::new();
     push_static(&mut html, tree, 0, false, false, false);

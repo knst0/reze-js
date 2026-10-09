@@ -1,11 +1,11 @@
 ---
 title: Vite plugin
-description: Configure @rezejs/vite-plugin for the Reze compiler, library manifests, file routes, static site generation, and diagnostics.
+description: Configure @rezejs/vite-plugin for the Reze compiler, library manifests, file routes, streaming server rendering, static site generation, and diagnostics.
 ---
 
 # Vite plugin
 
-`@rezejs/vite-plugin` runs the Reze compiler inside Vite. It compiles client and HTML builds and the development server. It also adds file routes, static site generation (SSG), and diagnostic output when you turn them on.
+`@rezejs/vite-plugin` runs the Reze compiler inside Vite. It compiles client and HTML builds and the development server. It also adds file routes, request-time streaming server rendering (SSR), static site generation (SSG), and diagnostic output when you turn them on.
 
 ## Register the plugin
 
@@ -22,7 +22,7 @@ export default defineConfig({
 
 With no options, the plugin compiles files whose extension appears in `DEFAULT_ROUTE_EXTENSIONS`: `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs`. It skips files under `node_modules` unless the file's package declares a `reze` export target. See [Libraries](#libraries).
 
-`reze()` returns one plugin when `fileRoutes` and `ssg` are unset. It returns an array of plugins when `ssg` is set, and a promise of an array when `fileRoutes` is set. Vite accepts nested arrays and promises in `plugins`, so you can pass the result directly.
+`reze()` returns one plugin when `fileRoutes`, `ssg`, and `ssr` are unset. It returns an array of plugins when `ssg` or `ssr` is set, and a promise of an array when `fileRoutes` is set. Vite accepts nested arrays and promises in `plugins`, so you can pass the result directly.
 
 ## Options
 
@@ -36,6 +36,7 @@ Every option is optional. The table lists each option, its type, and its default
 | `extensions`        | `string[]`                            | `DEFAULT_ROUTE_EXTENSIONS` | Extensions the transform compiles. This value replaces the default list, so spread `DEFAULT_ROUTE_EXTENSIONS` to add an extension.                                                         |
 | `fileRoutes`        | `false`, `true`, or an options object | `false`                    | Generates routes from files in a directory. `true` uses every default. See [File routes](#file-routes).                                                                                    |
 | `ssg`               | Options object                        | Not set                    | Generates static HTML pages. See [Static site generation](#static-site-generation).                                                                                                        |
+| `ssr`               | Options object                        | Not set                    | Builds a request handler that streams HTML. See [Server rendering](#server-rendering).                                                                                                     |
 | `profile.dir`       | `string`                              | Not set                    | Enables the development profiling endpoint `POST /__reze/profile`. Its request format and stored data are internal, so this page does not document them.                                   |
 
 Two behaviors affect which options take effect:
@@ -169,9 +170,102 @@ The router reports conflicting files at build time. Two files for the same route
 
 During `vite` dev, the plugin watches `dir`. Adding or removing a file or directory regenerates the route module and the types file. When the route module changes, the plugin invalidates it and sends a full reload to the browser. Regeneration errors go to the Vite logger as errors.
 
+## Server rendering
+
+Set `ssr` to render pages when a request arrives. The build produces a server entry that exports `handler(request: Request): Promise<Response>`. The handler streams the document: the HTML for everything that is ready arrives first, and each part that was still waiting for data arrives later and replaces its placeholder.
+
+The browser runs only the components that need it. The compiler marks a component as an island when it contains a native event handler, a `ref`, an `effect` call, or `useBeforeLeave`. The server sends such a component with its props, and the browser renders it in place of the server HTML. A component with none of these never loads in the browser. [Islands](/building-interfaces#islands) covers the `island` attribute, which lets you choose when a component loads.
+
+### Configure server rendering
+
+```ts file=examples/server-rendering.config.ts
+import reze from "@rezejs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [
+    reze({
+      fileRoutes: true,
+      ssr: {
+        entry: "src/app.tsx",
+        template: "index.html",
+        selector: "#app",
+        timeoutMs: 30000,
+        outDir: "dist-server",
+      },
+    }),
+  ],
+});
+```
+
+The `ssr` options are:
+
+| Option      | Type     | Default         | Purpose                                                                                                                                                      |
+| ----------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `entry`     | `string` | Required        | Module that renders the app. The entry shapes are the same as for [static generation](#entry-shapes).                                                        |
+| `template`  | `string` | `"index.html"`  | HTML template for every response. It must contain exactly one `<script type="module" src="/@reze/client.js">` and one element whose `id` matches `selector`. |
+| `selector`  | `string` | `"#app"`        | Mount element. The value must be `#` followed by an ASCII identifier.                                                                                        |
+| `timeoutMs` | `number` | `30000`         | Time one request has to finish rendering, in milliseconds. The value must be finite and greater than zero.                                                   |
+| `outDir`    | `string` | `"dist-server"` | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers.                           |
+
+When you set both `ssr` and `ssg`, they must use the same `entry`, `template`, and `selector`. Otherwise the plugin fails with `[reze] ssg and ssr must use the same entry, template and selector`.
+
+### Build output
+
+`vite build` renders the HTML environment, builds the client, and then writes two directories:
+
+- The client output, in `build.outDir`, serves from your static host. It also contains `reze-assets.json`. See [Work with a service worker](#work-with-a-service-worker).
+- The server output, in `ssr.outDir`, contains `entry.js`, which exports `handler`, and the files it imports. Run it with any runtime that provides the web `Request` and `Response`.
+
+The client and the server must come from the same build. The server writes a build ID into every document, and a page that navigates to a document with a different build ID loads the document fully instead of swapping it.
+
+### Serve the handler
+
+`handler` takes a web `Request`. It answers `302` for a route redirect, `404` with `Not Found` for a path that no route matches, and `500` with `Internal Server Error` when rendering fails before the first byte. The package `reze-js/node` adapts it to Node's HTTP server. The next sample is a fragment, because `dist-server/entry.js` exists only after a build:
+
+```ts fragment
+import { createServer } from "node:http";
+
+import { createNodeListener } from "reze-js/node";
+
+import { handler } from "../dist-server/entry.js";
+
+createServer(createNodeListener(handler)).listen(3000);
+```
+
+`createNodeListener` aborts the request's `signal` when the client disconnects, and the render stops. Serve the client output on the same origin, for example with your host's static file support in front of the handler.
+
+### Streaming
+
+A component that awaits data renders its `pending` view first, and the server streams the finished view when the data arrives. [Async components](/building-interfaces#async-components) describes `pending` and `failure`. A component without a `pending` view makes the document wait, so the first byte arrives after the data does.
+
+The streamed parts need JavaScript to apply. A browser with JavaScript off shows the `pending` views. A page with no waiting parts is complete HTML.
+
+An island is sent to the browser after everything inside it has settled. Until then, its server HTML is on the page and is not interactive.
+
+The document contains no inline executable script, so a `Content-Security-Policy` that allows only `script-src 'self'` works.
+
+### Isolation between requests
+
+Each request has its own module state. A module-level `signal`, `computed`, `action`, `store`, `selector`, `effect`, or `createContext` declaration is created again for each request, so one request never sees another request's values. Plain variables, such as a `let` that holds a number, stay shared across requests.
+
+### Development
+
+`vite` (dev) serves the same streamed documents through the plugin. A change to a source file reloads the page.
+
+### Work with a service worker
+
+Reze ships no service worker and puts nothing in the way of yours. The plugin writes `reze-assets.json` into the client output:
+
+```json
+{ "buildId": "5b0c1f3c2a9d4e11", "files": ["/assets/index-DG3a1.js", "/assets/app-Bv9a2.css"] }
+```
+
+`buildId` changes whenever the client files change. `files` lists every emitted client file, joined with `base`, so a service worker can precache them. Every document carries `<meta name="reze-build" content="<buildId>">`, and a service worker can compare it with the manifest. Navigations between pages are ordinary `fetch` requests for HTML, so a worker that answers them from a cache or a network fallback works with the swap.
+
 ## Static site generation
 
-Set `ssg` to generate one HTML file per page at build time. Each page renders in its own worker with separate module state. The client bundle then hydrates each page.
+Set `ssg` to generate one HTML file per page at build time. The pages come from the same renderer as [server rendering](#server-rendering), run to completion: a generated page contains the final content, and the client bundle loads only the components that are islands.
 
 ### Configure static generation
 
@@ -203,14 +297,14 @@ export default defineConfig({
 
 The `ssg` options are:
 
-| Option          | Type                    | Default        | Purpose                                                                                                                                                      |
-| --------------- | ----------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `entry`         | `string`                | Required       | Module that renders the app. The path is relative to the Vite `root`. A missing file fails with `[reze] ssg.entry not found: "<entry>"`.                     |
-| `template`      | `string`                | `"index.html"` | HTML template for every page. It must contain exactly one `<script type="module" src="/@reze/ssg-client.js">` and one element whose `id` matches `selector`. |
-| `selector`      | `string`                | `"#app"`       | Mount element. The value must be `#` followed by an ASCII identifier. Other values fail with `[reze] ssg.selector must be "#" plus an ASCII identifier`.     |
-| `trailingSlash` | `"always"` or `"never"` | `"always"`     | URL form of generated pages. `"always"` uses `/todos/1/`, and `"never"` uses `/todos/1`. Output file names do not change.                                    |
-| `timeoutMs`     | `number`                | `30000`        | Render deadline for one page, in milliseconds. The value must be finite and greater than zero. See [Failures and timeouts](#failures-and-timeouts).          |
-| `paths`         | Object                  | `{}`           | Parameter values for dynamic routes. See [Map dynamic routes](#map-dynamic-routes).                                                                          |
+| Option          | Type                    | Default        | Purpose                                                                                                                                                  |
+| --------------- | ----------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entry`         | `string`                | Required       | Module that renders the app. The path is relative to the Vite `root`. A missing file fails with `[reze] ssg.entry not found: "<entry>"`.                 |
+| `template`      | `string`                | `"index.html"` | HTML template for every page. It must contain exactly one `<script type="module" src="/@reze/client.js">` and one element whose `id` matches `selector`. |
+| `selector`      | `string`                | `"#app"`       | Mount element. The value must be `#` followed by an ASCII identifier. Other values fail with `[reze] ssg.selector must be "#" plus an ASCII identifier`. |
+| `trailingSlash` | `"always"` or `"never"` | `"always"`     | URL form of generated pages. `"always"` uses `/todos/1/`, and `"never"` uses `/todos/1`. Output file names do not change.                                |
+| `timeoutMs`     | `number`                | `30000`        | Render deadline for one page, in milliseconds. The value must be finite and greater than zero. See [Failures and timeouts](#failures-and-timeouts).      |
+| `paths`         | Object                  | `{}`           | Parameter values for dynamic routes. See [Map dynamic routes](#map-dynamic-routes).                                                                      |
 
 ### Entry shapes
 
@@ -289,9 +383,9 @@ A redirect target must be a generated page inside `base`, or an external `http:`
 
 ### Build and dev behavior
 
-`vite build` runs three steps in order: it renders the HTML environment, then it builds the client, then it writes the pages. The client bundle hydrates each page.
+`vite build` runs three steps in order: it renders the HTML environment, then it builds the client, then it writes the pages. All pages render in one worker, and module state is isolated per page. The client bundle loads only the islands.
 
-`vite` (dev) does not run generation. The development server serves the client-rendered app. The client mounts the app with `render` and does not execute the SSG entry.
+`vite` (dev) does not write pages. The development server renders each requested page with the same renderer.
 
 ### Unsupported configurations
 
@@ -310,7 +404,7 @@ A file in the `public` directory whose path matches a generated page also fails 
 
 A render error stops the build and names the URL of the page: `[reze] SSG render of "<url>" failed: <message>`.
 
-Each page has `timeoutMs` to settle. A page that does not settle in time fails with an error naming its URL, such as `[reze] Scope "<url>" did not settle within <ms>ms`. The worker also has a watchdog that fires 5 seconds after `timeoutMs`. When it fires, it stops the worker with `[reze] SSG worker timed out after <timeoutMs>ms and was terminated`. The message names `timeoutMs`, but the watchdog waits 5 seconds longer than that value.
+Each page has `timeoutMs` to settle. A page that does not settle in time fails with an error naming its URL, such as `[reze] Scope "<url>" did not settle within <ms>ms`. The worker has a watchdog that fires 5 seconds after `timeoutMs`. When it fires, it stops the worker with `[reze] SSG worker timed out after <timeoutMs>ms and was terminated`. The message names `timeoutMs`, but the watchdog waits 5 seconds longer than that value.
 
 A worker that exits unexpectedly fails with `[reze] SSG worker exited with code <code>`. A worker error fails with `[reze] SSG worker failed: <message>`.
 
@@ -396,12 +490,12 @@ Hot module replacement is on in the development server unless `server.hmr` is `f
 Serve the contents of `dist` as static files. The plugin's output has these properties, which your host must support:
 
 - Each generated page is an `index.html` inside a directory. A request for `/todos/1` must reach `todos/1/index.html`.
-- Hydration checks the page's URL. The client throws `hydration page pathname does not match payload` when the URL differs from the URL the page was generated for. Serve each page at its generated URL.
+- Pages navigate with a fetch for the next page's HTML, so the host must serve each generated page at its URL.
 - Generation emits no 404 page. Configure the host to answer unknown paths.
 
 ## Optional: Run the packaged SSG smoke test
 
-Maintainers of the Reze packages can run `packages/vite-plugin/scripts/packaged-ssg-smoke.mjs` to check the plugin as it ships. The script packs real native and JavaScript tarballs, installs them outside the workspace, typechecks, builds, and hydrates the fixtures in a browser. Its help text describes the same steps.
+Maintainers of the Reze packages can run `packages/vite-plugin/scripts/packaged-ssg-smoke.mjs` to check the plugin as it ships. The script packs real native and JavaScript tarballs, installs them outside the workspace, typechecks, builds, and boots the fixtures in a browser. Its help text describes the same steps.
 
 ```sh
 node packages/vite-plugin/scripts/packaged-ssg-smoke.mjs --help

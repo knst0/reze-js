@@ -376,8 +376,8 @@ catalog! {
         severity: Error,
         title: "Build target without a module id",
         message: "The `{target}` target keys its output by module, but no `moduleId` was passed, so this file was not compiled. Pass the canonical module id for this file.",
-        explanation: "`hydrate` and `html` outputs are keyed by module: compiler sites, hydration ranges and payloads all reference the canonical module id the build driver passes. An absent or empty `moduleId` would make those keys unstable, so compilation stops before parsing. The `client` target needs no `moduleId`. `data.target` is the requested target.",
-        repair: "Pass `moduleId` alongside `target`, for example `compile(source, filename, { target: \"hydrate\", moduleId: \"src/view.tsx\" })`. The id itself is opaque to the compiler: the build driver owns its canonical form.",
+        explanation: "`island` and `html` outputs are keyed by module: compiler sites, island descriptors and component registrations reference the canonical module id the build driver passes. An absent or empty `moduleId` would make those keys unstable, so compilation stops before parsing. The `client` target needs no `moduleId`. `data.target` is the requested target.",
+        repair: "Pass `moduleId` alongside `target`, for example `compile(source, filename, { target: \"island\", moduleId: \"src/view.tsx\" })`. The id itself is opaque to the compiler: the build driver owns its canonical form.",
         fix: None,
         example: Shows("export const view = <div />;\n"),
     }
@@ -515,8 +515,8 @@ catalog! {
         name: "ASYNC_PROPS_READ_IN_AWAIT",
         severity: Error,
         title: "Props read inside an await",
-        message: "`{component}` reads its props inside an `await` operand, which hydration replays without tracking the read, so the load can keep a stale value. Hoist the read into a `const` before the first `await`.",
-        explanation: "An async component re-runs its load when a tracked read changes. On hydrate, an await operand is replayed, and a props read inside it is not tracked, so the load would keep a stale value. The compiler refuses the shape instead of guessing. Reads inside functions the operand calls are not tracked on hydrate either. `data.component` is the component.",
+        message: "`{component}` reads its props inside an `await` operand, which the load does not track, so it can keep a stale value. Hoist the read into a `const` before the first `await`.",
+        explanation: "An async component re-runs its load when a tracked read changes. A props read inside an `await` operand is not tracked, so the load would keep a stale value. The compiler refuses the shape instead of guessing. `data.component` is the component.",
         repair: "Read the prop into a `const` before the first `await`, then pass that constant to the awaited call.",
         fix: None,
         example: Pair {

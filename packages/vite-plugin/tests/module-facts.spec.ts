@@ -176,7 +176,10 @@ describe("library modules", () => {
 
   it("reports modules the compiler refuses instead of writing them", () => {
     writeLibrary();
-    write("node_modules/@acme/ui/src/bad.ts", `import { signal } from "reze-js";\nlet m = signal(1);\nexport default m;\nexport const bump = () => (m += 1);\n`);
+    write(
+      "node_modules/@acme/ui/src/bad.ts",
+      `import { signal } from "reze-js";\nlet m = signal(1);\nexport default m;\nexport const bump = () => (m += 1);\n`,
+    );
     const report = writeManifest(libraryDir());
     expect(report.written).toBe(1);
     expect(report.skipped).toEqual([{ file: "src/bad.ts", reason: "SIGNAL_DEFAULT_EXPORT" }]);
