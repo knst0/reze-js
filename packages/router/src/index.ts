@@ -35,6 +35,7 @@ export type {
   PathsTree,
   PreloadArgs,
   PreloadIntent,
+  RouterContext,
   Register,
   RouterServerContextArgs,
   RouterServerContextFactory,

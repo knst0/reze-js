@@ -926,6 +926,10 @@ importers:
         version: 6.2.0
 
   packages/query:
+    dependencies:
+      '@rezejs/router':
+        specifier: workspace:^
+        version: link:../router
     devDependencies:
       vite-plus:
         specifier: 'catalog:'

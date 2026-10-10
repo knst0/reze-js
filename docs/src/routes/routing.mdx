@@ -226,12 +226,9 @@ Set `preload: false` in `createRouter` to turn warming off. Clicks still route t
 
 ```tsx file=src/routes/blog/[id].tsx
 import { createQueryClient } from "@rezejs/query";
-import type { QueryClient } from "@rezejs/query";
+import "@rezejs/query/router";
 import type { RouteConfigFor } from "@rezejs/router";
 
-interface AppContext {
-  queryClient: QueryClient;
-}
 
 export const route = {
   preload: ({ params, context }) =>
@@ -244,7 +241,7 @@ export const route = {
       },
       staleTime: 30_000,
     }),
-} satisfies RouteConfigFor<"/blog/:id", { title: string }, AppContext>;
+} satisfies RouteConfigFor<"/blog/:id", { title: string }>;
 ```
 
 For a client-only app, pass a browser-scoped client to `createRouter`:
@@ -260,10 +257,10 @@ For SSR and SSG, export `createContext` from the server entry. Reze calls it for
 
 ```tsx file=src/entry-server.tsx
 import { createQueryClient } from "@rezejs/query";
-import type { QueryClient } from "@rezejs/query";
-import type { RouterServerContextFactory } from "@rezejs/router";
+import "@rezejs/query/router";
+import type { RouterContext, RouterServerContextFactory } from "@rezejs/router";
 
-export const createContext: RouterServerContextFactory<{ queryClient: QueryClient }> = () => ({
+export const createContext: RouterServerContextFactory<RouterContext> = () => ({
   queryClient: createQueryClient(),
 });
 ```

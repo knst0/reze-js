@@ -7,10 +7,11 @@ import type {
   RouteParams,
   RouteRedirect,
   RouteResolvedArgs,
+  RouterContext,
 } from "./types";
 
 /** Preserves the literal route tuple for the router factory; returns the same value. */
-export function defineRoutes<const R extends readonly RouteDefinition<any>[]>(routes: R): R {
+export function defineRoutes<const R extends readonly RouteDefinition<RouterContext>[]>(routes: R): R {
   return routes;
 }
 
@@ -26,10 +27,10 @@ type PreloadedRoute<S extends string, T, C> = RouteInput<S, T, C> & {
   preload: (args: PreloadArgs<RouteParams<S>, C>) => T;
 };
 
-export function defineRoute<const S extends string, T, C = unknown>(
+export function defineRoute<const S extends string, T, C = RouterContext>(
   route: PreloadedRoute<S, T, C>,
 ): Omit<RouteDefinition<C>, "path" | "preload"> & Pick<PreloadedRoute<S, T, C>, "path" | "preload">;
-export function defineRoute<const S extends string, T = unknown, C = unknown>(route: RouteInput<S, T, C>): RouteDefinition<C> & { path: S };
+export function defineRoute<const S extends string, T = unknown, C = RouterContext>(route: RouteInput<S, T, C>): RouteDefinition<C> & { path: S };
 export function defineRoute(route: RouteDefinition<any>): RouteDefinition<any> {
   return route;
 }

@@ -17,6 +17,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./router": {
+      "types": "./dist/router.d.ts",
+      "import": "./dist/router.js"
     }
   },
   "publishConfig": {
@@ -25,6 +29,9 @@
   "scripts": {
     "build": "vp pack",
     "test": "vp test run --config vitest.node.config.mts"
+  },
+  "dependencies": {
+    "@rezejs/router": "workspace:^"
   },
   "devDependencies": {
     "vite-plus": "catalog:"

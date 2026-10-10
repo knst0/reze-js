@@ -13,14 +13,14 @@ export interface Location {
 
 export type PreloadIntent = "initial" | "navigate" | "preload";
 
-export interface PreloadArgs<P extends Params = Params, C = unknown> {
+export interface PreloadArgs<P extends Params = Params, C = RouterContext> {
   readonly params: P;
   readonly location: Location;
   readonly intent: PreloadIntent;
   readonly context: C;
 }
 
-export interface RouteResolvedArgs<P extends Params = Params, D = unknown, C = unknown> extends PreloadArgs<P, C> {
+export interface RouteResolvedArgs<P extends Params = Params, D = unknown, C = RouterContext> extends PreloadArgs<P, C> {
   readonly data: Awaited<D>;
 }
 
@@ -56,7 +56,7 @@ export interface RouteRedirect {
   replace?: boolean;
 }
 
-export interface RouteConfig<D = unknown, C = unknown> {
+export interface RouteConfig<D = unknown, C = RouterContext> {
   /**
    * Starts the route's data; the return value is the component's `data`. Runs with intent `"preload"` when a link to the
    * route is hovered, focused or touched, and again with `"navigate"` when it is entered, so cache fetches that should not repeat.
@@ -76,12 +76,12 @@ export interface RouteConfig<D = unknown, C = unknown> {
   info?: Readonly<Record<string, unknown>>;
 }
 
-export interface RouteModule<C = any> {
+export interface RouteModule<C = RouterContext> {
   default?: RouteComponent<any, any>;
   route?: RouteConfig<any, C>;
 }
 
-export interface RouteDefinition<C = any> extends RouteConfig<any, C> {
+export interface RouteDefinition<C = RouterContext> extends RouteConfig<any, C> {
   path: string;
   /** Stable identity for server route matches and SSG descriptors: the plugin sets it to the file route id, hand-written tables may. Otherwise the factory assigns a structural index chain (`"2"`, `"2/0"`). */
   id?: string;
@@ -123,6 +123,8 @@ export interface BeforeLeaveEvent {
 }
 
 /** Augmented by the generated routes `.d.ts`: `paths` (every leaf href shape) and `base` (the prefix `<a href>` puts before one, or `#` for hash history) drive `Href`; `routes` (leaf pattern to params and data) and `pathsTree` (the `paths` builders) drive the typed hooks and `Router.paths`. */
+export interface RouterContext {}
+
 export interface Register {}
 
 export type RoutePath = Register extends { paths: infer P extends string } ? P : string;
@@ -181,7 +183,7 @@ export type RoutePropsFor<P extends RoutePattern> = RouteProps<ParamsFor<P>, Dat
  * preload params follow the pattern, the return stays author-declared, and `D` defaults to `unknown` for modules
  * without data.
  */
-export interface RouteConfigFor<P extends RoutePattern, D = unknown, C = unknown> {
+export interface RouteConfigFor<P extends RoutePattern, D = unknown, C = RouterContext> {
   preload?: (args: PreloadArgs<ParamsFor<P>, C>) => D;
   meta?: PageMetadata | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<PageMetadata>);
   redirect?: RouteRedirect | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<RouteRedirect | undefined>);

@@ -46,6 +46,9 @@ export const Router = createRouter({
 | `headDefaults` | `PageMetadata`               | None                                                      | Title and metadata used when no matched route sets them.                                       |
 | `context`      | `C`                          | `undefined`                                               | Value passed to route `preload`, `meta`, and `redirect` callbacks.                             |
 
+`RouterContext` is the default type of route callback `context` and is open to module augmentation. Importing `@rezejs/query` alone does not change it; add `import "@rezejs/query/router"` to add `queryClient: QueryClient`. Supply that value through `RouterConfig.context` or the server context factory—the type augmentation does not create a client at runtime.
+
+
 ### The `RouterInstance` members
 
 | Member   | Type                                                                                   | Purpose                                                                                      |
@@ -488,6 +491,7 @@ These exports are types only. They describe values you receive from the hooks, t
 | `RouteConfigFor<P, D, C>`       | `RouteConfig` with the params of leaf pattern `P` and context `C`.                                      |
 | `RouteDefinition<C>`            | `RouteConfig` plus `path`, `id`, `name`, `component`, `load`, and `children`.                           |
 | `RouteMatch`                    | `{ path, params, data, info }`, the entries `useCurrentMatches` returns.                                |
+| `RouterContext`                | The augmentable default type of the route callback `context`. |
 | `RouteModule<C>`                | `{ default?, route? }`, the module a `load` function resolves to.                                       |
 | `RouteParams<S>`                | The params parsed from pattern string `S`.                                                              |
 | `RoutePath`                     | Every href path, or `string` without generated types.                                                   |

@@ -17,7 +17,7 @@ import {
 } from "./navigation";
 import type { OutputMatch, PageMetadata, PathsTree, RouteDefinition } from "./types";
 
-export interface RouterConfig<C = unknown> {
+export interface RouterConfig<C = RouterContext> {
   routes: readonly RouteDefinition<C>[];
   /** Values made available to route `preload`, `meta`, and `redirect` callbacks. */
   context?: C;
@@ -36,7 +36,7 @@ export interface RouterConfig<C = unknown> {
   headDefaults?: PageMetadata;
 }
 
-export interface RouterInstance<C = unknown> {
+export interface RouterInstance<C = RouterContext> {
   (props: { root?: (props: { children: JSX.Element }) => JSX.Element }): JSX.Element;
   /** Matches `url` root-to-leaf without rendering; `[]` when nothing matches. */
   readonly match: (url: string) => OutputMatch[];
@@ -105,8 +105,8 @@ export function createSettledRouter(
 }
 
 /** Compiles `routes` once and returns the router component; mount it with an optional `root` shell. */
-export function createRouter<C>(config: RouterConfig<C> & { paths: PathsTree }): RouterInstance<C> & { readonly paths: PathsTree };
-export function createRouter<C>(config: RouterConfig<C>): RouterInstance<C>;
+export function createRouter<C = RouterContext>(config: RouterConfig<C> & { paths: PathsTree }): RouterInstance<C> & { readonly paths: PathsTree };
+export function createRouter<C = RouterContext>(config: RouterConfig<C>): RouterInstance<C>;
 export function createRouter(config: RouterConfig<any>): RouterInstance<any> {
   const history = config.history ?? createBrowserHistory();
   const branches = compileRoutes(config.routes);
