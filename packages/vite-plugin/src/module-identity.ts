@@ -86,6 +86,8 @@ export function compilerInputHash(canonicalId: string, input: string): string {
 export interface ModuleRegistry {
   /** Rejects differing inputs for one module ID and digest collisions across module IDs. */
   register(canonicalId: string, input: string): string;
+  /** Replaces the stored input, e.g. after a dev-server file edit; still rejects digest collisions. */
+  update(canonicalId: string, input: string): string;
 }
 
 export function createModuleRegistry(): ModuleRegistry {
@@ -104,6 +106,21 @@ export function createModuleRegistry(): ModuleRegistry {
       const owner = owners.get(hash);
       if (owner !== undefined && owner !== canonicalId) {
         throw new Error(`[reze] Compiler site hash collision ${hash}: ${JSON.stringify(owner)} and ${JSON.stringify(canonicalId)}`);
+      }
+      owners.set(hash, canonicalId);
+      inputs.set(canonicalId, { input, hash });
+      return hash;
+    },
+    update(canonicalId, input) {
+      const known = inputs.get(canonicalId);
+      if (known !== undefined && known.input === input) return known.hash;
+      const hash = compilerInputHash(canonicalId, input);
+      const owner = owners.get(hash);
+      if (owner !== undefined && owner !== canonicalId) {
+        throw new Error(`[reze] Compiler site hash collision ${hash}: ${JSON.stringify(owner)} and ${JSON.stringify(canonicalId)}`);
+      }
+      if (known !== undefined && known.hash !== hash && owners.get(known.hash) === canonicalId) {
+        owners.delete(known.hash);
       }
       owners.set(hash, canonicalId);
       inputs.set(canonicalId, { input, hash });

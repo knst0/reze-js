@@ -60,3 +60,14 @@ test("paired target registration permits identical input but rejects differing m
   expect(() => registry.register("src/App.tsx", "export default 2;")).toThrow("different compiler input across targets");
   expect(createModuleRegistry().register("src/App.tsx", "export default 2;")).not.toBe("617ae233d41b19b1");
 });
+
+test("dev updates replace stored input while strict registration keeps rejecting it", () => {
+  const registry = createModuleRegistry();
+  const first = registry.register("src/App.tsx", "export default 1;");
+  expect(registry.update("src/App.tsx", "export default 1;")).toBe(first);
+  const second = registry.update("src/App.tsx", "export default 2;");
+  expect(second).not.toBe(first);
+  expect(second).toBe(createModuleRegistry().register("src/App.tsx", "export default 2;"));
+  expect(registry.register("src/App.tsx", "export default 2;")).toBe(second);
+  expect(() => registry.register("src/App.tsx", "export default 1;")).toThrow("different compiler input across targets");
+});

@@ -284,7 +284,8 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
       const target = shared.enabled && shared.root !== "" ? (envName === HtmlEnv ? "html" : "island") : undefined;
       const moduleId = target === undefined ? undefined : canonicalModuleId(id, shared.root);
       if (moduleId !== undefined) {
-        shared.registry.register(moduleId, code);
+        if (isServe) shared.registry.update(moduleId, code);
+        else shared.registry.register(moduleId, code);
         if (target === "html" && id !== SsgViewId) shared.moduleFiles.set(moduleId, file);
       }
       const imported = await moduleFacts.factsFor(
