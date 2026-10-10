@@ -1,0 +1,32 @@
+{
+  "name": "@rezejs/query",
+  "version": "0.0.0",
+  "license": "MIT",
+  "author": "Konstantin Kireyev <https://github.com/knst0>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/knst0/reze-js.git",
+    "directory": "packages/query"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp pack",
+    "test": "vp test run --config vitest.node.config.mts"
+  },
+  "devDependencies": {
+    "vite-plus": "catalog:"
+  }
+}

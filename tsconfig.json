@@ -20,6 +20,7 @@
       "@rezejs/dom/jsx-dev-runtime": ["./packages/dom/src/jsx-dev-runtime.ts"],
       "@rezejs/router": ["./packages/router/src/index.ts"],
       "@rezejs/router/fs": ["./packages/router/src/fs/index.ts"],
+      "@rezejs/query": ["./packages/query/src/index.ts"],
       "@rezejs/signals": ["./packages/signals/src/index.ts"],
       "@rezejs/signals/render": ["./packages/signals/src/render.ts"],
       "@rezejs/signals/profile": ["./packages/signals/src/profile.ts"],

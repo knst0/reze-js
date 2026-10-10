@@ -925,6 +925,12 @@ importers:
         specifier: ^6.2.0
         version: 6.2.0
 
+  packages/query:
+    devDependencies:
+      vite-plus:
+        specifier: 'catalog:'
+        version: 1.1.0(@types/node@26.6.2)(@vitest/browser-playwright@5.0.3)(@vitest/ui@5.0.3)(@volar/typescript@2.4.28(typescript@7.0.2))(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(playwright@1.63.0)(svelte@5.57.1)(typescript@7.0.2)(yaml@2.9.1)
+
   packages/reze-js:
     dependencies:
       '@rezejs/dom':

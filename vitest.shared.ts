@@ -13,6 +13,7 @@ const packages = join(import.meta.dirname, "packages");
 
 /** Resolves every workspace package to its sources, so tests never read a stale `dist`. */
 export const sourceAliases = [
+  { find: "@rezejs/query", replacement: join(packages, "query", "src", "index.ts") },
   { find: "@rezejs/router/fs", replacement: join(packages, "router", "src", "fs", "index.ts") },
   { find: "@rezejs/router", replacement: join(packages, "router", "src", "index.ts") },
   { find: "reze-js/internal/runtime", replacement: join(packages, "reze-js", "src", "internal", "runtime.ts") },
