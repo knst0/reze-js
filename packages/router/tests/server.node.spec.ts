@@ -147,6 +147,23 @@ test("prepareServerRoute settles preloads and merges metadata root-to-leaf", asy
   ]);
 });
 
+test("prepareServerRoute passes its context into route data and metadata", async () => {
+  const context = { requestId: "ssr-42" };
+  const routes: RouteDefinition<typeof context>[] = [
+    {
+      path: "/",
+      preload: ({ context }) => context.requestId,
+      meta: ({ context }) => ({ title: context.requestId }),
+      component: Home,
+    },
+  ];
+
+  const prepared = await prepareServerRoute(routes, "/", { context });
+  if (prepared.status !== "render") throw new Error("expected render");
+  expect(prepared.metadata.title).toBe("ssr-42");
+  expect(prepared.matches[0]?.data).toBe("ssr-42");
+});
+
 test("prepareServerRoute distinguishes missing preloads from undefined data", async () => {
   const routes: RouteDefinition[] = [
     {

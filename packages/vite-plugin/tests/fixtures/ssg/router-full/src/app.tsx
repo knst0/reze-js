@@ -1,9 +1,15 @@
-import { useLocation } from "@rezejs/router";
+import { useLocation, type RouterServerContextArgs } from "@rezejs/router";
 import type { JSX } from "reze-js";
 
 import { routes } from "./routes";
 
 export { routes };
+
+let nextContextId = 0;
+
+export function createContext({ pathname, mode }: RouterServerContextArgs) {
+  return { id: ++nextContextId, pathname, mode };
+}
 
 export default function Shell(props: { children: JSX.Element }) {
   const location = useLocation();

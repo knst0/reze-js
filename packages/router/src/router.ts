@@ -17,8 +17,10 @@ import {
 } from "./navigation";
 import type { OutputMatch, PageMetadata, PathsTree, RouteDefinition } from "./types";
 
-export interface RouterConfig {
-  routes: readonly RouteDefinition[];
+export interface RouterConfig<C = unknown> {
+  routes: readonly RouteDefinition<C>[];
+  /** Values made available to route `preload`, `meta`, and `redirect` callbacks. */
+  context?: C;
   /** Prebuilt href builders (`paths` from `virtual:reze-routes`, or `buildPaths` for hand-written tables); the factory never builds them, so apps that skip it skip the code. */
   paths?: PathsTree;
   /** Default `createBrowserHistory()`. */
@@ -34,13 +36,13 @@ export interface RouterConfig {
   headDefaults?: PageMetadata;
 }
 
-export interface RouterInstance {
+export interface RouterInstance<C = unknown> {
   (props: { root?: (props: { children: JSX.Element }) => JSX.Element }): JSX.Element;
   /** Matches `url` root-to-leaf without rendering; `[]` when nothing matches. */
   readonly match: (url: string) => OutputMatch[];
   /** The configured `paths`, or `undefined` when the factory got none. */
   readonly paths: PathsTree | undefined;
-  readonly routes: readonly RouteDefinition[];
+  readonly routes: readonly RouteDefinition<C>[];
 }
 
 function renderLevel(state: RouterState, depth: number): JSX.Element {
@@ -103,9 +105,9 @@ export function createSettledRouter(
 }
 
 /** Compiles `routes` once and returns the router component; mount it with an optional `root` shell. */
-export function createRouter(config: RouterConfig & { paths: PathsTree }): RouterInstance & { readonly paths: PathsTree };
-export function createRouter(config: RouterConfig): RouterInstance;
-export function createRouter(config: RouterConfig): RouterInstance {
+export function createRouter<C>(config: RouterConfig<C> & { paths: PathsTree }): RouterInstance<C> & { readonly paths: PathsTree };
+export function createRouter<C>(config: RouterConfig<C>): RouterInstance<C>;
+export function createRouter(config: RouterConfig<any>): RouterInstance<any> {
   const history = config.history ?? createBrowserHistory();
   const branches = compileRoutes(config.routes);
   const isLinking = config.links ?? history.scroll;
@@ -123,6 +125,7 @@ export function createRouter(config: RouterConfig): RouterInstance {
       history,
       branches,
       env: "browser",
+      context: config.context,
       headBaseline: config.headDefaults,
     });
     const root = props.root;

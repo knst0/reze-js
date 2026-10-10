@@ -32,6 +32,7 @@ const ROUTER_PATHS = {
   "/blog/:id": [{ id: "a" }, { id: "b" }],
   "/opt/:id?": [{}, { id: "x" }],
   "/files/*rest": [{ rest: ["a", "b"] }],
+  "/context/:id": [{ id: "one" }, { id: "two" }],
   "/ghost/:id": [],
 } as const;
 
@@ -318,6 +319,18 @@ describe("preboot html, metadata, assets and lazy execution", () => {
     const intro = await fetchHtml(pages.router, "/docs/intro/");
     expect(intro.html).toContain("docs");
     expect(intro.html).toContain("intro");
+  });
+
+  test("creates fresh route context for every generated page", async () => {
+    const one = await fetchHtml(pages.router, "/context/one/");
+    const two = await fetchHtml(pages.router, "/context/two/");
+    const oneId = /ssg:(\d+):/.exec(one.html)?.[1];
+    const twoId = /ssg:(\d+):/.exec(two.html)?.[1];
+
+    expect(one.html).toContain(":/context/one/:one");
+    expect(two.html).toContain(":/context/two/:two");
+    expect(oneId).not.toBeUndefined();
+    expect(twoId).not.toBe(oneId);
   });
 
   test("enumeration covers dynamics and skips layouts and empty path lists", async () => {

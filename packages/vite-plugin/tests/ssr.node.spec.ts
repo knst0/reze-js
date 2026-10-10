@@ -69,6 +69,22 @@ function islandDescriptors(html: string): Array<Record<string, unknown>> {
   );
 }
 
+test("router server context is created from each request", async () => {
+  const [first, second] = await Promise.all([
+    routerA
+      .handler(new Request("http://127.0.0.1/context", { headers: { "x-query-scope": "request-one" } }))
+      .then((response) => response.text()),
+    routerA
+      .handler(new Request("http://127.0.0.1/context", { headers: { "x-query-scope": "request-two" } }))
+      .then((response) => response.text()),
+  ]);
+
+  expect(first).toContain("request-one");
+  expect(second).toContain("request-two");
+  expect(first).not.toContain("request-two");
+  expect(second).not.toContain("request-one");
+});
+
 test(
   "concurrent requests see their own module-level signals",
   async () => {

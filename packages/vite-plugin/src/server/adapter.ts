@@ -170,7 +170,7 @@ function redirectResult(appPath, redirect) {
     replace: redirect.replace,
   };
 }
-async function respond(pathname, search, mode, signal, overrides) {
+async function respond(pathname, search, mode, signal, overrides, request) {
   const appPath = stripBase(pathname);
   if (appPath === undefined) return { status: "not-found" };
   const depth = pageDepth(pathname);
@@ -189,8 +189,16 @@ async function respond(pathname, search, mode, signal, overrides) {
     let route;
     let handle;
     if (router) {
+      const context = application.app.createContext === undefined
+        ? undefined
+        : await application.app.createContext({
+            request,
+            pathname: appPath,
+            search,
+            mode: mode === "stream" ? "ssr" : "ssg",
+          });
       const prepared = await session.load(() =>
-        routerServer.prepareServerRoute(application.app.routes, appPath, { base: basePath }),
+        routerServer.prepareServerRoute(application.app.routes, appPath, { base: basePath, context }),
       );
       if (prepared.status === "redirect") return redirectResult(appPath, prepared);
       if (prepared.status === "not-found") return { status: "not-found" };
@@ -220,7 +228,7 @@ function text(status, body) {
 export async function handler(request, overrides) {
   const url = new URL(request.url);
   try {
-    const result = await respond(url.pathname, url.search, "stream", request.signal, overrides);
+    const result = await respond(url.pathname, url.search, "stream", request.signal, overrides, request);
     if (result.status === "not-found") return text(404, "Not Found");
     if (result.status === "redirect") return new Response(null, { status: 302, headers: { location: result.to } });
     return new Response(result.body, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
@@ -230,7 +238,7 @@ export async function handler(request, overrides) {
   }
 }
 export async function prerender(input) {
-  const result = await respond(basePath + input.pathname, "", "buffered", undefined, undefined);
+  const result = await respond(basePath + input.pathname, "", "buffered", undefined, undefined, undefined);
   if (result.status === "redirect") return result;
   if (result.status === "not-found") throw new Error("[reze] SSG route " + input.pathname + " matched no route");
   return { status: "render", html: await new Response(result.body).text() };

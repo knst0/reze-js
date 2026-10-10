@@ -41,6 +41,7 @@ type SearchParamsState = [query: () => Location["query"], set: (next: SearchInit
 interface SetupOptions {
   history?: RouterHistory;
   links?: boolean;
+  context?: unknown;
 }
 
 function setup(
@@ -56,7 +57,7 @@ function setup(
     controls.isRouting = useIsRouting();
     return <main>{view(props.children)}</main>;
   }
-  const Router = createRouter({ routes, history, links: options.links });
+  const Router = createRouter({ routes, history, links: options.links, context: options.context });
   const { el } = mount(() => <Router root={Root} />);
   return { el: el.firstElementChild!, history, ...controls };
 }
@@ -637,6 +638,7 @@ test("hover warming runs preloads but ignores their navigation and never applies
     navigateRef = useNavigate();
     return null;
   };
+  const routeContext = { cache: "browser" };
   const preload = vi.fn(() => {
     navigateRef("/target");
     return "warmed";
@@ -660,13 +662,13 @@ test("hover warming runs preloads but ignores their navigation and never applies
         <a href="/target">t</a>
       </>
     ),
-    { links: true },
+    { links: true, context: routeContext },
   );
   const anchor = el.querySelector("a")!;
   const home = el.querySelector("p")!;
   fire(anchor, "focusin");
   await settle();
-  expect(preload).toHaveBeenCalledWith(expect.objectContaining({ intent: "preload" }));
+  expect(preload).toHaveBeenCalledWith(expect.objectContaining({ context: routeContext, intent: "preload" }));
   expect(history.get().path).toBe("/");
   expect(el.querySelector("p")).toBe(home);
   expect(home.textContent).toBe("home");

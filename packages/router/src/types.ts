@@ -13,13 +13,14 @@ export interface Location {
 
 export type PreloadIntent = "initial" | "navigate" | "preload";
 
-export interface PreloadArgs<P extends Params = Params> {
+export interface PreloadArgs<P extends Params = Params, C = unknown> {
   readonly params: P;
   readonly location: Location;
   readonly intent: PreloadIntent;
+  readonly context: C;
 }
 
-export interface RouteResolvedArgs<P extends Params = Params, D = unknown> extends PreloadArgs<P> {
+export interface RouteResolvedArgs<P extends Params = Params, D = unknown, C = unknown> extends PreloadArgs<P, C> {
   readonly data: Awaited<D>;
 }
 
@@ -34,6 +35,15 @@ export type RouteComponent<P extends Params = Params, D = unknown> = (props: Rou
 
 export type Awaitable<T> = T | PromiseLike<T>;
 
+export interface RouterServerContextArgs {
+  readonly request?: Request;
+  readonly pathname: string;
+  readonly search: string;
+  readonly mode: "ssr" | "ssg";
+}
+
+export type RouterServerContextFactory<C> = (args: RouterServerContextArgs) => Awaitable<C>;
+
 export interface PageMetadata {
   title?: string;
   description?: string;
@@ -46,32 +56,32 @@ export interface RouteRedirect {
   replace?: boolean;
 }
 
-export interface RouteConfig<D = unknown> {
+export interface RouteConfig<D = unknown, C = unknown> {
   /**
    * Starts the route's data; the return value is the component's `data`. Runs with intent `"preload"` when a link to the
    * route is hovered, focused or touched, and again with `"navigate"` when it is entered, so cache fetches that should not repeat.
    * May return a promise-like; navigations await it and deliver the settled value, never the promise.
    */
-  preload?: (args: PreloadArgs<any>) => D;
+  preload?: (args: PreloadArgs<any, C>) => D;
   /**
    * Page metadata, merged root-to-leaf with the last defined field winning. A function receives the route's settled
    * preload data; navigations await it. Hover warming never runs it.
    */
-  meta?: PageMetadata | ((args: RouteResolvedArgs<any, D>) => Awaitable<PageMetadata>);
+  meta?: PageMetadata | ((args: RouteResolvedArgs<any, D, C>) => Awaitable<PageMetadata>);
   /**
    * A literal object short-circuits the navigation before any preload runs. A function receives the route's settled
    * preload data; navigations await it and follow the first defined result root-to-leaf. Hover warming never runs it.
    */
-  redirect?: RouteRedirect | ((args: RouteResolvedArgs<any, D>) => Awaitable<RouteRedirect | undefined>);
+  redirect?: RouteRedirect | ((args: RouteResolvedArgs<any, D, C>) => Awaitable<RouteRedirect | undefined>);
   info?: Readonly<Record<string, unknown>>;
 }
 
-export interface RouteModule {
+export interface RouteModule<C = any> {
   default?: RouteComponent<any, any>;
-  route?: RouteConfig<any>;
+  route?: RouteConfig<any, C>;
 }
 
-export interface RouteDefinition extends RouteConfig<any> {
+export interface RouteDefinition<C = any> extends RouteConfig<any, C> {
   path: string;
   /** Stable identity for server route matches and SSG descriptors: the plugin sets it to the file route id, hand-written tables may. Otherwise the factory assigns a structural index chain (`"2"`, `"2/0"`). */
   id?: string;
@@ -79,8 +89,8 @@ export interface RouteDefinition extends RouteConfig<any> {
   name?: string;
   component?: RouteComponent<any, any>;
   /** Code-split module; its `default` and `route` override `component`, `preload`, `meta`, `redirect` and `info` once loaded. */
-  load?: () => Promise<RouteModule>;
-  children?: readonly RouteDefinition[];
+  load?: () => Promise<RouteModule<C>>;
+  children?: readonly RouteDefinition<C>[];
 }
 
 export interface RouteMatch {
@@ -171,10 +181,10 @@ export type RoutePropsFor<P extends RoutePattern> = RouteProps<ParamsFor<P>, Dat
  * preload params follow the pattern, the return stays author-declared, and `D` defaults to `unknown` for modules
  * without data.
  */
-export interface RouteConfigFor<P extends RoutePattern, D = unknown> {
-  preload?: (args: PreloadArgs<ParamsFor<P>>) => D;
-  meta?: PageMetadata | ((args: RouteResolvedArgs<ParamsFor<P>, D>) => Awaitable<PageMetadata>);
-  redirect?: RouteRedirect | ((args: RouteResolvedArgs<ParamsFor<P>, D>) => Awaitable<RouteRedirect | undefined>);
+export interface RouteConfigFor<P extends RoutePattern, D = unknown, C = unknown> {
+  preload?: (args: PreloadArgs<ParamsFor<P>, C>) => D;
+  meta?: PageMetadata | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<PageMetadata>);
+  redirect?: RouteRedirect | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<RouteRedirect | undefined>);
   info?: Readonly<Record<string, unknown>>;
 }
 

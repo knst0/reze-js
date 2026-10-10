@@ -33,7 +33,7 @@ async function preloadPath(state: RouterState, path: string): Promise<boolean> {
     for (const route of match.branch.routes) {
       if (route.preload === undefined) continue;
       try {
-        const data = route.preload({ params: match.params, location, intent: "preload" });
+        const data = route.preload({ params: match.params, location, intent: "preload", context: state.context });
         if (isThenable(data)) await data.then(undefined, () => {});
       } catch {
         continue;

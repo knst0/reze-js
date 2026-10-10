@@ -1,8 +1,13 @@
+import type { RouterServerContextArgs } from "@rezejs/router";
 import type { JSX } from "reze-js";
 
 import { routes } from "./routes";
 
 export { routes };
+
+export function createContext({ request }: RouterServerContextArgs) {
+  return { requestId: request?.headers.get("x-query-scope") ?? "missing" };
+}
 
 export default function Shell(props: { children: JSX.Element }) {
   return (

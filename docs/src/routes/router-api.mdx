@@ -44,6 +44,7 @@ export const Router = createRouter({
 | `links`        | `boolean`                    | `true` for browser and hash histories, `false` for memory | Routes same-origin anchor clicks that match a route through the router instead of the browser. |
 | `preload`      | `boolean`                    | `true`                                                    | Runs route `preload` functions when a matching link is hovered, focused, or touched.           |
 | `headDefaults` | `PageMetadata`               | None                                                      | Title and metadata used when no matched route sets them.                                       |
+| `context`      | `C`                          | `undefined`                                               | Value passed to route `preload`, `meta`, and `redirect` callbacks.                             |
 
 ### The `RouterInstance` members
 
@@ -457,49 +458,51 @@ For file routes, the Vite plugin's `fileRoutes` option controls the route direct
 
 These exports are types only. They describe values you receive from the hooks, the builders, and the route definitions.
 
-| Type                          | Shape or meaning                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `AnchorAttributes`            | The attributes an `<a>` element accepts, listed in [anchor attributes](#anchor-attributes).             |
-| `Awaitable<T>`                | `T` or a promise-like of `T`.                                                                           |
-| `DataFor<P>`                  | The `data` type of leaf pattern `P`, or `unknown` without generated types.                              |
-| `DataOf<M>`                   | The awaited return of a route module's `route.preload`, or `unknown`.                                   |
-| `HistoryEntry`                | `{ path, state, index }` as described in [the `RouterHistory` interface](#the-routerhistory-interface). |
-| `Href`                        | An `<a href>` value. Any string without generated types.                                                |
-| `HrefFor<H>`                  | `H`, `H` with a query, or `H` with a hash.                                                              |
-| `LinkState`                   | The return type of `useLinkState`, as described in [`useLinkState`](#uselinkstate).                     |
-| `Location`                    | `{ pathname, search, hash, query, state }`.                                                             |
-| `LoosePathNode`, `LoosePaths` | The builder types used when no generated `pathsTree` exists.                                            |
-| `Navigate`                    | The type of the function `useNavigate` returns.                                                         |
-| `NavigateOptions`             | `{ replace?, state?, scroll? }`.                                                                        |
-| `NavigateTarget`              | A `navigate` target: a route path, a path with a query or hash, or an absolute URL.                     |
-| `OutputMatch`                 | `{ path, pattern, params, info }`, the entries `match` returns.                                         |
-| `PageMetadata`                | `{ title?, description?, canonical?, robots? }`.                                                        |
-| `Params`                      | A readonly record of string params.                                                                     |
-| `ParamsFor<P>`                | The params of leaf pattern `P`, or `Params` without generated types.                                    |
-| `PathMatch`                   | `{ params, path }`, the result of matching one pattern. No hook in this version returns it.             |
-| `PathMatchFor<P>`             | `{ params, path }` typed by the pattern `P`. No hook in this version returns it.                        |
-| `PathsTree`                   | The type of the `paths` builders: generated, or `LoosePaths` otherwise.                                 |
-| `PreloadArgs<P>`              | `{ params, location, intent }`, the argument of `preload`. `intent` is a `PreloadIntent`.               |
-| `PreloadIntent`               | `"initial"`, `"navigate"`, or `"preload"`.                                                              |
-| `Register`                    | The interface the generated declaration augments.                                                       |
-| `RouteComponent<P, D>`        | A component that receives `RouteProps<P, D>` and returns a `JSX.Element`.                               |
-| `RouteConfig<D>`              | The `preload`, `meta`, `redirect`, and `info` fields of a route.                                        |
-| `RouteConfigFor<P, D>`        | `RouteConfig` with the params of leaf pattern `P`.                                                      |
-| `RouteDefinition`             | `RouteConfig` plus `path`, `id`, `name`, `component`, `load`, and `children`.                           |
-| `RouteMatch`                  | `{ path, params, data, info }`, the entries `useCurrentMatches` returns.                                |
-| `RouteModule`                 | `{ default?, route? }`, the module a `load` function resolves to.                                       |
-| `RouteParams<S>`              | The params parsed from pattern string `S`.                                                              |
-| `RoutePath`                   | Every href path, or `string` without generated types.                                                   |
-| `RoutePattern`                | Every leaf pattern, or `string` without generated types.                                                |
-| `RouteProps<P, D>`            | `{ params, location, data, children }`, the props a route component receives.                           |
-| `RoutePropsFor<P>`            | `RouteProps` with the params and data of leaf pattern `P`.                                              |
-| `RouteRedirect`               | `{ to, replace? }`, the value a `redirect` resolves to.                                                 |
-| `RouteResolvedArgs<P, D>`     | `PreloadArgs` plus the settled `data`, the argument of function `meta` and `redirect`.                  |
-| `SearchInit`                  | A record of search values, where an array value appends one entry per item.                             |
-| `SearchValue`                 | `string`, `number`, `boolean`, `null`, or `undefined`.                                                  |
-| `BeforeLeaveEvent`            | The event described in [guarding navigation](#guard-navigation-with-usebeforeleave).                    |
-| `RouterConfig`                | The options described in [`RouterConfig` options](#routerconfig-options).                               |
-| `RouterInstance`              | The members described in [the `RouterInstance` members](#the-routerinstance-members).                   |
+| Type                            | Shape or meaning                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `AnchorAttributes`              | The attributes an `<a>` element accepts, listed in [anchor attributes](#anchor-attributes).             |
+| `Awaitable<T>`                  | `T` or a promise-like of `T`.                                                                           |
+| `DataFor<P>`                    | The `data` type of leaf pattern `P`, or `unknown` without generated types.                              |
+| `DataOf<M>`                     | The awaited return of a route module's `route.preload`, or `unknown`.                                   |
+| `HistoryEntry`                  | `{ path, state, index }` as described in [the `RouterHistory` interface](#the-routerhistory-interface). |
+| `Href`                          | An `<a href>` value. Any string without generated types.                                                |
+| `HrefFor<H>`                    | `H`, `H` with a query, or `H` with a hash.                                                              |
+| `LinkState`                     | The return type of `useLinkState`, as described in [`useLinkState`](#uselinkstate).                     |
+| `Location`                      | `{ pathname, search, hash, query, state }`.                                                             |
+| `LoosePathNode`, `LoosePaths`   | The builder types used when no generated `pathsTree` exists.                                            |
+| `Navigate`                      | The type of the function `useNavigate` returns.                                                         |
+| `NavigateOptions`               | `{ replace?, state?, scroll? }`.                                                                        |
+| `NavigateTarget`                | A `navigate` target: a route path, a path with a query or hash, or an absolute URL.                     |
+| `OutputMatch`                   | `{ path, pattern, params, info }`, the entries `match` returns.                                         |
+| `PageMetadata`                  | `{ title?, description?, canonical?, robots? }`.                                                        |
+| `Params`                        | A readonly record of string params.                                                                     |
+| `ParamsFor<P>`                  | The params of leaf pattern `P`, or `Params` without generated types.                                    |
+| `PathMatch`                     | `{ params, path }`, the result of matching one pattern. No hook in this version returns it.             |
+| `PathMatchFor<P>`               | `{ params, path }` typed by the pattern `P`. No hook in this version returns it.                        |
+| `PathsTree`                     | The type of the `paths` builders: generated, or `LoosePaths` otherwise.                                 |
+| `PreloadArgs<P, C>`             | `{ params, location, intent, context }`, the argument of `preload`. `intent` is a `PreloadIntent`.      |
+| `PreloadIntent`                 | `"initial"`, `"navigate"`, or `"preload"`.                                                              |
+| `Register`                      | The interface the generated declaration augments.                                                       |
+| `RouteComponent<P, D>`          | A component that receives `RouteProps<P, D>` and returns a `JSX.Element`.                               |
+| `RouteConfig<D, C>`             | The `preload`, `meta`, `redirect`, and `info` fields of a route.                                        |
+| `RouteConfigFor<P, D, C>`       | `RouteConfig` with the params of leaf pattern `P` and context `C`.                                      |
+| `RouteDefinition<C>`            | `RouteConfig` plus `path`, `id`, `name`, `component`, `load`, and `children`.                           |
+| `RouteMatch`                    | `{ path, params, data, info }`, the entries `useCurrentMatches` returns.                                |
+| `RouteModule<C>`                | `{ default?, route? }`, the module a `load` function resolves to.                                       |
+| `RouteParams<S>`                | The params parsed from pattern string `S`.                                                              |
+| `RoutePath`                     | Every href path, or `string` without generated types.                                                   |
+| `RoutePattern`                  | Every leaf pattern, or `string` without generated types.                                                |
+| `RouteProps<P, D>`              | `{ params, location, data, children }`, the props a route component receives.                           |
+| `RoutePropsFor<P>`              | `RouteProps` with the params and data of leaf pattern `P`.                                              |
+| `RouteRedirect`                 | `{ to, replace? }`, the value a `redirect` resolves to.                                                 |
+| `RouteResolvedArgs<P, D, C>`    | `PreloadArgs` plus the settled `data`, the argument of function `meta` and `redirect`.                  |
+| `SearchInit`                    | A record of search values, where an array value appends one entry per item.                             |
+| `RouterServerContextArgs`       | `{ request?, pathname, search, mode }`; available to the server entry's `createContext` factory.        |
+| `RouterServerContextFactory<C>` | Factory that returns router context for an SSR request or an SSG page.                                  |
+| `SearchValue`                   | `string`, `number`, `boolean`, `null`, or `undefined`.                                                  |
+| `BeforeLeaveEvent`              | The event described in [guarding navigation](#guard-navigation-with-usebeforeleave).                    |
+| `RouterConfig`                  | The options described in [`RouterConfig` options](#routerconfig-options).                               |
+| `RouterInstance`                | The members described in [the `RouterInstance` members](#the-routerinstance-members).                   |
 
 ## Related pages
 

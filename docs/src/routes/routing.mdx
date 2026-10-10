@@ -220,6 +220,56 @@ With `preload` enabled, which is the default, the router starts loading a route 
 
 Set `preload: false` in `createRouter` to turn warming off. Clicks still route the page.
 
+### Reuse route data with `@rezejs/query`
+
+`route.preload` runs again when a hovered link is navigated to. Pass a `QueryClient` through router context so both calls share fresh data and in-flight requests:
+
+```tsx file=src/routes/blog/[id].tsx
+import { createQueryClient } from "@rezejs/query";
+import type { QueryClient } from "@rezejs/query";
+import type { RouteConfigFor } from "@rezejs/router";
+
+interface AppContext {
+  queryClient: QueryClient;
+}
+
+export const route = {
+  preload: ({ params, context }) =>
+    context.queryClient.fetchQuery({
+      key: ["post", params.id],
+      queryFn: async ({ signal }) => {
+        const response = await fetch(`/api/posts/${params.id}`, { signal });
+        if (!response.ok) throw new Error("Could not load post");
+        return response.json() as Promise<{ title: string }>;
+      },
+      staleTime: 30_000,
+    }),
+} satisfies RouteConfigFor<"/blog/:id", { title: string }, AppContext>;
+```
+
+For a client-only app, pass a browser-scoped client to `createRouter`:
+
+```ts
+const Router = createRouter({
+  routes,
+  context: { queryClient: createQueryClient() },
+});
+```
+
+For SSR and SSG, export `createContext` from the server entry. Reze calls it for every request or generated page, so each render can create its own cache scope:
+
+```tsx file=src/entry-server.tsx
+import { createQueryClient } from "@rezejs/query";
+import type { QueryClient } from "@rezejs/query";
+import type { RouterServerContextFactory } from "@rezejs/router";
+
+export const createContext: RouterServerContextFactory<{ queryClient: QueryClient }> = () => ({
+  queryClient: createQueryClient(),
+});
+```
+
+The key must include every input that changes the result. `staleTime` controls reuse; `invalidateQueries(["post", id])` marks matching data stale after a mutation. The SSR/SSG router passes the settled result to `props.data`; query-cache snapshots are not automatically embedded in HTML or hydrated in the browser.
+
 ## Set page metadata
 
 A route can set the document title, description, canonical URL, and robots directive. Export a `meta` object from `route`:

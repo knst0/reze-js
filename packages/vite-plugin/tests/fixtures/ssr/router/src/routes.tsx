@@ -25,4 +25,9 @@ export const routes = defineRoutes([
   defineRoute({ path: "/", meta: { title: "Home" }, component: Home }),
   defineRoute({ path: "/about", meta: { title: "About" }, component: About }),
   defineRoute({ path: "/news", meta: { title: "News" }, component: News }),
+  defineRoute<"/context", string, { requestId: string }>({
+    path: "/context",
+    preload: ({ context }) => context.requestId,
+    component: (props) => <h1 id="request-scope">{props.data}</h1>,
+  }),
 ]);

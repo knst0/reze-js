@@ -65,9 +65,11 @@ export interface SsgNotFoundResult {
 
 export type SsgPreparedRoute = SsgRenderResult | SsgRedirectResult | SsgNotFoundResult;
 
-export interface SsgPrepareOptions {
+export interface SsgPrepareOptions<C = unknown> {
   /** Served base the router paths exclude; default `""`. */
   readonly base?: string;
+  /** Values made available to matched route callbacks. */
+  readonly context?: C;
 }
 
 function dynamicsOf(pattern: string): SsgParamSpec[] {
@@ -345,10 +347,14 @@ export function uninstallServerLinkTarget(): void {
  * `session.run(hMount(...))`. The adapter records `matches` through its own session hook after preparation and before
  * mounting, then mounts, settles, and polls `takeServerRedirect(handle)` for imperative navigation during the view.
  */
-export function prepareServerRoute(routes: readonly RouteDefinition[], path: string, opts?: SsgPrepareOptions): Promise<SsgPreparedRoute> {
+export function prepareServerRoute<C = unknown>(
+  routes: readonly RouteDefinition<C>[],
+  path: string,
+  opts?: SsgPrepareOptions<C>,
+): Promise<SsgPreparedRoute> {
   const branches = compileRoutes(routes);
   const history = createCaptureHistory(path, opts?.base ?? "");
-  const state = initRouterState({ history, branches, env: "html" });
+  const state = initRouterState({ history, branches, env: "html", context: opts?.context });
   installServerLinkTarget();
   return settleEntry(state, history.get(), "initial").then((outcome) => {
     if (outcome.kind === "redirect") return { status: "redirect", to: outcome.to, replace: outcome.replace };
@@ -436,10 +442,11 @@ export function resolveSsgRedirectTarget(fromPathname: string, to: string): stri
  * detection. Only the final render result's matches are recorded by the adapter; intermediate redirecting prepares
  * never reach the session.
  */
-export function resolveSsgRedirectChain(
-  routes: readonly RouteDefinition[],
+export function resolveSsgRedirectChain<C = unknown>(
+  routes: readonly RouteDefinition<C>[],
   startPath: string,
   maxDepth = 10,
+  opts?: SsgPrepareOptions<C>,
 ): Promise<SsgPreparedRoute | { readonly status: "external"; readonly to: string }> {
   const visited: string[] = [];
   let path = startPath;
@@ -452,7 +459,7 @@ export function resolveSsgRedirectChain(
     if (visited.length > maxDepth) {
       throw new Error(`[reze-router] redirect chain exceeds ${maxDepth}: ${visited.join(" -> ")}`);
     }
-    return prepareServerRoute(routes, path).then((prepared) => {
+    return prepareServerRoute(routes, path, opts).then((prepared) => {
       if (prepared.status !== "redirect") return prepared;
       assertRedirectTarget(prepared.to);
       if (isExternalRedirectTarget(prepared.to)) return { status: "external", to: prepared.to };

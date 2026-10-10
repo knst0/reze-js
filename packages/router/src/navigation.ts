@@ -38,6 +38,7 @@ export interface LinkSelectors {
 export interface RouterState {
   readonly history: RouterHistory;
   readonly branches: readonly Branch[];
+  readonly context: unknown;
   /** Browser page or server-side route preparation. */
   env: RouterEnv;
   /** Set by the swap runtime: navigations fetch the next page instead of matching client routes. */
@@ -84,6 +85,7 @@ export interface RouterStateInit {
   readonly history: RouterHistory;
   readonly branches: readonly Branch[];
   readonly env: RouterEnv;
+  readonly context?: unknown;
   readonly headBaseline?: PageMetadata;
   readonly swap?: RouterSwap;
 }
@@ -98,6 +100,7 @@ export function initRouterState(init: RouterStateInit): RouterState {
     history: init.history,
     branches: init.branches,
     env: init.env,
+    context: init.context,
     swap: init.swap,
     redirectCaptured: undefined,
     headBaseline: init.headBaseline,
@@ -415,7 +418,7 @@ function settleRoute(
   }
   let produced: unknown;
   try {
-    produced = untrack(() => route.preload!({ params, location, intent }));
+    produced = untrack(() => route.preload!({ params, location, intent, context: state.context }));
   } catch (thrown) {
     return settleData(state, generation, routes, params, path, location, intent, index, matches, undefined, false, thrown);
   }
@@ -467,7 +470,7 @@ function settleData(
   const afterMeta = (ownMeta: PageMetadata): SettleOutcome | Promise<SettleOutcome> => {
     const redirect = route.redirect;
     if (error !== undefined || redirect === undefined || typeof redirect !== "function") return push(ownMeta, error);
-    const args = { params, location, intent, data };
+    const args = { params, location, intent, data, context: state.context };
     let decided: Awaitable<RouteRedirect | undefined>;
     try {
       decided = untrack(() => redirect(args));
@@ -495,7 +498,7 @@ function settleData(
   const meta = route.meta;
   if (error !== undefined || meta === undefined) return afterMeta({});
   if (typeof meta !== "function") return afterMeta(meta);
-  const resolvedArgs = { params, location, intent, data };
+  const resolvedArgs = { params, location, intent, data, context: state.context };
   let produced: Awaitable<PageMetadata>;
   try {
     produced = untrack(() => meta(resolvedArgs));

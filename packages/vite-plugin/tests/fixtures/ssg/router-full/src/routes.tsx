@@ -1,5 +1,4 @@
-import { defineRoute, defineRoutes, useNavigate } from "@rezejs/router";
-import type { RouteProps } from "@rezejs/router";
+import { defineRoute, defineRoutes, useNavigate, type RouteProps } from "@rezejs/router";
 import { computed, effect, signal, type JSX } from "reze-js";
 import { asyncComponent } from "reze-js/internal/runtime";
 
@@ -330,5 +329,10 @@ export const routes = defineRoutes([
   defineRoute({
     path: "/assets",
     component: AssetsPage,
+  }),
+  defineRoute<"/context/:id", string, { id: number; pathname: string; mode: "ssr" | "ssg" }>({
+    path: "/context/:id",
+    preload: ({ params, context }) => `${context.mode}:${context.id}:${context.pathname}:${params.id}`,
+    component: (props: RouteProps<{ id: string }, string>) => <p id="context-data">{props.data}</p>,
   }),
 ]);

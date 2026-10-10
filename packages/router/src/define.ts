@@ -10,26 +10,26 @@ import type {
 } from "./types";
 
 /** Preserves the literal route tuple for the router factory; returns the same value. */
-export function defineRoutes<const R extends readonly RouteDefinition[]>(routes: R): R {
+export function defineRoutes<const R extends readonly RouteDefinition<any>[]>(routes: R): R {
   return routes;
 }
 
-type RouteInput<S extends string, T> = Omit<RouteDefinition, "path" | "preload" | "meta" | "redirect" | "component"> & {
+type RouteInput<S extends string, T, C> = Omit<RouteDefinition<C>, "path" | "preload" | "meta" | "redirect" | "component"> & {
   path: S;
-  preload?: (args: PreloadArgs<RouteParams<S>>) => T;
-  meta?: PageMetadata | ((args: RouteResolvedArgs<RouteParams<S>, T>) => Awaitable<PageMetadata>);
-  redirect?: RouteRedirect | ((args: RouteResolvedArgs<RouteParams<S>, T>) => Awaitable<RouteRedirect | undefined>);
+  preload?: (args: PreloadArgs<RouteParams<S>, C>) => T;
+  meta?: PageMetadata | ((args: RouteResolvedArgs<RouteParams<S>, T, C>) => Awaitable<PageMetadata>);
+  redirect?: RouteRedirect | ((args: RouteResolvedArgs<RouteParams<S>, T, C>) => Awaitable<RouteRedirect | undefined>);
   component?: RouteComponent<RouteParams<S>, Awaited<T>>;
 };
 
-type PreloadedRoute<S extends string, T> = RouteInput<S, T> & {
-  preload: (args: PreloadArgs<RouteParams<S>>) => T;
+type PreloadedRoute<S extends string, T, C> = RouteInput<S, T, C> & {
+  preload: (args: PreloadArgs<RouteParams<S>, C>) => T;
 };
 
-export function defineRoute<const S extends string, T>(
-  route: PreloadedRoute<S, T>,
-): Omit<RouteDefinition, "path" | "preload"> & Pick<PreloadedRoute<S, T>, "path" | "preload">;
-export function defineRoute<const S extends string, T = unknown>(route: RouteInput<S, T>): RouteDefinition & { path: S };
-export function defineRoute(route: RouteDefinition): RouteDefinition {
+export function defineRoute<const S extends string, T, C = unknown>(
+  route: PreloadedRoute<S, T, C>,
+): Omit<RouteDefinition<C>, "path" | "preload"> & Pick<PreloadedRoute<S, T, C>, "path" | "preload">;
+export function defineRoute<const S extends string, T = unknown, C = unknown>(route: RouteInput<S, T, C>): RouteDefinition<C> & { path: S };
+export function defineRoute(route: RouteDefinition<any>): RouteDefinition<any> {
   return route;
 }
