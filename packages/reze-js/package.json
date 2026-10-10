@@ -45,7 +45,6 @@
     "./server": {
       "types": "./dist/server/node.d.ts",
       "bun": "./dist/server/bun.js",
-      "deno": "./dist/server/deno.js",
       "node": "./dist/server/node.js"
     }
   },

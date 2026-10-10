@@ -18,7 +18,6 @@ export default defineConfig({
       "src/internal/client.ts",
       "src/server/node.ts",
       "src/server/bun.ts",
-      "src/server/deno.ts",
     ],
     platform: "neutral",
     unbundle: true,
