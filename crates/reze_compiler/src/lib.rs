@@ -19,7 +19,8 @@ use oxc_span::{SourceType, Span};
 use std::collections::HashMap;
 
 pub use diagnostic::{
-    CATALOG, Code, Diagnostic, Edit, Entry, Example, Fix, Label, Position, Severity, render_skill,
+    CATALOG, Code, Diagnostic, Edit, Entry, Example, Fix, Label, LineIndex, Position, Severity,
+    render_skill,
 };
 
 pub use module_facts::{ExportFacts, FactKind, ModuleFacts, Reads, Written};
