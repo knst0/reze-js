@@ -106,13 +106,13 @@ function App() {
         <tbody>
           <For each={data} keyed={(row) => row.id}>
             {(row) => (
-              <tr class={isSelected(row().id) ? "danger" : ""}>
-                <td class="col-md-1">{row().id}</td>
+              <tr class={isSelected(row.id) ? "danger" : ""}>
+                <td class="col-md-1">{row.id}</td>
                 <td class="col-md-4">
-                  <a onClick={() => (selected = row().id)}>{row().label}</a>
+                  <a onClick={() => (selected = row.id)}>{row.label}</a>
                 </td>
                 <td class="col-md-1">
-                  <a onClick={() => remove(row().id)}>
+                  <a onClick={() => remove(row.id)}>
                     <span class="glyphicon glyphicon-remove" aria-hidden="true" />
                   </a>
                 </td>

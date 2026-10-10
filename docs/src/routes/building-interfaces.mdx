@@ -106,7 +106,7 @@ Changing `text` updates the paragraph in place. Setting `open` to `false` remove
 
 ### Show and Switch
 
-`Show` renders its children while `when` is truthy and `fallback` otherwise. Without a `fallback`, a falsy `when` renders nothing. A function child receives the tested value as a tracked getter:
+`Show` renders its children while `when` is truthy and `fallback` otherwise. Without a `fallback`, a falsy `when` renders nothing. A function child receives the tested value, which reads as a signal:
 
 ```tsx
 import { Show, signal } from "reze-js";
@@ -117,7 +117,7 @@ export function Greeting() {
     <div>
       <input value={name} onInput={(e: InputEvent) => (name = (e.currentTarget as HTMLInputElement).value)} />
       <Show when={name} fallback={<p>anonymous</p>}>
-        {(value) => <p>hello {value()}</p>}
+        {(value) => <p>hello {value}</p>}
       </Show>
     </div>
   );
@@ -125,6 +125,18 @@ export function Greeting() {
 ```
 
 Clearing the input makes `name` falsy, which shows the fallback.
+
+Calling the value reads the getter itself instead of the value, so the compiler reports it with `FLOW_PARAM_CALLED`:
+
+```tsx expect=FLOW_PARAM_CALLED
+import { Show } from "reze-js";
+
+export const view = (
+  <Show when="Ada">
+    {(value) => <p>hello {value()}</p>}
+  </Show>
+);
+```
 
 `Switch` renders the first `Match` whose `when` is truthy, or its `fallback` when none match. It rebuilds only when the chosen `Match` changes:
 
@@ -149,7 +161,7 @@ export function Status() {
 }
 ```
 
-A function child of `Match` receives its `when` as a tracked getter, as `Show` does. `Match` works only as a direct child of `Switch`, so use `Show` for a single condition:
+A function child of `Match` receives its `when`, which reads as a signal as in `Show`. `Match` works only as a direct child of `Switch`, so use `Show` for a single condition:
 
 ```tsx expect=MATCH_OUTSIDE_SWITCH
 import { Match } from "reze-js";
@@ -173,9 +185,9 @@ export function Ready(props: { ready: boolean }) {
 
 | Mode           | `keyed` value              | Rows follow                  | Row `item` argument   | Row `index` argument      |
 | -------------- | -------------------------- | ---------------------------- | --------------------- | ------------------------- |
-| Identity       | Omitted, or `keyed={true}` | The item object              | The item itself       | A getter for the position |
-| Keyed function | `keyed={(item) => key}`    | The key the function returns | A getter for the item | A getter for the position |
-| Position       | `keyed={false}`            | The array position           | A getter for the item | The position as a number  |
+| Identity       | Omitted, or `keyed={true}` | The item object              | The item itself          | The position, read as a signal |
+| Keyed function | `keyed={(item) => key}`    | The key the function returns | The item, read as a signal | The position, read as a signal |
+| Position       | `keyed={false}`            | The array position           | The item, read as a signal | The position as a number       |
 
 The following component renders todos with a function key. Removing a row removes that row's nodes:
 
@@ -197,7 +209,7 @@ export function Todos() {
       <For each={todos} fallback={<li>empty</li>} keyed={(todo) => todo.id}>
         {(todo, index) => (
           <li>
-            {index()}: {todo().title} <button onClick={() => (todos = todos.filter((t) => t.id !== todo().id))}>remove</button>
+            {index}: {todo.title} <button onClick={() => (todos = todos.filter((t) => t.id !== todo.id))}>remove</button>
           </li>
         )}
       </For>
@@ -206,9 +218,27 @@ export function Todos() {
 }
 ```
 
-In keyed-function mode, replacing an item with another object that has the same key keeps the row's nodes and updates its `todo()` getter. Reordering moves the existing nodes. In identity mode, a new object builds a new row. The `fallback` renders when `each` is empty, `null`, `undefined`, or `false`.
+In keyed-function mode, replacing an item with another object that has the same key keeps the row's nodes and updates `todo` in place. Reordering moves the existing nodes. In identity mode, a new object builds a new row. The `fallback` renders when `each` is empty, `null`, `undefined`, or `false`.
 
 Keep keys stable for the lifetime of a row. Use identity mode for stable objects, a keyed function when items are replaced but keep the same logical identity, and position mode when a row belongs to its array slot.
+
+`keyed` is read once when the list is built, and it must be `true`, `false`, or a key function, so the compiler knows which row parameters read as signals. A value it cannot decide is an error reported as `FOR_KEYED_DYNAMIC`:
+
+```tsx expect=FOR_KEYED_DYNAMIC
+import { For } from "reze-js";
+
+const numbers = [1, 2, 3];
+
+export function Rows(props: { mode: boolean }) {
+  return (
+    <ul>
+      <For each={numbers} keyed={props.mode}>
+        {(n) => <li>{n}</li>}
+      </For>
+    </ul>
+  );
+}
+```
 
 An array literal passed directly to `each` builds new items on every evaluation, so no row can be reused. The compiler reports `INLINE_EACH` as a warning:
 

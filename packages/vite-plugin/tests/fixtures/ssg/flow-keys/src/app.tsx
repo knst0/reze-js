@@ -8,8 +8,8 @@ interface Row {
 const removedIds: string[] = [];
 const [removedText, setRemovedText] = runtimeSignal("");
 
-function KeyedRow(props: { row: () => Row; index: () => number }) {
-  const row = props.row();
+function KeyedRow(props: { row: Row; index: number }) {
+  const row = props.row;
   onCleanup(() => {
     removedIds.push(row.id);
     setRemovedText(removedIds.join(","));
@@ -17,7 +17,7 @@ function KeyedRow(props: { row: () => Row; index: () => number }) {
   return (
     <li data-row={row.id}>
       <input id={`row-${row.id}`} value={row.label} />
-      <span>{props.index()}</span>
+      <span>{props.index}</span>
     </li>
   );
 }

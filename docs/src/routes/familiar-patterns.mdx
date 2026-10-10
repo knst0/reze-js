@@ -124,7 +124,7 @@ export function List() {
 }
 ```
 
-Use `map` for lists whose rows hold no state. Use `<For>` for everything else. Pass `keyed` a function to match rows by a key instead of by item identity. The row then receives an item getter, and replacing an item with another object that has the same key keeps the row's nodes:
+Use `map` for lists whose rows hold no state. Use `<For>` for everything else. Pass `keyed` a function to match rows by a key instead of by item identity. The row then reads its item as a signal, and replacing an item with another object that has the same key keeps the row's nodes:
 
 ```tsx
 import { For, signal } from "reze-js";
@@ -137,7 +137,7 @@ export function Todos() {
     <div>
       <ul>
         <For each={todos} keyed={(todo) => todo.id}>
-          {(todo) => <li>{todo().text}</li>}
+          {(todo) => <li>{todo.text}</li>}
         </For>
       </ul>
       <button onClick={() => (todos = [{ id: 1, text: "b" }])}>go</button>

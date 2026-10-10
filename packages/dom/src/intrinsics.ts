@@ -5,21 +5,24 @@ type Falsy = false | 0 | "" | null | undefined;
 export interface ShowProps<T> {
   when: T | Falsy;
   fallback?: JSX.Element;
-  children: JSX.Element | ((value: () => T) => JSX.Element);
+  /** Read `value` as a signal; the compiler turns each read into a getter call. */
+  children: JSX.Element | ((value: T) => JSX.Element);
 }
 
 export interface ForProps<T> {
   each: readonly T[] | null | undefined | false;
   fallback?: JSX.Element;
   keyed?: true;
-  children: (item: T, index: () => number) => JSX.Element;
+  /** Read `index` as a signal; `item` is the row's value. */
+  children: (item: T, index: number) => JSX.Element;
 }
 
 export interface ForIndexProps<T> {
   each: readonly T[] | null | undefined | false;
   fallback?: JSX.Element;
   keyed: false;
-  children: (item: () => T, index: number) => JSX.Element;
+  /** Read `item` as a signal; `index` is the row's position. */
+  children: (item: T, index: number) => JSX.Element;
 }
 
 export interface ForKeyedProps<T> {
@@ -30,7 +33,8 @@ export interface ForKeyedProps<T> {
    * item in place, so a key must keep pointing at its own row.
    */
   keyed: (item: T) => unknown;
-  children: (item: () => T, index: () => number) => JSX.Element;
+  /** Read `item` and `index` as signals; the compiler turns each read into a getter call. */
+  children: (item: T, index: number) => JSX.Element;
 }
 
 export interface RepeatProps {
@@ -46,7 +50,8 @@ export interface SwitchProps {
 
 export interface MatchProps<T> {
   when: T | Falsy;
-  children: JSX.Element | ((value: () => T) => JSX.Element);
+  /** Read `value` as a signal; the compiler turns each read into a getter call. */
+  children: JSX.Element | ((value: T) => JSX.Element);
 }
 
 export interface PortalProps {

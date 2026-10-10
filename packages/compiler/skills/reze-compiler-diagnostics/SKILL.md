@@ -228,6 +228,66 @@ import { Match, Switch } from "reze-js";
 export const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Switch></div>;
 ```
 
+## FLOW_PARAM_CALLED
+
+**Flow parameter called as a function** · severity `error`
+
+> `{param}` reads as a signal here, so `{param}()` calls the getter instead of reading the value. Remove the call.
+
+`data` keys: `param`
+
+Automatic fix: yes
+
+The value parameter of a `<Show>` or `<Match>` child, and the `<For>` row parameters the `keyed` mode makes reactive, read as signals: the compiler turns each read into a getter call. An explicit call would call the getter itself, so it is refused. `data.param` is the parameter.
+
+**Repair:** Apply the fix to remove `()`. Read the parameter where the value is used, like a `signal`.
+
+Before:
+
+```tsx
+import { Show } from "reze-js";
+
+export const view = <Show when={user()}>{(u) => <b>{u().name}</b>}</Show>;
+```
+
+After:
+
+```tsx
+import { Show } from "reze-js";
+
+export const view = <Show when={user()}>{(u) => <b>{u.name}</b>}</Show>;
+```
+
+## FOR_KEYED_DYNAMIC
+
+**Non-static `<For keyed>`** · severity `error`
+
+> `keyed` must be `true`, `false`, or a key function written here, so the compiler knows which row parameters read as signals. The value here cannot be decided.
+
+`data` keys: none
+
+Automatic fix: no
+
+`<For>` passes its row parameters as getters or plain values depending on `keyed`: without it the index is a getter, with `keyed={false}` the item is, and with a key function both are. A variable, a member, or a call leaves the parameters unknown, so it is refused. `keyed` is read once when the list is built.
+
+**Repair:** Write `keyed`, `keyed={true}`, `keyed={false}`, or `keyed={(item) => item.id}`. To share one key function, write it in each `<For>`.
+
+Before:
+
+```tsx
+import { For } from "reze-js";
+
+export const view = <ul><For each={items()} keyed={mode}>{(item) => <li>{item}</li>}</For></ul>;
+```
+
+After:
+
+```tsx
+import { For } from "reze-js";
+
+export const view = <ul><For each={items()} keyed={(item) => item.id}>{(item) => <li>{item.id}</li>}</For></ul>;
+```
+
 ## SIGNAL_NOT_DECLARED
 
 **`signal` or `computed` outside a variable declaration** · severity `error`

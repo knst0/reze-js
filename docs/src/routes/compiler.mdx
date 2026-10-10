@@ -280,6 +280,8 @@ Errors:
 | `CONTROL_FLOW_MISSING`        | A control-flow tag lacks the attribute that decides what it renders.                                       |
 | `CONTROL_FLOW_CHILDREN`       | A control-flow tag has children it cannot render.                                                          |
 | `MATCH_OUTSIDE_SWITCH`        | `<Match>` is not a direct child of `<Switch>`.                                                             |
+| `FLOW_PARAM_CALLED`           | A flow parameter that reads as a signal is called as a function.                                           |
+| `FOR_KEYED_DYNAMIC`           | `<For keyed>` is not `true`, `false`, or a key function written in place.                                  |
 | `SIGNAL_NOT_DECLARED`         | `signal` or `computed` is used outside a variable declaration.                                             |
 | `SIGNAL_PATTERN`              | `signal` or `computed` initializes a destructuring pattern.                                                |
 | `SIGNAL_DEFAULT_EXPORT`       | `signal` or `computed` is the default export.                                                              |

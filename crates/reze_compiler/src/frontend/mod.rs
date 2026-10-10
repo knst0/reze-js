@@ -2,6 +2,7 @@ pub mod analysis;
 pub mod async_component;
 pub mod dsl;
 pub mod dynamic;
+pub mod flow_params;
 pub mod imports;
 pub mod keyed;
 pub mod props;
@@ -88,6 +89,7 @@ pub fn normalize<'a>(
     let props_plan;
     let mut async_plan;
     let selector_plan;
+    let flow_plan;
     let mut async_reports = Vec::new();
     let first_scoping;
     let imported_getters;
@@ -101,6 +103,7 @@ pub fn normalize<'a>(
         props_plan = props::collect(program, &scoping, &nodes, &mut reports);
         async_plan = async_component::collect(program, &scoping, &nodes, &mut async_reports);
         selector_plan = selector::collect(program, &scoping, &nodes, &pre, &mut reports);
+        flow_plan = flow_params::collect(program, &scoping, &mut reports);
         if syntax.declared.is_empty()
             && syntax.namespaces.is_empty()
             && !imports::has_lowerable(program)
@@ -108,6 +111,7 @@ pub fn normalize<'a>(
             && props_plan.is_empty()
             && async_plan.is_empty()
             && selector_plan.is_empty()
+            && flow_plan.is_empty()
             && imported_getters.is_empty()
         {
             reports.extend(async_reports);
@@ -150,7 +154,11 @@ pub fn normalize<'a>(
         source,
     );
     content_changed |= normalized;
-    if (props_changed || normalized) && (!async_plan.is_empty() || !async_reports.is_empty()) {
+    let flow_changed = flow_params::apply(allocator, program, &first_scoping, flow_plan);
+    content_changed |= flow_changed;
+    if (props_changed || normalized || flow_changed)
+        && (!async_plan.is_empty() || !async_reports.is_empty())
+    {
         content_changed |= helpers.install(allocator, program);
         let semantic = SemanticBuilder::new().with_build_nodes(true).build(&*program);
         let (scoping, nodes) = semantic.semantic.into_scoping_and_nodes();

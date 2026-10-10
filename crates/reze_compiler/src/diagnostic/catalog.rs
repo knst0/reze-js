@@ -176,6 +176,32 @@ catalog! {
             good: "import { Match, Switch } from \"reze-js\";\n\nexport const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Switch></div>;\n",
         },
     }
+    FlowParamCalled {
+        name: "FLOW_PARAM_CALLED",
+        severity: Error,
+        title: "Flow parameter called as a function",
+        message: "`{param}` reads as a signal here, so `{param}()` calls the getter instead of reading the value. Remove the call.",
+        explanation: "The value parameter of a `<Show>` or `<Match>` child, and the `<For>` row parameters the `keyed` mode makes reactive, read as signals: the compiler turns each read into a getter call. An explicit call would call the getter itself, so it is refused. `data.param` is the parameter.",
+        repair: "Apply the fix to remove `()`. Read the parameter where the value is used, like a `signal`.",
+        fix: Some("read `{param}` as a signal"),
+        example: Pair {
+            bad: "import { Show } from \"reze-js\";\n\nexport const view = <Show when={user()}>{(u) => <b>{u().name}</b>}</Show>;\n",
+            good: "import { Show } from \"reze-js\";\n\nexport const view = <Show when={user()}>{(u) => <b>{u.name}</b>}</Show>;\n",
+        },
+    }
+    ForKeyedDynamic {
+        name: "FOR_KEYED_DYNAMIC",
+        severity: Error,
+        title: "Non-static `<For keyed>`",
+        message: "`keyed` must be `true`, `false`, or a key function written here, so the compiler knows which row parameters read as signals. The value here cannot be decided.",
+        explanation: "`<For>` passes its row parameters as getters or plain values depending on `keyed`: without it the index is a getter, with `keyed={false}` the item is, and with a key function both are. A variable, a member, or a call leaves the parameters unknown, so it is refused. `keyed` is read once when the list is built.",
+        repair: "Write `keyed`, `keyed={true}`, `keyed={false}`, or `keyed={(item) => item.id}`. To share one key function, write it in each `<For>`.",
+        fix: None,
+        example: Pair {
+            bad: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()} keyed={mode}>{(item) => <li>{item}</li>}</For></ul>;\n",
+            good: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()} keyed={(item) => item.id}>{(item) => <li>{item.id}</li>}</For></ul>;\n",
+        },
+    }
     SignalNotDeclared {
         name: "SIGNAL_NOT_DECLARED",
         severity: Error,

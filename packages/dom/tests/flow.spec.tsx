@@ -15,7 +15,7 @@ test("Show keeps its branch while when stays truthy and passes the value as a tr
     <Show when={user()} fallback={<i>none</i>}>
       {(u) => {
         builds++;
-        return <b>{u().name}</b>;
+        return <b>{u.name}</b>;
       }}
     </Show>
   ));
@@ -165,7 +165,7 @@ test("a function child of Match receives its when as a tracked getter", () => {
       <Match when={b()}>
         {(value) => {
           builds++;
-          return <u>{value()}</u>;
+          return <u>{value}</u>;
         }}
       </Match>
     </Switch>
@@ -194,7 +194,7 @@ test("For rows follow items by identity: nodes move instead of being rebuilt", (
   expect([...el.children]).toEqual([c, a, b]);
 });
 
-test("For with keyed keeps the row of a changed item and updates item() in place", () => {
+test("For with keyed keeps the row of a changed item and updates item in place", () => {
   type Row = { id: number; label: string };
   let builds = 0;
   const [items, setItems] = signal<Row[]>([
@@ -206,7 +206,7 @@ test("For with keyed keeps the row of a changed item and updates item() in place
       <For each={items()} keyed={(row) => row.id}>
         {(row) => {
           builds++;
-          return <li>{row().label}</li>;
+          return <li>{row.label}</li>;
         }}
       </For>
     ),
@@ -223,14 +223,14 @@ test("For with keyed keeps the row of a changed item and updates item() in place
   expect(builds).toBe(2);
 });
 
-test("For index() tracks the row position", () => {
+test("For index tracks the row position", () => {
   const [items, setItems] = signal(["a", "b", "c"]);
   const { el } = mount(
     () => (
       <For each={items()}>
         {(item, index) => (
           <li>
-            {index()}:{item}
+            {index}:{item}
           </li>
         )}
       </For>
@@ -243,7 +243,7 @@ test("For index() tracks the row position", () => {
   expect(texts(el)).toEqual(["0:c", "1:a"]);
 });
 
-test("For with keyed={false} keeps rows by position and updates item() in place", () => {
+test("For with keyed={false} keeps rows by position and updates item in place", () => {
   let builds = 0;
   const [items, setItems] = signal(["a", "b", "c"]);
   const { el } = mount(
@@ -253,7 +253,7 @@ test("For with keyed={false} keeps rows by position and updates item() in place"
           builds++;
           return (
             <li>
-              {index}:{item()}
+              {index}:{item}
             </li>
           );
         }}
@@ -329,7 +329,7 @@ test("random keyed updates keep DOM order and reuse the nodes of surviving rows"
   const { el } = mount(
     () => (
       <For each={items()} keyed={(item) => item.id}>
-        {(item) => <li>{item().id}</li>}
+        {(item) => <li>{item.id}</li>}
       </For>
     ),
     "ul",
@@ -370,7 +370,7 @@ test("For with duplicate keys keeps every row and updates each in place", () => 
   const { el } = mount(
     () => (
       <For each={items()} keyed={(item) => item.id}>
-        {(item) => <li>{item().label}</li>}
+        {(item) => <li>{item.label}</li>}
       </For>
     ),
     "ul",
@@ -424,9 +424,9 @@ test("rows reading a selector render like plain comparisons across selection and
     <ul>
       <For each={rows()} keyed={(row) => row.id}>
         {(row) => (
-          <li class={selected() === row().id ? "on" : ""} title={row().id !== selected() ? "off" : "on"}>
-            {row().id}
-            {selected() === row().id && <b>*</b>}
+          <li class={selected() === row.id ? "on" : ""} title={row.id !== selected() ? "off" : "on"}>
+            {row.id}
+            {selected() === row.id && <b>*</b>}
           </li>
         )}
       </For>
@@ -485,13 +485,13 @@ test("keyed row writes reexecute on replacement without losing row identity", ()
   const { el } = mount(
     () => (
       <For each={rows()} keyed={(row) => row.id}>
-        {(row: (...args: number[]) => Row) => (
-          <li data-label={row().label}>
-            {(row().id = 5)}
-            {row().id++}
-            {delete (row() as Partial<Row>).id}
-            {([row().id] = [7])}
-            {row(1).id}
+        {(row) => (
+          <li data-label={row.label}>
+            {(row.id = 5)}
+            {row.id++}
+            {delete (row as Partial<Row>).id}
+            {([row.id] = [7])}
+            {row.id}
           </li>
         )}
       </For>

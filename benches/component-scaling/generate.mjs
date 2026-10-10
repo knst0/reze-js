@@ -94,9 +94,9 @@ export function DataTable${i}(props) {
           <For each={rows} keyed={(row) => row.id}>
             {(row) => (
               <tr>
-                <td>{row().name}</td>
-                <td>{row().value}</td>
-                <td class={row().value > 50 ? "ok" : "warn"}>{row().value > 50 ? "OK" : "Low"}</td>
+                <td>{row.name}</td>
+                <td>{row.value}</td>
+                <td class={row.value > 50 ? "ok" : "warn"}>{row.value > 50 ? "OK" : "Low"}</td>
               </tr>
             )}
           </For>
@@ -142,9 +142,9 @@ export function BarChart${i}(props) {
         <For each={bars}>
           {(bar, k) => (
             <div
-              class={["bar", { active: hovered === k() }]}
+              class={["bar", { active: hovered === k }]}
               style={{ height: bar.value + "%" }}
-              onMouseEnter={() => (hovered = k())}
+              onMouseEnter={() => (hovered = k)}
               onMouseLeave={() => (hovered = -1)}
             />
           )}
