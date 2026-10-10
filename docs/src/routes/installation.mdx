@@ -89,6 +89,34 @@ Removing `moduleResolution`, `strict`, or `verbatimModuleSyntax` did not change 
 
 Files that contain JSX must use the `.tsx` extension. A `.ts` file with JSX fails to parse with `PARSE_ERROR`.
 
+When an editor auto-imports the `JSX` type, TypeScript suggests `reze-js/jsx-runtime` first. To
+import it from `reze-js` instead, exclude the runtime modules from auto-imports. In VS Code, add
+this to `.vscode/settings.json`:
+
+```json
+{
+  "typescript.preferences.autoImportFileExcludePatterns": ["**/jsx-runtime*", "**/jsx-dev-runtime*"]
+}
+```
+
+In Zed, add this to `settings.json`:
+
+```json
+{
+  "lsp": {
+    "vtsls": {
+      "settings": {
+        "typescript": {
+          "preferences": {
+            "autoImportFileExcludePatterns": ["**/jsx-runtime*", "**/jsx-dev-runtime*"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ## Create the HTML entry page
 
 Create `index.html` at the project root. It contains the element that `render` mounts into and the script that loads the entry module:
