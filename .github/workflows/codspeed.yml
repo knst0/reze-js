@@ -23,13 +23,14 @@ jobs:
           node-version: 24
           cache: pnpm
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter . --filter @rezejs/compiler --filter @rezejs/signals --filter @rezejs/dom --filter @rezejs/router
+        run: pnpm install --frozen-lockfile --filter . --filter @rezejs/compiler --filter @rezejs/signals --filter @rezejs/dom --filter reze-js --filter @rezejs/router
       - name: Build compiler
         run: pnpm --filter @rezejs/compiler build
       - name: Build benchmark packages
         run: |
           pnpm --filter @rezejs/signals build
           pnpm --filter @rezejs/dom build
+          pnpm --filter reze-js build
           pnpm --filter @rezejs/router build
       - name: Run benchmarks
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
