@@ -35,6 +35,7 @@ pub enum Intrinsic {
     Switch,
     Match,
     Portal,
+    Head,
 }
 
 impl Intrinsic {
@@ -46,6 +47,7 @@ impl Intrinsic {
             Intrinsic::Switch => "Switch",
             Intrinsic::Match => "Match",
             Intrinsic::Portal => "Portal",
+            Intrinsic::Head => "Head",
         }
     }
 }

@@ -131,11 +131,7 @@ Calling the value reads the getter itself instead of the value, so the compiler 
 ```tsx expect=FLOW_PARAM_CALLED
 import { Show } from "reze-js";
 
-export const view = (
-  <Show when="Ada">
-    {(value) => <p>hello {value()}</p>}
-  </Show>
-);
+export const view = <Show when="Ada">{(value) => <p>hello {value()}</p>}</Show>;
 ```
 
 `Switch` renders the first `Match` whose `when` is truthy, or its `fallback` when none match. It rebuilds only when the chosen `Match` changes:
@@ -183,9 +179,9 @@ export function Ready(props: { ready: boolean }) {
 
 `For` renders one row per item. Its `keyed` prop decides which rows are kept when `each` changes:
 
-| Mode           | `keyed` value              | Rows follow                  | Row `item` argument   | Row `index` argument      |
-| -------------- | -------------------------- | ---------------------------- | --------------------- | ------------------------- |
-| Identity       | Omitted, or `keyed={true}` | The item object              | The item itself          | The position, read as a signal |
+| Mode           | `keyed` value              | Rows follow                  | Row `item` argument        | Row `index` argument           |
+| -------------- | -------------------------- | ---------------------------- | -------------------------- | ------------------------------ |
+| Identity       | Omitted, or `keyed={true}` | The item object              | The item itself            | The position, read as a signal |
 | Keyed function | `keyed={(item) => key}`    | The key the function returns | The item, read as a signal | The position, read as a signal |
 | Position       | `keyed={false}`            | The array position           | The item, read as a signal | The position as a number       |
 
@@ -483,6 +479,34 @@ export function Dialog() {
 When `mount` is reactive, the same nodes move to the new parent. Children stay reactive after a move, components inside stay alive, and a delegated event inside the portal still reaches its handler. Toggling a portal leaves nothing behind in the mount.
 
 An error thrown while building portal children reaches the nearest `catchError`, the same as an error in inline content. For error handling in general, see [Lifecycle](/lifecycle).
+
+## Head tags
+
+`Head` renders its children into the document head and leaves nothing inline. Children can only be `<meta>`, `<link>` and `<script>` elements; anything else fails to compile:
+
+```tsx
+import { Head, signal } from "reze-js";
+
+export function Gallery() {
+  let caption = signal("Photos");
+  return (
+    <section>
+      <Head>
+        <script src="https://cdn.example.test/gallery.js" async />
+        <link rel="preconnect" href="https://cdn.example.test" />
+        <meta property="og:title" content={caption} />
+        <script type="application/ld+json">{'{"@type":"Gallery"}'}</script>
+      </Head>
+      <h1>{caption}</h1>
+      <button onClick={() => (caption = "More photos")}>more</button>
+    </section>
+  );
+}
+```
+
+Tags need static identity: `src`, `rel`, `href`, `name` and `property` must be string literals. `meta` needs exactly one of `name` and `property`, `link` needs `rel` and `href`, and a `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta` and `link` take no children, and `script` takes only text. Set the document title with [`route.meta`](/routing#set-page-metadata) instead; `<Head>` cannot carry `<title>`.
+
+The server renders head tags into the head of SSR and SSG pages, including tags from async components, which arrive with a later patch. Scripts adopt the live tag, so a script shared by two components or with `route.meta` executes once. Links and metas stay live: mounting replaces the previous tag, and disposing removes the tags no live owner claims. Tags from the template stay untouched. Declare each tag once: when `route.meta` and `<Head>` name the same tag, the route version wins.
 
 ## Async components
 

@@ -6,6 +6,7 @@ import { renderEffect } from "@rezejs/signals/render";
 import { SVGElements } from "../../../../crates/reze_compiler/src/html-data.json";
 import { errored } from "../errored";
 import { branch, choose } from "../flow";
+import { HeadManagedAttribute, headKeyKind, headLinkKey, headMetaNameKey, headMetaPropertyKey, headScriptKey } from "../head";
 import type { JSX } from "../jsx";
 import { list } from "../list";
 import { loading } from "../loading";
@@ -508,6 +509,59 @@ export function hDynamicElement(
     if (!type) return undefined;
     return hElementType(site, type, Object.hasOwn(SVGElements, type) ? "svg" : type === "math" ? "math" : "");
   });
+}
+
+export function hHead(site: Site, items: [string | undefined, () => unknown][]): HtmlRange {
+  return managedRange("head", site, () => {
+    const session = htmlSession();
+    for (const [key, build] of items) {
+      if (key !== undefined) {
+        if (session.headKeys.has(key)) continue;
+        session.headKeys.add(key);
+      }
+      const content = managedRange("head-tag", site, build);
+      const id = key ?? `u${session.headTokens++}`;
+      markHeadTag(content, key === undefined ? id : undefined);
+      session.headTags.push({
+        id,
+        script: key !== undefined && headKeyKind(key) === "script",
+        node: content,
+        instance: instances.get(content)!,
+        emitted: false,
+        html: "",
+      });
+    }
+    return undefined;
+  });
+}
+
+export interface HeadListInput {
+  readonly scripts?: readonly { readonly src: string }[];
+  readonly links?: readonly { readonly rel: string; readonly href: string }[];
+  readonly metas?: readonly ({ readonly name: string } | { readonly property: string })[];
+}
+
+export function headListKeys(input: HeadListInput | undefined): string[] {
+  if (input === undefined) return [];
+  const keys: string[] = [];
+  for (const script of input.scripts ?? []) keys.push(headScriptKey(script.src));
+  for (const link of input.links ?? []) keys.push(headLinkKey(link.rel, link.href));
+  for (const meta of input.metas ?? []) {
+    keys.push("name" in meta ? headMetaNameKey(meta.name) : headMetaPropertyKey(meta.property));
+  }
+  return keys;
+}
+
+function markHeadTag(content: HtmlRange, token: string | undefined): void {
+  for (const node of content.children) {
+    if (node.kind !== "element") continue;
+    node.attributes.set(HeadManagedAttribute, {
+      name: HeadManagedAttribute,
+      ns: undefined,
+      bool: token === undefined,
+      value: token,
+    });
+  }
 }
 
 export function hPortal(site: Site, child: () => unknown, mount?: () => unknown): HtmlRange {

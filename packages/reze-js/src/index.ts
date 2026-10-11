@@ -3,6 +3,7 @@ import type {
   ForIndexProps,
   ForKeyedProps,
   ForProps,
+  HeadProps,
   IslandOptions,
   IslandTrigger,
   JSX,
@@ -41,6 +42,7 @@ export type {
   ForKeyedProps,
   ForProps,
   Getter,
+  HeadProps,
   IslandOptions,
   IslandTrigger,
   JSX,
@@ -163,6 +165,8 @@ export declare function Switch(props: SwitchProps): JSX.Element;
 export declare function Match<T>(props: MatchProps<T>): JSX.Element;
 
 export declare function Portal(props: PortalProps): JSX.Element;
+
+export declare function Head(props: HeadProps): JSX.Element;
 
 /**
  * A component that renders what `source()` returns: a component, or nothing when falsy. It switches when `source()`

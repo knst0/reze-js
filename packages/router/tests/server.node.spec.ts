@@ -147,6 +147,52 @@ test("prepareServerRoute settles preloads and merges metadata root-to-leaf", asy
   ]);
 });
 
+test("prepareServerRoute concatenates head lists root-to-leaf with last entry winning", async () => {
+  const routes: RouteDefinition[] = [
+    {
+      id: "root",
+      path: "/",
+      component: Home,
+      meta: {
+        scripts: [{ src: "https://cdn.example.test/shared.js" }, { src: "https://cdn.example.test/root.js", defer: true }],
+        links: [{ rel: "preconnect", href: "https://cdn.example.test" }],
+        metas: [
+          { name: "description", content: "root" },
+          { property: "og:title", content: "Root" },
+        ],
+      },
+      children: [
+        {
+          id: "leaf",
+          path: "/leaf",
+          component: Home,
+          meta: {
+            scripts: [
+              { src: "https://cdn.example.test/shared.js", async: true },
+              { src: "https://cdn.example.test/leaf.js", type: "module" },
+            ],
+            metas: [{ property: "og:title", content: "Leaf" }],
+          },
+        },
+      ],
+    },
+  ];
+  const prepared = await prepareServerRoute(routes, "/leaf");
+  if (prepared.status !== "render") throw new Error("expected render");
+  expect(prepared.metadata).toEqual({
+    scripts: [
+      { src: "https://cdn.example.test/root.js", defer: true },
+      { src: "https://cdn.example.test/shared.js", async: true },
+      { src: "https://cdn.example.test/leaf.js", type: "module" },
+    ],
+    links: [{ rel: "preconnect", href: "https://cdn.example.test" }],
+    metas: [
+      { name: "description", content: "root" },
+      { property: "og:title", content: "Leaf" },
+    ],
+  });
+});
+
 test("prepareServerRoute passes its context into route data and metadata", async () => {
   const context = { requestId: "ssr-42" };
   const routes: RouteDefinition<typeof context>[] = [

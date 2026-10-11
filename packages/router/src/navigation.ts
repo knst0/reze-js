@@ -1,9 +1,23 @@
+import { HeadManagedAttribute } from "@rezejs/dom/internal/client";
 import { flush, untrack, type ContextKey, type Getter, type Owner } from "@rezejs/signals";
 import { signal } from "reze-js";
 
+import { applyRouteHead, headWants, type HeadWant } from "./head";
 import type { HistoryEntry, RouterHistory } from "./history";
 import { decode, matchBranches, pathKey, type Branch, type BranchMatch, type CompiledRoute } from "./match";
-import type { Awaitable, BeforeLeaveEvent, Location, NavigateOptions, PageMetadata, Params, PreloadIntent, RouteRedirect } from "./types";
+import type {
+  Awaitable,
+  BeforeLeaveEvent,
+  Location,
+  NavigateOptions,
+  PageHeadLink,
+  PageHeadMeta,
+  PageHeadScript,
+  PageMetadata,
+  Params,
+  PreloadIntent,
+  RouteRedirect,
+} from "./types";
 
 export interface ActiveMatch {
   readonly route: CompiledRoute;
@@ -47,6 +61,8 @@ export interface RouterState {
   redirectCaptured: { to: string; replace: boolean } | undefined;
   /** Template metadata the merged page metadata restores absent fields to; from config or captured on first apply. */
   headBaseline: PageMetadata | undefined;
+  /** Token the router claims managed head tags with; released when the router disposes. */
+  readonly headOwner: object;
   /** Hover-warming depth: while nonzero, preloads run but navigations are ignored and metadata/redirects never run. */
   warming: number;
   owner: Owner | undefined;
@@ -104,6 +120,7 @@ export function initRouterState(init: RouterStateInit): RouterState {
     swap: init.swap,
     redirectCaptured: undefined,
     headBaseline: init.headBaseline,
+    headOwner: {},
     warming: 0,
     owner: undefined,
     entry: undefined,
@@ -385,6 +402,27 @@ function settleMatch(
   return settleRoute(state, generation, routes, match.params, match.path, location, intent, 0, []);
 }
 
+function mergeEntry<T>(entries: Map<string, T>, key: string, value: T): void {
+  entries.delete(key);
+  entries.set(key, value);
+}
+
+function mergeHeadLists(metadata: PageMetadata, matches: readonly ActiveMatch[]): void {
+  const scripts = new Map<string, PageHeadScript>();
+  const links = new Map<string, PageHeadLink>();
+  const metas = new Map<string, PageHeadMeta>();
+  for (const settled of matches) {
+    for (const want of headWants(settled.meta)) {
+      if (want.kind === "script") mergeEntry(scripts, want.key, want.spec);
+      else if (want.kind === "link") mergeEntry(links, want.key, want.spec);
+      else mergeEntry(metas, want.key, want.spec);
+    }
+  }
+  if (scripts.size > 0) metadata.scripts = [...scripts.values()];
+  if (links.size > 0) metadata.links = [...links.values()];
+  if (metas.size > 0) metadata.metas = [...metas.values()];
+}
+
 function settleRoute(
   state: RouterState,
   generation: number,
@@ -404,6 +442,7 @@ function settleRoute(
       if (settled.meta.canonical !== undefined) metadata.canonical = settled.meta.canonical;
       if (settled.meta.robots !== undefined) metadata.robots = settled.meta.robots;
     }
+    mergeHeadLists(metadata, matches);
     return { kind: "render", matches, metadata };
   }
   const stopped = checkpoint(state, generation);
@@ -547,14 +586,15 @@ export function commit(
 }
 
 function readHeadMetadata(): PageMetadata {
-  const description = document.querySelector('meta[name="description"]')?.getAttribute("content") ?? undefined;
-  const canonical = document.querySelector('link[rel="canonical"]')?.getAttribute("href") ?? undefined;
-  const robots = document.querySelector('meta[name="robots"]')?.getAttribute("content") ?? undefined;
+  const description =
+    document.querySelector(`meta[name="description"]:not([${HeadManagedAttribute}])`)?.getAttribute("content") ?? undefined;
+  const canonical = document.querySelector(`link[rel="canonical"]:not([${HeadManagedAttribute}])`)?.getAttribute("href") ?? undefined;
+  const robots = document.querySelector(`meta[name="robots"]:not([${HeadManagedAttribute}])`)?.getAttribute("content") ?? undefined;
   return { title: document.title || undefined, description, canonical, robots };
 }
 
 function writeHeadText(kind: "description" | "robots", value: string | undefined): void {
-  const selector = `meta[name="${kind}"]`;
+  const selector = `meta[name="${kind}"]:not([${HeadManagedAttribute}])`;
   if (value === undefined) {
     document.querySelector(selector)?.remove();
     return;
@@ -571,11 +611,12 @@ function writeHeadText(kind: "description" | "robots", value: string | undefined
 }
 
 function writeHeadCanonical(value: string | undefined): void {
+  const selector = `link[rel="canonical"]:not([${HeadManagedAttribute}])`;
   if (value === undefined) {
-    document.querySelector('link[rel="canonical"]')?.remove();
+    document.querySelector(selector)?.remove();
     return;
   }
-  const existing = document.querySelector('link[rel="canonical"]');
+  const existing = document.querySelector(selector);
   if (existing !== null) {
     existing.setAttribute("href", value);
     return;
@@ -586,14 +627,22 @@ function writeHeadCanonical(value: string | undefined): void {
   document.head.append(tag);
 }
 
+function suppresses(wants: readonly HeadWant[], kind: "description" | "robots" | "canonical"): boolean {
+  return wants.some((want) =>
+    kind === "canonical" ? want.kind === "link" && want.spec.rel === "canonical" : want.kind === "meta" && want.spec.name === kind,
+  );
+}
+
 function applyMetadata(state: RouterState, metadata: PageMetadata): void {
   if (state.env !== "browser" || typeof document === "undefined") return;
   const baseline = (state.headBaseline ??= readHeadMetadata());
+  const wants = headWants(metadata);
   const title = metadata.title ?? baseline.title;
   if (title !== undefined) document.title = title;
-  writeHeadText("description", metadata.description ?? baseline.description);
-  writeHeadCanonical(metadata.canonical ?? baseline.canonical);
-  writeHeadText("robots", metadata.robots ?? baseline.robots);
+  writeHeadText("description", suppresses(wants, "description") ? undefined : (metadata.description ?? baseline.description));
+  writeHeadCanonical(suppresses(wants, "canonical") ? undefined : (metadata.canonical ?? baseline.canonical));
+  writeHeadText("robots", suppresses(wants, "robots") ? undefined : (metadata.robots ?? baseline.robots));
+  applyRouteHead(wants, state.headOwner);
 }
 
 function savePosition(state: RouterState, index: number): void {

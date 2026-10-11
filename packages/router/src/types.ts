@@ -44,11 +44,46 @@ export interface RouterServerContextArgs {
 
 export type RouterServerContextFactory<C> = (args: RouterServerContextArgs) => Awaitable<C>;
 
-export interface PageMetadata {
+export interface PageHeadScript {
+  src: string;
+  async?: boolean;
+  defer?: boolean;
+  type?: string;
+  crossorigin?: "anonymous" | "use-credentials";
+  integrity?: string;
+}
+
+export interface PageHeadLink {
+  rel: string;
+  href: string;
+  as?: string;
+  type?: string;
+  media?: string;
+  hreflang?: string;
+  crossorigin?: "anonymous" | "use-credentials";
+}
+
+export type PageHeadMeta =
+  | { name: string; property?: undefined; content: string }
+  | { property: string; name?: undefined; content: string };
+
+export interface PageHeadDefaults {
   title?: string;
   description?: string;
   canonical?: string;
   robots?: string;
+}
+
+/**
+ * Merged root-to-leaf with the last defined scalar winning. `scripts`, `links` and `metas`
+ * concatenate root-to-leaf and dedupe by `src`, `rel` plus `href`, and `name` or `property`,
+ * with the last entry winning. Entries render only while a matched route declares them; a
+ * managed entry suppresses the same-key scalar (`description`, `robots`, `canonical`).
+ */
+export interface PageMetadata extends PageHeadDefaults {
+  scripts?: PageHeadScript[];
+  links?: PageHeadLink[];
+  metas?: PageHeadMeta[];
 }
 
 export interface RouteRedirect {

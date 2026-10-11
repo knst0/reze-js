@@ -15,7 +15,8 @@ use crate::ast::Ast;
 use crate::html::is_identifier_name;
 use crate::ir::view::{
     AssignTarget, Child, ComponentProp, ComponentSegment, ComponentValue, ComponentView, ExprRef,
-    FlowKeyValue, FlowRender, FlowView, IslandLoader, IslandView, MemberKey, View, ViewKind,
+    FlowKeyValue, FlowRender, FlowView, HeadTag, IslandLoader, IslandView, MemberKey, View,
+    ViewKind,
 };
 
 const HTML: &str = "reze-js/internal/html";
@@ -450,7 +451,32 @@ fn flow<'a, 'm>(
                 }
             }
         }
+        FlowView::Head { tags } => {
+            let entries = head_entries(ctx, tags);
+            match ctx.options.target {
+                CompileTarget::Client | CompileTarget::Island => {
+                    ctx.call(RUNTIME_MODULE, "head", [entries])
+                }
+                CompileTarget::Html => {
+                    let site = ctx.site(view);
+                    ctx.call(HTML, "hHead", [site, entries])
+                }
+            }
+        }
     }
+}
+
+fn head_entries<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, tags: &'m [HeadTag]) -> Expression<'a> {
+    let ast = Ast::new(ctx.allocator);
+    let entries = tags
+        .iter()
+        .map(|tag| {
+            let key =
+                tag.key.as_ref().map(|key| ast.string(key)).unwrap_or_else(|| ast.undefined());
+            ast.array([key, render_flow(ctx, &tag.child)])
+        })
+        .collect::<Vec<_>>();
+    ast.array(entries)
 }
 
 fn render_flow<'a, 'm>(ctx: &mut EmitContext<'a, 'm>, render: &'m FlowRender) -> Expression<'a> {

@@ -108,6 +108,12 @@ test(
     expect(first).toMatch(/loading slow[\s\S]*<\/div>/);
     expect(first).not.toContain("data-rz-patch");
     expect(chunks.some((chunk) => chunk.includes("<template data-rz-patch=") && chunk.includes("done"))).toBe(true);
+    expect(first).not.toContain("data-rz-head");
+    expect(
+      chunks.some(
+        (chunk) => chunk.includes('<template data-rz-head data-rz-head-key="meta:name:slow">') && chunk.includes("content=settled"),
+      ),
+    ).toBe(true);
     const endIndex = chunks.findIndex((chunk) => chunk.includes("data-rz-end"));
     expect(endIndex).toBeGreaterThan(0);
     expect(chunks.slice(endIndex).join("")).toMatch(/<\/body>\s*<\/html>\s*$/);
@@ -131,6 +137,7 @@ for (const engine of ENGINES) {
       const { page, errors, requests, close } = await openPage(browsers.get(engine)!, `${streamingOrigin.origin}/`);
       try {
         await waitFor(page, "document.querySelector('#slow')?.textContent === 'done'");
+        await waitFor(page, "document.head.querySelector('meta[name=\"slow\"]')?.getAttribute('content') === 'settled'");
         await clickUntil(page, "#counter", "document.querySelector('#counter')?.textContent === '1'");
         const staticModule = streaming.registry.modules["src/Static.tsx"];
         expect(staticModule).toBeDefined();

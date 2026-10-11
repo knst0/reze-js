@@ -2719,6 +2719,7 @@ impl Builder<'_> {
             Intrinsic::Repeat => self.flow_repeat(el),
             Intrinsic::Switch => self.flow_switch(el),
             Intrinsic::Portal => self.flow_portal(el),
+            Intrinsic::Head => self.flow_head(el),
             Intrinsic::Match => {
                 self.report(Report::new(Code::MatchOutsideSwitch, el.opening_element.span));
                 None
@@ -2872,6 +2873,262 @@ impl Builder<'_> {
         let mount = self.flow_attr_source(&attributes, "mount");
         Some(FlowView::Portal { child, mount })
     }
+
+    fn flow_head(&mut self, el: &JSXElement<'_>) -> Option<FlowView> {
+        let intrinsic = Intrinsic::Head;
+        self.flow_attributes(el, intrinsic, &[]);
+        let mut tags = Vec::new();
+        let mut has_child = false;
+        let mut is_valid = true;
+        for child in el.children.iter().filter(|child| is_meaningful(child)) {
+            has_child = true;
+            match self.head_tag(child, intrinsic) {
+                Some(tag) => tags.push(tag),
+                None => is_valid = false,
+            }
+        }
+        if !has_child {
+            self.report(
+                Report::new(Code::ControlFlowChildren, el.opening_element.span)
+                    .arg("tag", intrinsic.name().to_string())
+                    .arg("expected", "at least one child"),
+            );
+            return None;
+        }
+        if !is_valid {
+            return None;
+        }
+        Some(FlowView::Head { tags })
+    }
+
+    fn head_tag(&mut self, child: &JSXChild<'_>, intrinsic: Intrinsic) -> Option<HeadTag> {
+        let JSXChild::Element(tag) = child else {
+            self.head_child_error(child.span(), intrinsic);
+            return None;
+        };
+        let Tag::Native(name) = self.tag_of(&tag.opening_element.name) else {
+            self.head_child_error(tag.span, intrinsic);
+            return None;
+        };
+        if !matches!(name.as_str(), "meta" | "link" | "script") {
+            self.head_child_error(tag.span, intrinsic);
+            return None;
+        }
+        let key = self.head_key(tag, &name)?;
+        let id = self.build_root(tag);
+        Some(HeadTag { key, child: FlowRender::Child(Box::new(Child::View(id))) })
+    }
+
+    fn head_child_error(&mut self, span: Span, intrinsic: Intrinsic) {
+        self.report(
+            Report::new(Code::ControlFlowChildren, span)
+                .arg("tag", intrinsic.name().to_string())
+                .arg("expected", "only `<meta>`, `<link>` and `<script>` elements"),
+        );
+    }
+
+    fn head_attr(&mut self, tag: &str, span: Span, detail: String) {
+        self.report(
+            Report::new(Code::HeadAttr, span).arg("tag", tag.to_string()).arg("detail", detail),
+        );
+    }
+
+    fn head_key(&mut self, tag: &JSXElement<'_>, name: &str) -> Option<Option<String>> {
+        let mut values: HashMap<String, String> = HashMap::new();
+        let mut reported: HashSet<String> = HashSet::new();
+        let mut is_valid = true;
+        for item in &tag.opening_element.attributes {
+            let JSXAttributeItem::Attribute(a) = item else {
+                self.head_attr(
+                    name,
+                    item.span(),
+                    String::from("takes no spread: every head attribute is written out"),
+                );
+                is_valid = false;
+                continue;
+            };
+            let attr = attr_name(a);
+            if is_head_event(&attr) {
+                self.head_attr(
+                    name,
+                    a.span,
+                    format!("takes no event handler: `{attr}` never runs for a head tag"),
+                );
+                is_valid = false;
+                continue;
+            }
+            if is_island_attr(&attr) {
+                self.head_attr(
+                    name,
+                    a.span,
+                    format!("takes no `{attr}`: head tags are not islands"),
+                );
+                is_valid = false;
+                continue;
+            }
+            if !matches!(attr.as_str(), "src" | "rel" | "href" | "name" | "property") {
+                continue;
+            }
+            match head_string(a) {
+                Some(value) => {
+                    values.insert(attr, value);
+                }
+                None => {
+                    self.head_attr(
+                        name,
+                        a.span,
+                        format!("needs `{attr}` as a string literal so the tag keeps one identity"),
+                    );
+                    reported.insert(attr);
+                    is_valid = false;
+                }
+            }
+        }
+        let present = |key: &str| values.contains_key(key) || reported.contains(key);
+        let key = match name {
+            "meta" => {
+                let identity = ["name", "property"].into_iter().filter(|key| present(key)).count();
+                if identity != 1 {
+                    self.head_attr(
+                        name,
+                        tag.opening_element.span,
+                        String::from("needs exactly one of `name` and `property`"),
+                    );
+                    is_valid = false;
+                    None
+                } else if let Some(value) = values.get("name") {
+                    Some(format!("meta:name:{value}"))
+                } else if let Some(value) = values.get("property") {
+                    Some(format!("meta:property:{value}"))
+                } else {
+                    is_valid = false;
+                    None
+                }
+            }
+            "link" => match (values.get("rel"), values.get("href")) {
+                (Some(rel), Some(href)) => Some(format!("link:{rel}\n{href}")),
+                _ => {
+                    if !present("rel") || !present("href") {
+                        self.head_attr(
+                            name,
+                            tag.opening_element.span,
+                            String::from("needs `rel` and `href`"),
+                        );
+                    }
+                    is_valid = false;
+                    None
+                }
+            },
+            _ => match values.get("src") {
+                Some(src) => Some(format!("script:{src}")),
+                None => {
+                    if !reported.contains("src") {
+                        self.head_static_type(tag, name, &mut is_valid);
+                    } else {
+                        is_valid = false;
+                    }
+                    None
+                }
+            },
+        };
+        if name == "script" {
+            for child in &tag.children {
+                if matches!(child, JSXChild::Element(_)) {
+                    self.head_attr(name, child.span(), String::from("takes only text"));
+                    is_valid = false;
+                }
+            }
+        } else {
+            for child in tag.children.iter().filter(|child| is_meaningful(child)) {
+                self.head_attr(name, child.span(), String::from("takes no children"));
+                is_valid = false;
+            }
+        }
+        is_valid.then_some(key)
+    }
+
+    fn head_static_type(&mut self, tag: &JSXElement<'_>, name: &str, is_valid: &mut bool) {
+        let mut typed: Option<String> = None;
+        for item in &tag.opening_element.attributes {
+            let JSXAttributeItem::Attribute(a) = item else { continue };
+            if attr_name(a) != "type" {
+                continue;
+            }
+            match head_string(a) {
+                Some(value) => typed = Some(value),
+                None => {
+                    self.head_attr(
+                        name,
+                        a.span,
+                        String::from("needs `type` as a string literal when `src` is absent"),
+                    );
+                    *is_valid = false;
+                    return;
+                }
+            }
+        }
+        let executable = typed.as_ref().is_none_or(|value| is_executable_script_type(value));
+        if executable {
+            self.head_attr(
+                name,
+                tag.opening_element.span,
+                String::from("needs `src` or a non-executable `type` such as `application/ld+json`: inline scripts never execute"),
+            );
+            *is_valid = false;
+        }
+    }
+}
+
+fn is_head_event(name: &str) -> bool {
+    if let Some(rest) = name.strip_prefix("on:") {
+        return !rest.is_empty();
+    }
+    name.len() > 2
+        && name.starts_with("on")
+        && !name.contains(':')
+        && name.as_bytes()[2].is_ascii_alphabetic()
+}
+
+fn head_string(a: &JSXAttribute<'_>) -> Option<String> {
+    match a.value.as_ref()? {
+        JSXAttributeValue::StringLiteral(s) => Some(decode_entities(s.value.as_str()).into_owned()),
+        JSXAttributeValue::ExpressionContainer(c) => match c.expression.as_expression()? {
+            Expression::StringLiteral(s) => Some(String::from(s.value.as_str())),
+            Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
+                .quasis
+                .first()
+                .and_then(|quasi| quasi.value.cooked.as_ref())
+                .map(|text| text.to_string()),
+            _ => None,
+        },
+        JSXAttributeValue::Element(_) | JSXAttributeValue::Fragment(_) => None,
+    }
+}
+
+fn is_executable_script_type(value: &str) -> bool {
+    let essence = value.split(';').next().unwrap_or_default().trim().to_ascii_lowercase();
+    if essence.is_empty() || matches!(essence.as_str(), "module" | "importmap" | "speculationrules")
+    {
+        return true;
+    }
+    matches!(
+        essence.as_str(),
+        "text/javascript"
+            | "text/javascript1.0"
+            | "text/javascript1.1"
+            | "text/javascript1.2"
+            | "text/javascript1.3"
+            | "text/javascript1.4"
+            | "text/javascript1.5"
+            | "text/jscript"
+            | "text/livescript"
+            | "text/x-javascript"
+            | "text/x-ecmascript"
+            | "application/javascript"
+            | "application/x-javascript"
+            | "application/ecmascript"
+            | "application/x-ecmascript"
+    )
 }
 
 impl Builder<'_> {

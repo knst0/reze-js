@@ -59,3 +59,8 @@ export interface PortalProps {
   mount?: Node | null;
   children: JSX.Element;
 }
+
+export interface HeadProps {
+  /** Only `<meta>`, `<link>` and `<script>` elements; the compiler rejects anything else. */
+  children: JSX.Element;
+}

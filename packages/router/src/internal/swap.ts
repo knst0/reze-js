@@ -1,6 +1,7 @@
-import { attachStream, disposeIslandsIn, type BootOptions } from "@rezejs/dom/internal/client";
+import { HeadManagedAttribute, attachStream, disposeIslandsIn, type BootOptions } from "@rezejs/dom/internal/client";
 import { getOwner, provideContext, root } from "@rezejs/signals";
 
+import { syncManagedHead } from "../head";
 import { createBrowserHistory, routerBase, type HistoryEntry } from "../history";
 import { anchorOf, anchorPath } from "../links";
 import {
@@ -39,7 +40,11 @@ interface RouteSnapshot {
 const ShellMarker = "<!--rz-shell-->";
 const HoverDelayMs = 20;
 const PrefetchTtlMs = 10_000;
-const HeadSingletons = ['meta[name="description"]', 'link[rel="canonical"]', 'meta[name="robots"]'];
+const HeadSingletons = [
+  `meta[name="description"]:not([${HeadManagedAttribute}])`,
+  `link[rel="canonical"]:not([${HeadManagedAttribute}])`,
+  `meta[name="robots"]:not([${HeadManagedAttribute}])`,
+];
 
 function readRoute(scope: ParentNode): RouteSnapshot {
   const text = scope.querySelector("script[data-rz-route]")?.textContent;
@@ -104,6 +109,7 @@ async function syncHead(incoming: Document): Promise<void> {
     const next = incoming.head.querySelector(selector);
     if (next !== null) document.head.append(document.adoptNode(next));
   }
+  syncManagedHead(document, incoming);
   const known = new Set([...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map((link) => link.href));
   const pending: Promise<void>[] = [];
   for (const link of incoming.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')) {

@@ -116,7 +116,7 @@ catalog! {
         severity: Error,
         title: "Control-flow tag used as a value",
         message: "`{name}` is compiled away and has no runtime value, so this reference would throw. Use `{name}` only as a JSX tag.",
-        explanation: "`Show`, `For`, `Repeat`, `Switch`, `Match` and `Portal` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
+        explanation: "`Show`, `For`, `Repeat`, `Switch`, `Match`, `Portal` and `Head` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
         repair: "Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and select that with `dynamic(() => …)`.",
         fix: None,
         example: Pair {
@@ -129,7 +129,7 @@ catalog! {
         severity: Error,
         title: "Attribute a control-flow tag does not accept",
         message: "`<{tag}>` does not accept `{attribute}`, so it would be silently dropped. Remove it.",
-        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
+        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`, and `<Head>` takes none. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
         repair: "Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.",
         fix: Some("remove `{attribute}`"),
         example: Pair {
@@ -155,8 +155,8 @@ catalog! {
         severity: Error,
         title: "Control-flow tag with children it cannot render",
         message: "`<{tag}>` expects {expected} as children, so this cannot be compiled.",
-        explanation: "`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.",
-        repair: "Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`.",
+        explanation: "`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only `<meta>`, `<link>` and `<script>` elements. `data.tag` is the tag and `data.expected` what it takes.",
+        repair: "Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`, and keep only `<meta>`, `<link>` and `<script>` in `<Head>`.",
         fix: None,
         example: Pair {
             bad: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()}><li>item</li></For></ul>;\n",
@@ -174,6 +174,19 @@ catalog! {
         example: Pair {
             bad: "import { Match } from \"reze-js\";\n\nexport const view = <div><Match when={ready()}><b>ready</b></Match></div>;\n",
             good: "import { Match, Switch } from \"reze-js\";\n\nexport const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Switch></div>;\n",
+        },
+    }
+    HeadAttr {
+        name: "HEAD_ATTR",
+        severity: Error,
+        title: "Invalid `<Head>` tag",
+        message: "`<{tag}>` in `<Head>` {detail}.",
+        explanation: "`<Head>` tags need static identity: `src`, `rel`, `href`, `name` and `property` must be string literals, `meta` needs exactly one of `name` and `property`, `link` needs `rel` and `href`, and a `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta` and `link` take no children, and `script` takes only text. `data.tag` is the tag and `data.detail` what is wrong.",
+        repair: "Write the identity attributes as string literals, or move the tag out of `<Head>`.",
+        fix: None,
+        example: Pair {
+            bad: "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src={url} /></Head>;\n",
+            good: "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/sdk.js\" /></Head>;\n",
         },
     }
     FlowParamCalled {

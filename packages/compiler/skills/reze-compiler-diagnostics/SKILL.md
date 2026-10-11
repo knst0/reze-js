@@ -88,7 +88,7 @@ export const view = <table><tbody><tr><td>cell</td></tr></tbody></table>;
 
 Automatic fix: no
 
-`Show`, `For`, `Repeat`, `Switch`, `Match` and `Portal` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
+`Show`, `For`, `Repeat`, `Switch`, `Match`, `Portal` and `Head` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
 
 **Repair:** Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and select that with `dynamic(() => …)`.
 
@@ -118,7 +118,7 @@ export const view = <Show when={open()}><p>open</p></Show>;
 
 Automatic fix: yes
 
-A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
+A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`, and `<Head>` takes none. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
 
 **Repair:** Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.
 
@@ -178,9 +178,9 @@ export const view = <Show when={open()} fallback={<p>closed</p>}><p>open</p></Sh
 
 Automatic fix: no
 
-`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements. `data.tag` is the tag and `data.expected` what it takes.
+`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only `<meta>`, `<link>` and `<script>` elements. `data.tag` is the tag and `data.expected` what it takes.
 
-**Repair:** Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`.
+**Repair:** Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`, and keep only `<meta>`, `<link>` and `<script>` in `<Head>`.
 
 Before:
 
@@ -226,6 +226,36 @@ After:
 import { Match, Switch } from "reze-js";
 
 export const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Switch></div>;
+```
+
+## HEAD_ATTR
+
+**Invalid `<Head>` tag** · severity `error`
+
+> `<{tag}>` in `<Head>` {detail}.
+
+`data` keys: `detail`, `tag`
+
+Automatic fix: no
+
+`<Head>` tags need static identity: `src`, `rel`, `href`, `name` and `property` must be string literals, `meta` needs exactly one of `name` and `property`, `link` needs `rel` and `href`, and a `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta` and `link` take no children, and `script` takes only text. `data.tag` is the tag and `data.detail` what is wrong.
+
+**Repair:** Write the identity attributes as string literals, or move the tag out of `<Head>`.
+
+Before:
+
+```tsx
+import { Head } from "reze-js";
+
+export const view = <Head><script src={url} /></Head>;
+```
+
+After:
+
+```tsx
+import { Head } from "reze-js";
+
+export const view = <Head><script src="/sdk.js" /></Head>;
 ```
 
 ## FLOW_PARAM_CALLED

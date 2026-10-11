@@ -6,6 +6,7 @@ export { dynamic, type PropsOf } from "./dynamic";
 export { dynamicElement } from "./dynamic-element";
 export { element, elementMathML, elementSVG } from "./element";
 export { addEventListener, delegateEvents } from "./events";
+export { head } from "./head";
 export { branch, choose } from "./flow";
 export { hotComponent } from "./hot";
 export { append, insert } from "./insert";
@@ -13,6 +14,7 @@ export {
   type ForProps,
   type ForIndexProps,
   type ForKeyedProps,
+  type HeadProps,
   type MatchProps,
   type PortalProps,
   type ShowProps,

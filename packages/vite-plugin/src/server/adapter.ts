@@ -42,7 +42,7 @@ export function serverEntrySource(options: { mode: AppMode; entrySpecifier: stri
   const viewLiteral = JSON.stringify(SsgViewId);
   const router = options.mode.kind === "router";
   return String.raw`import facts from "${ServerFactsSpecifier}";
-import { HtmlSession, renderStream } from "reze-js/internal/html";
+import { HtmlSession, headListKeys, renderStream } from "reze-js/internal/html";
 ${router ? 'import * as routerServer from "@rezejs/router/internal/server";' : ""}
 const router = ${router};
 const externalBase = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(facts.base) || facts.base.startsWith("//");
@@ -138,16 +138,59 @@ function escapeHtml(text) {
 function jsonScript(value) {
   return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (char) => "\\u" + char.charCodeAt(0).toString(16).padStart(4, "0"));
 }
+function headAttr(out, name, value) {
+  if (value !== undefined) out.push(" " + name + '="' + escapeHtml(value) + '"');
+}
+function managedScript(script) {
+  const out = ['<script src="' + escapeHtml(script.src) + '"'];
+  if (script.async === true) out.push(" async");
+  if (script.defer === true) out.push(" defer");
+  headAttr(out, "type", script.type);
+  headAttr(out, "crossorigin", script.crossorigin);
+  headAttr(out, "integrity", script.integrity);
+  out.push(" data-rz-head></script>");
+  return out.join("");
+}
+function managedLink(link) {
+  const out = ['<link rel="' + escapeHtml(link.rel) + '" href="' + escapeHtml(link.href) + '"'];
+  headAttr(out, "as", link.as);
+  headAttr(out, "type", link.type);
+  headAttr(out, "media", link.media);
+  headAttr(out, "hreflang", link.hreflang);
+  headAttr(out, "crossorigin", link.crossorigin);
+  out.push(" data-rz-head>");
+  return out.join("");
+}
+function managedMeta(meta) {
+  const out =
+    meta.name === undefined
+      ? ['<meta property="' + escapeHtml(meta.property) + '"']
+      : ['<meta name="' + escapeHtml(meta.name) + '"'];
+  headAttr(out, "content", meta.content);
+  out.push(" data-rz-head>");
+  return out.join("");
+}
 function headHtml(headDefaults, metadata, route) {
   const tags = [];
   const title = metadata.title ?? headDefaults.title;
   const description = metadata.description ?? headDefaults.description;
   const canonical = metadata.canonical ?? headDefaults.canonical;
   const robots = metadata.robots ?? headDefaults.robots;
+  const scripts = metadata.scripts ?? [];
+  const links = metadata.links ?? [];
+  const metas = metadata.metas ?? [];
+  const managedNames = new Set();
+  for (const meta of metas) managedNames.add(meta.name === undefined ? "p:" + meta.property : "n:" + meta.name);
+  const managedCanonical = links.some((link) => link.rel === "canonical");
   if (title !== undefined) tags.push("<title>" + escapeHtml(title) + "</title>");
-  if (description !== undefined) tags.push('<meta name="description" content="' + escapeHtml(description) + '">');
-  if (canonical !== undefined) tags.push('<link rel="canonical" href="' + escapeHtml(canonical) + '">');
-  if (robots !== undefined) tags.push('<meta name="robots" content="' + escapeHtml(robots) + '">');
+  if (description !== undefined && !managedNames.has("n:description")) {
+    tags.push('<meta name="description" content="' + escapeHtml(description) + '">');
+  }
+  if (canonical !== undefined && !managedCanonical) tags.push('<link rel="canonical" href="' + escapeHtml(canonical) + '">');
+  if (robots !== undefined && !managedNames.has("n:robots")) tags.push('<meta name="robots" content="' + escapeHtml(robots) + '">');
+  for (const script of scripts) tags.push(managedScript(script));
+  for (const link of links) tags.push(managedLink(link));
+  for (const meta of metas) tags.push(managedMeta(meta));
   tags.push('<meta name="reze-build" content="' + escapeHtml(facts.buildId) + '">');
   if (route !== undefined) tags.push('<script type="application/json" data-rz-route>' + jsonScript(route) + "</script>");
   return tags.join("\n");
@@ -211,7 +254,7 @@ async function respond(pathname, search, mode, signal, overrides, request) {
     const clientModules = overrides?.clientModules ?? clientModulesAt(depth);
     const head = headHtml(overrides?.headDefaults ?? facts.headDefaults, metadata, route);
     handedOff = true;
-    const body = await renderStream({ build, session, template, head, clientModules, mode, signal });
+    const body = await renderStream({ build, session, template, head, headKeys: headListKeys(metadata), clientModules, mode, signal });
     const redirect = handle === undefined ? undefined : routerServer.takeServerRedirect(handle);
     if (redirect !== undefined) {
       await body.cancel();

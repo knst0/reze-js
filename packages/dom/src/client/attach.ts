@@ -1,3 +1,4 @@
+import { HeadManagedAttribute, mergeStreamedHead } from "../head";
 import { bootIsland, disposeIslandsBetween, type BootOptions, type IslandDescriptor, type RangeLocator } from "./boot";
 
 export interface StreamHandle {
@@ -6,7 +7,7 @@ export interface StreamHandle {
   dispose(): void;
 }
 
-const Units = "template[data-rz-patch],script[data-rz-island],script[data-rz-end]";
+const Units = `template[data-rz-patch],template[${HeadManagedAttribute}],script[data-rz-island],script[data-rz-end]`;
 
 function createLocator(target: Document): RangeLocator {
   const starts = new Map<string, Comment>();
@@ -41,7 +42,10 @@ export function attachStream(source: Document, target: Document, options: BootOp
   let finished = false;
 
   const apply = (unit: Element): void => {
-    if (unit instanceof HTMLTemplateElement) {
+    if (unit instanceof HTMLTemplateElement && unit.hasAttribute(HeadManagedAttribute)) {
+      mergeStreamedHead(target, unit);
+      unit.remove();
+    } else if (unit instanceof HTMLTemplateElement) {
       const token = unit.getAttribute("data-rz-patch")!;
       const range = locator.find(token);
       if (range === undefined) {

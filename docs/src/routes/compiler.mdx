@@ -53,6 +53,7 @@ Each control-flow tag accepts a fixed set of attributes, and it refuses spread a
 - `<Switch>` accepts `fallback`. Its children must be `<Match>` tags.
 - `<Match>` accepts `when` (required). It must be a direct child of `<Switch>`.
 - `<Portal>` accepts `mount`.
+- `<Head>` accepts no attributes. Its children must be `<meta>`, `<link>` and `<script>` elements.
 
 A tag with an attribute outside this list fails with `CONTROL_FLOW_ATTRIBUTE`:
 
@@ -88,7 +89,21 @@ export const view = (
 );
 ```
 
-A control-flow tag without its required attribute fails with `CONTROL_FLOW_MISSING`. The diagnostic reference below lists the other control-flow rules. [Building interfaces](/building-interfaces) shows conditions, lists, and portals in use.
+A control-flow tag without its required attribute fails with `CONTROL_FLOW_MISSING`. A `<Head>` child that is not a head tag fails with `CONTROL_FLOW_CHILDREN`, and a head tag without static identity fails with `HEAD_ATTR`:
+
+```tsx expect=HEAD_ATTR
+import { Head } from "reze-js";
+
+declare const url: string;
+
+export const view = (
+  <Head>
+    <script src={url} />
+  </Head>
+);
+```
+
+The diagnostic reference below lists the other control-flow rules. [Building interfaces](/building-interfaces) shows conditions, lists, portals, and head tags in use.
 
 ## Compiled bindings
 
@@ -280,6 +295,7 @@ Errors:
 | `CONTROL_FLOW_MISSING`        | A control-flow tag lacks the attribute that decides what it renders.                                       |
 | `CONTROL_FLOW_CHILDREN`       | A control-flow tag has children it cannot render.                                                          |
 | `MATCH_OUTSIDE_SWITCH`        | `<Match>` is not a direct child of `<Switch>`.                                                             |
+| `HEAD_ATTR`                   | A `<Head>` tag cannot be placed in the document head.                                                      |
 | `FLOW_PARAM_CALLED`           | A flow parameter that reads as a signal is called as a function.                                           |
 | `FOR_KEYED_DYNAMIC`           | `<For keyed>` is not `true`, `false`, or a key function written in place.                                  |
 | `SIGNAL_NOT_DECLARED`         | `signal` or `computed` is used outside a variable declaration.                                             |

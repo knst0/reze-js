@@ -229,7 +229,6 @@ import { createQueryClient } from "@rezejs/query";
 import "@rezejs/query/router";
 import type { RouteConfigFor } from "@rezejs/router";
 
-
 export const route = {
   preload: ({ params, context }) =>
     context.queryClient.fetchQuery({
@@ -269,13 +268,19 @@ The key must include every input that changes the result. `staleTime` controls r
 
 ## Set page metadata
 
-A route can set the document title, description, canonical URL, and robots directive. Export a `meta` object from `route`:
+A route can set the document title, description, canonical URL, robots directive, and extra head tags: scripts, links, and meta tags. Export a `meta` object from `route`:
 
 ```tsx file=src/routes/about.tsx
 import type { RouteConfigFor } from "@rezejs/router";
 
 export const route = {
-  meta: { title: "About", description: "Who we are" },
+  meta: {
+    title: "About",
+    description: "Who we are",
+    scripts: [{ src: "https://cdn.example.test/widget.js", async: true }],
+    links: [{ rel: "preconnect", href: "https://cdn.example.test" }],
+    metas: [{ property: "og:title", content: "About" }],
+  },
 } satisfies RouteConfigFor<"/about">;
 
 export default function About() {
@@ -284,6 +289,12 @@ export default function About() {
 ```
 
 `meta` can also be a function. The function receives the route's settled data and params, and it can return the object or a promise of it. When several matched routes set a field, the leaf route wins. A field that no matched route sets returns to its baseline. The baseline is the `headDefaults` option of `createRouter` when you set it. Otherwise it is the head the document had at the first commit.
+
+`scripts`, `links`, and `metas` concatenate from the root to the leaf instead. Entries dedupe by `src`, by `rel` plus `href`, and by `name` or `property`, with the last entry winning. A tag renders while a matched route declares it, and leaving the route removes it. A script shared by two routes keeps its tag, so it loads once; removing a tag never undoes the script's effects. A `metas` entry named `description` or `robots`, and a `links` entry with `rel` set to `canonical`, replace the same-named scalar instead of duplicating it.
+
+A script needs a `src`; there is no inline source, so a page keeps the static hosting property of carrying no inline executable script. A script without `async` loads in document order. The server renders the same tags into the head of SSR and SSG pages.
+
+For tags that belong to a component rather than a route, use [`<Head>`](/building-interfaces#head-tags) instead. Declare each tag in one place: when `meta` and `<Head>` name the same tag, the route version wins.
 
 ## Redirect routes
 

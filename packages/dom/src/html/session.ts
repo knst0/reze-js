@@ -25,11 +25,23 @@ interface RecordedContinuation {
   suspended?: () => void;
 }
 
+export interface HeadTagState {
+  readonly id: string;
+  readonly script: boolean;
+  readonly node: HtmlRange;
+  readonly instance: Instance;
+  emitted: boolean;
+  html: string;
+}
+
 export class HtmlSession implements ExecutionObserver, DirtySink {
   readonly scope: ExecutionScope;
   readonly instances = new Instances();
   readonly moduleStates = new Map<string, object>();
   readonly portals: { node: HtmlRange; instance: Instance; placement: "body" | "inert" }[] = [];
+  readonly headTags: HeadTagState[] = [];
+  readonly headKeys = new Set<string>();
+  headTokens = 0;
   readonly islands = new Set<IslandRoot>();
   readonly pendingRanges = new Map<HtmlRange, () => boolean>();
   readonly dirtyRanges = new Set<HtmlRange>();

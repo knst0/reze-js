@@ -1,4 +1,5 @@
 import { createComponent, type JSX } from "@rezejs/dom";
+import { releaseHeadOwner } from "@rezejs/dom/internal/client";
 import { getOwner, onCleanup, provideContext, untrack } from "@rezejs/signals";
 import { computed } from "reze-js";
 
@@ -15,7 +16,7 @@ import {
   start,
   type RouterState,
 } from "./navigation";
-import type { OutputMatch, PageMetadata, PathsTree, RouteDefinition } from "./types";
+import type { OutputMatch, PageHeadDefaults, PathsTree, RouteDefinition } from "./types";
 
 export interface RouterConfig<C = RouterContext> {
   routes: readonly RouteDefinition<C>[];
@@ -33,7 +34,7 @@ export interface RouterConfig<C = RouterContext> {
    * Template head metadata the merged page metadata restores absent fields to; without it the router captures the live
    * document on first apply.
    */
-  headDefaults?: PageMetadata;
+  headDefaults?: PageHeadDefaults;
 }
 
 export interface RouterInstance<C = RouterContext> {
@@ -105,7 +106,9 @@ export function createSettledRouter(
 }
 
 /** Compiles `routes` once and returns the router component; mount it with an optional `root` shell. */
-export function createRouter<C = RouterContext>(config: RouterConfig<C> & { paths: PathsTree }): RouterInstance<C> & { readonly paths: PathsTree };
+export function createRouter<C = RouterContext>(
+  config: RouterConfig<C> & { paths: PathsTree },
+): RouterInstance<C> & { readonly paths: PathsTree };
 export function createRouter<C = RouterContext>(config: RouterConfig<C>): RouterInstance<C>;
 export function createRouter(config: RouterConfig<any>): RouterInstance<any> {
   const history = config.history ?? createBrowserHistory();
@@ -160,6 +163,7 @@ function installRouterListeners(state: RouterState, isLinking: boolean, isPreloa
   onCleanup(() => {
     state.generation++;
     unlisten();
+    releaseHeadOwner(state.headOwner);
     removeEventListener("beforeunload", state.onUnload);
     if (scrollRestoration === undefined) return;
     removeEventListener("pagehide", onPageHide);

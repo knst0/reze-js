@@ -16,6 +16,7 @@ export interface RenderStreamOptions {
   readonly session: HtmlSession;
   readonly template: TemplateParts;
   readonly head: string;
+  readonly headKeys?: readonly string[];
   readonly clientModules: ClientModules;
   readonly mode: "stream" | "buffered";
   readonly signal?: AbortSignal;
@@ -93,6 +94,40 @@ class Writer {
 
   latePortals(): string {
     return this.session.portals.length === this.portalCount ? "" : `<template data-rz-patch="p">${this.portals()}</template>\n`;
+  }
+
+  shellHead(): string {
+    let out = "";
+    for (const tag of this.session.headTags) {
+      if (tag.instance.retired) continue;
+      tag.html = serializeNodes([tag.node], this.context);
+      tag.emitted = true;
+      out += tag.html;
+    }
+    return out;
+  }
+
+  lateHead(): string {
+    let out = "";
+    for (const tag of this.session.headTags) {
+      if (tag.instance.retired) {
+        if (tag.emitted) {
+          out += `<template data-rz-head data-rz-head-key="${escapeAttribute(tag.id)}"></template>\n`;
+          tag.emitted = false;
+        }
+        continue;
+      }
+      const html = serializeNodes([tag.node], this.context);
+      if (!tag.emitted) {
+        tag.emitted = true;
+        tag.html = html;
+        out += `<template data-rz-head data-rz-head-key="${escapeAttribute(tag.id)}">${html}</template>\n`;
+      } else if (!tag.script && html !== tag.html) {
+        tag.html = html;
+        out += `<template data-rz-head data-rz-head-key="${escapeAttribute(tag.id)}">${html}</template>\n`;
+      }
+    }
+    return out;
   }
 
   patches(): string {
@@ -180,6 +215,7 @@ export async function renderStream(options: RenderStreamOptions): Promise<Readab
   options.signal?.addEventListener("abort", close, { once: true });
 
   try {
+    for (const key of options.headKeys ?? []) session.headKeys.add(key);
     session.run(() => hMount(options.build));
     for (;;) {
       session.flush();
@@ -189,10 +225,12 @@ export async function renderStream(options: RenderStreamOptions): Promise<Readab
     const content = writer.shell();
     const portals = writer.portals();
     const resources = writer.resources();
+    const headTags = writer.shellHead();
     write(
       template.beforeHeadEnd +
         resources +
         options.head +
+        headTags +
         template.headEndToRoot +
         content +
         template.rootEndToBodyEnd +
@@ -217,7 +255,7 @@ export async function renderStream(options: RenderStreamOptions): Promise<Readab
       while (session.hasPendingWork() && !closed) {
         await session.waitForWork();
         session.flush();
-        const patches = writer.patches() + writer.latePortals();
+        const patches = writer.patches() + writer.latePortals() + writer.lateHead();
         write((patches === "" ? "" : writer.resources()) + patches + writer.descriptors());
       }
     } catch (error) {

@@ -261,6 +261,11 @@ fn flow_exprs(flow: &FlowView, visit: &mut impl FnMut(ViewReference)) {
                 visit(ViewReference::Expression(mount.expr));
             }
         }
+        FlowView::Head { tags } => {
+            for tag in tags {
+                flow_render_exprs(&tag.child, visit);
+            }
+        }
     }
 }
 
@@ -476,6 +481,12 @@ pub enum FlowView {
     Repeat { count: FlowSource, map: ExprRef, fallback: Option<FlowRender> },
     Rows { times: u32, map: ExprRef },
     Portal { child: FlowRender, mount: Option<FlowSource> },
+    Head { tags: Vec<HeadTag> },
+}
+
+pub struct HeadTag {
+    pub key: Option<String>,
+    pub child: FlowRender,
 }
 
 pub enum FlowKeyValue {

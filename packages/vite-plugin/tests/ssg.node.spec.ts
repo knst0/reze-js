@@ -310,6 +310,24 @@ describe("preboot html, metadata, assets and lazy execution", () => {
     expect(canonicalOf(about.html)).toBe("https://example.test/about");
     expect(metaOf(about.html, "description")).toBe("Site template");
     expect(canonicalOf(home.html)).toBeUndefined();
+    const aboutScripts = elements(about.html, "script", { "data-rz-head": "" });
+    expect(aboutScripts.map((node) => attr(node, "src"))).toEqual(["/about-widget.js"]);
+    expect(attr(aboutScripts[0], "defer")).toBe("");
+    const aboutJsonLd = elements(about.html, "script", { type: "application/ld+json" })[0];
+    expect(aboutJsonLd !== undefined && attr(aboutJsonLd, "data-rz-head")?.startsWith("u")).toBe(true);
+    const jsonLdText =
+      aboutJsonLd !== undefined && "childNodes" in aboutJsonLd
+        ? aboutJsonLd.childNodes.map((child) => ("value" in child ? child.value : "")).join("")
+        : "";
+    expect(jsonLdText).toBe('{"@type":"AboutPage"}');
+    const aboutAuthor = elements(about.html, "meta", { "data-rz-head": "", name: "author" })[0];
+    expect(attr(aboutAuthor, "content")).toBe("Reze");
+    const aboutPreconnect = elements(about.html, "link", { "data-rz-head": "", rel: "preconnect" })[0];
+    expect(attr(aboutPreconnect, "href")).toBe("https://cdn.example.test");
+    const aboutOgTitle = elements(about.html, "meta", { "data-rz-head": "" })[0];
+    expect(attr(aboutOgTitle, "property")).toBe("og:title");
+    expect(attr(aboutOgTitle, "content")).toBe("About the site");
+    expect(elements(home.html, "script", { "data-rz-head": "" })).toHaveLength(0);
     const post = await fetchHtml(pages.router, "/blog/a/");
     expect(post.status).toBe(200);
     expect(post.html).toContain("Post a");
@@ -690,6 +708,20 @@ describe("routing, enumeration, base and redirects", () => {
         expect(await home.page.evaluate(`document.title`)).toBe("About");
         expect(metaOf(await home.page.content(), "description")).toBe("Site template");
         expect(await home.page.evaluate(`globalThis.__marker`)).toBe("kept");
+        await waitFor(home.page, `globalThis.__aboutWidgetRan === true`);
+        expect(elements(await home.page.content(), "script", { "data-rz-head": "" }).map((node) => attr(node, "src"))).toEqual([
+          "/about-widget.js",
+        ]);
+        const swapped = await home.page.content();
+        expect(elements(swapped, "script", { type: "application/ld+json" })).toHaveLength(1);
+        expect(attr(elements(swapped, "meta", { name: "author" })[0], "content")).toBe("Reze");
+        await home.page.goBack();
+        await waitFor(home.page, `document.querySelector("#to-about") !== null`);
+        expect(await home.page.evaluate(`document.title`)).toBe("Home");
+        const back = await home.page.content();
+        expect(elements(back, "script", { "data-rz-head": "" })).toHaveLength(0);
+        expect(elements(back, "script", { type: "application/ld+json" })).toHaveLength(0);
+        expect(elements(back, "meta", { name: "author" })).toHaveLength(0);
         expect(home.errors).toEqual([]);
       } finally {
         await home.close();

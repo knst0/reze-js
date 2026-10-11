@@ -1,5 +1,5 @@
 import { defineRoute, defineRoutes, useNavigate, type RouteProps } from "@rezejs/router";
-import { computed, effect, signal, type JSX } from "reze-js";
+import { Head, computed, effect, signal, type JSX } from "reze-js";
 import { asyncComponent } from "reze-js/internal/runtime";
 
 import { logoUrl, inlineLogo, emittedLogo, metaLogo, inlineMetaLogo } from "./assets";
@@ -30,6 +30,11 @@ function Home() {
 function About() {
   return (
     <article>
+      <Head>
+        <script src="/about-widget.js" />
+        <script type="application/ld+json">{'{"@type":"AboutPage"}'}</script>
+        <meta name="author" content="Reze" />
+      </Head>
       <h1 id="about-title">about</h1>
     </article>
   );
@@ -231,7 +236,13 @@ export const routes = defineRoutes([
   }),
   defineRoute({
     path: "/about",
-    meta: { title: "About", canonical: "https://example.test/about" },
+    meta: {
+      title: "About",
+      canonical: "https://example.test/about",
+      scripts: [{ src: "/about-widget.js", defer: true }],
+      links: [{ rel: "preconnect", href: "https://cdn.example.test" }],
+      metas: [{ property: "og:title", content: "About the site" }],
+    },
     component: About,
   }),
   defineRoute({

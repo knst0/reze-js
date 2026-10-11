@@ -111,6 +111,7 @@ static TABLE: &[&[Entry]] = &[
     &[intrinsic(PUBLIC, "Switch", Intrinsic::Switch)],
     &[intrinsic(PUBLIC, "Match", Intrinsic::Match)],
     &[intrinsic(PUBLIC, "Portal", Intrinsic::Portal)],
+    &[intrinsic(PUBLIC, "Head", Intrinsic::Head)],
     &plain("store"),
     &plain("effect"),
     &plain("createContext"),

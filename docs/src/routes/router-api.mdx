@@ -43,11 +43,10 @@ export const Router = createRouter({
 | `history`      | `RouterHistory`              | `createBrowserHistory()`                                  | Where the router reads and writes the location.                                                |
 | `links`        | `boolean`                    | `true` for browser and hash histories, `false` for memory | Routes same-origin anchor clicks that match a route through the router instead of the browser. |
 | `preload`      | `boolean`                    | `true`                                                    | Runs route `preload` functions when a matching link is hovered, focused, or touched.           |
-| `headDefaults` | `PageMetadata`               | None                                                      | Title and metadata used when no matched route sets them.                                       |
+| `headDefaults` | `PageHeadDefaults`           | None                                                      | Title and metadata used when no matched route sets them.                                       |
 | `context`      | `C`                          | `undefined`                                               | Value passed to route `preload`, `meta`, and `redirect` callbacks.                             |
 
 `RouterContext` is the default type of route callback `context` and is open to module augmentation. Importing `@rezejs/query` alone does not change it; add `import "@rezejs/query/router"` to add `queryClient: QueryClient`. Supply that value through `RouterConfig.context` or the server context factory—the type augmentation does not create a client at runtime.
-
 
 ### The `RouterInstance` members
 
@@ -152,7 +151,7 @@ export const routes = defineRoutes([
 These three fields run in a fixed order when a navigation enters a route.
 
 - `preload` starts the route's data. The router calls it with intent `"preload"` when a matching link is hovered, focused, or touched, and with intent `"navigate"` when the route is entered. Return a promise to start a fetch; a navigation waits for it and delivers the settled value as `data`, and never the promise itself.
-- `meta` sets the document title, description, canonical URL, and robots tag. The router merges the fields of the matched routes from the root to the leaf, and the last defined field wins. A function receives the settled `data`. Hovering a link never runs `meta`.
+- `meta` sets the document title, description, canonical URL, and robots tag, plus `scripts`, `links`, and `metas` lists. The router merges the scalar fields of the matched routes from the root to the leaf, and the last defined field wins. The lists concatenate from the root to the leaf and dedupe by `src`, by `rel` plus `href`, and by `name` or `property`, with the last entry winning. A function receives the settled `data`. Hovering a link never runs `meta`.
 - `redirect` sends the navigation to another path. A literal object short-circuits the navigation before any `preload` runs. A function receives the settled `data`, and the first defined result from the root to the leaf wins. Hovering a link never runs `redirect`.
 
 The following module loads a post's data through `preload`, uses it for the title, and redirects an old path:
@@ -477,7 +476,11 @@ These exports are types only. They describe values you receive from the hooks, t
 | `NavigateOptions`               | `{ replace?, state?, scroll? }`.                                                                        |
 | `NavigateTarget`                | A `navigate` target: a route path, a path with a query or hash, or an absolute URL.                     |
 | `OutputMatch`                   | `{ path, pattern, params, info }`, the entries `match` returns.                                         |
-| `PageMetadata`                  | `{ title?, description?, canonical?, robots? }`.                                                        |
+| `PageHeadDefaults`              | `{ title?, description?, canonical?, robots? }`.                                                        |
+| `PageHeadLink`                  | `{ rel, href, as?, type?, media?, hreflang?, crossorigin? }`.                                           |
+| `PageHeadMeta`                  | `{ name, content }` or `{ property, content }`.                                                         |
+| `PageHeadScript`                | `{ src, async?, defer?, type?, crossorigin?, integrity? }`.                                             |
+| `PageMetadata`                  | `PageHeadDefaults` plus `{ scripts?, links?, metas? }`.                                                 |
 | `Params`                        | A readonly record of string params.                                                                     |
 | `ParamsFor<P>`                  | The params of leaf pattern `P`, or `Params` without generated types.                                    |
 | `PathMatch`                     | `{ params, path }`, the result of matching one pattern. No hook in this version returns it.             |
@@ -491,7 +494,7 @@ These exports are types only. They describe values you receive from the hooks, t
 | `RouteConfigFor<P, D, C>`       | `RouteConfig` with the params of leaf pattern `P` and context `C`.                                      |
 | `RouteDefinition<C>`            | `RouteConfig` plus `path`, `id`, `name`, `component`, `load`, and `children`.                           |
 | `RouteMatch`                    | `{ path, params, data, info }`, the entries `useCurrentMatches` returns.                                |
-| `RouterContext`                | The augmentable default type of the route callback `context`. |
+| `RouterContext`                 | The augmentable default type of the route callback `context`.                                           |
 | `RouteModule<C>`                | `{ default?, route? }`, the module a `load` function resolves to.                                       |
 | `RouteParams<S>`                | The params parsed from pattern string `S`.                                                              |
 | `RoutePath`                     | Every href path, or `string` without generated types.                                                   |
