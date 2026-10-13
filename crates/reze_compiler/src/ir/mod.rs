@@ -3396,7 +3396,9 @@ impl Builder<'_> {
         ] {
             if let Some(a) = attr {
                 self.report(
-                    Report::new(Code::IslandOrphan, a.span).arg("attribute", name.to_string()),
+                    Report::new(Code::IslandOrphan, a.span)
+                        .arg("attribute", name.to_string())
+                        .fix(vec![self.removal(a.span)]),
                 );
             }
         }

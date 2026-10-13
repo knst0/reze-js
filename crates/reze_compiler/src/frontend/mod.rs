@@ -13,8 +13,11 @@ pub mod selector;
 use std::collections::{HashMap, HashSet};
 
 use oxc_allocator::Allocator;
-use oxc_ast::ast::Program;
+use oxc_ast::ast::{BindingPattern, Expression, Function, Program, VariableDeclarator};
+use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::{Scoping, SemanticBuilder};
+use oxc_span::{GetSpan, Span};
+use oxc_syntax::scope::ScopeFlags;
 
 pub use analysis::SharedFacts;
 
@@ -61,6 +64,55 @@ impl<'a> Namer<'a> {
         }
         self.generated.insert(name.clone());
         name
+    }
+}
+
+#[derive(Default)]
+struct ComponentSpans {
+    spans: Vec<(Span, String)>,
+}
+
+impl<'a> Visit<'a> for ComponentSpans {
+    fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
+        if let Some(id) = &it.id
+            && pure::is_component_name(id.name.as_str())
+        {
+            self.spans.push((it.span, id.name.to_string()));
+        }
+        walk::walk_function(self, it, flags);
+    }
+
+    fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
+        if let BindingPattern::BindingIdentifier(id) = &it.id
+            && pure::is_component_name(id.name.as_str())
+            && let Some(init) = it.init.as_ref().map(Expression::without_parentheses)
+            && matches!(
+                init,
+                Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+            )
+        {
+            self.spans.push((init.span(), id.name.to_string()));
+        }
+        walk::walk_variable_declarator(self, it);
+    }
+}
+
+fn stamp_component_paths(program: &Program<'_>, reports: &mut [Report]) {
+    let mut components = ComponentSpans::default();
+    components.visit_program(program);
+    for report in reports.iter_mut() {
+        if !report.path.is_empty() {
+            continue;
+        }
+        let Some((_, name)) = components
+            .spans
+            .iter()
+            .filter(|(span, _)| span.start <= report.span.start && report.span.end <= span.end)
+            .min_by_key(|(span, _)| span.end - span.start)
+        else {
+            continue;
+        };
+        report.path = vec![format!("<{name}>")];
     }
 }
 
@@ -118,6 +170,7 @@ pub fn normalize<'a>(
             dsl::scan(program, &scoping, &pre, source, &mut reports);
             let facts = analysis::collect(program, &scoping, &nodes, &mut reports);
             drop(nodes);
+            stamp_component_paths(program, &mut reports);
             return FrontendOutput {
                 program,
                 scoping,
@@ -175,5 +228,6 @@ pub fn normalize<'a>(
     let (scoping, nodes) = second.semantic.into_scoping_and_nodes();
     dsl::scan(program, &scoping, &pre, source, &mut reports);
     let facts = analysis::collect(program, &scoping, &nodes, &mut reports);
+    stamp_component_paths(program, &mut reports);
     FrontendOutput { program, scoping, facts, reports, namer, helpers, content_changed }
 }

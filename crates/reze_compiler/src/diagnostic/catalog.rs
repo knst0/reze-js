@@ -248,7 +248,7 @@ catalog! {
         message: "`{signal}` is a `{primitive}` and cannot be the default export: a default import carries no reactive facts, so it would read a getter function or a value that never updates.",
         explanation: "Named exports of `signal` and `computed` variables are reactive: importers read them as values. The default export is not analyzed across modules, so it is refused. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.",
         repair: "Export it by name: `export let count = signal(0)`, or export a function that reads it.",
-        fix: None,
+        fix: Some("export `{signal}` by name"),
         example: Pair {
             bad: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport default count;\n",
             good: "import { signal } from \"reze-js\";\n\nexport let count = signal(0);\n",
@@ -274,7 +274,7 @@ catalog! {
         message: "`{signal}` is incremented or decremented as part of an expression. Use it as a statement, or write `{signal} += 1`, which is an expression with the new value.",
         explanation: "`count++` as a statement becomes `setCount(count() + 1)`. Inside a larger expression, for example `() => count++` or `use(count++)`, the value of the old `++` would change meaning, so it is not accepted. `data.signal` is the updated variable.",
         repair: "Put the update in its own statement, or use `count += 1` (value: the new count) or `count -= 1`.",
-        fix: None,
+        fix: Some("write `{signal} += 1` or `{signal} -= 1`"),
         example: Pair {
             bad: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport const view = <button onClick={() => count++}>{count}</button>;\n",
             good: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport const view = <button onClick={() => { count++; }}>{count}</button>;\n",
@@ -404,7 +404,7 @@ catalog! {
         message: "`{attribute}` only means something next to `island`, but this component has none, so it would reach the component as a stray prop. Add `island` or remove it.",
         explanation: "`islandMedia`, `islandRootMargin` and `islandFallback` are consumed by the compiler and never reach the component. Without `island` there is no island to consume them. `data.attribute` is the name.",
         repair: "Add `island=\"…\"` to the component, or remove the companion.",
-        fix: None,
+        fix: Some("remove `{attribute}`"),
         example: Pair {
             bad: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter islandMedia=\"(max-width: 40rem)\" />;\n",
             good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"media\" islandMedia=\"(max-width: 40rem)\" />;\n",
@@ -489,7 +489,7 @@ catalog! {
         name: "PROPS_DESTRUCTURED",
         severity: Warn,
         title: "Props destructured in a form that cannot be rewritten",
-        message: "`{component}` destructures its props in a form the compiler cannot rewrite ({reason}), so each value is read once and never updates. Take `props` and read `props.x` where it is used.",
+        message: "`{component}` destructures its props in a form the compiler cannot rewrite ({detail}), so each value is read once and never updates. Take `props` and read `props.x` where it is used.",
         explanation: "Destructured props are rewritten into lazy reads of one props object, unless the pattern uses a computed key (`computed-key`), a default that cannot run once at the start (`default`), a default on a nested pattern (`nested-default`), a nested rest (`nested-rest`), an array pattern (`array-pattern`), a name that is assigned (`written`), `arguments` (`arguments`), a generator (`generator`), more than one parameter (`params`), or a type-position read of a non-identifier key (`type`), which no qualified type name can spell. `data.component` is the component and `data.reason` the rule.",
         repair: "Take `props` as the one parameter and read `props.name` where the value is used. Use `splitProps` to forward a subset.",
         fix: None,
@@ -515,7 +515,7 @@ catalog! {
         name: "ASYNC_COMPONENT_SHAPE",
         severity: Error,
         title: "Async component in a form that cannot be compiled",
-        message: "`{component}` is an async component the compiler cannot rewrite ({reason}). Reshape the awaits so each one is a whole statement.",
+        message: "`{component}` is an async component the compiler cannot rewrite ({detail}). Reshape the awaits so each one is a whole statement.",
         explanation: "An `async` component compiles to a load step, re-run when a source it reads changes, and a body that runs once after the first load and reads each awaited value through a getter, so later loads update it in place. That needs each top-level `await` to be a whole statement, `const x = await …;` or `await …;` (`await-position`, and `nested-await` when its operand awaits again); between the first and last await only `const`/`let`/`var` declarations may appear (`statement-between-awaits`); nothing up to the last await may `return` (`return-before-await`) or contain JSX (`jsx-before-await`); no value an await produces may be assigned after the last await (`value-reassigned`). `data.component` is the component and `data.reason` the rule.",
         repair: "Give every await its own `const x = await …;` statement, keep other statements before the first await or after the last one, and start the JSX after the last await.",
         fix: None,
@@ -544,7 +544,7 @@ catalog! {
         message: "`{name}` is imported from `reze-js/internal/reactivity`, which is private compiler output. Import `{name}` from `reze-js` instead.",
         explanation: "`reze-js/internal/reactivity` is the module compiler output calls. Only `reze-js` is a public import, and importing a reactive primitive from the private module would skip the public surface and its diagnostics.",
         repair: "Import `{name}` from `reze-js` and let the compiler lower it.",
-        fix: None,
+        fix: Some("import `{name}` from `reze-js`"),
         example: Pair {
             bad: "import { signal } from \"reze-js/internal/reactivity\";\nlet count = signal(0);\nexport const view = <p>{count}</p>;\n",
             good: "import { signal } from \"reze-js\";\nlet count = signal(0);\nexport const view = <p>{count}</p>;\n",
@@ -609,9 +609,9 @@ catalog! {
         message: "`{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `computed(…)`.",
         explanation: "A component function runs once, so a `signal` or `computed` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `computed` and JSX are reactive and are not reported. `data.signal` is the variable read and `data.variable` the declared variable.",
         repair: "Move the read to where the value is used, or declare `const name = computed(expression)` and read `name`. Mark an intended one-time read with `untrack(() => …)`.",
-        fix: None,
+        fix: Some("derive `{variable}` with `computed(…)`"),
         example: Pair {
-            bad: "import { signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = signal(0);\n  const doubled = count * 2;\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
+            bad: "import { computed, signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = signal(0);\n  const doubled = count * 2;\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
             good: "import { computed, signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = signal(0);\n  const doubled = computed(count * 2);\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
         },
     }

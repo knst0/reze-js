@@ -34,6 +34,7 @@ pub struct PreScan {
     pub syntax_inits: HashSet<(u32, u32)>,
     pub action_callees: HashSet<(u32, u32)>,
     pub discarded: HashSet<u32>,
+    pub computed_name: Option<String>,
 }
 
 pub fn prescan(
@@ -75,13 +76,73 @@ pub fn prescan(
     let mut by_symbol = HashMap::new();
     let mut inits = HashSet::new();
     let default_exported = super::analysis::default_exported_symbols(program, scoping);
+    let mut sole_declarations: HashMap<SymbolId, u32> = HashMap::new();
+    let mut default_statements: HashMap<SymbolId, Span> = HashMap::new();
+    let mut named_default_edits: HashMap<SymbolId, Vec<Edit>> = HashMap::new();
+    for statement in &program.body {
+        match statement {
+            Statement::VariableDeclaration(declaration) if declaration.declarations.len() == 1 => {
+                if let BindingPattern::BindingIdentifier(id) = &declaration.declarations[0].id {
+                    sole_declarations.insert(id.symbol_id(), declaration.span.start);
+                }
+            }
+            Statement::ExportDefaultDeclaration(export) => {
+                if let ExportDefaultDeclarationKind::Identifier(local) = &export.declaration
+                    && let Some(symbol) = local
+                        .reference_id
+                        .get()
+                        .and_then(|reference| scoping.get_reference(reference).symbol_id())
+                {
+                    default_statements.entry(symbol).or_insert(export.span);
+                }
+            }
+            Statement::ExportNamedDeclaration(export) => {
+                for specifier in &export.specifiers {
+                    if specifier.exported.name().as_str() == "default"
+                        && let ModuleExportName::IdentifierReference(local) = &specifier.local
+                        && let Some(symbol) = local
+                            .reference_id
+                            .get()
+                            .and_then(|reference| scoping.get_reference(reference).symbol_id())
+                        && !export
+                            .specifiers
+                            .iter()
+                            .any(|other| other.exported.name().as_str() == local.name.as_str())
+                    {
+                        named_default_edits.entry(symbol).or_insert_with(|| {
+                            vec![Edit {
+                                start: specifier.span.start,
+                                end: specifier.span.end,
+                                text: local.name.to_string(),
+                            }]
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     for (symbol, variable) in &variables {
         if default_exported.contains(symbol) {
-            reports.push(
-                Report::new(Code::SignalDefaultExport, variable.declarator)
-                    .arg("signal", scoping.symbol_name(*symbol))
-                    .arg("primitive", variable.primitive.name()),
-            );
+            let mut report = Report::new(Code::SignalDefaultExport, variable.declarator)
+                .arg("signal", scoping.symbol_name(*symbol))
+                .arg("primitive", variable.primitive.name());
+            if let Some(edits) = named_default_edits.get(symbol) {
+                report = report.fix(edits.clone());
+            } else if let (Some(statement), Some(declaration_start)) = (
+                default_statements.get(symbol),
+                sole_declarations.get(symbol),
+            ) {
+                report = report.fix(vec![
+                    Edit {
+                        start: *declaration_start,
+                        end: *declaration_start,
+                        text: String::from("export "),
+                    },
+                    Edit { start: statement.start, end: statement.end, text: String::new() },
+                ]);
+            }
+            reports.push(report);
         }
         if let Some(plan) = declarators.get(&variable.declarator.start) {
             decls.insert(
@@ -99,6 +160,11 @@ pub fn prescan(
     let mut marker = TopMarker { discarded: HashSet::new() };
     marker.visit_program(program);
     let run = if has_action { namer.fresh("_a$") } else { String::new() };
+    let computed_name = syntax
+        .declared
+        .iter()
+        .find(|import| import.syntax == Syntax::Computed)
+        .map(|import| scoping.symbol_name(import.symbol).to_string());
     PreScan {
         run,
         decls,
@@ -106,6 +172,7 @@ pub fn prescan(
         syntax_inits: inits,
         action_callees,
         discarded: marker.discarded,
+        computed_name,
     }
 }
 struct Reactive {
@@ -485,6 +552,7 @@ pub fn scan(
         frame: None,
         later: HashMap::new(),
         component_inits: HashSet::new(),
+        computed_name: pre.computed_name.clone(),
         reports: Vec::new(),
     };
     analyzer.visit_program(program);
@@ -592,6 +660,7 @@ struct Analyzer<'p, 's> {
     frame: Option<ActionFrame>,
     later: HashMap<u32, &'static str>,
     component_inits: HashSet<u32>,
+    computed_name: Option<String>,
     reports: Vec<Report>,
 }
 
@@ -612,9 +681,18 @@ impl Analyzer<'_, '_> {
 
     fn update(&mut self, it: &UpdateExpression<'_>, symbol: SymbolId) {
         if !self.discarded.contains(&it.span.start) {
+            let operator = match it.operator {
+                UpdateOperator::Increment => "+",
+                UpdateOperator::Decrement => "-",
+            };
             self.reports.push(
                 Report::new(Code::SignalUpdateInExpression, it.span)
-                    .arg("signal", self.name(symbol)),
+                    .arg("signal", self.name(symbol))
+                    .fix(vec![Edit {
+                        start: it.span.start,
+                        end: it.span.end,
+                        text: format!("{} {}= 1", self.name(symbol), operator),
+                    }]),
             );
             return;
         }
@@ -727,7 +805,7 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn check_read_once(&mut self, body: &FunctionBody<'_>) {
+    fn check_read_once(&mut self, body: &FunctionBody<'_>, wrap_computed: bool) {
         for statement in &body.statements {
             let Statement::VariableDeclaration(declaration) = statement else { continue };
             for declarator in &declaration.declarations {
@@ -744,9 +822,23 @@ impl Analyzer<'_, '_> {
                         [pattern.span().start as usize..pattern.span().end as usize]
                         .to_string(),
                 };
-                let report = Report::new(Code::SignalReadOnce, span)
+                let mut report = Report::new(Code::SignalReadOnce, span)
                     .arg("variable", variable)
                     .arg("signal", self.name(symbol));
+                if wrap_computed
+                    && declaration.kind == VariableDeclarationKind::Const
+                    && matches!(declarator.id, BindingPattern::BindingIdentifier(_))
+                    && let Some(computed) = &self.computed_name
+                {
+                    report = report.fix(vec![
+                        Edit {
+                            start: init.span().start,
+                            end: init.span().start,
+                            text: format!("{computed}("),
+                        },
+                        Edit { start: init.span().end, end: init.span().end, text: String::from(")") },
+                    ]);
+                }
                 self.reports.push(report);
             }
         }
@@ -862,7 +954,7 @@ impl<'a> Visit<'a> for Analyzer<'_, '_> {
         let is_component = it.id.as_ref().is_some_and(|id| is_component_name(id.name.as_str()))
             || self.component_inits.contains(&it.span.start);
         if let (true, Some(body)) = (is_component, &it.body) {
-            self.check_read_once(body);
+            self.check_read_once(body, !it.r#async && !it.generator);
         }
         let outer = self.enter(it.span.start, it.r#async);
         walk::walk_function(self, it, flags);
@@ -873,7 +965,7 @@ impl<'a> Visit<'a> for Analyzer<'_, '_> {
         if let ArrowFunctionBody::FunctionBody(body) = &it.body
             && self.component_inits.contains(&it.span.start)
         {
-            self.check_read_once(body);
+            self.check_read_once(body, !it.r#async);
         }
         let outer = self.enter(it.span.start, it.r#async);
         walk::walk_arrow_function_expression(self, it);

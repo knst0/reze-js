@@ -119,6 +119,18 @@ pub fn apply<'a>(
     rewrite.changed
 }
 
+fn shape_detail(reason: &str) -> &'static str {
+    match reason {
+        "await-position" => "each top-level await must be a whole statement",
+        "nested-await" => "an await operand contains another await",
+        "statement-between-awaits" => "only declarations may appear between the first and last await",
+        "return-before-await" => "a statement up to the last await returns",
+        "jsx-before-await" => "JSX appears before the last await",
+        "value-reassigned" => "a value an await produces is assigned after the last await",
+        _ => "its awaits are not in a supported shape",
+    }
+}
+
 struct Collector<'f, 'r, 'p> {
     facts: &'f AsyncFacts,
     reports: &'r mut Vec<Report>,
@@ -143,9 +155,9 @@ impl Collector<'_, '_, '_> {
                 let report = match reject.reason {
                     "props-read-in-await" => Report::new(Code::AsyncPropsReadInAwait, reject.span),
                     "try-around-await" => Report::new(Code::AsyncTryAroundAwait, reject.span),
-                    reason => {
-                        Report::new(Code::AsyncComponentShape, reject.span).arg("reason", reason)
-                    }
+                    reason => Report::new(Code::AsyncComponentShape, reject.span)
+                        .arg("detail", shape_detail(reason))
+                        .data("reason", reason),
                 };
                 self.reports.push(report.arg("component", name));
             }

@@ -389,7 +389,7 @@ export const view = <button onClick={() => (count += 1)}>{count}</button>;
 
 `data` keys: `primitive`, `signal`
 
-Automatic fix: no
+Automatic fix: yes
 
 Named exports of `signal` and `computed` variables are reactive: importers read them as values. The default export is not analyzed across modules, so it is refused. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.
 
@@ -458,7 +458,7 @@ export const view = <p>{count}</p>;
 
 `data` keys: `signal`
 
-Automatic fix: no
+Automatic fix: yes
 
 `count++` as a statement becomes `setCount(count() + 1)`. Inside a larger expression, for example `() => count++` or `use(count++)`, the value of the old `++` would change meaning, so it is not accepted. `data.signal` is the updated variable.
 
@@ -774,7 +774,7 @@ export const view = <Counter island="visible" />;
 
 `data` keys: `attribute`
 
-Automatic fix: no
+Automatic fix: yes
 
 `islandMedia`, `islandRootMargin` and `islandFallback` are consumed by the compiler and never reach the component. Without `island` there is no island to consume them. `data.attribute` is the name.
 
@@ -950,9 +950,9 @@ export const view = <button onClick={() => save()} />;
 
 **Props destructured in a form that cannot be rewritten** · severity `warn`
 
-> `{component}` destructures its props in a form the compiler cannot rewrite ({reason}), so each value is read once and never updates. Take `props` and read `props.x` where it is used.
+> `{component}` destructures its props in a form the compiler cannot rewrite ({detail}), so each value is read once and never updates. Take `props` and read `props.x` where it is used.
 
-`data` keys: `component`, `reason`
+`data` keys: `component`, `detail`
 
 Automatic fix: no
 
@@ -1011,9 +1011,9 @@ export const view = <ul><For each={numbers}>{(n) => <li>{n}</li>}</For></ul>;
 
 **Async component in a form that cannot be compiled** · severity `error`
 
-> `{component}` is an async component the compiler cannot rewrite ({reason}). Reshape the awaits so each one is a whole statement.
+> `{component}` is an async component the compiler cannot rewrite ({detail}). Reshape the awaits so each one is a whole statement.
 
-`data` keys: `component`, `reason`
+`data` keys: `component`, `detail`
 
 Automatic fix: no
 
@@ -1087,7 +1087,7 @@ Card.failure = (error) => <p>{error.message}</p>;
 
 `data` keys: `name`
 
-Automatic fix: no
+Automatic fix: yes
 
 `reze-js/internal/reactivity` is the module compiler output calls. Only `reze-js` is a public import, and importing a reactive primitive from the private module would skip the public surface and its diagnostics.
 
@@ -1269,7 +1269,7 @@ export async function Card(props) {
 
 `data` keys: `signal`, `variable`
 
-Automatic fix: no
+Automatic fix: yes
 
 A component function runs once, so a `signal` or `computed` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `computed` and JSX are reactive and are not reported. `data.signal` is the variable read and `data.variable` the declared variable.
 
@@ -1278,7 +1278,7 @@ A component function runs once, so a `signal` or `computed` read directly in the
 Before:
 
 ```tsx
-import { signal } from "reze-js";
+import { computed, signal } from "reze-js";
 
 export function Counter() {
   let count = signal(0);

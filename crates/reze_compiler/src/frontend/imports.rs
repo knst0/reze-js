@@ -10,7 +10,7 @@ use oxc_syntax::symbol::SymbolId;
 
 use super::Namer;
 use super::analysis::Primitive;
-use crate::diagnostic::{Code, Report};
+use crate::diagnostic::{Code, Edit, Report};
 use crate::exports::{self, REACTIVITY, Role};
 use crate::imports::HelperImports;
 
@@ -119,7 +119,15 @@ pub(crate) fn refuse_internal_reactivity(program: &Program<'_>, reports: &mut Ve
             if named.import_kind.is_type() || exports::primitive_named(REACTIVITY, name.as_str()).is_none() {
                 continue;
             }
-            reports.push(Report::new(Code::InternalReactivityImport, named.span).arg("name", name.as_str()));
+            reports.push(
+                Report::new(Code::InternalReactivityImport, named.span)
+                    .arg("name", name.as_str())
+                    .fix(vec![Edit {
+                        start: import.source.span.start,
+                        end: import.source.span.end,
+                        text: String::from("\"reze-js\""),
+                    }]),
+            );
         }
     }
 }

@@ -168,6 +168,22 @@ pub fn apply<'a>(
     rewrite.changed
 }
 
+fn destructured_detail(reason: &str) -> &'static str {
+    match reason {
+        "computed-key" => "the pattern uses a computed key",
+        "default" => "a default cannot run once at the start",
+        "nested-default" => "a default is on a nested pattern",
+        "nested-rest" => "the pattern has a nested rest element",
+        "array-pattern" => "the pattern is an array pattern",
+        "written" => "a destructured name is assigned",
+        "arguments" => "the component reads `arguments`",
+        "generator" => "the component is a generator",
+        "params" => "the component takes extra or rest parameters",
+        "type" => "a prop is read in a type position through a key no qualified type name can spell",
+        _ => "the pattern is not in a supported shape",
+    }
+}
+
 struct Collector<'s, 'r, 'p> {
     scoping: &'s Scoping,
     symbols: &'s [(SymbolId, PropsMethod)],
@@ -192,7 +208,8 @@ impl Collector<'_, '_, '_> {
             Err(reason) => {
                 self.reports.push(
                     Report::new(Code::PropsDestructured, pattern)
-                        .arg("reason", reason)
+                        .arg("detail", destructured_detail(reason))
+                        .data("reason", reason)
                         .arg("component", name),
                 );
             }
@@ -200,7 +217,8 @@ impl Collector<'_, '_, '_> {
                 if has_unnameable_type_read(self.scoping, &resolved.bindings) {
                     self.reports.push(
                         Report::new(Code::PropsDestructured, pattern)
-                            .arg("reason", "type")
+                            .arg("detail", destructured_detail("type"))
+                            .data("reason", "type")
                             .arg("component", name),
                     );
                     return;
