@@ -50,6 +50,7 @@ pub fn build_module_ir<'x>(
 ) -> ModuleIr {
     let islands = IslandPlan::scan(program, scoping);
     let mut builder = Builder {
+        static_handlers: static_handler_symbols(program, scoping),
         source,
         scoping,
         facts,
@@ -91,6 +92,7 @@ struct Builder<'x> {
     reports: Vec<Report>,
     path: Vec<String>,
     has_views: bool,
+    static_handlers: HashSet<SymbolId>,
 }
 impl Builder<'_> {
     fn report(&mut self, mut report: Report) {
@@ -237,6 +239,141 @@ fn is_function(e: &Expression<'_>) -> bool {
         e.without_parentheses(),
         Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
     )
+}
+fn static_handler_symbols(program: &Program<'_>, scoping: &Scoping) -> HashSet<SymbolId> {
+    if scoping
+        .scope_descendants_from_root()
+        .any(|scope| scoping.scope_flags(scope).contains_direct_eval())
+    {
+        return HashSet::new();
+    }
+    let mut collector = StaticHandlerCollector {
+        scoping,
+        direct: HashSet::new(),
+        aliases: Vec::new(),
+        exported: HashSet::new(),
+    };
+    collector.visit_program(program);
+    let eligible = |symbol: SymbolId| {
+        !scoping.symbol_is_mutated(symbol)
+            && scoping.symbol_redeclarations(symbol).is_empty()
+            && !collector.exported.contains(&symbol)
+    };
+    let mut proven: HashSet<SymbolId> =
+        collector.direct.iter().copied().filter(|symbol| eligible(*symbol)).collect();
+    loop {
+        let mut changed = false;
+        for &(alias, target) in &collector.aliases {
+            if eligible(alias) && proven.contains(&target) && proven.insert(alias) {
+                changed = true;
+            }
+        }
+        if !changed {
+            return proven;
+        }
+    }
+}
+
+struct StaticHandlerCollector<'s> {
+    scoping: &'s Scoping,
+    direct: HashSet<SymbolId>,
+    aliases: Vec<(SymbolId, SymbolId)>,
+    exported: HashSet<SymbolId>,
+}
+
+impl StaticHandlerCollector<'_> {
+    fn resolved(&self, id: &IdentifierReference<'_>) -> Option<SymbolId> {
+        self.scoping.get_reference(id.reference_id.get()?).symbol_id()
+    }
+
+    fn exported_declaration(&mut self, declaration: &Declaration<'_>) {
+        match declaration {
+            Declaration::FunctionDeclaration(function) => {
+                if let Some(id) = &function.id {
+                    self.exported.insert(id.symbol_id());
+                }
+            }
+            Declaration::VariableDeclaration(variables) => {
+                for declarator in &variables.declarations {
+                    for id in declarator.id.get_binding_identifiers() {
+                        self.exported.insert(id.symbol_id());
+                    }
+                }
+            }
+            Declaration::ClassDeclaration(class) => {
+                if let Some(id) = &class.id {
+                    self.exported.insert(id.symbol_id());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl<'a> Visit<'a> for StaticHandlerCollector<'_> {
+    fn visit_function(&mut self, it: &Function<'a>, flags: oxc_syntax::scope::ScopeFlags) {
+        if it.r#type == FunctionType::FunctionDeclaration
+            && let Some(id) = &it.id
+        {
+            self.direct.insert(id.symbol_id());
+        }
+        walk::walk_function(self, it, flags);
+    }
+
+    fn visit_variable_declaration(&mut self, it: &VariableDeclaration<'a>) {
+        if it.kind == VariableDeclarationKind::Const {
+            for declarator in &it.declarations {
+                let BindingPattern::BindingIdentifier(id) = &declarator.id else { continue };
+                let Some(init) = &declarator.init else { continue };
+                if is_function(init) {
+                    self.direct.insert(id.symbol_id());
+                } else if let Expression::Identifier(target) = init.without_parentheses()
+                    && let Some(target) = self.resolved(target)
+                {
+                    self.aliases.push((id.symbol_id(), target));
+                }
+            }
+        }
+        walk::walk_variable_declaration(self, it);
+    }
+
+    fn visit_export_named_declaration(&mut self, it: &ExportNamedDeclaration<'a>) {
+        for specifier in &it.specifiers {
+            if let ModuleExportName::IdentifierReference(local) = &specifier.local
+                && let Some(symbol) = self.resolved(local)
+            {
+                self.exported.insert(symbol);
+            }
+        }
+        walk::walk_export_named_declaration(self, it);
+    }
+
+    fn visit_export_default_declaration(&mut self, it: &ExportDefaultDeclaration<'a>) {
+        match &it.declaration {
+            ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
+                if let Some(id) = &function.id {
+                    self.exported.insert(id.symbol_id());
+                }
+            }
+            ExportDefaultDeclarationKind::ClassDeclaration(class) => {
+                if let Some(id) = &class.id {
+                    self.exported.insert(id.symbol_id());
+                }
+            }
+            ExportDefaultDeclarationKind::Identifier(local) => {
+                if let Some(symbol) = self.resolved(local) {
+                    self.exported.insert(symbol);
+                }
+            }
+            _ => {}
+        }
+        walk::walk_export_default_declaration(self, it);
+    }
+
+    fn visit_export_declaration(&mut self, it: &ExportDeclaration<'a>) {
+        self.exported_declaration(&it.declaration);
+        walk::walk_export_declaration(self, it);
+    }
 }
 
 fn is_meaningful(child: &JSXChild<'_>) -> bool {
@@ -1450,6 +1587,15 @@ impl Builder<'_> {
         );
     }
 
+    fn is_static_handler(&self, handler: &Expression<'_>) -> bool {
+        let Expression::Identifier(id) = handler.without_parentheses() else { return false };
+        let Some(reference) = id.reference_id.get() else { return false };
+        self.scoping
+            .get_reference(reference)
+            .symbol_id()
+            .is_some_and(|symbol| self.static_handlers.contains(&symbol))
+    }
+
     fn build_event(
         &mut self,
         state: &mut ElementState,
@@ -1470,7 +1616,7 @@ impl Builder<'_> {
         };
         let kind = if !(is_delegatable && crate::html::is_delegated_event(&event)) {
             EventKind::Direct
-        } else if is_function(handler) {
+        } else if is_function(handler) || self.is_static_handler(handler) {
             EventKind::DelegatedStatic
         } else if let Expression::ArrayExpression(array) = handler.without_parentheses()
             && array.elements.len() == 2

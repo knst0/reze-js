@@ -244,6 +244,55 @@ fn a_group_is_fixed_only_when_every_member_is() {
 }
 
 #[test]
+fn provably_local_function_handlers_use_delegated_static_emission() {
+    for source in [
+        "function handle() {}\nexport function C() {\n  return <button onClick={handle}>x</button>;\n}",
+        "const handle = () => {};\nexport function C() {\n  return <button onClick={handle}>x</button>;\n}",
+        "export function C() {\n  function handle() {}\n  return <button onClick={handle}>x</button>;\n}",
+        "export function C() {\n  const handle = () => {};\n  const alias = handle;\n  return <button onClick={alias}>x</button>;\n}",
+    ] {
+        let code = output_for(source, "test.tsx", &Options::default()).code;
+        assert!(code.contains("$$click ="), "{source}\n{code}");
+        assert!(!code.contains("addEventListener"), "{source}\n{code}");
+    }
+}
+
+#[test]
+fn opaque_handlers_keep_delegated_dynamic_emission() {
+    for source in [
+        "export function C(props) {\n  return <button onClick={props.handle}>x</button>;\n}",
+        "export function C(handle) {\n  return <button onClick={handle}>x</button>;\n}",
+        "export function C() {\n  let handle = () => {};\n  return <button onClick={handle}>x</button>;\n}",
+        "export function C() {\n  function handle() {}\n  handle = () => {};\n  return <button onClick={handle}>x</button>;\n}",
+        "export function handle() {}\nexport function C() {\n  return <button onClick={handle}>x</button>;\n}",
+    ] {
+        let code = output_for(source, "test.tsx", &Options::default()).code;
+        assert!(code.contains("addEventListener"), "{source}\n{code}");
+        assert!(!code.contains("$$click ="), "{source}\n{code}");
+    }
+}
+
+#[test]
+fn closed_spreads_with_only_fixed_entries_use_fixed_render_effect() {
+    let code = client_body(
+        "let a = signal(0); let b = signal(0);",
+        r#"<><div {...{ title: a + "-" + b }} /><button onClick={() => { a += 1; b += 1; }}>x</button></>"#,
+    );
+    assert!(code.contains("fixedRenderEffect("), "{code}");
+    assert!(!code.contains("_$renderEffect("), "{code}");
+}
+
+#[test]
+fn closed_spreads_with_a_conditional_entry_stay_dynamic() {
+    let code = client_body(
+        "let a = signal(0); let b = signal(0);",
+        r#"<><div {...{ title: a > 0 ? b + "x" : "y" }} /><button onClick={() => { a += 1; b += 1; }}>x</button></>"#,
+    );
+    assert!(code.contains("_$renderEffect("), "{code}");
+    assert!(!code.contains("fixedRenderEffect("), "{code}");
+}
+
+#[test]
 fn island_binding_fixing_matches_client() {
     let source = "import { signal } from \"reze-js\";\nexport function C() {\n  let a = signal(0);\n  let b = signal(0);\n  return <div title={a + \"-\" + b} onClick={() => { a += 1; b += 1; }} />;\n}";
     let options = Options {

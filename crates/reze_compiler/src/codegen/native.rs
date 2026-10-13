@@ -5,7 +5,7 @@ use crate::ast::Ast;
 use crate::ir::schedule::{MemberKind, SchedMember};
 use crate::ir::view::{
     Attr, AttrTarget, AttrValue, ElementProp, ElementView, EventHandler, InsertOp, LateProp,
-    LinkProp, RefTarget, SpreadPart, SpreadSegment,
+    LinkProp, RefTarget, SpreadPart, SpreadSegment, TextPart,
 };
 
 use super::{EmitContext, composite};
@@ -144,7 +144,7 @@ fn immediate<'a, T: NativeTarget<'a>>(
         closed_spread_body(ctx, target, spread, out, &mut body);
         if !body.is_empty() {
             let callback = Ast::new(ctx.allocator).block_arrow([], body);
-            out.push(target.effect(ctx, callback, false));
+            out.push(target.effect(ctx, callback, closed_spread_fixed(spread)));
         }
         return;
     }
@@ -194,6 +194,25 @@ fn closed_spread_body<'a>(
             let name = read_value(ctx, value, if deferred { body } else { outer });
             attr_write(ctx, target, attr, name, true, true, outer, body);
         }
+    }
+}
+
+fn closed_spread_fixed(spread: &SpreadSegment) -> bool {
+    spread.parts.iter().all(|part| match part {
+        SpreadPart::Entries(entries) => entries.iter().all(|attr| attr_value_fixed(&attr.value)),
+        SpreadPart::Generic { .. } => false,
+    })
+}
+
+fn attr_value_fixed(value: &AttrValue) -> bool {
+    match value {
+        AttrValue::Dynamic(dynamic) => dynamic.fixed,
+        AttrValue::ClassParts(parts) => parts.iter().all(attr_value_fixed),
+        AttrValue::TextParts(parts) => parts.iter().all(|part| match part {
+            TextPart::Dynamic(dynamic) => dynamic.fixed,
+            TextPart::Static(_) => true,
+        }),
+        _ => true,
     }
 }
 
