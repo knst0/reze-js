@@ -7,9 +7,11 @@ use lsp_types::request::Request as RequestMethod;
 use lsp_types::{
     CodeAction, CodeActionContext, CodeActionKind, CodeActionOrCommand, CodeActionParams,
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, NumberOrString, Position, PublishDiagnosticsParams, Range,
-    ServerCapabilities, TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
-    TextEdit, Uri, VersionedTextDocumentIdentifier, notification as notify, request as req,
+    DidOpenTextDocumentParams, GotoDefinitionParams, Hover, HoverContents, HoverParams, Location,
+    NumberOrString, Position, PublishDiagnosticsParams, Range, ServerCapabilities,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+    TextDocumentPositionParams, TextEdit, Uri, VersionedTextDocumentIdentifier,
+    notification as notify, request as req,
 };
 use serde_json::{Value, json};
 
@@ -18,6 +20,8 @@ const DUPLICATE_GOOD: &str = "export const view = <a href={url()} />;\n";
 const EMOJI_BAD: &str = "export const view = <div title=\"\u{1F389}\" clas=\"box\" />;\n";
 const EMOJI_GOOD: &str = "export const view = <div title=\"\u{1F389}\" class=\"box\" />;\n";
 const PARSE_BAD: &str = "export const view = <div>;\n";
+const FEATURE: &str = "import { signal, computed, action, Show } from \"reze-js\";\nlet count = signal(0);\nconst doubled = computed(count * 2);\nconst increment = action(() => { count++; });\nexport const view = <div><p>{count}{doubled}</p><button onClick={() => increment()}>go</button><Show when={count > 0}><span>{count}</span></Show></div>;\n";
+const FEATURE_BROKEN: &str = "import { signal } from \"reze-js\";\nlet [count] = signal(0);\nexport const view = <p>{count}</p>;\n";
 
 struct Client {
     connection: Connection,
@@ -131,6 +135,90 @@ fn actions(client: &mut Client, uri: &Uri, only: Option<Vec<CodeActionKind>>) ->
         .collect()
 }
 
+fn position_at(text: &str, offset: usize) -> Position {
+    let before = &text[..offset];
+    let line = before.matches('\n').count() as u32;
+    let line_start = before.rfind('\n').map_or(0, |found| found + 1);
+    Position { line, character: text[line_start..offset].encode_utf16().count() as u32 }
+}
+
+fn text_range(text: &str, start: usize, end: usize) -> Range {
+    Range { start: position_at(text, start), end: position_at(text, end) }
+}
+
+fn definition(client: &mut Client, uri: &Uri, at: Position) -> Option<Location> {
+    let response = client.request(
+        req::GotoDefinition::METHOD,
+        serde_json::to_value(GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: at,
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        })
+        .unwrap(),
+    );
+    let result = response.response_result.unwrap();
+    if result.is_null() {
+        return None;
+    }
+    Some(serde_json::from_value(result).unwrap())
+}
+
+fn hover(client: &mut Client, uri: &Uri, at: Position) -> Option<Hover> {
+    let response = client.request(
+        req::HoverRequest::METHOD,
+        serde_json::to_value(HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: at,
+            },
+            work_done_progress_params: Default::default(),
+        })
+        .unwrap(),
+    );
+    let result = response.response_result.unwrap();
+    if result.is_null() {
+        return None;
+    }
+    Some(serde_json::from_value(result).unwrap())
+}
+
+fn hover_text(hover: &Hover) -> String {
+    match &hover.contents {
+        HoverContents::Markup(content) => content.value.clone(),
+        other => panic!("expected markup hover, got {other:?}"),
+    }
+}
+
+fn open(client: &mut Client, uri: &Uri, text: &str) -> PublishDiagnosticsParams {
+    client.notify(Notification::new(
+        notify::DidOpenTextDocument::METHOD.to_string(),
+        serde_json::to_value(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: uri.clone(),
+                language_id: String::from("typescriptreact"),
+                version: 1,
+                text: text.to_string(),
+            },
+        })
+        .unwrap(),
+    ));
+    client.diagnostics()
+}
+
+fn close(client: &mut Client, uri: &Uri) {
+    client.notify(Notification::new(
+        notify::DidCloseTextDocument::METHOD.to_string(),
+        serde_json::to_value(DidCloseTextDocumentParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+        })
+        .unwrap(),
+    ));
+    assert!(client.diagnostics().diagnostics.is_empty());
+}
+
 #[test]
 fn session_reports_diagnostics_and_fixes() {
     let (mut client, server) = start();
@@ -151,6 +239,8 @@ fn session_reports_diagnostics_and_fixes() {
         Some(lsp_types::TextDocumentSyncCapability::Kind(lsp_types::TextDocumentSyncKind::FULL))
     );
     assert_eq!(capabilities.position_encoding, Some(lsp_types::PositionEncodingKind::UTF16));
+    assert_eq!(capabilities.definition_provider, Some(lsp_types::OneOf::Left(true)));
+    assert_eq!(capabilities.hover_provider, Some(lsp_types::HoverProviderCapability::Simple(true)));
     client.notify(Notification::new(notify::Initialized::METHOD.to_string(), json!({})));
 
     client.notify(Notification::new(
@@ -250,8 +340,62 @@ fn session_reports_diagnostics_and_fixes() {
     assert_eq!(parse.severity, Some(DiagnosticSeverity::ERROR));
     assert!(actions(&mut client, &uri, None).is_empty());
 
-    let response = client.request("textDocument/hover", json!({}));
-    assert_eq!(response.response_result.unwrap_err().code, -32601);
+    let feature = parse_uri("file:///feature.tsx");
+    open(&mut client, &feature, FEATURE);
+    let count_decl = FEATURE.find("let count").unwrap() + 4;
+    let count_range = text_range(FEATURE, count_decl, count_decl + 5);
+    let jsx_read = FEATURE.find("{count}{doubled}").unwrap() + 1;
+    let found = definition(&mut client, &feature, position_at(FEATURE, jsx_read + 1)).unwrap();
+    assert_eq!(found.uri, feature);
+    assert_eq!(found.range, count_range);
+    let on_decl = definition(&mut client, &feature, position_at(FEATURE, count_decl + 1)).unwrap();
+    assert_eq!(on_decl.range, count_range);
+    let doubled_decl = FEATURE.find("const doubled").unwrap() + 6;
+    let doubled_use = jsx_read + "{count}".len();
+    let found = definition(&mut client, &feature, position_at(FEATURE, doubled_use + 1)).unwrap();
+    assert_eq!(found.range, text_range(FEATURE, doubled_decl, doubled_decl + 7));
+    let increment_decl = FEATURE.find("const increment").unwrap() + 6;
+    let increment_use = FEATURE.find("increment()}").unwrap();
+    let found = definition(&mut client, &feature, position_at(FEATURE, increment_use + 1)).unwrap();
+    assert_eq!(found.range, text_range(FEATURE, increment_decl, increment_decl + 9));
+    let show_decl = FEATURE.find("Show").unwrap();
+    let show_use = FEATURE.find("<Show").unwrap() + 1;
+    let found = definition(&mut client, &feature, position_at(FEATURE, show_use + 1)).unwrap();
+    assert_eq!(found.range, text_range(FEATURE, show_decl, show_decl + 4));
+    let text =
+        hover_text(&hover(&mut client, &feature, position_at(FEATURE, jsx_read + 1)).unwrap());
+    assert!(
+        text.contains("signal") && text.contains("count()") && text.contains("setCount"),
+        "{text}"
+    );
+    let text =
+        hover_text(&hover(&mut client, &feature, position_at(FEATURE, doubled_use + 1)).unwrap());
+    assert!(
+        text.contains("computed") && text.contains("computed(() =>") && text.contains("doubled()"),
+        "{text}"
+    );
+    let text =
+        hover_text(&hover(&mut client, &feature, position_at(FEATURE, increment_use + 1)).unwrap());
+    assert!(text.contains("action") && text.contains("increment"), "{text}");
+    let text =
+        hover_text(&hover(&mut client, &feature, position_at(FEATURE, show_use + 1)).unwrap());
+    assert!(text.contains("Show") && text.contains("branch"), "{text}");
+    close(&mut client, &feature);
+
+    let broken_feature = parse_uri("file:///broken-feature.tsx");
+    let published = open(&mut client, &broken_feature, FEATURE_BROKEN);
+    assert!(has(&published.diagnostics, "SIGNAL_PATTERN"));
+    let broken_decl = FEATURE_BROKEN.find("[count]").unwrap() + 1;
+    let broken_use = FEATURE_BROKEN.find("{count}").unwrap() + 1;
+    let found =
+        definition(&mut client, &broken_feature, position_at(FEATURE_BROKEN, broken_use + 1))
+            .unwrap();
+    assert_eq!(found.range, text_range(FEATURE_BROKEN, broken_decl, broken_decl + 5));
+    let text = hover_text(
+        &hover(&mut client, &broken_feature, position_at(FEATURE_BROKEN, broken_use + 1)).unwrap(),
+    );
+    assert!(text.contains("signal") && text.contains("count()"), "{text}");
+    close(&mut client, &broken_feature);
 
     client.notify(Notification::new(
         notify::DidCloseTextDocument::METHOD.to_string(),

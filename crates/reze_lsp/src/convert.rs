@@ -14,6 +14,38 @@ pub struct Document {
     pub reports: Vec<Report>,
 }
 
+impl Document {
+    pub fn offset_at(&self, at: Position) -> Option<u32> {
+        offset_at(&self.text, at).map(|offset| offset as u32)
+    }
+
+    pub fn span_range(&self, start: u32, end: u32) -> Range {
+        offset_range(&self.text, &self.index, start, end)
+    }
+}
+
+pub fn offset_at(text: &str, at: Position) -> Option<usize> {
+    let mut line_start = 0usize;
+    for _ in 0..at.line {
+        line_start = text[line_start..].find('\n').map(|found| line_start + found + 1)?;
+    }
+    let line_end = text[line_start..].find('\n').map_or(text.len(), |found| line_start + found);
+    let mut taken = 0usize;
+    let mut units = 0u32;
+    for c in text[line_start..line_end].chars() {
+        if units >= at.character {
+            break;
+        }
+        units += c.len_utf16() as u32;
+        taken += c.len_utf8();
+        if units > at.character {
+            taken -= c.len_utf8();
+            break;
+        }
+    }
+    Some(line_start + taken)
+}
+
 pub fn position(at: CompilerPosition) -> Position {
     Position { line: at.line.saturating_sub(1), character: at.column }
 }
@@ -175,5 +207,28 @@ mod tests {
     fn position_is_zero_based() {
         let at = position(CompilerPosition { offset: 7, line: 3, column: 5 });
         assert_eq!(at, Position { line: 2, character: 5 });
+    }
+
+    #[test]
+    fn offset_at_round_trips_through_locate() {
+        let text = "let a = 1;\nlet b = \"\u{1F389}xy\";\nlet c = a;\n";
+        let index = LineIndex::new(text);
+        for offset in [0, 5, 11, 20, 24, 26, 27, 31, 36] {
+            let (line, character) = index.locate(text, offset);
+            assert_eq!(offset_at(text, Position { line, character }), Some(offset), "{offset}");
+        }
+    }
+
+    #[test]
+    fn offset_at_handles_emoji_and_line_bounds() {
+        let text = "a\u{1F389}b\ncd";
+        assert_eq!(offset_at(text, Position { line: 0, character: 0 }), Some(0));
+        assert_eq!(offset_at(text, Position { line: 0, character: 1 }), Some(1));
+        assert_eq!(offset_at(text, Position { line: 0, character: 3 }), Some(5));
+        assert_eq!(offset_at(text, Position { line: 0, character: 4 }), Some(6));
+        assert_eq!(offset_at(text, Position { line: 0, character: 99 }), Some(6));
+        assert_eq!(offset_at(text, Position { line: 1, character: 1 }), Some(8));
+        assert_eq!(offset_at(text, Position { line: 2, character: 0 }), None);
+        assert_eq!(offset_at(text, Position { line: 0, character: 2 }), Some(1));
     }
 }

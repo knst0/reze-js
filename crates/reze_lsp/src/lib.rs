@@ -11,8 +11,10 @@ use lsp_types::request::Request as RequestMethod;
 use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionParams, CodeActionProviderCapability,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    PositionEncodingKind, PublishDiagnosticsParams, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Uri, notification as notify, request as req,
+    GotoDefinitionParams, Hover, HoverContents, HoverParams, HoverProviderCapability, Location,
+    MarkupContent, MarkupKind, OneOf, PositionEncodingKind, PublishDiagnosticsParams,
+    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+    notification as notify, request as req,
 };
 use reze_compiler::{LineIndex, Options};
 
@@ -24,6 +26,8 @@ pub fn capabilities() -> ServerCapabilities {
             code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
             ..Default::default()
         })),
+        definition_provider: Some(OneOf::Left(true)),
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
         ..Default::default()
     }
 }
@@ -57,41 +61,107 @@ fn respond(
     request: Request,
     documents: &HashMap<String, Document>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if request.method != req::CodeActionRequest::METHOD {
-        return send(
+    match request.method.as_str() {
+        req::CodeActionRequest::METHOD => {
+            let Request { id, params, .. } = request;
+            let params: CodeActionParams = match serde_json::from_value(params) {
+                Ok(params) => params,
+                Err(error) => {
+                    return send(
+                        connection,
+                        Response::new_err(
+                            id,
+                            lsp_server::ErrorCode::InvalidParams as i32,
+                            error.to_string(),
+                        ),
+                    );
+                }
+            };
+            let actions =
+                documents.get(params.text_document.uri.as_str()).map_or(Vec::new(), |document| {
+                    convert::code_actions(
+                        &params.text_document.uri,
+                        &document.text,
+                        &document.index,
+                        &document.reports,
+                        params.range,
+                        params.context.only.clone(),
+                    )
+                });
+            send(connection, Response::new_ok(id, actions))
+        }
+        req::GotoDefinition::METHOD => {
+            let Request { id, params, .. } = request;
+            let Ok(params) = serde_json::from_value::<GotoDefinitionParams>(params) else {
+                return send(
+                    connection,
+                    Response::new_err(
+                        id,
+                        lsp_server::ErrorCode::InvalidParams as i32,
+                        String::from("invalid definition params"),
+                    ),
+                );
+            };
+            let at = params.text_document_position_params;
+            let location = documents.get(at.text_document.uri.as_str()).and_then(|document| {
+                let offset = document.offset_at(at.position)?;
+                let inspection = reze_compiler::inspect(
+                    &document.text,
+                    &convert::filename(&at.text_document.uri),
+                    offset,
+                )?;
+                Some(Location {
+                    uri: at.text_document.uri.clone(),
+                    range: document
+                        .span_range(inspection.declaration_start, inspection.declaration_end),
+                })
+            });
+            send(connection, Response::new_ok(id, location))
+        }
+        req::HoverRequest::METHOD => {
+            let Request { id, params, .. } = request;
+            let Ok(params) = serde_json::from_value::<HoverParams>(params) else {
+                return send(
+                    connection,
+                    Response::new_err(
+                        id,
+                        lsp_server::ErrorCode::InvalidParams as i32,
+                        String::from("invalid hover params"),
+                    ),
+                );
+            };
+            let at = params.text_document_position_params;
+            let hover = documents.get(at.text_document.uri.as_str()).and_then(|document| {
+                let offset = document.offset_at(at.position)?;
+                let inspection = reze_compiler::inspect(
+                    &document.text,
+                    &convert::filename(&at.text_document.uri),
+                    offset,
+                )?;
+                Some(Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: format!(
+                            "**{}** `{}`\n\n```tsx\n{}\n```",
+                            inspection.kind.label(),
+                            inspection.name,
+                            inspection.lowered
+                        ),
+                    }),
+                    range: Some(document.span_range(inspection.use_start, inspection.use_end)),
+                })
+            });
+            send(connection, Response::new_ok(id, hover))
+        }
+        _ => send(
             connection,
             Response::new_err(
                 request.id,
                 lsp_server::ErrorCode::MethodNotFound as i32,
                 format!("unsupported method {}", request.method),
             ),
-        );
+        ),
     }
-    let Request { id, params, .. } = request;
-    let params: CodeActionParams = match serde_json::from_value(params) {
-        Ok(params) => params,
-        Err(error) => {
-            return send(
-                connection,
-                Response::new_err(
-                    id,
-                    lsp_server::ErrorCode::InvalidParams as i32,
-                    error.to_string(),
-                ),
-            );
-        }
-    };
-    let actions = documents.get(params.text_document.uri.as_str()).map_or(Vec::new(), |document| {
-        convert::code_actions(
-            &params.text_document.uri,
-            &document.text,
-            &document.index,
-            &document.reports,
-            params.range,
-            params.context.only.clone(),
-        )
-    });
-    send(connection, Response::new_ok(id, actions))
 }
 
 fn receive(

@@ -7,6 +7,7 @@ mod exports;
 mod frontend;
 mod html;
 mod imports;
+mod inspect;
 mod ir;
 mod kind;
 mod module_facts;
@@ -23,6 +24,7 @@ pub use diagnostic::{
     render_skill,
 };
 
+pub use inspect::{BindingKind, Inspection, inspect};
 pub use module_facts::{ExportFacts, FactKind, ModuleFacts, Reads, Written};
 
 use diagnostic::Report;
