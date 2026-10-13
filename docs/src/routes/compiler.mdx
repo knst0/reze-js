@@ -351,7 +351,7 @@ Info:
 The Vite plugin chooses compiler options from your Vite configuration:
 
 - `debugNames` is on in development builds and off in production builds. Names appear in the output, which helps profiling.
-- `hot` is on when the dev server runs with hot module replacement. Components register for hot swapping.
+- `hot` is on when the dev server runs with hot module replacement. Components register for hot swapping. A swap preserves each mounted instance's `signal` values by declaration order: keep signal declarations stable in order and type across edits, because a changed type at a position resets that position, and editing an initializer does not overwrite a preserved value.
 - `sourceMap` follows Vite's `build.sourcemap` in a build and `dev.sourcemap` in the dev server.
 
 Fixed bindings also run differently in the two modes. [Compiled bindings](#compiled-bindings) explains the difference.

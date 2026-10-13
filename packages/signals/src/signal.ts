@@ -2,6 +2,7 @@
 import { effectDepth, track } from "./context";
 import { FlagDirty, FlagMutable } from "./flags";
 import { propagate, type Link, type ReactiveNode, shallowPropagate } from "./graph";
+import { activeSignalFrame, signalNodeForFrame } from "./internal/hotFrame";
 import { profileCreated, profileWrote } from "./profile";
 import { scheduleFlush } from "./scheduler";
 
@@ -78,8 +79,18 @@ export class SignalNode<T = unknown> implements ReactiveNode {
 export function signal<T>(): [Getter<T | undefined>, Setter<T | undefined>];
 export function signal<T>(initialValue: T, options?: SignalOptions<T>): [Getter<T>, Setter<T>];
 export function signal<T>(initialValue?: T, options?: SignalOptions<T | undefined>): [Getter<T | undefined>, Setter<T | undefined>] {
-  const node = new SignalNode(initialValue, options?.equals ?? Object.is);
-  if (process.env.NODE_ENV !== "production") {
+  const frame = activeSignalFrame();
+  let created = frame === undefined;
+  let node: SignalNode<T | undefined>;
+  if (frame === undefined) {
+    node = new SignalNode(initialValue, options?.equals ?? Object.is);
+  } else {
+    node = signalNodeForFrame(frame, initialValue, () => {
+      created = true;
+      return new SignalNode(initialValue, options?.equals ?? Object.is);
+    });
+  }
+  if (created && process.env.NODE_ENV !== "production") {
     profileCreated(node, "signal", options?.name);
   }
   return [

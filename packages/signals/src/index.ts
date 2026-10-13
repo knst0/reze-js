@@ -6,6 +6,7 @@ export { getOwner, runWithOwner } from "./context";
 export { effect } from "./effect";
 export { effectScope } from "./effectScope";
 export { catchError } from "./error";
+export { createSignalFrame, runWithSignalFrame, type SignalFrame } from "./internal/hotFrame";
 export { onCleanup, root, untrack, type Owner } from "./owner";
 export { ContextNotFoundError, createContext, provideContext, useContext, type Context, type ContextKey } from "./provide";
 export { withReloadScope } from "./reload";
