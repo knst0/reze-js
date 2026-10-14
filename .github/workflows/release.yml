@@ -213,7 +213,7 @@ jobs:
         if: needs.plan.outputs.compiler == 'true'
         run: pnpm publish -r --filter "./packages/compiler/npm/*" --access public --provenance --no-git-checks
       - name: Publish
-        run: pnpm publish -r --access public --provenance --no-git-checks
+        run: pnpm publish -r --filter "!./packages/compiler/npm/*" --access public --provenance --no-git-checks
 
   release:
     name: Commit and tag
