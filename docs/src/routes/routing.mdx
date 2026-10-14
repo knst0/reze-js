@@ -246,6 +246,10 @@ export const route = {
 For a client-only app, pass a browser-scoped client to `createRouter`:
 
 ```ts
+import { createQueryClient } from "@rezejs/query";
+import { createRouter } from "@rezejs/router";
+import { routes } from "virtual:reze-routes";
+
 const Router = createRouter({
   routes,
   context: { queryClient: createQueryClient() },

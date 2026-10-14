@@ -97,7 +97,7 @@ export interface RouteConfig<D = unknown, C = RouterContext> {
    * route is hovered, focused or touched, and again with `"navigate"` when it is entered, so cache fetches that should not repeat.
    * May return a promise-like; navigations await it and deliver the settled value, never the promise.
    */
-  preload?: (args: PreloadArgs<any, C>) => D;
+  preload?: (args: PreloadArgs<any, C>) => Awaitable<D>;
   /**
    * Page metadata, merged root-to-leaf with the last defined field winning. A function receives the route's settled
    * preload data; navigations await it. Hover warming never runs it.
@@ -219,7 +219,7 @@ export type RoutePropsFor<P extends RoutePattern> = RouteProps<ParamsFor<P>, Dat
  * without data.
  */
 export interface RouteConfigFor<P extends RoutePattern, D = unknown, C = RouterContext> {
-  preload?: (args: PreloadArgs<ParamsFor<P>, C>) => D;
+  preload?: (args: PreloadArgs<ParamsFor<P>, C>) => Awaitable<D>;
   meta?: PageMetadata | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<PageMetadata>);
   redirect?: RouteRedirect | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<RouteRedirect | undefined>);
   info?: Readonly<Record<string, unknown>>;

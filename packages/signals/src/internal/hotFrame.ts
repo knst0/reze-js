@@ -35,7 +35,7 @@ export function signalNodeForFrame<T>(frame: SignalFrame, initialValue: T, creat
     return existing as SignalNode<T>;
   }
   const node = create();
-  frame.slots[index] = node;
+  frame.slots[index] = node as SignalNode;
   return node;
 }
 

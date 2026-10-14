@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -11,7 +11,7 @@ let root: string;
 let server: ViteDevServer | undefined;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "reze-vite-plugin-"));
+  root = realpathSync(mkdtempSync(join(tmpdir(), "reze-vite-plugin-")));
   mkdirSync(join(root, "src"));
   symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "dir");
 });

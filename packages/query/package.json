@@ -27,8 +27,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
-    "test": "vp test run --config vitest.node.config.mts"
+    "build": "vp pack"
   },
   "dependencies": {
     "@rezejs/router": "workspace:^"

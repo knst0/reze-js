@@ -23,8 +23,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
-    "test": "vp test run"
+    "build": "vp pack"
   },
   "dependencies": {
     "reze-js": "workspace:*"

@@ -13,3 +13,4 @@ dist
 /benches/component-scaling/frameworks/*/src
 /benches/router/apps/*/src
 .vitest/
+coverage

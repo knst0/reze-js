@@ -42,12 +42,15 @@ async function writePageProject(page: string, pageExamples: Example[]): Promise<
     await writeFile(path, `${example.source}\nexport {};\n`);
   }
   const routesDir = join(projectDir, "src/routes");
-  const routeFiles = pageExamples.filter((example) => example.file.startsWith("src/routes/"));
+  const routeFiles = [
+    ...new Map(
+      pageExamples
+        .filter((example) => example.file.startsWith("src/routes/"))
+        .map((example) => [example.file, relative(routesDir, join(projectDir, example.file)).replaceAll("\\", "/")]),
+    ).values(),
+  ];
   const dtsFile = join(projectDir, "routes.gen.d.ts");
-  const routes = scanRoutes(
-    routeFiles.map((example) => relative(routesDir, join(projectDir, example.file)).replaceAll("\\", "/")),
-    { extensions: DEFAULT_ROUTE_EXTENSIONS },
-  );
+  const routes = scanRoutes(routeFiles, { extensions: DEFAULT_ROUTE_EXTENSIONS });
   await writeFile(dtsFile, routeFiles.length === 0 ? genericRoutes : routesDts(routes, "", dtsFile, routesDir));
   await writeFile(join(projectDir, "build-constants.d.ts"), buildConstants);
   await writeFile(

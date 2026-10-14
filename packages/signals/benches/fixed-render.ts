@@ -1,5 +1,6 @@
-import { Bench, type FnOptions } from "tinybench";
+import { Bench } from "tinybench";
 
+import { finishBench, withGraph } from "../../../benches/kit/micro";
 import { flush, root, signal } from "../src/index";
 import { fixedRenderEffect, renderEffect } from "../src/render";
 
@@ -7,27 +8,12 @@ const BINDINGS = 1000;
 
 const sink = new Float64Array(BINDINGS);
 
-function withGraph(build: () => void): FnOptions {
-  let dispose: (() => void) | undefined;
-  return {
-    beforeAll() {
-      root((disposer) => {
-        dispose = disposer;
-        build();
-      });
-    },
-    afterAll() {
-      dispose?.();
-    },
-  };
-}
-
 const bench = new Bench();
 
 {
   let setters: ((value: number) => number)[] = [];
   let next = 0;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     setters = [];
     for (let i = 0; i < BINDINGS; i++) {
       const [get, set] = signal(0);
@@ -51,7 +37,7 @@ const bench = new Bench();
 {
   let setters: ((value: number) => number)[] = [];
   let next = 0;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     setters = [];
     for (let i = 0; i < BINDINGS; i++) {
       const [get, set] = signal(0);
@@ -75,7 +61,7 @@ const bench = new Bench();
 {
   let setters: ((value: number) => number)[] = [];
   let next = 0;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     setters = [];
     for (let i = 0; i < BINDINGS; i++) {
       const [a, setA] = signal(0);
@@ -101,7 +87,7 @@ const bench = new Bench();
 {
   let setters: ((value: number) => number)[] = [];
   let next = 0;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     setters = [];
     for (let i = 0; i < BINDINGS; i++) {
       const [a, setA] = signal(0);
@@ -148,5 +134,4 @@ bench.add("create: 1000 bindings x 1 dep / fixed", () => {
   });
 });
 
-await bench.run();
-console.table(bench.table());
+await finishBench(bench);

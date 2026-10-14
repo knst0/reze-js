@@ -33,8 +33,8 @@ can decide into the compiler, even when it costs compile time or compiler comple
 - `crates/reze_compiler` is the compiler core; `packages/compiler` its JS facade.
   `packages/{dom,signals,router,query,vite-plugin,testing-library}` build on it.
 - Loop: `pnpm test:fast`; browser matrix: `pnpm test`; Rust: `pnpm test:rust`.
-- Measure shipped code before and after with `pnpm bench:size`, `pnpm bench:rendering`,
-  `pnpm bench:scaling`; don't accept a regression without a repeat A/B run. Fix compile-time
+- Measure internal performance before and after with `pnpm bench` (CodSpeed history:
+  `pnpm bench:codspeed`); don't accept a regression without a repeat A/B run. Fix compile-time
   regressions in the compiler, never by giving up emitted-code quality.
 
 ## Conventions

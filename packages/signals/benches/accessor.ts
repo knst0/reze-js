@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { Bench, type FnOptions } from "tinybench";
+import { Bench } from "tinybench";
 
+import { finishBench, withGraph } from "../../../benches/kit/micro";
 import { computed, effect, flush, root, signal } from "../src/index";
 import { SignalNode } from "../src/signal";
 
@@ -40,21 +41,6 @@ const FANOUT_EFFECTS = 100;
 const FANOUT_ITERS = 100;
 const WIDE_SIGNALS = 100;
 const WIDE_ITERS = 100;
-
-function withGraph(build: () => void): FnOptions {
-  let dispose: (() => void) | undefined;
-  return {
-    beforeAll() {
-      root((disposer) => {
-        dispose = disposer;
-        build();
-      });
-    },
-    afterAll() {
-      dispose?.();
-    },
-  };
-}
 
 function factoriesOf(name: Variant): { create: (i: number) => unknown; pair: (value: number) => Pair } {
   if (name === "tuple") {
@@ -133,7 +119,7 @@ async function runChild(name: Variant): Promise<void> {
   {
     let write!: Pair[1];
     let next = 0;
-    const hooks = withGraph(() => {
+    const hooks = withGraph(root, () => {
       const [read, set] = pair(0);
       write = set;
       const doubled = computed(() => read() * 2);
@@ -158,7 +144,7 @@ async function runChild(name: Variant): Promise<void> {
   {
     let write!: Pair[1];
     let next = 0;
-    const hooks = withGraph(() => {
+    const hooks = withGraph(root, () => {
       const [read, set] = pair(0);
       write = set;
       for (let i = 0; i < FANOUT_EFFECTS; i++) {
@@ -183,7 +169,7 @@ async function runChild(name: Variant): Promise<void> {
   {
     const writes: Pair[1][] = [];
     let next = 0;
-    const hooks = withGraph(() => {
+    const hooks = withGraph(root, () => {
       writes.length = 0;
       const reads: Pair[0][] = [];
       for (let i = 0; i < WIDE_SIGNALS; i++) {
@@ -210,9 +196,8 @@ async function runChild(name: Variant): Promise<void> {
     );
   }
 
-  await bench.run();
   console.log(`--- ${name} ---`);
-  console.table(bench.table());
+  await finishBench(bench);
   if (sum === -1 || keep.length === -1) throw new Error("unreachable");
 }
 

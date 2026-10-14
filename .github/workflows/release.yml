@@ -83,7 +83,7 @@ jobs:
       - name: Lint
         run: pnpm lint
       - name: Test
-        run: pnpm test:fast
+        run: pnpm test:coverage
       - name: Test Rust
         run: pnpm test:rust
 

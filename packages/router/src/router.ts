@@ -12,11 +12,11 @@ import {
   onPop,
   parseLocation,
   persistPositions,
-  RouterContext,
+  RouterContext as RouterStateContext,
   start,
   type RouterState,
 } from "./navigation";
-import type { OutputMatch, PageHeadDefaults, PathsTree, RouteDefinition } from "./types";
+import type { OutputMatch, PageHeadDefaults, PathsTree, RouteDefinition, RouterContext } from "./types";
 
 export interface RouterConfig<C = RouterContext> {
   routes: readonly RouteDefinition<C>[];
@@ -92,7 +92,7 @@ export function createSettledRouter(
 ): (props: { root?: (props: { children: JSX.Element }) => JSX.Element }) => JSX.Element {
   return function SettledRouter(props: { root?: (props: { children: JSX.Element }) => JSX.Element }): JSX.Element {
     const root = props.root;
-    return provideContext(RouterContext, state, () => {
+    return provideContext(RouterStateContext, state, () => {
       state.owner = getOwner();
       if (root === undefined) return outlet(state, 0);
       let children: JSX.Element;
@@ -132,7 +132,7 @@ export function createRouter(config: RouterConfig<any>): RouterInstance<any> {
       headBaseline: config.headDefaults,
     });
     const root = props.root;
-    return provideContext(RouterContext, state, () => {
+    return provideContext(RouterStateContext, state, () => {
       state.owner = getOwner();
       const isScrollManaged = state.env === "browser" && history.scroll;
       if (isScrollManaged) loadPositions(state);

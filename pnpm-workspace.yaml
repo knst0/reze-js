@@ -1,9 +1,4 @@
 packages:
-  - benches/component-scaling/frameworks/*
-  - benches/rendering
-  - benches/rendering/frameworks/*
-  - benches/router
-  - benches/router/apps/*
   - docs
   - examples/*
   - packages/*
@@ -33,6 +28,7 @@ catalog:
   vitest: 5.0.3
   vite-plus: 1.1.0
   "@vitest/browser-playwright": 5.0.3
+  "@vitest/coverage-v8": 5.0.3
 overrides:
   vite@*: "catalog:"
   vitest@*: "catalog:"

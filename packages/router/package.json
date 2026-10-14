@@ -35,9 +35,7 @@
     "access": "public"
   },
   "scripts": {
-    "bench:codspeed": "node --import ../../benches/kit/production-env.mjs benches/codspeed.ts",
-    "build": "vp pack",
-    "test": "vp test run && vp test run --config vitest.node.config.mts"
+    "build": "vp pack"
   },
   "dependencies": {
     "@rezejs/dom": "workspace:^",

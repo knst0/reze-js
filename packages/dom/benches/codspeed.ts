@@ -12,29 +12,17 @@ import {
   splitProps,
 } from "@rezejs/dom";
 import { effect, flush, root, signal } from "@rezejs/signals";
-import { Bench, type FnOptions } from "tinybench";
+import { Bench } from "tinybench";
 
-function withGraph(build: () => void): FnOptions {
-  let dispose: (() => void) | undefined;
-  return {
-    beforeAll() {
-      root((disposer) => {
-        dispose = disposer;
-        build();
-      });
-    },
-    afterAll() {
-      dispose?.();
-    },
-  };
-}
+// @ts-expect-error -- Node executes this file directly, so the relative import needs its .ts extension.
+import { finishBench, withGraph } from "../../../benches/kit/micro.ts";
 
 const bench = withCodSpeed(new Bench());
 
 {
   const TOGGLES = 60;
   let setShown!: (value: boolean) => void;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     const [shown, set] = signal(true);
     setShown = set;
     const view = branch(
@@ -59,7 +47,7 @@ const bench = withCodSpeed(new Bench());
   const CHOICES = 4;
   const STEPS = 60;
   let pick!: (value: number) => void;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     const [at, setAt] = signal(0);
     pick = setAt;
     const view = choose([() => at() === 0, () => at() === 1, () => at() === 2], [() => "zero", () => "one", () => "two"], () => "other");
@@ -92,7 +80,7 @@ const bench = withCodSpeed(new Bench());
   swapped[0] = swapped[ROWS - 1]!;
   swapped[ROWS - 1] = first;
   let setItems!: (value: Item[]) => void;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     const [items, set] = signal<Item[]>(base);
     setItems = set;
     const view = list(
@@ -122,7 +110,7 @@ const bench = withCodSpeed(new Bench());
   const LOW = 50;
   const HIGH = 60;
   let setCount!: (value: number) => void;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     const [count, set] = signal(LOW);
     setCount = set;
     const view = repeat(
@@ -248,7 +236,7 @@ bench.add("loading: build with pending async children", () => {
   const STEADY_READS = 12000;
   const RESET_CYCLES = 50;
   let steadyView!: () => unknown;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     steadyView = asyncViews(
       () => "ok",
       undefined,
@@ -366,5 +354,4 @@ class FakeParent {
   });
 }
 
-await bench.run();
-console.table(bench.table());
+await finishBench(bench);

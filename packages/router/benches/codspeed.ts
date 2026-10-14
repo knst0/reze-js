@@ -3,6 +3,9 @@ import { buildPaths, createMemoryHistory, createRouter, type OutputMatch, type R
 import { routesDts, routesModule, scanRoutes } from "@rezejs/router/fs";
 import { Bench } from "tinybench";
 
+// @ts-expect-error -- Node executes this file directly, so the relative import needs its .ts extension.
+import { finishBench } from "../../../benches/kit/micro.ts";
+
 const GROUP_COUNT = 40;
 const MATCH_REPEATS = 50;
 const MISS_REPEATS = 20;
@@ -148,5 +151,4 @@ bench.add("fs: scan plus module plus dts", () => {
   sink += routesModule(routes, ROUTES_DIR, HREF_BASE).length + routesDts(routes, HREF_BASE, DTS_FILE, ROUTES_DIR).length;
 });
 
-await bench.run();
-console.table(bench.table());
+await finishBench(bench);

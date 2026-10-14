@@ -26,8 +26,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
-    "test": "vp test run"
+    "build": "vp pack"
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",

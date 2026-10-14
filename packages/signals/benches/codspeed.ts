@@ -17,27 +17,15 @@ import {
   useContext,
   type ContextKey,
 } from "@rezejs/signals";
-import { Bench, type FnOptions } from "tinybench";
+import { Bench } from "tinybench";
+
+// @ts-expect-error -- Node executes this file directly, so the relative import needs its .ts extension.
+import { finishBench, withGraph } from "../../../benches/kit/micro.ts";
 
 const CREATE_COUNT = 10_000;
 const WRITE_ITERS = 1000;
 const FANOUT_EFFECTS = 100;
 const FANOUT_ITERS = 100;
-
-function withGraph(build: () => void): FnOptions {
-  let dispose: (() => void) | undefined;
-  return {
-    beforeAll() {
-      root((disposer) => {
-        dispose = disposer;
-        build();
-      });
-    },
-    afterAll() {
-      dispose?.();
-    },
-  };
-}
 
 const bench = withCodSpeed(new Bench());
 
@@ -86,7 +74,7 @@ bench.add("create: row roots with a signal", () => {
 {
   let setCount!: (value: number) => void;
   let next = 0;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     const [count, set] = signal(0);
     setCount = set;
     const doubled = computed(() => count() * 2);
@@ -131,7 +119,7 @@ bench.add("create: row roots with a signal", () => {
         flush();
       }
     },
-    withGraph(() => {
+    withGraph(root, () => {
       const [get, setSource] = signal(0);
       set = setSource;
       for (let i = 0; i < FANOUT_EFFECTS; i++) {
@@ -150,7 +138,7 @@ bench.add("create: row roots with a signal", () => {
   }
   let state!: State;
   let next = 0;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     state = store({ user: { name: "a", age: 1 }, tags: ["x", "y"] });
     effect(() => void state.user.name);
     effect(() => void state.user.age);
@@ -173,7 +161,7 @@ bench.add("create: row roots with a signal", () => {
   const ROWS = 1000;
   const MOVES = 60;
   let moveSelection!: (value: number) => void;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     const [selected, setSelected] = signal(0);
     moveSelection = setSelected;
     const isSelected = selector(selected);
@@ -239,7 +227,7 @@ bench.add("create: row roots with a signal", () => {
     defaultValue: -1,
   }));
   let runLookups!: (count: number) => void;
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     const nest = (depth: number): void => {
       if (depth === 0) {
         const owner = getOwner();
@@ -287,7 +275,7 @@ bench.add("create: effect scopes with signal + effect", () => {
   const CELLS = 64;
   const TOUCHES = 300;
   let cells!: () => number[];
-  const hooks = withGraph(() => {
+  const hooks = withGraph(root, () => {
     const [get] = signal(Array.from({ length: CELLS }, (_, index) => index));
     cells = get;
     const length = computed(() => cells().length);
@@ -337,5 +325,4 @@ bench.add("create: effect scopes with signal + effect", () => {
   });
 }
 
-await bench.run();
-console.table(bench.table());
+await finishBench(bench);

@@ -39,9 +39,7 @@
     "access": "public"
   },
   "scripts": {
-    "bench:codspeed": "node --import ../../benches/kit/production-env.mjs benches/codspeed.ts",
-    "build": "vp pack",
-    "test": "vp test run"
+    "build": "vp pack"
   },
   "dependencies": {
     "@rezejs/signals": "workspace:^",

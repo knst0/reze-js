@@ -1,0 +1,136 @@
+[
+  {
+    "file": "docs/plugins/diagnostics.spec.ts",
+    "keptBecause": "asserts the docs diagnostic reference matches the compiler catalog; covers no packages/*/src statements in-process"
+  },
+  {
+    "file": "docs/plugins/examples.spec.ts",
+    "keptBecause": "asserts docs samples compile for all targets and typecheck via subprocess tsc; no equivalent assertions elsewhere"
+  },
+  {
+    "file": "docs/plugins/links.spec.ts",
+    "keptBecause": "asserts docs links resolve to existing pages and headings; covers no packages/*/src statements in-process"
+  },
+  {
+    "file": "docs/plugins/llms.spec.ts",
+    "keptBecause": "asserts llms Markdown routes, link rewriting, and 404/metadata behavior; no equivalent assertions elsewhere"
+  },
+  {
+    "file": "packages/compiler/tests/loader.node.spec.ts",
+    "keptBecause": "asserts the native binding compiles a fixture and returns diagnostics; native code has no TS coverage"
+  },
+  {
+    "file": "packages/dom/tests/action.spec.tsx",
+    "keptBecause": "compiled action rollback, pending, and parallel-toggle assertions not present in any other file"
+  },
+  { "file": "packages/dom/tests/aria-roles.spec.tsx", "keptBecause": "MDN aria role rendering assertions not present in dom.spec.tsx" },
+  {
+    "file": "packages/dom/tests/asyncPending.spec.tsx",
+    "keptBecause": "isPending and abortSignal reload assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/dom/tests/asyncViews.spec.tsx",
+    "keptBecause": "async pending/failure view and retry assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/dom/tests/context.spec.tsx",
+    "keptBecause": "DOM context provider, nesting, and ContextNotFoundError assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/dom/tests/cross-module-signals.spec.tsx",
+    "keptBecause": "cross-module imported signal binding assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/dom/tests/folding.spec.tsx",
+    "keptBecause": "constant-folding coercion and numeric truthiness assertions not present in dom.spec.tsx"
+  },
+  { "file": "packages/dom/tests/list.spec.ts", "keptBecause": "list index() signal creation assertions not asserted elsewhere" },
+  {
+    "file": "packages/dom/tests/signal-syntax.spec.tsx",
+    "keptBecause": "compiled signal assignment/syntax semantics assertions not asserted elsewhere"
+  },
+  { "file": "packages/signals/tests/asyncRun.spec.ts", "keptBecause": "async run abort-on-supersede assertions not asserted elsewhere" },
+  { "file": "packages/signals/tests/boundary.spec.ts", "keptBecause": "boundary pending/settlement assertions not asserted elsewhere" },
+  {
+    "file": "packages/signals/tests/check-dirty-t14.spec.ts",
+    "keptBecause": "T14 dirty-check traversal invariants not asserted in conformance.spec.ts"
+  },
+  {
+    "file": "packages/signals/tests/create-context.spec.ts",
+    "keptBecause": "signals createContext default/shadowing/throw assertions; distinct API surface from dom context.spec.tsx"
+  },
+  {
+    "file": "packages/signals/tests/effect.spec.ts",
+    "keptBecause": "effect cleanup ordering and flush no-op assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/signals/tests/effectScope.spec.ts",
+    "keptBecause": "effect scope nesting and cleanup-order assertions not present in conformance.spec.ts"
+  },
+  {
+    "file": "packages/signals/tests/graph-propagate-t13.spec.ts",
+    "keptBecause": "T13 graph propagation/fork-push invariants not asserted in conformance.spec.ts"
+  },
+  {
+    "file": "packages/signals/tests/hotFrame.spec.ts",
+    "keptBecause": "hot frame slot reuse and shape-mismatch assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/signals/tests/owner.spec.ts",
+    "keptBecause": "owner disposal ordering and runWithOwner assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/signals/tests/profile.spec.ts",
+    "keptBecause": "profile session tree and event attribution assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/signals/tests/provide.spec.ts",
+    "keptBecause": "provide default/nearest/undefined assertions not asserted elsewhere"
+  },
+  { "file": "packages/signals/tests/reload.spec.ts", "keptBecause": "reload pending-count and disposal assertions not asserted elsewhere" },
+  {
+    "file": "packages/signals/tests/scheduler-ownership-conformance.spec.ts",
+    "keptBecause": "scheduler ownership diamond/coalescing scenarios not present in conformance.spec.ts"
+  },
+  {
+    "file": "packages/signals/tests/scheduler-t16.spec.ts",
+    "keptBecause": "T16 flush ordering and recovery assertions not present in conformance.spec.ts"
+  },
+  {
+    "file": "packages/signals/tests/shallow-propagate-t15.spec.ts",
+    "keptBecause": "T15 shallow propagation flag invariants not asserted in conformance.spec.ts"
+  },
+  {
+    "file": "packages/signals/tests/signal.spec.ts",
+    "keptBecause": "setter updater and Object.is equality semantics not asserted elsewhere"
+  },
+  { "file": "packages/signals/tests/t10-setter.spec.ts", "keptBecause": "T10 detached setter identity assertions not asserted elsewhere" },
+  {
+    "file": "packages/signals/tests/t11-link.spec.ts",
+    "keptBecause": "T11 intrusive link reuse/reorder invariants not asserted in conformance.spec.ts"
+  },
+  {
+    "file": "packages/signals/tests/t12-unlink.spec.ts",
+    "keptBecause": "T12 unlink list-integrity and callback assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/signals/tests/t19-profile-attribution.spec.ts",
+    "keptBecause": "T19 profile attribution assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/signals/tests/treeShaking.node.spec.ts",
+    "keptBecause": "asserts production bundle contents via subprocess bundling; no in-process src coverage by design"
+  },
+  {
+    "file": "packages/vite-plugin/tests/fileRoutes.spec.ts",
+    "keptBecause": "file-route generation assertions not present in ssg.node.spec.ts"
+  },
+  {
+    "file": "packages/vite-plugin/tests/plugin.spec.ts",
+    "keptBecause": "plugin diagnostic severity/location and profiling HTTP assertions not asserted elsewhere"
+  },
+  {
+    "file": "packages/vite-plugin/tests/ssr.node.spec.ts",
+    "keptBecause": "SSR per-request router server context assertions not asserted elsewhere"
+  }
+]
