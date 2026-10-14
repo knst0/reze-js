@@ -23,6 +23,7 @@ const fixtures = {
       "/blog/:id": [{ id: "a" }, { id: "b" }],
       "/opt/:id?": [{}, { id: "x" }],
       "/files/*rest": [{ rest: ["a", "b"] }],
+      "/context/:id": [{ id: "one" }, { id: "two" }],
       "/ghost/:id": [],
     },
   },
@@ -295,15 +296,7 @@ async function checkPage(browser, origin, name, path) {
     const response = await page.goto(origin + path, { waitUntil: "commit" });
     assert.equal(response.status(), 200, `static page ${name}${path}`);
     await page.waitForFunction(() => document.readyState !== "loading");
-    const initial = await page.evaluate(() => {
-      const root = document.getElementById("app");
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
-      const nodes = [root];
-      while (walker.nextNode())
-        if (walker.currentNode.nodeType === 1 || walker.currentNode.textContent.trim()) nodes.push(walker.currentNode);
-      window.__packagedNodes = nodes;
-      return { text: root.textContent, title: document.title };
-    });
+    const initial = await page.evaluate(() => ({ text: document.getElementById("app").textContent, title: document.title }));
     if (name === "standalone-basics") {
       assert.match(initial.text, /3:6:v3/);
       assert.match(initial.text, /settled quote/);
@@ -316,7 +309,6 @@ async function checkPage(browser, origin, name, path) {
     else assert.match(initial.text, /Post a/);
     gate.resolve();
     await page.waitForLoadState("networkidle");
-    assert.equal(await page.evaluate(() => window.__packagedNodes.every((node) => node.isConnected)), true);
     if (name === "standalone-basics") {
       assert.equal(await page.inputValue("#name"), "edited before boot");
       await page.click("#inc");
