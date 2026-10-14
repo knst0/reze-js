@@ -5,7 +5,7 @@ import { computed } from "reze-js";
 
 import { useRouter } from "./hooks";
 import { pathKey } from "./match";
-import { pathnameOf, resolveHrefSafe, RouterContext, type LinkSelectors, type RouterState } from "./navigation";
+import { pathnameOf, resolveHrefSafe, RouterStateContext, type LinkSelectors, type RouterState } from "./navigation";
 import { linkTarget } from "./target";
 import type { Href } from "./types";
 
@@ -91,7 +91,7 @@ function staticHref(el: Element): string | null {
 
 /** Compiler target for claimed `<a>`: binds `href` when given and keeps `aria-current`/`data-active`/`data-pending` current. */
 export function link(el: Element, href?: () => string): void {
-  const state = useContext(RouterContext);
+  const state = useContext(RouterStateContext);
   const value = href === undefined ? undefined : computedGetter(href);
   if (value !== undefined) renderEffect(() => writeHref(el, value()));
   if (state === undefined) return;

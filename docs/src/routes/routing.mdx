@@ -224,8 +224,7 @@ Set `preload: false` in `createRouter` to turn warming off. Clicks still route t
 
 `route.preload` runs again when a hovered link is navigated to. Pass a `QueryClient` through router context so both calls share fresh data and in-flight requests:
 
-```tsx file=src/routes/blog/[id].tsx
-import { createQueryClient } from "@rezejs/query";
+```tsx file=src/routes/posts/[id].tsx
 import "@rezejs/query/router";
 import type { RouteConfigFor } from "@rezejs/router";
 
@@ -240,12 +239,17 @@ export const route = {
       },
       staleTime: 30_000,
     }),
-} satisfies RouteConfigFor<"/blog/:id", { title: string }>;
+} satisfies RouteConfigFor<"/posts/:id", Promise<{ title: string }>>;
 ```
 
 For a client-only app, pass a browser-scoped client to `createRouter`:
 
 ```ts
+import { createQueryClient } from "@rezejs/query";
+import "@rezejs/query/router";
+import { createRouter } from "@rezejs/router";
+import { routes } from "virtual:reze-routes";
+
 const Router = createRouter({
   routes,
   context: { queryClient: createQueryClient() },

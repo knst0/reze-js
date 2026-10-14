@@ -12,7 +12,7 @@ import {
   onPop,
   parseLocation,
   persistPositions,
-  RouterContext,
+  RouterStateContext,
   type ActiveMatch,
   type RouterState,
   type ScrollMode,
@@ -150,7 +150,7 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
     state.owner = getOwner();
   });
 
-  const wrap = <T>(render: () => T): T => provideContext(RouterContext, state, render);
+  const wrap = <T>(render: () => T): T => provideContext(RouterStateContext, state, render);
 
   async function run(generation: number, entry: HistoryEntry, location: Location, scrollMode: ScrollMode): Promise<void> {
     const url = history.base + entry.path;

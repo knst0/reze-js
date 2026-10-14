@@ -17,6 +17,7 @@ import type {
   Params,
   PreloadIntent,
   RouteRedirect,
+  RouterContext,
 } from "./types";
 
 export interface ActiveMatch {
@@ -52,7 +53,7 @@ export interface LinkSelectors {
 export interface RouterState {
   readonly history: RouterHistory;
   readonly branches: readonly Branch[];
-  readonly context: unknown;
+  readonly context: RouterContext;
   /** Browser page or server-side route preparation. */
   env: RouterEnv;
   /** Set by the swap runtime: navigations fetch the next page instead of matching client routes. */
@@ -116,7 +117,7 @@ export function initRouterState(init: RouterStateInit): RouterState {
     history: init.history,
     branches: init.branches,
     env: init.env,
-    context: init.context,
+    context: init.context as RouterContext,
     swap: init.swap,
     redirectCaptured: undefined,
     headBaseline: init.headBaseline,
@@ -165,7 +166,7 @@ const PositionsKey = "reze-router:scroll";
 const RelativeOrigin = "http://router.invalid";
 const QueryOrHash = /[?#]/;
 
-export const RouterContext: ContextKey<RouterState | undefined> = { id: Symbol("reze-router"), defaultValue: undefined };
+export const RouterStateContext: ContextKey<RouterState | undefined> = { id: Symbol("reze-router"), defaultValue: undefined };
 
 function parseQuery(search: string): Record<string, string | string[]> {
   const query: Record<string, string | string[]> = Object.create(null);

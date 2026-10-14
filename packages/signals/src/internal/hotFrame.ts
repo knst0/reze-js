@@ -1,7 +1,7 @@
 import type { SignalNode } from "../signal";
 
 export interface SignalFrame {
-  slots: (SignalNode | undefined)[];
+  slots: (SignalNode<any> | undefined)[];
   cursor: number;
 }
 

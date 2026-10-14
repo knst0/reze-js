@@ -2,7 +2,7 @@ import { onCleanup, useContext } from "@rezejs/signals";
 import { computed } from "reze-js";
 
 import { matchPath, type PathMatch } from "./match";
-import { addLeaveListener, navigate, RouterContext, type RouterState } from "./navigation";
+import { addLeaveListener, navigate, RouterStateContext, type RouterState } from "./navigation";
 import type {
   BeforeLeaveEvent,
   Location,
@@ -22,7 +22,7 @@ const NoParams: Params = Object.freeze({});
 export type PathMatchFor<P extends string> = P extends RoutePattern ? { params: ParamsFor<P>; path: string } : PathMatch;
 
 export function useRouter(): RouterState {
-  const state = useContext(RouterContext);
+  const state = useContext(RouterStateContext);
   if (state === undefined) throw new Error("[reze-router] hooks must be called inside <Router>");
   return state;
 }
