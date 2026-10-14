@@ -5,8 +5,8 @@
     "jsxImportSource": "reze-js",
     "paths": {},
     "allowImportingTsExtensions": true,
-    "types": ["vite/client"]
+    "types": ["node", "vite/client"]
   },
-  "include": ["src", "vite.config.mts"],
+  "include": ["src", "plugins", "vite.config.mts", "vitest.config.mts"],
   "exclude": []
 }

@@ -45,7 +45,7 @@ interface SetupOptions {
 }
 
 function setup(
-  routes: RouteDefinition[],
+  routes: RouteDefinition<any>[],
   initial = "/",
   view: (children: JSX.Element) => JSX.Element = (c) => c,
   options: SetupOptions = {},

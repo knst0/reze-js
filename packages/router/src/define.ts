@@ -11,7 +11,7 @@ import type {
 } from "./types";
 
 /** Preserves the literal route tuple for the router factory; returns the same value. */
-export function defineRoutes<const R extends readonly RouteDefinition<RouterContext>[]>(routes: R): R {
+export function defineRoutes<const R extends readonly RouteDefinition<any>[]>(routes: R): R {
   return routes;
 }
 

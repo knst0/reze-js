@@ -137,7 +137,7 @@ function compileRoute(def: RouteDefinition, pattern: string, id: string): Compil
 }
 
 /** Flattens `defs` into leaf branches, best match first: segment by segment, static beats param beats splat; ties keep definition order. Throws on an invalid path. */
-export function compileRoutes(defs: readonly RouteDefinition[]): Branch[] {
+export function compileRoutes(defs: readonly RouteDefinition<any>[]): Branch[] {
   const branches: Branch[] = [];
   const walk = (list: readonly RouteDefinition[], parentPath: string, parents: readonly CompiledRoute[], parentId: string): void => {
     for (let index = 0; index < list.length; index++) {

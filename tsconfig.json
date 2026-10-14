@@ -39,5 +39,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "exclude": ["**/node_modules", "examples"]
+  "exclude": ["**/node_modules", "**/dist", "examples", "docs"]
 }
