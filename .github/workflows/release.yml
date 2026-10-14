@@ -179,7 +179,7 @@ jobs:
       - name: Apply release patch
         run: git apply --index release.patch
       - name: Build
-        run: pnpm --filter "./packages/*" --filter "!@rezejs/compiler" build
+        run: pnpm exec turbo build --filter "./packages/*" --filter "!@rezejs/compiler" --only
       - name: Create native packages
         if: needs.plan.outputs.compiler == 'true'
         working-directory: packages/compiler
