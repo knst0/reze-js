@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-14T06:28:30.311Z",
+  "sizes": {
+    "baseline": {
+      "raw": 0,
+      "gzip": 20,
+      "brotli": 1
+    },
+    "client": {
+      "raw": 4197,
+      "gzip": 1544,
+      "brotli": 1429
+    },
+    "fetch": {
+      "raw": 4265,
+      "gzip": 1583,
+      "brotli": 1472
+    },
+    "hydrate": {
+      "raw": 4242,
+      "gzip": 1559,
+      "brotli": 1440
+    }
+  }
+}

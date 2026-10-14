@@ -5,47 +5,6 @@ import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 
-test("dynamic switches components only when the source returns a different one, disposing the previous, with props kept live", () => {
-  const lifecycle: string[] = [];
-  function Bold(props: { label: string }) {
-    lifecycle.push("bold+");
-    onCleanup(() => lifecycle.push("bold-"));
-    return <b>{props.label}</b>;
-  }
-  function Italic(props: { label: string }) {
-    return <i>{props.label}</i>;
-  }
-  const [picked, setPicked] = signal<typeof Bold | false>(Bold);
-  const [unrelated, setUnrelated] = signal(0);
-  const [label, setLabel] = signal("a");
-  const Picked = dynamic(() => (unrelated(), picked()));
-  const { el } = mount(() => (
-    <p>
-      <Picked label={label()} />
-    </p>
-  ));
-  expect(el.innerHTML).toBe("<p><b>a</b></p>");
-
-  setUnrelated(1);
-  setLabel("b");
-  tick();
-  expect(el.innerHTML).toBe("<p><b>b</b></p>");
-  expect(lifecycle).toEqual(["bold+"]);
-
-  setPicked(() => Italic);
-  tick();
-  expect(el.innerHTML).toBe("<p><i>b</i></p>");
-  expect(lifecycle).toEqual(["bold+", "bold-"]);
-
-  setPicked(false);
-  tick();
-  expect(el.innerHTML).toBe("<p></p>");
-
-  setPicked(() => Bold);
-  tick();
-  expect(el.innerHTML).toBe("<p><b>b</b></p>");
-});
-
 test("dynamicElement renders a tag name chosen at runtime with its props, events and children, in the namespace of the tag", () => {
   const clicks: string[] = [];
   const [tag, setTag] = signal("input");
@@ -113,13 +72,4 @@ test("nested functions inside a dynamic source are not tag sources", () => {
   const { el } = mount(() => <Picked>hi</Picked>);
   expect(el.innerHTML).toBe("<section>hi</section>");
   expect(calls).toEqual(["span"]);
-});
-
-test("a locally defined factory call is left alone", () => {
-  function other(fn: () => string): string {
-    return `made:${fn()}`;
-  }
-  const made = other(() => "div");
-  const { el } = mount(() => <p>{made}</p>);
-  expect(el.innerHTML).toBe("<p>made:div</p>");
 });

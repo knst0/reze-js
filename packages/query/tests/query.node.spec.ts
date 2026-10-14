@@ -2,7 +2,7 @@ import { expect, test, vi } from "vite-plus/test";
 
 import { createQueryClient } from "../src";
 
-test("fresh data is reused until invalidated, then fetched again", async () => {
+async function reusesFreshDataUntilInvalidated(): Promise<void> {
   const client = createQueryClient();
   const queryFn = vi.fn(() => Promise.resolve("v1"));
   const options = { key: ["post", "1"] as const, queryFn, staleTime: 1_000 };
@@ -15,9 +15,47 @@ test("fresh data is reused until invalidated, then fetched again", async () => {
   queryFn.mockResolvedValue("v2");
   expect(await client.fetchQuery(options)).toBe("v2");
   expect(queryFn).toHaveBeenCalledTimes(2);
+}
+
+async function refetchesExpiredDataAndKeepsKeyTypesDistinct(): Promise<void> {
+  vi.useFakeTimers();
+  try {
+    const client = createQueryClient();
+    const queryFn = vi.fn().mockResolvedValueOnce("first").mockResolvedValueOnce("second");
+    const options = { key: [1] as const, queryFn, staleTime: 1_000 };
+    expect(await client.fetchQuery(options)).toBe("first");
+    vi.advanceTimersByTime(1_000);
+    expect(await client.fetchQuery(options)).toBe("second");
+
+    client.setQueryData(["1"], "text");
+    expect(client.getQueryData([1])).toBe("second");
+    expect(client.getQueryData(["1"])).toBe("text");
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+function collectsInactiveResultsAfterRetentionWindow(): void {
+  vi.useFakeTimers();
+  try {
+    const client = createQueryClient({ gcTime: 1_000 });
+    client.setQueryData(["post", "6"], "data");
+    expect(client.getQueryData(["post", "6"])).toBe("data");
+
+    vi.advanceTimersByTime(1_000);
+    expect(client.getQueryData(["post", "6"])).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+test("cached results are reused while fresh and refetched once stale, invalidated, or collected", async () => {
+  await reusesFreshDataUntilInvalidated();
+  await refetchesExpiredDataAndKeepsKeyTypesDistinct();
+  collectsInactiveResultsAfterRetentionWindow();
 });
 
-test("concurrent callers share a request and failed work can be retried", async () => {
+test("concurrent callers share one request and a failed request is retried on the next call", async () => {
   const client = createQueryClient();
   const pending = Promise.withResolvers<string>();
   const queryFn = vi.fn(() => pending.promise);
@@ -37,25 +75,7 @@ test("concurrent callers share a request and failed work can be retried", async 
   expect(await client.fetchQuery(retryOptions)).toBe("online");
 });
 
-test("expired data is fetched again and key types remain distinct", async () => {
-  vi.useFakeTimers();
-  try {
-    const client = createQueryClient();
-    const queryFn = vi.fn().mockResolvedValueOnce("first").mockResolvedValueOnce("second");
-    const options = { key: [1] as const, queryFn, staleTime: 1_000 };
-    expect(await client.fetchQuery(options)).toBe("first");
-    vi.advanceTimersByTime(1_000);
-    expect(await client.fetchQuery(options)).toBe("second");
-
-    client.setQueryData(["1"], "text");
-    expect(client.getQueryData([1])).toBe("second");
-    expect(client.getQueryData(["1"])).toBe("text");
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-test("invalidation during a request keeps its result stale", async () => {
+async function invalidationDuringRequestKeepsResultStale(): Promise<void> {
   const client = createQueryClient();
   const pending = Promise.withResolvers<string>();
   const queryFn = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce("fresh");
@@ -67,51 +87,9 @@ test("invalidation during a request keeps its result stale", async () => {
   expect(await loading).toBe("invalidated response");
   expect(await client.fetchQuery(options)).toBe("fresh");
   expect(queryFn).toHaveBeenCalledTimes(2);
-});
+}
 
-test("inactive results are collected after their retention window", () => {
-  vi.useFakeTimers();
-  try {
-    const client = createQueryClient({ gcTime: 1_000 });
-    client.setQueryData(["post", "6"], "data");
-    expect(client.getQueryData(["post", "6"])).toBe("data");
-
-    vi.advanceTimersByTime(1_000);
-    expect(client.getQueryData(["post", "6"])).toBeUndefined();
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-test("set data wins over an older in-flight response", async () => {
-  const client = createQueryClient();
-  const pending = Promise.withResolvers<string>();
-  const options = { key: ["post", "3"] as const, queryFn: () => pending.promise, staleTime: 10_000 };
-
-  const loading = client.fetchQuery(options);
-  client.setQueryData(options.key, "updated");
-  pending.resolve("stale response");
-  await loading;
-
-  expect(client.getQueryData(options.key)).toBe("updated");
-});
-
-test("dehydrated data can be restored into an isolated client", async () => {
-  const server = createQueryClient();
-  await server.fetchQuery({ key: ["post", "4"], queryFn: () => ({ title: "Server" }), staleTime: 10_000 });
-
-  const browser = createQueryClient();
-  browser.hydrate(server.dehydrate());
-  const queryFn = vi.fn(() => ({ title: "Browser" }));
-  const options = { key: ["post", "4"] as const, queryFn, staleTime: 10_000 };
-
-  expect(browser.getQueryData(options.key)).toEqual({ title: "Server" });
-  expect(await browser.fetchQuery(options)).toEqual({ title: "Server" });
-  expect(queryFn).not.toHaveBeenCalled();
-  expect(createQueryClient().getQueryData(options.key)).toBeUndefined();
-});
-
-test("a request started before an invalidation is not reused", async () => {
+async function requestStartedBeforeInvalidationIsNotReused(): Promise<void> {
   const client = createQueryClient({ staleTime: 10_000 });
   const first = Promise.withResolvers<string>();
   const queryFn = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValueOnce("fresh");
@@ -127,9 +105,75 @@ test("a request started before an invalidation is not reused", async () => {
   expect(await before).toBe("old");
   expect(client.getQueryData(options.key)).toBe("fresh");
   expect(queryFn).toHaveBeenCalledTimes(2);
+}
+
+async function setDataWinsOverOlderInFlightResponse(): Promise<void> {
+  const client = createQueryClient();
+  const pending = Promise.withResolvers<string>();
+  const options = { key: ["post", "3"] as const, queryFn: () => pending.promise, staleTime: 10_000 };
+
+  const loading = client.fetchQuery(options);
+  client.setQueryData(options.key, "updated");
+  pending.resolve("stale response");
+  await loading;
+
+  expect(client.getQueryData(options.key)).toBe("updated");
+}
+
+test("in-flight responses never overwrite a later invalidation or manual write", async () => {
+  await invalidationDuringRequestKeepsResultStale();
+  await requestStartedBeforeInvalidationIsNotReused();
+  await setDataWinsOverOlderInFlightResponse();
 });
 
-test("callers of a replaced request receive the replacement instead of an abort", async () => {
+async function dehydratedDataRestoresIntoIsolatedClient(): Promise<void> {
+  const server = createQueryClient();
+  await server.fetchQuery({ key: ["post", "4"], queryFn: () => ({ title: "Server" }), staleTime: 10_000 });
+
+  const browser = createQueryClient();
+  browser.hydrate(server.dehydrate());
+  const queryFn = vi.fn(() => ({ title: "Browser" }));
+  const options = { key: ["post", "4"] as const, queryFn, staleTime: 10_000 };
+
+  expect(browser.getQueryData(options.key)).toEqual({ title: "Server" });
+  expect(await browser.fetchQuery(options)).toEqual({ title: "Server" });
+  expect(queryFn).not.toHaveBeenCalled();
+  expect(createQueryClient().getQueryData(options.key)).toBeUndefined();
+}
+
+function hydratedAgeIgnoresClockDifferencesAndInvalidStateRestoresNothing(): void {
+  vi.useFakeTimers();
+  try {
+    const server = createQueryClient({ staleTime: 60_000 });
+    vi.setSystemTime(new Date(2_000_000));
+    server.setQueryData(["post", "11"], "server");
+    vi.setSystemTime(new Date(2_010_000));
+    const state = server.dehydrate();
+    expect(state[0]?.ageMs).toBe(10_000);
+
+    vi.setSystemTime(new Date(9_000_000));
+    const browser = createQueryClient({ staleTime: 60_000 });
+    browser.hydrate(state);
+    const entry = state[0]!;
+    expect(() =>
+      browser.hydrate([
+        { ...entry, key: ["post", "12"] },
+        { ...entry, ageMs: -1 },
+      ]),
+    ).toThrow(TypeError);
+    expect(browser.getQueryData(["post", "12"])).toBeUndefined();
+    expect(browser.getQueryData(["post", "11"])).toBe("server");
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+test("hydration restores entries into an isolated client, ages them by elapsed time, and rejects invalid state", async () => {
+  await dehydratedDataRestoresIntoIsolatedClient();
+  hydratedAgeIgnoresClockDifferencesAndInvalidStateRestoresNothing();
+});
+
+test("callers of a replaced or cleared request receive the replacement, or an abort when cleared", async () => {
   const client = createQueryClient();
   const queryFn = vi.fn(
     ({ signal }: { signal: AbortSignal }) =>
@@ -153,28 +197,6 @@ test("callers of a replaced request receive the replacement instead of an abort"
   const cleared = client.fetchQuery({ key: ["post", "10"], queryFn });
   client.clear();
   await expect(cleared).rejects.toMatchObject({ name: "AbortError" });
-});
-
-test("hydrated age ignores clock differences and invalid state restores nothing", () => {
-  vi.useFakeTimers();
-  try {
-    const server = createQueryClient({ staleTime: 60_000 });
-    vi.setSystemTime(new Date(2_000_000));
-    server.setQueryData(["post", "11"], "server");
-    vi.setSystemTime(new Date(2_010_000));
-    const state = server.dehydrate();
-    expect(state[0]?.ageMs).toBe(10_000);
-
-    vi.setSystemTime(new Date(9_000_000));
-    const browser = createQueryClient({ staleTime: 60_000 });
-    browser.hydrate(state);
-    const entry = state[0]!;
-    expect(() => browser.hydrate([{ ...entry, key: ["post", "12"] }, { ...entry, ageMs: -1 }])).toThrow(TypeError);
-    expect(browser.getQueryData(["post", "12"])).toBeUndefined();
-    expect(browser.getQueryData(["post", "11"])).toBe("server");
-  } finally {
-    vi.useRealTimers();
-  }
 });
 
 test("invalid options reject and infinite durations never expire", async () => {

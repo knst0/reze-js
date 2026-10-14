@@ -69,8 +69,9 @@
   "scripts": {
     "bench": "vp test bench --run",
     "bench:accessor": "node benches/bundled.mjs benches/accessor.ts",
-    "bench:codspeed": "node --import ../../benches/kit/production-env.mjs benches/codspeed.ts",
+    "bench:codspeed": "node --import ../../scripts/bench/production-env.mjs benches/codspeed.ts",
     "bench:fixed-render": "node benches/bundled.mjs benches/fixed-render.ts",
+    "bench:size": "node ../../scripts/bench/size.mjs",
     "bench:update": "REZE_BENCH_UPDATE=1 vp test bench --run",
     "build": "vp pack",
     "test": "vp test run && vp test run --config vitest.node.config.mts"

@@ -1,9 +1,9 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import mdx from "@mdx-js/rollup";
-import { parse, serialize } from "parse5";
+import { parse } from "parse5";
 import type { DefaultTreeAdapterTypes } from "parse5";
 import type { Browser, Page } from "playwright";
 import remarkFrontmatter from "remark-frontmatter";
@@ -243,62 +243,53 @@ afterAll(async () => {
 });
 
 describe("preboot html, metadata, assets and lazy execution", () => {
-  test("a standalone page carries settled signals, effects, async data and assets without js", async () => {
-    const { status, html } = await fetchHtml(pages.basics, "/");
-    expect(status).toBe(200);
-    const clean = bodyText(html);
-    expect(clean).toContain("basics");
-    expect(clean).toContain("3:6:v3");
-    expect(clean).toContain("settled quote");
-    expect(clean).toContain("late arrived");
-    expect(clean).not.toContain("loading quote…");
-    expect(clean).not.toContain("loading late…");
-    expect(text(elements(html, "output", { id: "spread-reads" })[0])).toBe("1");
-    expect(titleOf(html)).toBe("Basics");
-    expect(metaOf(html, "description")).toBe("Standalone basics fixture");
-    expect(canonicalOf(html)).toBe("https://example.test/");
-    for (const href of stylesheetHrefs(html)) {
-      expect((await fetch(`${pages.basics}${href}`)).status).toBe(200);
-    }
-    const logo = await fetch(new URL(imgSrc(html, "logo"), pages.basics));
-    expect(logo.status).toBe(200);
-    expect(logo.headers.get("content-type")).toContain("image/svg+xml");
-    expect(html).not.toContain("data-reze-state");
-    expect(html).not.toContain("data-rz-patch");
-  });
+  test.each(ENGINES)(
+    "standalone pages carry settled state without js, and a client-rendered build mounts and updates on %s",
+    async (engine) => {
+      const { status, html } = await fetchHtml(pages.basics, "/");
+      expect(status).toBe(200);
+      const clean = bodyText(html);
+      expect(clean).toContain("basics");
+      expect(clean).toContain("3:6:v3");
+      expect(clean).toContain("settled quote");
+      expect(clean).toContain("late arrived");
+      expect(clean).not.toContain("loading quote…");
+      expect(clean).not.toContain("loading late…");
+      expect(text(elements(html, "output", { id: "spread-reads" })[0])).toBe("1");
+      expect(titleOf(html)).toBe("Basics");
+      expect(metaOf(html, "description")).toBe("Standalone basics fixture");
+      expect(canonicalOf(html)).toBe("https://example.test/");
+      for (const href of stylesheetHrefs(html)) {
+        expect((await fetch(`${pages.basics}${href}`)).status).toBe(200);
+      }
+      const logo = await fetch(new URL(imgSrc(html, "logo"), pages.basics));
+      expect(logo.status).toBe(200);
+      expect(logo.headers.get("content-type")).toContain("image/svg+xml");
+      expect(html).not.toContain("data-reze-state");
+      expect(html).not.toContain("data-rz-patch");
 
-  test.each(ENGINES)("client-owned inline and emitted URLs load before and after boot on %s", async (engine) => {
-    const { page, errors, close } = await openPage(browsers.get(engine)!, `${pages.router}/assets/`, {
-      beforeHydration: async (page) => {
-        await page.waitForFunction(`document.readyState !== "loading"`);
-        const sources = await page.locator("article img").evaluateAll((images) => images.map((image) => image.getAttribute("src")));
-        expect(sources[0]).toMatch(/^data:image\/svg\+xml,/);
-        expect(sources[1]).toBe(sources[0]);
-        expect(sources[2]).toMatch(/^\/assets\/logo-[^/]+\.svg$/);
-        expect(sources[3]).toBe(sources[2]);
-        expect(sources[4]).toBe(sources[0]);
-        await waitFor(page, `[...document.querySelectorAll("article img")].every(image => image.complete && image.naturalWidth === 6)`);
-        await page.evaluate(
-          `window.__assetSnapshot = [...document.querySelectorAll("article img")].map(node => ({ node, src: node.src }))`,
-        );
-      },
-    });
-    try {
-      expect(
-        await page.evaluate(
-          `window.__assetSnapshot.every(({ node, src }) => node === document.getElementById(node.id) && node.src === src && node.naturalWidth === 6)`,
-        ),
-      ).toBe(true);
-      await page.click('nav a[href="/about"]');
-      await waitFor(page, `document.getElementById("about-title") !== null`);
-      expect(await page.evaluate(`window.__assetSnapshot !== undefined`)).toBe(true);
-      expect(errors).toEqual([]);
-    } finally {
-      await close();
-    }
-  });
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${pages.basicsCsr}/csr.html`, {
+        beforeHydration: async (held) => {
+          await held.waitForFunction(`document.readyState !== "loading"`);
+          expect(await held.locator("#app").evaluate((root) => root.childNodes.length)).toBe(0);
+        },
+      });
+      try {
+        await waitFor(page, `document.querySelector("#settled")?.textContent === "3:6:v3"`);
+        expect(await page.textContent("#greeting")).toBe("hi basics");
+        expect(await page.textContent("#spread-reads")).toBe("1");
+        await page.click("#inc");
+        await waitFor(page, `document.querySelector("#settled").textContent === "4:8:v4"`);
+        await waitFor(page, `document.querySelector("#quote")?.textContent === "settled quote"`);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    120_000,
+  );
 
-  test("router pages render layouts, settled preloads and merged head without js", async () => {
+  test("router pages render layouts, merged head, enumerated routes and fresh context without js", async () => {
     const home = await fetchHtml(pages.router, "/");
     expect(home.status).toBe(200);
     expect(home.html).toContain("home-data");
@@ -337,21 +328,16 @@ describe("preboot html, metadata, assets and lazy execution", () => {
     const intro = await fetchHtml(pages.router, "/docs/intro/");
     expect(intro.html).toContain("docs");
     expect(intro.html).toContain("intro");
-  });
 
-  test("creates fresh route context for every generated page", async () => {
     const one = await fetchHtml(pages.router, "/context/one/");
     const two = await fetchHtml(pages.router, "/context/two/");
     const oneId = /ssg:(\d+):/.exec(one.html)?.[1];
     const twoId = /ssg:(\d+):/.exec(two.html)?.[1];
-
     expect(one.html).toContain(":/context/one/:one");
     expect(two.html).toContain(":/context/two/:two");
     expect(oneId).not.toBeUndefined();
     expect(twoId).not.toBe(oneId);
-  });
 
-  test("enumeration covers dynamics and skips layouts and empty path lists", async () => {
     expect((await fetchHtml(pages.router, "/opt/")).html).toContain("none");
     expect((await fetchHtml(pages.router, "/opt/x/")).html).toContain(">x<");
     expect((await fetchHtml(pages.router, "/files/a/b/")).html).toContain("a");
@@ -360,7 +346,7 @@ describe("preboot html, metadata, assets and lazy execution", () => {
     expect((await fetchHtml(pages.router, "/nope/")).status).toBe(404);
   });
 
-  test("an unvisited lazy route ships no content, preload or initializer to other pages", async () => {
+  test("lazy route code and info stay on their own page, and route info never enters an island descriptor", async () => {
     const { html } = await fetchHtml(pages.router, "/");
     const manifest = readManifest(dist("router"));
     const lazyChunk = Object.values(manifest).find((chunk) => chunk.src?.includes("LazyPage"));
@@ -386,44 +372,69 @@ describe("preboot html, metadata, assets and lazy execution", () => {
       expect(stylesheetHrefs(html)).not.toContain(`/${file}`);
       expect(stylesheetHrefs(lazy.html)).not.toContain(`/${file}`);
     }
-  });
 
-  test.each(ENGINES)("executed lazy route CSS applies without JavaScript on %s", async (engine) => {
-    const { page, close } = await openPage(browsers.get(engine)!, `${pages.router}/lazy/`, { javaScript: false });
-    try {
-      expect(await page.locator("#lazy-title").evaluate((node) => getComputedStyle(node).color)).toBe("rgb(17, 34, 51)");
-    } finally {
-      await close();
-    }
-  });
-
-  test("route info stays code-owned and never enters an island descriptor", async () => {
-    const { html } = await fetchHtml(pages.router, "/blog/a/");
-    const descriptors = [...html.matchAll(/<script type="application\/json" data-rz-island[^>]*>([\s\S]*?)<\/script>/g)]
+    const blog = await fetchHtml(pages.router, "/blog/a/");
+    const descriptors = [...blog.html.matchAll(/<script type="application\/json" data-rz-island[^>]*>([\s\S]*?)<\/script>/g)]
       .map((match) => match[1])
       .join("");
     expect(descriptors).not.toContain("blog-info-canary");
   });
 
-  test("worker isolation keeps module state per page", async () => {
+  test("settled state is serialized per page: worker module state, effect-derived state, await aliases and missing vs undefined data", async () => {
     expect(text(elements((await fetchHtml(pages.router, "/one/")).html, "p", { id: "hits" })[0])).toBe("1");
     expect(text(elements((await fetchHtml(pages.router, "/two/")).html, "p", { id: "hits" })[0])).toBe("1");
-  });
 
-  test("effect-derived state settles before serialization", async () => {
-    const clean = bodyText((await fetchHtml(pages.router, "/effect/")).html);
-    expect(clean).toContain("4:14");
-    expect(clean).toContain("2/7");
-  });
+    const effect = bodyText((await fetchHtml(pages.router, "/effect/")).html);
+    expect(effect).toContain("4:14");
+    expect(effect).toContain("2/7");
 
-  test("await aliases keep identity with one mutation per execution", async () => {
     expect(bodyText((await fetchHtml(pages.router, "/alias/")).html)).toContain("same:m,n");
-  });
 
-  test("missing data and undefined data stay distinct", async () => {
     expect((await fetchHtml(pages.router, "/nodata/")).html).toContain("no data");
     expect((await fetchHtml(pages.router, "/undefdata/")).html).toContain("undef");
   });
+
+  test.each(ENGINES)(
+    "client-owned inline and emitted URLs load before and after boot, and executed lazy route CSS applies without JavaScript on %s",
+    async (engine) => {
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${pages.router}/assets/`, {
+        beforeHydration: async (page) => {
+          await page.waitForFunction(`document.readyState !== "loading"`);
+          const sources = await page.locator("article img").evaluateAll((images) => images.map((image) => image.getAttribute("src")));
+          expect(sources[0]).toMatch(/^data:image\/svg\+xml,/);
+          expect(sources[1]).toBe(sources[0]);
+          expect(sources[2]).toMatch(/^\/assets\/logo-[^/]+\.svg$/);
+          expect(sources[3]).toBe(sources[2]);
+          expect(sources[4]).toBe(sources[0]);
+          await waitFor(page, `[...document.querySelectorAll("article img")].every(image => image.complete && image.naturalWidth === 6)`);
+          await page.evaluate(
+            `window.__assetSnapshot = [...document.querySelectorAll("article img")].map(node => ({ node, src: node.src }))`,
+          );
+        },
+      });
+      try {
+        expect(
+          await page.evaluate(
+            `window.__assetSnapshot.every(({ node, src }) => node === document.getElementById(node.id) && node.src === src && node.naturalWidth === 6)`,
+          ),
+        ).toBe(true);
+        await page.click('nav a[href="/about"]');
+        await waitFor(page, `document.getElementById("about-title") !== null`);
+        expect(await page.evaluate(`window.__assetSnapshot !== undefined`)).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+
+      const lazy = await openPage(browsers.get(engine)!, `${pages.router}/lazy/`, { javaScript: false });
+      try {
+        expect(await lazy.page.locator("#lazy-title").evaluate((node) => getComputedStyle(node).color)).toBe("rgb(17, 34, 51)");
+      } finally {
+        await lazy.close();
+      }
+    },
+    120_000,
+  );
 });
 
 describe("keyed flow lifetime", () => {
@@ -478,26 +489,24 @@ describe("keyed flow lifetime", () => {
 });
 
 describe("parser namespaces, raw text and opaque subtrees", () => {
-  test("the built corpus carries parser-normalized topology", async () => {
-    const { html } = await fetchHtml(pages.namespaces, "/");
-    expect(elements(html, "tbody")).toHaveLength(1);
-    expect(elements(html, "td").map((node) => text(node))).toEqual(["a1", "first"]);
-    expect(
-      elements(html, "option")
-        .filter((node) => attr(node, "selected") !== undefined)
-        .map((node) => attr(node, "value")),
-    ).toEqual(["b"]);
-    expect(text(elements(html, "textarea", { id: "notes" })[0])).toBe("first");
-    expect(elements(html, "svg")[0]?.namespaceURI).toBe("http://www.w3.org/2000/svg");
-    expect(elements(html, "foreignObject")[0]?.namespaceURI).toBe("http://www.w3.org/2000/svg");
-    expect(elements(html, "math")[0]?.namespaceURI).toBe("http://www.w3.org/1998/Math/MathML");
-    expect(text(elements(html, "b")[0])).toBe("trusted");
-    expect(text(elements(html, "p", { id: "empty-dynamic" })[0])).toBe("");
-  });
-
   test.each(ENGINES)(
-    "namespaces, selection and opaque replacement behave on %s",
+    "the built corpus carries parser-normalized topology, and namespaces, selection and opaque replacement behave on %s",
     async (engine) => {
+      const { html } = await fetchHtml(pages.namespaces, "/");
+      expect(elements(html, "tbody")).toHaveLength(1);
+      expect(elements(html, "td").map((node) => text(node))).toEqual(["a1", "first"]);
+      expect(
+        elements(html, "option")
+          .filter((node) => attr(node, "selected") !== undefined)
+          .map((node) => attr(node, "value")),
+      ).toEqual(["b"]);
+      expect(text(elements(html, "textarea", { id: "notes" })[0])).toBe("first");
+      expect(elements(html, "svg")[0]?.namespaceURI).toBe("http://www.w3.org/2000/svg");
+      expect(elements(html, "foreignObject")[0]?.namespaceURI).toBe("http://www.w3.org/2000/svg");
+      expect(elements(html, "math")[0]?.namespaceURI).toBe("http://www.w3.org/1998/Math/MathML");
+      expect(text(elements(html, "b")[0])).toBe("trusted");
+      expect(text(elements(html, "p", { id: "empty-dynamic" })[0])).toBe("");
+
       const browser = browsers.get(engine)!;
       const { page, errors, close } = await openPage(browser, `${pages.namespaces}/`);
       try {
@@ -527,31 +536,20 @@ describe("parser namespaces, raw text and opaque subtrees", () => {
     },
     60_000,
   );
-
-  test("unrepresentable nesting fails the build with a site", async () => {
-    await expectBuildFails(
-      reze({ ssg: { entry: "src/app.tsx" } }),
-      fixture("foster-bad"),
-      dist("foster-bad"),
-      /table|foster|parent|serial/i,
-    );
-  });
 });
 
 describe("portals, islands and trigger cancellation", () => {
-  test("the build adopts eager bodies and keeps deferred ones inert", async () => {
-    const { html } = await fetchHtml(pages.portals, "/");
-    expect(html).toContain("eager body");
-    expect(html).toContain("clock waiting");
-    expect(html).toContain("counter waiting");
-    expect(html).toContain("cancel waiting");
-    expect(html).not.toContain("data-ticked");
-    expect(html).not.toContain("never body");
-  });
-
   test.each(ENGINES)(
-    "portals move and islands boot without remounting the page on %s",
+    "the build adopts eager bodies and keeps deferred ones inert, and portals move and islands boot without remounting on %s",
     async (engine) => {
+      const { html } = await fetchHtml(pages.portals, "/");
+      expect(html).toContain("eager body");
+      expect(html).toContain("clock waiting");
+      expect(html).toContain("counter waiting");
+      expect(html).toContain("cancel waiting");
+      expect(html).not.toContain("data-ticked");
+      expect(html).not.toContain("never body");
+
       const browser = browsers.get(engine)!;
       const { page, errors, close } = await openPage(browser, `${pages.portals}/`);
       try {
@@ -578,73 +576,64 @@ describe("portals, islands and trigger cancellation", () => {
 });
 
 describe("routing, enumeration, base and redirects", () => {
-  test("redirects, chains, imperative navigation and externals build static documents", async () => {
-    for (const path of ["/old/", "/chain/", "/cond/", "/admin/", "/redirect-only/"]) {
-      const { status, html } = await fetchHtml(pages.router, path);
-      expect(status).toBe(200);
-      expect(html).not.toContain("@reze/client");
-      expect(html).not.toContain("data-reze-state");
-      expect(canonicalOf(html)).toBe(path === "/chain/" ? "/old/" : "/about/");
-      const script = elements(html, "script").find((node) => node.attrs.some((attr) => attr.name === "data-reze-redirect"))!;
-      const payload = JSON.parse((script.childNodes[0] as DefaultTreeAdapterTypes.TextNode).value);
-      expect(payload.to).toBe(canonicalOf(html));
-    }
-    const external = await fetchHtml(pages.router, "/external/");
-    expect(external.html).toContain("https://example.test/out");
-    expect(external.html).not.toContain("@reze/client");
-  });
+  test.each(ENGINES)(
+    "redirects, chains, trailing slash and imperative navigation build static documents and land on %s",
+    async (engine) => {
+      for (const path of ["/old/", "/chain/", "/cond/", "/admin/", "/redirect-only/"]) {
+        const { status, html } = await fetchHtml(pages.router, path);
+        expect(status).toBe(200);
+        expect(html).not.toContain("@reze/client");
+        expect(html).not.toContain("data-reze-state");
+        expect(canonicalOf(html)).toBe(path === "/chain/" ? "/old/" : "/about/");
+        const script = elements(html, "script").find((node) => node.attrs.some((attr) => attr.name === "data-reze-redirect"))!;
+        const payload = JSON.parse((script.childNodes[0] as DefaultTreeAdapterTypes.TextNode).value);
+        expect(payload.to).toBe(canonicalOf(html));
+      }
+      const external = await fetchHtml(pages.router, "/external/");
+      expect(external.html).toContain("https://example.test/out");
+      expect(external.html).not.toContain("@reze/client");
 
-  test("trailing slash selects generated urls while the file layout stays put", async () => {
-    const always = await fetchHtml(pages.router, "/old/");
-    const neverFiles = listBuiltFiles(dist("router-never"));
-    expect(neverFiles).toContain("old/index.html");
-    expect(neverFiles).toContain("about/index.html");
-    expect(readBuiltFile(dist("router-never"), "old/index.html")).toContain('"/about"');
-    expect(always.html).toContain('"/about/"');
-  });
+      const always = await fetchHtml(pages.router, "/old/");
+      const neverFiles = listBuiltFiles(dist("router-never"));
+      expect(neverFiles).toContain("old/index.html");
+      expect(neverFiles).toContain("about/index.html");
+      expect(readBuiltFile(dist("router-never"), "old/index.html")).toContain('"/about"');
+      expect(always.html).toContain('"/about/"');
 
-  test("enumeration, base and asset failures are build errors", async () => {
-    await expectBuildFails(reze({ ssg: { entry: "src/app.tsx" } }), fixture("redirect-loop"), dist("neg-loop"), /loop|redirect|cycle/i);
-    await expectBuildFails(
-      reze({ ssg: { entry: "src/app.tsx" } }),
-      fixture("redirect-missing"),
-      dist("neg-missing"),
-      /nowhere|redirect|target/i,
-    );
-    await expectBuildFails(
-      reze({ ssg: { entry: "src/app.tsx", paths: { "/x/:id": [{ id: "a" }] } } }),
-      fixture("paths-duplicate"),
-      dist("neg-dup"),
-      /duplicate|collide/i,
-    );
-    await expectBuildFails(
-      reze({ ssg: { entry: "src/app.tsx", paths: { "/blog/:id": [{ id: "../evil" }] } } }),
-      fixture("paths-unsafe"),
-      dist("neg-unsafe"),
-      /traverse|\.\.|unsafe|slash/i,
-    );
-  });
-
-  test.each([
-    ["tinyDocs", "/docs/"],
-    ["tinyExternal", "https://cdn.example.test/assets/"],
-  ])("absolute asset URLs resolve to emitted files for %s", (name, base) => {
-    const directory = pages[name]!;
-    const html = readBuiltFile(directory, "a/b/index.html");
-    const scripts = elements(html, "script", { type: "module" }).map((node) => attr(node, "src")!);
-    const styles = stylesheetHrefs(html);
-    expect(scripts).toHaveLength(1);
-    expect(styles).toHaveLength(1);
-    const files = new Set(listBuiltFiles(directory));
-    for (const url of [...scripts, ...styles, ...modulePreloads(html), imgSrc(html, "tiny-logo"), imgSrc(html, "tiny-public")]) {
-      expect(url.startsWith(base)).toBe(true);
-      expect(files.has(decodeURIComponent(url.slice(base.length)))).toBe(true);
-    }
-  });
+      const browser = browsers.get(engine)!;
+      for (const path of ["/chain/", "/admin/"]) {
+        const visit = await openPage(browser, `${pages.router}${path}`);
+        try {
+          await waitFor(visit.page, `document.querySelector("#about-title") !== null`);
+          expect(visit.errors).toEqual([]);
+        } finally {
+          await visit.close();
+        }
+      }
+    },
+    120_000,
+  );
 
   test.each(ENGINES)(
-    "relative bases load nested assets and swap to the next page on %s",
+    "absolute asset URLs resolve to emitted files for tiny docs and external bases, and relative bases load nested assets and swap pages on %s",
     async (engine) => {
+      for (const [name, base] of [
+        ["tinyDocs", "/docs/"],
+        ["tinyExternal", "https://cdn.example.test/assets/"],
+      ] as const) {
+        const directory = pages[name]!;
+        const html = readBuiltFile(directory, "a/b/index.html");
+        const scripts = elements(html, "script", { type: "module" }).map((node) => attr(node, "src")!);
+        const styles = stylesheetHrefs(html);
+        expect(scripts).toHaveLength(1);
+        expect(styles).toHaveLength(1);
+        const files = new Set(listBuiltFiles(directory));
+        for (const url of [...scripts, ...styles, ...modulePreloads(html), imgSrc(html, "tiny-logo"), imgSrc(html, "tiny-public")]) {
+          expect(url.startsWith(base)).toBe(true);
+          expect(files.has(decodeURIComponent(url.slice(base.length)))).toBe(true);
+        }
+      }
+
       const browser = browsers.get(engine)!;
       for (const [directory, pathname, prefix] of [
         [pages.tinyRelative!, "/a/b/", ""],
@@ -741,27 +730,35 @@ describe("routing, enumeration, base and redirects", () => {
     },
     120_000,
   );
-
-  test.each(ENGINES)(
-    "redirect chains and imperative navigation land on %s",
-    async (engine) => {
-      const browser = browsers.get(engine)!;
-      for (const path of ["/chain/", "/admin/"]) {
-        const visit = await openPage(browser, `${pages.router}${path}`);
-        try {
-          await waitFor(visit.page, `document.querySelector("#about-title") !== null`);
-          expect(visit.errors).toEqual([]);
-        } finally {
-          await visit.close();
-        }
-      }
-    },
-    60_000,
-  );
 });
 
 describe("worker isolation, cleanup and timeouts", () => {
-  test("a hung page fails with its url while other builds stay usable", async () => {
+  test("enumeration, base, asset, nesting and timeout failures are build errors, and a hung page leaves other builds usable", async () => {
+    await expectBuildFails(reze({ ssg: { entry: "src/app.tsx" } }), fixture("redirect-loop"), dist("neg-loop"), /loop|redirect|cycle/i);
+    await expectBuildFails(
+      reze({ ssg: { entry: "src/app.tsx" } }),
+      fixture("redirect-missing"),
+      dist("neg-missing"),
+      /nowhere|redirect|target/i,
+    );
+    await expectBuildFails(
+      reze({ ssg: { entry: "src/app.tsx", paths: { "/x/:id": [{ id: "a" }] } } }),
+      fixture("paths-duplicate"),
+      dist("neg-dup"),
+      /duplicate|collide/i,
+    );
+    await expectBuildFails(
+      reze({ ssg: { entry: "src/app.tsx", paths: { "/blog/:id": [{ id: "../evil" }] } } }),
+      fixture("paths-unsafe"),
+      dist("neg-unsafe"),
+      /traverse|\.\.|unsafe|slash/i,
+    );
+    await expectBuildFails(
+      reze({ ssg: { entry: "src/app.tsx" } }),
+      fixture("foster-bad"),
+      dist("foster-bad"),
+      /table|foster|parent|serial/i,
+    );
     await expectBuildFails(
       reze({ ssg: { entry: "src/app.tsx", timeoutMs: 500 } }),
       fixture("timeout-hang"),
@@ -771,7 +768,7 @@ describe("worker isolation, cleanup and timeouts", () => {
     const { status, html } = await fetchHtml(pages.basics, "/");
     expect(status).toBe(200);
     expect(html).toContain("basics");
-  });
+  }, 120_000);
 });
 
 test("disabled public files do not collide with the application's HTML template", async () => {
@@ -781,28 +778,6 @@ test("disabled public files do not collide with the application's HTML template"
     plugins: [{ name: "public-disabled", config: () => ({ publicDir: false }) }, ...(await reze({ ssg: { entry: "src/app.tsx" } }))],
   });
   expect(text(elements(readBuiltFile(built.distDir, "index.html"), "p", { id: "settled" })[0])).toBe("3:6:v3");
-});
-
-describe("ordinary client-rendered production output", () => {
-  test.each(ENGINES)("mounts an empty template and updates derived state on %s", async (engine) => {
-    const { page, errors, close } = await openPage(browsers.get(engine)!, `${pages.basicsCsr}/csr.html`, {
-      beforeHydration: async (page) => {
-        await page.waitForFunction(`document.readyState !== "loading"`);
-        expect(await page.locator("#app").evaluate((root) => root.childNodes.length)).toBe(0);
-      },
-    });
-    try {
-      await waitFor(page, `document.querySelector("#settled")?.textContent === "3:6:v3"`);
-      expect(await page.textContent("#greeting")).toBe("hi basics");
-      expect(await page.textContent("#spread-reads")).toBe("1");
-      await page.click("#inc");
-      await waitFor(page, `document.querySelector("#settled").textContent === "4:8:v4"`);
-      await waitFor(page, `document.querySelector("#quote")?.textContent === "settled quote"`);
-      expect(errors).toEqual([]);
-    } finally {
-      await close();
-    }
-  });
 });
 
 describe("development serves the streamed document", () => {

@@ -13,7 +13,7 @@ afterEach(() => {
   warn.mockRestore();
 });
 
-test("reruns on every write of its dependency without warning", () => {
+test("reruns once per flush of its dependencies without warning, coalescing writes to several dependencies", () => {
   root((dispose) => {
     const [a, setA] = signal(0);
     const out: number[] = [];
@@ -28,9 +28,6 @@ test("reruns on every write of its dependency without warning", () => {
     expect(warn).not.toHaveBeenCalled();
     dispose();
   });
-});
-
-test("coalesces writes to several dependencies into one rerun", () => {
   root((dispose) => {
     const [a, setA] = signal(1);
     const [b, setB] = signal(10);

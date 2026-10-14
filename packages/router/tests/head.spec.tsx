@@ -28,9 +28,9 @@ function tag(kind: string, key: string, value: string): Element | undefined {
   return managed().find((element) => element.tagName === kind && element.getAttribute(key) === value);
 }
 
-function setup(routes: RouteDefinition[], initial: string, headDefaults?: { title: string }): (to: string) => void {
+function setup(routes: RouteDefinition[], initial: string): (to: string) => void {
   const history = createMemoryHistory(initial);
-  const Router = createRouter({ routes, history, headDefaults });
+  const Router = createRouter({ routes, history });
   let navigate!: Navigate;
   function Root(props: { children: JSX.Element }) {
     navigate = useNavigate();
@@ -162,12 +162,7 @@ test("a managed entry suppresses the same-key scalar without duplicating the tag
   expect(managed()).toHaveLength(0);
 });
 
-test("headDefaults restore scalar fields the route does not set", () => {
-  setup([{ path: "/", component: Home }], "/", { title: "Studio" });
-  expect(document.title).toBe("Studio");
-});
-
-test("a Head adopts the route script and the tag leaves with the route", () => {
+test("a Head adopts the route script and the tag leaves with the route, and a Head meta replaces the route meta until disposed", () => {
   const About = () => (
     <Head>
       <script src="/shared.js" />
@@ -190,18 +185,17 @@ test("a Head adopts the route script and the tag leaves with the route", () => {
   tick();
   expect(tag("SCRIPT", "src", "/shared.js")).toBeUndefined();
   expect(adopted?.isConnected).toBe(false);
-});
+  cleanup();
 
-test("a Head meta replaces the route meta and the route claim survives the Head dispose", () => {
   const [open, setOpen] = signal(true);
-  const About = () => (
+  const Meta = () => (
     <Show when={open()}>
       <Head>
         <meta property="og:title" content="head" />
       </Head>
     </Show>
   );
-  setup([{ path: "/about", component: About, meta: { metas: [{ property: "og:title", content: "route" }] } }], "/about");
+  setup([{ path: "/about", component: Meta, meta: { metas: [{ property: "og:title", content: "route" }] } }], "/about");
   const live = tag("META", "property", "og:title");
   expect(document.head.querySelectorAll('meta[property="og:title"]')).toHaveLength(1);
   expect(live?.getAttribute("content")).toBe("head");

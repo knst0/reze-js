@@ -2,14 +2,12 @@ import { expect, test } from "vite-plus/test";
 
 import { computed, effect, flush, signal } from "../src";
 
-test("setter applies updater functions to the latest value and returns the result", () => {
+test("setter applies updater functions to the latest value and stores function values by wrapping them in an updater", () => {
   const [count, setCount] = signal(1);
   expect(setCount((n) => n + 1)).toBe(2);
   expect(setCount((n) => n * 10)).toBe(20);
   expect(count()).toBe(20);
-});
 
-test("a function value is stored by wrapping it in an updater", () => {
   const fn = () => 1;
   const [get, set] = signal<() => number>(() => 0);
   set(() => fn);

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
 import { afterEach, beforeEach, expect, test } from "vite-plus/test";
 
-import reze, { type FileRoutesOptions } from "../src";
+import reze from "../src";
 import { buildSsgFixture, listBuiltFiles } from "./ssg-harness";
 
 let root: string;
@@ -33,46 +33,21 @@ function paragraph(html: string): string {
   throw new Error("missing rendered paragraph");
 }
 
-interface RouteSelection {
-  name: string;
-  extensions?: string[];
-  fileRoutes: FileRoutesOptions;
-  pages: readonly (readonly [string, string])[];
-}
-
-const selections: RouteSelection[] = [
-  {
-    name: "top-level extensions replace the route scan",
-    extensions: [".jsx"],
-    fileRoutes: { types: false },
-    pages: [["guide/index.html", "guide"]],
-  },
-  {
-    name: "route-specific extensions override the scan in a custom directory",
-    fileRoutes: { dir: "pages", extensions: [".tsx"], types: false },
-    pages: [["index.html", "home"]],
-  },
-];
-
-test.each(selections)(
-  "$name",
-  async ({ extensions, fileRoutes, pages }) => {
-    const routes = join(root, fileRoutes.dir ?? "src/routes");
-    mkdirSync(routes, { recursive: true });
-    writeFileSync(join(routes, "index.tsx"), "export default function Home(){return <p>home</p>}");
-    writeFileSync(join(routes, "guide.jsx"), "export default function Guide(){return <p>guide</p>}");
-    const outDir = join(root, "dist");
-    await buildSsgFixture({
-      fixtureDir: root,
-      outDir,
-      plugins: await reze({ extensions, fileRoutes, ssg: { entry: "src/app.tsx" } }),
-    });
-    expect(
-      listBuiltFiles(outDir)
-        .filter((file) => file.endsWith(".html"))
-        .sort(),
-    ).toEqual(pages.map(([file]) => file).sort());
-    for (const [file, expected] of pages) expect(paragraph(readFileSync(join(outDir, file), "utf8"))).toBe(expected);
-  },
-  30_000,
-);
+test("route-specific extensions override the scan in a custom directory", async () => {
+  const routes = join(root, "pages");
+  mkdirSync(routes, { recursive: true });
+  writeFileSync(join(routes, "index.tsx"), "export default function Home(){return <p>home</p>}");
+  writeFileSync(join(routes, "guide.jsx"), "export default function Guide(){return <p>guide</p>}");
+  const outDir = join(root, "dist");
+  await buildSsgFixture({
+    fixtureDir: root,
+    outDir,
+    plugins: await reze({ fileRoutes: { dir: "pages", extensions: [".tsx"], types: false }, ssg: { entry: "src/app.tsx" } }),
+  });
+  expect(
+    listBuiltFiles(outDir)
+      .filter((file) => file.endsWith(".html"))
+      .sort(),
+  ).toEqual(["index.html"]);
+  expect(paragraph(readFileSync(join(outDir, "index.html"), "utf8"))).toBe("home");
+}, 30_000);

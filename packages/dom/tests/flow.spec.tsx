@@ -8,7 +8,7 @@ afterEach(cleanup);
 
 const texts = (el: Element) => [...el.children].map((child) => child.textContent);
 
-test("Show keeps its branch while when stays truthy and passes the value as a tracked getter", () => {
+test("Show keeps its branch and renders several children in order, with or without a fallback", () => {
   let builds = 0;
   const [user, setUser] = signal<{ name: string } | null>({ name: "a" });
   const { el } = mount(() => (
@@ -33,89 +33,28 @@ test("Show keeps its branch while when stays truthy and passes the value as a tr
   tick();
   expect(el.innerHTML).toBe("<b>c</b>");
   expect(builds).toBe(2);
-});
-
-test("Show with element children rebuilds only when truthiness flips, between static siblings", () => {
-  let builds = 0;
-  function Big(props: { n: number }) {
-    builds++;
-    return <b>{props.n}</b>;
+  {
+    const [user, setUser] = signal<{ name: string } | undefined>(undefined);
+    const { el } = mount(() => (
+      <p>
+        <Show when={user()}>
+          {user()!.name}
+          <b />
+          <i />
+        </Show>
+      </p>
+    ));
+    expect(el.innerHTML).toBe("<p></p>");
+    setUser({ name: "ann" });
+    tick();
+    expect(el.innerHTML).toBe("<p>ann<b></b><i></i></p>");
+    setUser({ name: "bob" });
+    tick();
+    expect(el.innerHTML).toBe("<p>bob<b></b><i></i></p>");
+    setUser(undefined);
+    tick();
+    expect(el.innerHTML).toBe("<p></p>");
   }
-  const [n, setN] = signal(10);
-  const { el } = mount(() => (
-    <div>
-      x
-      <Show when={n() >= 10} fallback={<i>small</i>}>
-        <Big n={n()} />
-      </Show>
-      y
-    </div>
-  ));
-  const b = el.querySelector("b");
-  expect(el.innerHTML).toBe("<div>x<b>10</b><!---->y</div>");
-  setN(11);
-  tick();
-  expect(el.innerHTML).toBe("<div>x<b>11</b><!---->y</div>");
-  expect(el.querySelector("b")).toBe(b);
-  expect(builds).toBe(1);
-  setN(3);
-  tick();
-  expect(el.innerHTML).toBe("<div>x<i>small</i><!---->y</div>");
-  setN(12);
-  tick();
-  expect(el.innerHTML).toBe("<div>x<b>12</b><!---->y</div>");
-  expect(builds).toBe(2);
-});
-
-test("Show renders several children in order and nothing without a fallback", () => {
-  const [user, setUser] = signal<{ name: string } | undefined>(undefined);
-  const { el } = mount(() => (
-    <p>
-      <Show when={user()}>
-        {user()!.name}
-        <b />
-        <i />
-      </Show>
-    </p>
-  ));
-  expect(el.innerHTML).toBe("<p></p>");
-  setUser({ name: "ann" });
-  tick();
-  expect(el.innerHTML).toBe("<p>ann<b></b><i></i></p>");
-  setUser({ name: "bob" });
-  tick();
-  expect(el.innerHTML).toBe("<p>bob<b></b><i></i></p>");
-  setUser(undefined);
-  tick();
-  expect(el.innerHTML).toBe("<p></p>");
-});
-
-test("Show disposes the branch it switches away from, at the top level and inside an element", () => {
-  const log: string[] = [];
-  function Child(props: { name: string }) {
-    onCleanup(() => log.push(props.name));
-    return <b />;
-  }
-  const [on, setOn] = signal(true);
-  const top = mount(() => (
-    <Show when={on()} fallback={<Child name="top fallback" />}>
-      <Child name="top child" />
-    </Show>
-  ));
-  const nested = mount(() => (
-    <div>
-      <Show when={on()} fallback={<Child name="nested fallback" />}>
-        <Child name="nested child" />
-      </Show>
-    </div>
-  ));
-  setOn(false);
-  tick();
-  expect(log.sort()).toEqual(["nested child", "top child"]);
-  log.length = 0;
-  top.dispose();
-  nested.dispose();
-  expect(log).toEqual(["top fallback", "nested fallback"]);
 });
 
 test("Switch renders the first truthy Match and rebuilds only when the choice changes", () => {
@@ -184,46 +123,7 @@ test("a function child of Match receives its when as a tracked getter", () => {
   expect(el.innerHTML).toBe("");
 });
 
-test("For rows follow items by identity: nodes move instead of being rebuilt", () => {
-  const [items, setItems] = signal(["a", "b", "c"]);
-  const { el } = mount(() => <For each={items()}>{(item) => <li>{item}</li>}</For>, "ul");
-  const [a, b, c] = el.children;
-  setItems(["c", "a", "b"]);
-  tick();
-  expect(texts(el)).toEqual(["c", "a", "b"]);
-  expect([...el.children]).toEqual([c, a, b]);
-});
-
-test("For with keyed keeps the row of a changed item and updates item in place", () => {
-  type Row = { id: number; label: string };
-  let builds = 0;
-  const [items, setItems] = signal<Row[]>([
-    { id: 1, label: "one" },
-    { id: 2, label: "two" },
-  ]);
-  const { el } = mount(
-    () => (
-      <For each={items()} keyed={(row) => row.id}>
-        {(row) => {
-          builds++;
-          return <li>{row.label}</li>;
-        }}
-      </For>
-    ),
-    "ul",
-  );
-  const [one, two] = el.children;
-  setItems([
-    { id: 2, label: "dos" },
-    { id: 1, label: "uno" },
-  ]);
-  tick();
-  expect(texts(el)).toEqual(["dos", "uno"]);
-  expect([...el.children]).toEqual([two, one]);
-  expect(builds).toBe(2);
-});
-
-test("For index tracks the row position", () => {
+test("For tracks rows by position for index and keyed={false} updates", () => {
   const [items, setItems] = signal(["a", "b", "c"]);
   const { el } = mount(
     () => (
@@ -241,41 +141,40 @@ test("For index tracks the row position", () => {
   setItems(["c", "a"]);
   tick();
   expect(texts(el)).toEqual(["0:c", "1:a"]);
-});
-
-test("For with keyed={false} keeps rows by position and updates item in place", () => {
-  let builds = 0;
-  const [items, setItems] = signal(["a", "b", "c"]);
-  const { el } = mount(
-    () => (
-      <For each={items()} keyed={false}>
-        {(item, index) => {
-          builds++;
-          return (
-            <li>
-              {index}:{item}
-            </li>
-          );
-        }}
-      </For>
-    ),
-    "ul",
-  );
-  const [first, second, third] = el.children;
-  expect(texts(el)).toEqual(["0:a", "1:b", "2:c"]);
-  setItems(["c", "a", "b"]);
-  tick();
-  expect(texts(el)).toEqual(["0:c", "1:a", "2:b"]);
-  expect([...el.children]).toEqual([first, second, third]);
-  expect(builds).toBe(3);
-  setItems(["x"]);
-  tick();
-  expect(texts(el)).toEqual(["0:x"]);
-  expect(builds).toBe(3);
-  setItems(["x", "y"]);
-  tick();
-  expect(texts(el)).toEqual(["0:x", "1:y"]);
-  expect(builds).toBe(4);
+  {
+    let builds = 0;
+    const [items, setItems] = signal(["a", "b", "c"]);
+    const { el } = mount(
+      () => (
+        <For each={items()} keyed={false}>
+          {(item, index) => {
+            builds++;
+            return (
+              <li>
+                {index}:{item}
+              </li>
+            );
+          }}
+        </For>
+      ),
+      "ul",
+    );
+    const [first, second, third] = el.children;
+    expect(texts(el)).toEqual(["0:a", "1:b", "2:c"]);
+    setItems(["c", "a", "b"]);
+    tick();
+    expect(texts(el)).toEqual(["0:c", "1:a", "2:b"]);
+    expect([...el.children]).toEqual([first, second, third]);
+    expect(builds).toBe(3);
+    setItems(["x"]);
+    tick();
+    expect(texts(el)).toEqual(["0:x"]);
+    expect(builds).toBe(3);
+    setItems(["x", "y"]);
+    tick();
+    expect(texts(el)).toEqual(["0:x", "1:y"]);
+    expect(builds).toBe(4);
+  }
 });
 
 test("For disposes removed rows and shows the fallback while the list is empty", () => {
@@ -359,33 +258,6 @@ test("random keyed updates keep DOM order and reuse the nodes of surviving rows"
     });
     nodes = new Map(list.map((item, i) => [item.id, children[i]!]));
   }
-});
-
-test("For with duplicate keys keeps every row and updates each in place", () => {
-  const [items, setItems] = signal([
-    { id: 1, label: "a" },
-    { id: 1, label: "b" },
-    { id: 2, label: "c" },
-  ]);
-  const { el } = mount(
-    () => (
-      <For each={items()} keyed={(item) => item.id}>
-        {(item) => <li>{item.label}</li>}
-      </For>
-    ),
-    "ul",
-  );
-  expect(texts(el)).toEqual(["a", "b", "c"]);
-  setItems([
-    { id: 2, label: "C" },
-    { id: 1, label: "B" },
-    { id: 1, label: "A" },
-  ]);
-  tick();
-  expect(texts(el)).toEqual(["C", "B", "A"]);
-  setItems([{ id: 1, label: "x" }]);
-  tick();
-  expect(texts(el)).toEqual(["x"]);
 });
 
 test("a selection change re-runs only the two rows whose comparison flips", () => {

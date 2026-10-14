@@ -27,6 +27,7 @@
     "access": "public"
   },
   "scripts": {
+    "bench:size": "node ../../scripts/bench/size.mjs",
     "build": "vp pack",
     "test": "vp test run --config vitest.node.config.mts"
   },

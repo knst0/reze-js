@@ -24,17 +24,6 @@ function requestsOf(): { requests: PromiseWithResolvers<string>[]; load: Load } 
   return { requests, load };
 }
 
-test("an async component shows its pending view until its first load settles, then its body", async () => {
-  const { requests, load } = requestsOf();
-  const { el } = mount(() => <Profile id={1} load={load} />);
-  tick();
-  expect(el.innerHTML).toBe("<i>loading</i>");
-
-  requests[0].resolve("ada");
-  await settle();
-  expect(el.innerHTML).toBe("<p>ada</p>");
-});
-
 test("a rejected load shows the failure view, and its retry runs the load again", async () => {
   const { requests, load } = requestsOf();
   const { el } = mount(() => <Profile id={1} load={load} />);

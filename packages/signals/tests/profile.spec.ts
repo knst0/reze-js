@@ -3,7 +3,7 @@ import { expect, test } from "vite-plus/test";
 import { computed, effect, signal } from "../src";
 import { profileComponent, setProfileHook, startProfileSession, stopProfileSession, type ProfileEvent } from "../src/profile";
 
-test("a session counts mounts, props, reruns and writes per component into a serializable tree", () => {
+test("a session counts mounts, props, reruns and writes per component in a serializable tree, and first evaluations are not reruns", () => {
   startProfileSession();
   profileComponent("Card", "app.tsx#Card", 2, () => {
     const [n, setN] = signal(0);
@@ -18,9 +18,7 @@ test("a session counts mounts, props, reruns and writes per component into a ser
     components: [{ component: "Card", file: "app.tsx", mounts: 1, props: 2, reruns: 1, writes: 1 }],
   });
   expect(JSON.parse(JSON.stringify(tree))).toEqual(tree);
-});
 
-test("first evaluations are not reruns", () => {
   startProfileSession();
   profileComponent("Row", undefined, 0, () => {
     const [n] = signal(0);
@@ -34,7 +32,7 @@ test("first evaluations are not reruns", () => {
   expect(stopProfileSession().components).toEqual([{ component: "Row", file: "", mounts: 1, props: 0, reruns: 0, writes: 0 }]);
 });
 
-test("events carry the innermost component and file, restoring the outer scope on exit", () => {
+test("events carry the innermost component and file, and stopping a session restores the previously installed hook", () => {
   const events: ProfileEvent[] = [];
   setProfileHook({ event: (event) => void events.push(event) });
   startProfileSession();
@@ -52,9 +50,7 @@ test("events carry the innermost component and file, restoring the outer scope o
     ["App", "a.tsx", "n"],
     ["Row", "a.tsx", "m"],
   ]);
-});
 
-test("stopping a session restores the previously installed hook", () => {
   const seen: ProfileEvent[] = [];
   setProfileHook({ event: (event) => void seen.push(event) });
   startProfileSession();

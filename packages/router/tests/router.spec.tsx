@@ -65,6 +65,15 @@ function setup(
 const Home = () => <p>home</p>;
 const About = () => <p>about</p>;
 
+const pages: RouteDefinition[] = [
+  { path: "/", component: Home },
+  { path: "/about", component: About },
+];
+
+function silenceScroll() {
+  return vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+}
+
 test("nested routes render inside their layout and keep DOM across param changes", () => {
   const Layout = (props: RouteProps) => <section>layout({props.children})</section>;
   const Post = (props: RouteProps<{ id: string }>) => <p>post {props.params.id}</p>;
@@ -77,39 +86,62 @@ test("nested routes render inside their layout and keep DOM across param changes
   expect(el.querySelector("p")).toBe(post);
 });
 
-test("lazy routes keep the old view and report routing until loaded", async () => {
-  const module = Promise.withResolvers<RouteModule>();
-  const { el, navigate, isRouting } = setup([
+test("lazy routes keep the old view and report routing until loaded; a navigation superseded while loading never commits", async () => {
+  const lazyModule = Promise.withResolvers<RouteModule>();
+  const lazy = setup([
     { path: "/", component: Home },
-    { path: "/about", load: () => module.promise },
+    { path: "/about", load: () => lazyModule.promise },
   ]);
-  expect(isRouting()).toBe(false);
-  navigate("/about");
+  expect(lazy.isRouting()).toBe(false);
+  lazy.navigate("/about");
   await settle();
-  expect(el.textContent).toBe("home");
-  expect(isRouting()).toBe(true);
-  module.resolve({ default: About });
+  expect(lazy.el.textContent).toBe("home");
+  expect(lazy.isRouting()).toBe(true);
+  lazyModule.resolve({ default: About });
   await settle();
-  expect(el.textContent).toBe("about");
-  expect(isRouting()).toBe(false);
-});
+  expect(lazy.el.textContent).toBe("about");
+  expect(lazy.isRouting()).toBe(false);
+  cleanup();
 
-test("a navigation superseded while loading never commits", async () => {
-  const module = Promise.withResolvers<RouteModule>();
-  const { el, navigate } = setup([
+  const slowModule = Promise.withResolvers<RouteModule>();
+  const superseded = setup([
     { path: "/", component: Home },
-    { path: "/slow", load: () => module.promise },
+    { path: "/slow", load: () => slowModule.promise },
     { path: "/about", component: About },
   ]);
-  navigate("/slow");
-  navigate("/about");
+  superseded.navigate("/slow");
+  superseded.navigate("/about");
   tick();
-  module.resolve({ default: () => <p>slow</p> });
+  slowModule.resolve({ default: () => <p>slow</p> });
+  await settle();
+  expect(superseded.el.textContent).toBe("about");
+});
+
+test("navigating while route modules load builds on the pending location", async () => {
+  const slowModule = Promise.withResolvers<RouteModule>();
+  let setQuery!: SearchParamsState[1];
+  const { el, history, navigate } = setup(
+    [
+      { path: "/", component: Home },
+      { path: "/slow", load: () => slowModule.promise },
+    ],
+    "/",
+    (children) => {
+      setQuery = useSearchParams()[1];
+      return children;
+    },
+  );
+  navigate("/slow?x=1");
+  setQuery({ y: 2 });
+  expect(history.get().path).toBe("/slow?x=1&y=2");
+  navigate("#top");
+  expect(history.get().path).toBe("/slow?x=1&y=2#top");
+  slowModule.resolve({ default: About });
   await settle();
   expect(el.textContent).toBe("about");
 });
 
-test("preload receives params and intent, and its result is the route's data", () => {
+test("preload receives params and intent and its result is the route data; a hash-only change keeps data without re-running preload", () => {
   const preload = vi.fn(({ params }: { params: { id: string } }) => "data " + params.id);
   const { el, navigate } = setup([
     { path: "/", component: Home },
@@ -119,9 +151,212 @@ test("preload receives params and intent, and its result is the route's data", (
   tick();
   expect(preload).toHaveBeenCalledWith(expect.objectContaining({ params: { id: "3" }, intent: "navigate" }));
   expect(el.textContent).toBe("data 3");
+  cleanup();
+
+  const hashPreload = vi.fn(() => "data");
+  const hashed = setup([{ path: "/", component: Home, preload: hashPreload }]);
+  hashed.navigate("#a");
+  hashed.navigate("/#b");
+  expect(hashPreload).toHaveBeenCalledOnce();
+  hashed.navigate("/?q=1");
+  expect(hashPreload).toHaveBeenCalledTimes(2);
 });
 
-test("same-origin anchor clicks navigate; modified, targeted, download, external and unrouted links do not", () => {
+test("async, thenable, and superseded preloads settle before commit and the component receives data, not a promise", async () => {
+  const gate = Promise.withResolvers<string>();
+  const seen: unknown[] = [];
+  const Comp = (props: RouteProps<Params, string>) => {
+    seen.push(props.data);
+    return <i>{props.data}</i>;
+  };
+  const asyncRoute = setup([
+    { path: "/", component: Home },
+    { path: "/p", preload: () => gate.promise, component: Comp },
+  ]);
+  asyncRoute.navigate("/p");
+  await settle();
+  expect(asyncRoute.el.textContent).toBe("home");
+  expect(asyncRoute.isRouting()).toBe(true);
+  gate.resolve("ready");
+  await settle();
+  expect(asyncRoute.el.textContent).toBe("ready");
+  expect(seen).toEqual(["ready"]);
+  cleanup();
+
+  const thenable = { then: (resolve: (value: string) => void) => resolve("thenable") };
+  const thenableRoute = setup([
+    { path: "/", component: Home },
+    { path: "/p", preload: () => thenable, component: (props: RouteProps<Params, string>) => <i>{props.data}</i> },
+  ]);
+  thenableRoute.navigate("/p");
+  await settle();
+  expect(thenableRoute.el.textContent).toBe("thenable");
+  cleanup();
+
+  const supersededGate = Promise.withResolvers<string>();
+  const superseded = setup([
+    { path: "/", component: Home },
+    { path: "/slow", preload: () => supersededGate.promise, component: () => <p>slow</p> },
+    { path: "/about", component: About },
+  ]);
+  superseded.navigate("/slow");
+  superseded.navigate("/about");
+  tick();
+  expect(superseded.el.textContent).toBe("about");
+  supersededGate.resolve("slow");
+  await settle();
+  expect(superseded.el.textContent).toBe("about");
+});
+
+test("redirects from preload and from a route component render their target", async () => {
+  let navigate!: Navigate;
+  const routes: RouteDefinition[] = [
+    ...pages,
+    { path: "/admin", component: () => <p>secret</p>, preload: () => navigate("/about", { replace: true }) },
+  ];
+  const result = setup(routes);
+  navigate = result.navigate;
+  navigate("/admin");
+  tick();
+  expect(result.history.get().path).toBe("/about");
+  expect(result.el.textContent).toBe("about");
+
+  for (const initial of ["/admin", "/"]) {
+    cleanup();
+    const Admin = () => {
+      useNavigate()("/about", { replace: true });
+      return <p>secret</p>;
+    };
+    const routed = setup([...pages, { path: "/admin", component: Admin }], initial);
+    if (initial !== "/admin") routed.navigate("/admin");
+    await settle();
+    expect(routed.history.get().path, initial).toBe("/about");
+    expect(routed.el.textContent, initial).toBe("about");
+  }
+});
+
+test("literal redirects short-circuit their preload and replace, redirect-only routes render their target, and a redirect callback runs after its preload settles with the data", async () => {
+  const preload = vi.fn(() => "data");
+  const literal = setup([
+    { path: "/", component: Home },
+    { path: "/old", redirect: { to: "/about" }, preload, component: () => <p>old</p> },
+    { path: "/about", component: About },
+  ]);
+  literal.navigate("/old");
+  tick();
+  expect(preload).not.toHaveBeenCalled();
+  expect(literal.history.get().path).toBe("/about");
+  expect(literal.el.textContent).toBe("about");
+  cleanup();
+
+  const redirectOnly = setup([
+    { path: "/", component: Home },
+    { path: "/old", redirect: { to: "/about" } },
+    { path: "/about", component: About },
+  ]);
+  redirectOnly.navigate("/old");
+  tick();
+  expect(redirectOnly.el.textContent).toBe("about");
+  cleanup();
+
+  const seen: unknown[] = [];
+  const gate = Promise.withResolvers<string>();
+  const gated = setup([
+    { path: "/", component: Home },
+    {
+      path: "/gated",
+      preload: () => gate.promise,
+      redirect: (args) => {
+        seen.push(args.data);
+        return args.data === "go" ? { to: "/about" } : undefined;
+      },
+      component: () => <p>gated</p>,
+    },
+    { path: "/about", component: About },
+  ]);
+  gated.navigate("/gated");
+  await settle();
+  expect(gated.el.textContent).toBe("home");
+  gate.resolve("go");
+  await settle();
+  expect(seen).toEqual(["go"]);
+  expect(gated.el.textContent).toBe("about");
+});
+
+test("focus preloads a link's route, retries after a failed load, and swallows preload rejections; hover warming runs preloads but ignores their navigation and never applies metadata", async () => {
+  const load = vi
+    .fn<() => Promise<RouteModule>>()
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValue({ default: About, route: { preload: () => Promise.reject(new Error("no data")) } });
+  const focused = setup(
+    [
+      { path: "/", component: Home },
+      { path: "/about", load },
+    ],
+    "/",
+    (children) => (
+      <>
+        {children}
+        <a href="/about">a</a>
+      </>
+    ),
+    { links: true },
+  );
+  const focusAnchor = focused.el.querySelector("a")!;
+  fire(focusAnchor, "focusin");
+  await settle();
+  fire(focusAnchor, "focusin");
+  await settle();
+  expect(load).toHaveBeenCalledTimes(2);
+  fire(focusAnchor, "focusin");
+  await settle();
+  expect(load).toHaveBeenCalledTimes(2);
+  cleanup();
+
+  let navigateRef!: Navigate;
+  const Probe = () => {
+    navigateRef = useNavigate();
+    return null;
+  };
+  const routeContext = { cache: "browser" };
+  const preload = vi.fn(() => {
+    navigateRef("/target");
+    return "warmed";
+  });
+  document.title = "Template";
+  const hovered = setup(
+    [
+      { path: "/", component: Home },
+      {
+        path: "/target",
+        preload,
+        meta: { title: "Target" },
+        component: (props: RouteProps<Params, string>) => <i>{props.data}</i>,
+      },
+    ],
+    "/",
+    (children) => (
+      <>
+        <Probe />
+        {children}
+        <a href="/target">t</a>
+      </>
+    ),
+    { links: true, context: routeContext },
+  );
+  const hoverAnchor = hovered.el.querySelector("a")!;
+  const home = hovered.el.querySelector("p")!;
+  fire(hoverAnchor, "focusin");
+  await settle();
+  expect(preload).toHaveBeenCalledWith(expect.objectContaining({ context: routeContext, intent: "preload" }));
+  expect(hovered.history.get().path).toBe("/");
+  expect(hovered.el.querySelector("p")).toBe(home);
+  expect(home.textContent).toBe("home");
+  expect(document.title).toBe("Template");
+  document.title = "";
+});
+
+test("same-origin anchor clicks navigate; modified, targeted, download, external and unrouted links do not; a memory router leaves document anchors to the browser; a malformed hash target is looked up raw", () => {
   const seen: boolean[] = [];
   const record = (event: Event): void => {
     seen.push(event.defaultPrevented);
@@ -173,9 +408,95 @@ test("same-origin anchor clicks navigate; modified, targeted, download, external
   } finally {
     window.removeEventListener("click", record);
   }
+  cleanup();
+
+  let isPrevented: boolean | undefined;
+  window.addEventListener(
+    "click",
+    (event) => {
+      isPrevented = event.defaultPrevented;
+      event.preventDefault();
+    },
+    { once: true },
+  );
+  const memory = setup(pages, "/", (children) => (
+    <>
+      {children}
+      <a href="/about">a</a>
+    </>
+  ));
+  fire(memory.el.querySelector("a")!, "click");
+  expect(isPrevented).toBe(false);
+  expect(memory.history.get().path).toBe("/");
+  memory.navigate("/about");
+  tick();
+  expect(memory.el.textContent).toContain("about");
+  cleanup();
+
+  silenceScroll();
+  const malformed = setup(
+    [{ path: "/", component: () => <h2 id="%E0%A4%A">t</h2> }],
+    "/",
+    (children) => (
+      <>
+        {children}
+        <a href="#%E0%A4%A">bad</a>
+      </>
+    ),
+    { history: createBrowserHistory() },
+  );
+  const scrollIntoView = vi.fn();
+  malformed.el.querySelector("h2")!.scrollIntoView = scrollIntoView;
+  fire(malformed.el.querySelector("a")!, "click");
+  expect(scrollIntoView).toHaveBeenCalledOnce();
 });
 
-test("leave guards prevent navigation, retry completes it, and prevented history moves are undone", () => {
+test("navigate takes route paths while anchors carry the base; same-origin absolute URLs route through the router", () => {
+  silenceScroll();
+  window.history.replaceState(null, "", "/app/");
+  const based = setup(
+    pages,
+    "/",
+    (children) => (
+      <>
+        {children}
+        <a href="/app/">home</a>
+      </>
+    ),
+    {
+      history: createBrowserHistory("/app/"),
+    },
+  );
+  based.navigate("/about");
+  tick();
+  expect(location.pathname).toBe("/app/about");
+  expect(based.el.textContent).toContain("about");
+  fire(based.el.querySelector("a")!, "click");
+  tick();
+  expect(location.pathname).toBe("/app/");
+  expect(based.el.textContent).toContain("home");
+  cleanup();
+
+  const absolute = setup(pages);
+  absolute.navigate(`${location.origin}/about?x=1`);
+  expect(absolute.history.get().path).toBe("/about?x=1");
+});
+
+test.runIf(navigator.userAgent.includes("HappyDOM"))(
+  "navigate hands absolute URLs outside the router to the browser and never runs scripts",
+  () => {
+    const assign = vi.spyOn(location, "assign").mockImplementation(() => {});
+    const { history, navigate } = setup(pages);
+    navigate("https://other.test/about");
+    expect(assign).toHaveBeenCalledWith("https://other.test/about");
+    expect(history.get().path).toBe("/");
+    navigate(" JavaScript:alert(1)");
+    navigate("java\tscript:alert(1)");
+    expect(assign).toHaveBeenCalledOnce();
+  },
+);
+
+test("leave guards prevent navigation, retry completes it, and prevented history moves are undone; a throwing guard is reported without blocking, and guards also cover unloading the document", () => {
   let isBlocking = true;
   let prevented: BeforeLeaveEvent | undefined;
   const {
@@ -214,9 +535,35 @@ test("leave guards prevent navigation, retry completes it, and prevented history
   navigate(-1);
   tick();
   expect(el.textContent).toBe("home");
+  cleanup();
+
+  const reportError = vi.fn();
+  vi.stubGlobal("reportError", reportError);
+  let blockingLeave = false;
+  const throwing = setup(pages, "/", (children) => {
+    useBeforeLeave(() => {
+      throw new Error("bug");
+    });
+    useBeforeLeave((event) => {
+      if (blockingLeave) event.preventDefault();
+    });
+    return children;
+  });
+  throwing.navigate("/about");
+  tick();
+  expect(reportError).toHaveBeenCalledWith(new Error("bug"));
+  expect(throwing.el.textContent).toBe("about");
+  blockingLeave = true;
+  const unload = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(unload);
+  expect(unload.defaultPrevented).toBe(true);
+  cleanup();
+  const afterDispose = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(afterDispose);
+  expect(afterDispose.defaultPrevented).toBe(false);
 });
 
-test("the search params setter merges into the query and deletes nullish keys", () => {
+test("the search params setter merges into the query and deletes nullish keys; repeated query keys keep every value and the setter writes arrays in place of the key", () => {
   let setQuery!: SearchParamsState[1];
   const { history } = setup([{ path: "/s", component: Home }], "/s?page=2", (children) => {
     setQuery = useSearchParams()[1];
@@ -224,6 +571,16 @@ test("the search params setter merges into the query and deletes nullish keys", 
   });
   setQuery({ q: "a", page: null });
   expect(history.get().path).toBe("/s?q=a");
+  cleanup();
+
+  let search!: SearchParamsState;
+  const repeated = setup([{ path: "/s", component: Home }], "/s?tag=a&q=x&tag=b", (children) => {
+    search = useSearchParams();
+    return children;
+  });
+  expect({ ...search[0]() }).toEqual({ tag: ["a", "b"], q: "x" });
+  search[1]({ tag: ["c", null, "d"], q: "y" });
+  expect(repeated.history.get().path).toBe("/s?q=y&tag=c&tag=d");
 });
 
 test("a failed load reaches catchError and the next navigation retries it", async () => {
@@ -253,7 +610,7 @@ test("a failed load reaches catchError and the next navigation retries it", asyn
   expect(el.textContent).toBe("about");
 });
 
-test("back/forward restores the scroll position saved for that entry and no other", () => {
+test("back/forward restores the scroll position saved for that entry and no other; scroll positions outlive the document through sessionStorage", () => {
   let entry: HistoryEntry = { path: "/", state: undefined, index: 0 };
   let onPop!: (entry: HistoryEntry) => void;
   const history: RouterHistory = {
@@ -293,387 +650,18 @@ test("back/forward restores the scroll position saved for that entry and no othe
   expect(scrollTo).toHaveBeenLastCalledWith(0, 0);
   vi.unstubAllGlobals();
   scrollTo.mockRestore();
-});
+  cleanup();
 
-const pages: RouteDefinition[] = [
-  { path: "/", component: Home },
-  { path: "/about", component: About },
-];
-
-function silenceScroll() {
-  return vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-}
-
-test("navigate takes route paths while anchors carry the base", () => {
-  silenceScroll();
-  window.history.replaceState(null, "", "/app/");
-  const { el, navigate } = setup(
-    pages,
-    "/",
-    (children) => (
-      <>
-        {children}
-        <a href="/app/">home</a>
-      </>
-    ),
-    {
-      history: createBrowserHistory("/app/"),
-    },
-  );
-  navigate("/about");
-  tick();
-  expect(location.pathname).toBe("/app/about");
-  expect(el.textContent).toContain("about");
-  fire(el.querySelector("a")!, "click");
-  tick();
-  expect(location.pathname).toBe("/app/");
-  expect(el.textContent).toContain("home");
-});
-
-test("navigate routes same-origin absolute URLs", () => {
-  const { history, navigate } = setup(pages);
-  navigate(`${location.origin}/about?x=1`);
-  expect(history.get().path).toBe("/about?x=1");
-});
-
-test.runIf(navigator.userAgent.includes("HappyDOM"))(
-  "navigate hands absolute URLs outside the router to the browser and never runs scripts",
-  () => {
-    const assign = vi.spyOn(location, "assign").mockImplementation(() => {});
-    const { history, navigate } = setup(pages);
-    navigate("https://other.test/about");
-    expect(assign).toHaveBeenCalledWith("https://other.test/about");
-    expect(history.get().path).toBe("/");
-    navigate(" JavaScript:alert(1)");
-    navigate("java\tscript:alert(1)");
-    expect(assign).toHaveBeenCalledOnce();
-  },
-);
-
-test("a malformed hash target is looked up raw instead of throwing", () => {
-  silenceScroll();
-  const { el } = setup(
-    [{ path: "/", component: () => <h2 id="%E0%A4%A">t</h2> }],
-    "/",
-    (children) => (
-      <>
-        {children}
-        <a href="#%E0%A4%A">bad</a>
-      </>
-    ),
-    { history: createBrowserHistory() },
-  );
-  const scrollIntoView = vi.fn();
-  el.querySelector("h2")!.scrollIntoView = scrollIntoView;
-  fire(el.querySelector("a")!, "click");
-  expect(scrollIntoView).toHaveBeenCalledOnce();
-});
-
-test("a memory router leaves the document's anchors to the browser by default", () => {
-  let isPrevented: boolean | undefined;
-  window.addEventListener(
-    "click",
-    (event) => {
-      isPrevented = event.defaultPrevented;
-      event.preventDefault();
-    },
-    { once: true },
-  );
-  const { el, history, navigate } = setup(pages, "/", (children) => (
-    <>
-      {children}
-      <a href="/about">a</a>
-    </>
-  ));
-  fire(el.querySelector("a")!, "click");
-  expect(isPrevented).toBe(false);
-  expect(history.get().path).toBe("/");
-  navigate("/about");
-  tick();
-  expect(el.textContent).toContain("about");
-});
-
-test("scroll positions outlive the document through sessionStorage", () => {
-  const scrollTo = silenceScroll();
+  const restoredScroll = silenceScroll();
   window.history.replaceState(null, "", "/about");
   setup(pages, "/", (children) => children, { history: createBrowserHistory() });
-  expect(scrollTo).not.toHaveBeenCalled();
+  expect(restoredScroll).not.toHaveBeenCalled();
   vi.stubGlobal("scrollY", 420);
   window.dispatchEvent(new Event("pagehide"));
   vi.stubGlobal("scrollY", 0);
   cleanup();
   setup(pages, "/", (children) => children, { history: createBrowserHistory() });
-  expect(scrollTo).toHaveBeenLastCalledWith(0, 420);
-});
-
-test("navigating while route modules load builds on the pending location", async () => {
-  const module = Promise.withResolvers<RouteModule>();
-  let setQuery!: SearchParamsState[1];
-  const { el, history, navigate } = setup(
-    [
-      { path: "/", component: Home },
-      { path: "/slow", load: () => module.promise },
-    ],
-    "/",
-    (children) => {
-      setQuery = useSearchParams()[1];
-      return children;
-    },
-  );
-  navigate("/slow?x=1");
-  setQuery({ y: 2 });
-  expect(history.get().path).toBe("/slow?x=1&y=2");
-  navigate("#top");
-  expect(history.get().path).toBe("/slow?x=1&y=2#top");
-  module.resolve({ default: About });
-  await settle();
-  expect(el.textContent).toBe("about");
-});
-
-test("a throwing leave guard is reported without blocking, and guards also cover unloading the document", () => {
-  const reportError = vi.fn();
-  vi.stubGlobal("reportError", reportError);
-  let isBlocking = false;
-  const { el, navigate } = setup(pages, "/", (children) => {
-    useBeforeLeave(() => {
-      throw new Error("bug");
-    });
-    useBeforeLeave((event) => {
-      if (isBlocking) event.preventDefault();
-    });
-    return children;
-  });
-  navigate("/about");
-  tick();
-  expect(reportError).toHaveBeenCalledWith(new Error("bug"));
-  expect(el.textContent).toBe("about");
-  isBlocking = true;
-  const unload = new Event("beforeunload", { cancelable: true });
-  window.dispatchEvent(unload);
-  expect(unload.defaultPrevented).toBe(true);
-  cleanup();
-  const afterDispose = new Event("beforeunload", { cancelable: true });
-  window.dispatchEvent(afterDispose);
-  expect(afterDispose.defaultPrevented).toBe(false);
-});
-
-test("repeated query keys keep every value and the setter writes arrays in place of the key", () => {
-  let search!: SearchParamsState;
-  const { history } = setup([{ path: "/s", component: Home }], "/s?tag=a&q=x&tag=b", (children) => {
-    search = useSearchParams();
-    return children;
-  });
-  expect({ ...search[0]() }).toEqual({ tag: ["a", "b"], q: "x" });
-  search[1]({ tag: ["c", null, "d"], q: "y" });
-  expect(history.get().path).toBe("/s?q=y&tag=c&tag=d");
-});
-
-test("a hash-only change keeps route data without re-running preload", () => {
-  const preload = vi.fn(() => "data");
-  const { navigate } = setup([{ path: "/", component: Home, preload }]);
-  navigate("#a");
-  navigate("/#b");
-  expect(preload).toHaveBeenCalledOnce();
-  navigate("/?q=1");
-  expect(preload).toHaveBeenCalledTimes(2);
-});
-
-test("focus preloads a link's route, retries after a failed load, and swallows preload rejections", async () => {
-  const load = vi
-    .fn<() => Promise<RouteModule>>()
-    .mockRejectedValueOnce(new Error("offline"))
-    .mockResolvedValue({ default: About, route: { preload: () => Promise.reject(new Error("no data")) } });
-  const { el } = setup(
-    [
-      { path: "/", component: Home },
-      { path: "/about", load },
-    ],
-    "/",
-    (children) => (
-      <>
-        {children}
-        <a href="/about">a</a>
-      </>
-    ),
-    { links: true },
-  );
-  const anchor = el.querySelector("a")!;
-  fire(anchor, "focusin");
-  await settle();
-  fire(anchor, "focusin");
-  await settle();
-  expect(load).toHaveBeenCalledTimes(2);
-  fire(anchor, "focusin");
-  await settle();
-  expect(load).toHaveBeenCalledTimes(2);
-});
-
-test("a redirect from preload wins over the navigation that ran it", () => {
-  let navigate!: Navigate;
-  const routes: RouteDefinition[] = [
-    ...pages,
-    { path: "/admin", component: () => <p>secret</p>, preload: () => navigate("/about", { replace: true }) },
-  ];
-  const result = setup(routes);
-  navigate = result.navigate;
-  navigate("/admin");
-  tick();
-  expect(result.history.get().path).toBe("/about");
-  expect(result.el.textContent).toBe("about");
-});
-
-test.each(["/admin", "/"])("a redirect from a route component renders its target (starting at %s)", async (initial) => {
-  const Admin = () => {
-    useNavigate()("/about", { replace: true });
-    return <p>secret</p>;
-  };
-  const { el, history, navigate } = setup([...pages, { path: "/admin", component: Admin }], initial);
-  if (initial !== "/admin") navigate("/admin");
-  await settle();
-  expect(history.get().path).toBe("/about");
-  expect(el.textContent).toBe("about");
-});
-
-test("an async preload settles before commit and the component receives data, not a promise", async () => {
-  const gate = Promise.withResolvers<string>();
-  const seen: unknown[] = [];
-  const Comp = (props: RouteProps<Params, string>) => {
-    seen.push(props.data);
-    return <i>{props.data}</i>;
-  };
-  const { el, navigate, isRouting } = setup([
-    { path: "/", component: Home },
-    { path: "/p", preload: () => gate.promise, component: Comp },
-  ]);
-  navigate("/p");
-  await settle();
-  expect(el.textContent).toBe("home");
-  expect(isRouting()).toBe(true);
-  gate.resolve("ready");
-  await settle();
-  expect(el.textContent).toBe("ready");
-  expect(seen).toEqual(["ready"]);
-});
-
-test("a custom thenable preload is awaited, not delivered as data", async () => {
-  const thenable = { then: (resolve: (value: string) => void) => resolve("thenable") };
-  const { el, navigate } = setup([
-    { path: "/", component: Home },
-    { path: "/p", preload: () => thenable, component: (props: RouteProps<Params, string>) => <i>{props.data}</i> },
-  ]);
-  navigate("/p");
-  await settle();
-  expect(el.textContent).toBe("thenable");
-});
-
-test("a navigation superseded while awaiting preload never commits", async () => {
-  const gate = Promise.withResolvers<string>();
-  const { el, navigate } = setup([
-    { path: "/", component: Home },
-    { path: "/slow", preload: () => gate.promise, component: () => <p>slow</p> },
-    { path: "/about", component: About },
-  ]);
-  navigate("/slow");
-  navigate("/about");
-  tick();
-  expect(el.textContent).toBe("about");
-  gate.resolve("slow");
-  await settle();
-  expect(el.textContent).toBe("about");
-});
-
-test("a literal redirect short-circuits its preload and replaces", () => {
-  const preload = vi.fn(() => "data");
-  const { el, history, navigate } = setup([
-    { path: "/", component: Home },
-    { path: "/old", redirect: { to: "/about" }, preload, component: () => <p>old</p> },
-    { path: "/about", component: About },
-  ]);
-  navigate("/old");
-  tick();
-  expect(preload).not.toHaveBeenCalled();
-  expect(history.get().path).toBe("/about");
-  expect(el.textContent).toBe("about");
-});
-
-test("a redirect-only route renders its target without a component", () => {
-  const { el, navigate } = setup([
-    { path: "/", component: Home },
-    { path: "/old", redirect: { to: "/about" } },
-    { path: "/about", component: About },
-  ]);
-  navigate("/old");
-  tick();
-  expect(el.textContent).toBe("about");
-});
-
-test("a redirect callback runs after its preload settles and receives the data", async () => {
-  const seen: unknown[] = [];
-  const gate = Promise.withResolvers<string>();
-  const { el, navigate } = setup([
-    { path: "/", component: Home },
-    {
-      path: "/gated",
-      preload: () => gate.promise,
-      redirect: (args) => {
-        seen.push(args.data);
-        return args.data === "go" ? { to: "/about" } : undefined;
-      },
-      component: () => <p>gated</p>,
-    },
-    { path: "/about", component: About },
-  ]);
-  navigate("/gated");
-  await settle();
-  expect(el.textContent).toBe("home");
-  gate.resolve("go");
-  await settle();
-  expect(seen).toEqual(["go"]);
-  expect(el.textContent).toBe("about");
-});
-
-test("hover warming runs preloads but ignores their navigation and never applies metadata", async () => {
-  let navigateRef!: Navigate;
-  const Probe = () => {
-    navigateRef = useNavigate();
-    return null;
-  };
-  const routeContext = { cache: "browser" };
-  const preload = vi.fn(() => {
-    navigateRef("/target");
-    return "warmed";
-  });
-  document.title = "Template";
-  const { el, history } = setup(
-    [
-      { path: "/", component: Home },
-      {
-        path: "/target",
-        preload,
-        meta: { title: "Target" },
-        component: (props: RouteProps<Params, string>) => <i>{props.data}</i>,
-      },
-    ],
-    "/",
-    (children) => (
-      <>
-        <Probe />
-        {children}
-        <a href="/target">t</a>
-      </>
-    ),
-    { links: true, context: routeContext },
-  );
-  const anchor = el.querySelector("a")!;
-  const home = el.querySelector("p")!;
-  fire(anchor, "focusin");
-  await settle();
-  expect(preload).toHaveBeenCalledWith(expect.objectContaining({ context: routeContext, intent: "preload" }));
-  expect(history.get().path).toBe("/");
-  expect(el.querySelector("p")).toBe(home);
-  expect(home.textContent).toBe("home");
-  expect(document.title).toBe("Template");
-  document.title = "";
+  expect(restoredScroll).toHaveBeenLastCalledWith(0, 420);
 });
 
 test("page metadata merges root-to-leaf and restores the template baseline when leaving", () => {

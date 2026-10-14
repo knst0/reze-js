@@ -2,7 +2,7 @@ import { defineConfig } from "vite-plus";
 
 const ignorePatterns = [
   "**/*.gen.d.ts",
-  "benches/rendering/frameworks/*/upstream",
+  "**/benches/size/**",
   "target",
   "dist",
   "packages/compiler/index.js",

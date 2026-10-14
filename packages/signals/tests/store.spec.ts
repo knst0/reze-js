@@ -31,8 +31,8 @@ test("writing an equal value does not notify, and NaN equals itself", () => {
   expect(reads.count).toBe(1);
 });
 
-test("key set and length are tracked on their own", () => {
-  const state = store<{ list: number[]; map: Record<string, number> }>({
+test("key set, length and missing keys are tracked on their own, and creating a read key re-runs its reader", () => {
+  const state = store<{ list: number[]; map: Record<string, number>; a?: number }>({
     list: [1, 2],
     map: { a: 1 },
   });
@@ -40,6 +40,7 @@ test("key set and length are tracked on their own", () => {
   const keys = runs(() => Object.keys(state.map));
   const hasB = runs(() => "b" in state.map);
   const first = runs(() => state.list[0]);
+  const missing = runs(() => state.a);
 
   state.map.a = 2;
   flush();
@@ -56,14 +57,10 @@ test("key set and length are tracked on their own", () => {
   expect([length.count, keys.count, first.count]).toEqual([3, 3, 2]);
   expect(state.list[0]).toBeUndefined();
   expect(Object.keys(state.map)).toEqual(["b"]);
-});
 
-test("reading a missing key tracks its later creation", () => {
-  const state = store<{ a?: number }>({});
-  const reads = runs(() => state.a);
   state.a = 1;
   flush();
-  expect(reads.count).toBe(2);
+  expect(missing.count).toBe(2);
   expect(state.a).toBe(1);
 });
 
@@ -77,7 +74,7 @@ test("a write is visible to the next read at once, and effects wait for the flus
   expect(reads.count).toBe(2);
 });
 
-test("written objects join the tree and are reactive", () => {
+test("written objects join the tree and are reactive, and storing a proxy stores its object so both paths reach the same signals", () => {
   const state = store<{ item: { label: string } | null }>({ item: null });
   const label = runs(() => state.item?.label);
   state.item = { label: "a" };
@@ -86,14 +83,12 @@ test("written objects join the tree and are reactive", () => {
   flush();
   expect(label.count).toBe(3);
   expect(state.item!.label).toBe("b");
-});
 
-test("storing a proxy stores its object, so both paths reach the same signals", () => {
-  const state = store({ a: { v: 1 }, b: null as { v: number } | null });
-  state.b = state.a;
-  expect(state.b).toBe(state.a);
-  const reads = runs(() => state.a.v);
-  state.b!.v = 2;
+  const shared = store({ a: { v: 1 }, b: null as { v: number } | null });
+  shared.b = shared.a;
+  expect(shared.b).toBe(shared.a);
+  const reads = runs(() => shared.a.v);
+  shared.b!.v = 2;
   flush();
   expect(reads.count).toBe(2);
 });

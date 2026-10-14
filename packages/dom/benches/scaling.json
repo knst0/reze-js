@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-14T06:31:56.226Z",
+  "summary": {
+    "raw": {
+      "baseline": 6234,
+      "perComponent": 809,
+      "intercept": 13312,
+      "perUsage": 39.9
+    },
+    "gzip": {
+      "baseline": 2410,
+      "perComponent": 57,
+      "intercept": 6052,
+      "perUsage": 5.5
+    },
+    "brotli": {
+      "baseline": 2227,
+      "perComponent": 41,
+      "intercept": 5625,
+      "perUsage": 2.3
+    }
+  },
+  "results": [
+    {
+      "components": 0,
+      "usages": 1,
+      "raw": 6234,
+      "gzip": 2410,
+      "brotli": 2227
+    },
+    {
+      "components": 1,
+      "usages": 1,
+      "raw": 10256,
+      "gzip": 3751,
+      "brotli": 3449
+    },
+    {
+      "components": 5,
+      "usages": 1,
+      "raw": 17368,
+      "gzip": 6163,
+      "brotli": 5617
+    },
+    {
+      "components": 10,
+      "usages": 1,
+      "raw": 21398,
+      "gzip": 6515,
+      "brotli": 5930
+    },
+    {
+      "components": 25,
+      "usages": 1,
+      "raw": 33519,
+      "gzip": 7470,
+      "brotli": 6670
+    },
+    {
+      "components": 50,
+      "usages": 1,
+      "raw": 53789,
+      "gzip": 8976,
+      "brotli": 7739
+    },
+    {
+      "components": 100,
+      "usages": 1,
+      "raw": 94292,
+      "gzip": 11871,
+      "brotli": 9769
+    },
+    {
+      "components": 200,
+      "usages": 1,
+      "raw": 175157,
+      "gzip": 17396,
+      "brotli": 13762
+    },
+    {
+      "components": 5,
+      "usages": 10,
+      "raw": 19117,
+      "gzip": 6422,
+      "brotli": 5778
+    },
+    {
+      "components": 5,
+      "usages": 50,
+      "raw": 27117,
+      "gzip": 7517,
+      "brotli": 6199
+    }
+  ]
+}

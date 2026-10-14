@@ -2,7 +2,7 @@ import { expect, test } from "vite-plus/test";
 
 import { effect, flush, getOwner, onCleanup, root, runWithOwner, signal, untrack, type Owner } from "../src";
 
-test("root dispose runs cleanups and effect teardowns in reverse creation order", () => {
+test("root dispose runs cleanups and effect teardowns in reverse creation order, and runWithOwner attaches later work to the owner", () => {
   const log: string[] = [];
   const dispose = root((dispose) => {
     onCleanup(() => log.push("c1"));
@@ -13,6 +13,16 @@ test("root dispose runs cleanups and effect teardowns in reverse creation order"
   expect(log).toEqual([]);
   dispose();
   expect(log).toEqual(["c2", "e", "c1"]);
+
+  const later: string[] = [];
+  let owner: Owner | undefined;
+  const disposeLater = root((dispose) => {
+    owner = getOwner();
+    return dispose;
+  });
+  runWithOwner(owner, () => onCleanup(() => later.push("late")));
+  disposeLater();
+  expect(later).toEqual(["late"]);
 });
 
 test("untrack hides reads from the effect but keeps what it creates owned by it", () => {
@@ -35,18 +45,6 @@ test("untrack hides reads from the effect but keeps what it creates owned by it"
   setA(1);
   flush();
   expect(log).toEqual(["inner cleanup"]);
-});
-
-test("runWithOwner attaches work created later to that owner", () => {
-  const log: string[] = [];
-  let owner: Owner | undefined;
-  const dispose = root((dispose) => {
-    owner = getOwner();
-    return dispose;
-  });
-  runWithOwner(owner, () => onCleanup(() => log.push("late")));
-  dispose();
-  expect(log).toEqual(["late"]);
 });
 
 test("writes stay async until flush drains them", () => {

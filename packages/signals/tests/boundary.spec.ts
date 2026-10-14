@@ -14,34 +14,31 @@ function request<T>() {
   return { data, ...deferred };
 }
 
-test("a read of an unsettled async computation inside a boundary is pending until it settles", async () => {
-  const { data, resolve } = request<string>();
-  const [, scope] = boundary(() => effect(() => void data.value()));
-  expect(scope.isPending()).toBe(true);
-  resolve("a");
+test("pending lasts until an unsettled read settles or fails, and clears at once when its reader is disposed", async () => {
+  const settled = request<string>();
+  const [, settledScope] = boundary(() => effect(() => void settled.data.value()));
+  expect(settledScope.isPending()).toBe(true);
+  settled.resolve("a");
   await tick();
   flush();
-  expect(scope.isPending()).toBe(false);
-});
-test("a rejected first run also clears pending", async () => {
-  const { data, reject } = request<string>();
-  const [, scope] = boundary(() => effect(() => void data.value()));
-  expect(scope.isPending()).toBe(true);
-  reject(new Error("no"));
-  await tick();
-  flush();
-  expect(scope.isPending()).toBe(false);
-});
+  expect(settledScope.isPending()).toBe(false);
 
-test("disposing the reader before settlement clears pending at once", () => {
-  const { data } = request<string>();
+  const rejected = request<string>();
+  const [, rejectedScope] = boundary(() => effect(() => void rejected.data.value()));
+  expect(rejectedScope.isPending()).toBe(true);
+  rejected.reject(new Error("no"));
+  await tick();
+  flush();
+  expect(rejectedScope.isPending()).toBe(false);
+
+  const disposed = request<string>();
   let stop!: () => void;
-  const [, scope] = boundary(() => {
-    stop = effect(() => void data.value());
+  const [, disposedScope] = boundary(() => {
+    stop = effect(() => void disposed.data.value());
   });
-  expect(scope.isPending()).toBe(true);
+  expect(disposedScope.isPending()).toBe(true);
   stop();
-  expect(scope.isPending()).toBe(false);
+  expect(disposedScope.isPending()).toBe(false);
 });
 
 test("only readers inside the nearest boundary count", () => {

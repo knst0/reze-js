@@ -1,30 +1,17 @@
-use oxc_allocator::Allocator;
-use oxc_parser::Parser;
-use oxc_semantic::SemanticBuilder;
-use oxc_span::SourceType;
-use reze_compiler::{Code, Diagnostic, Options, Output, Severity, compile};
+mod common;
 
-fn output_for(source: &str, filename: &str, options: &Options) -> Output {
-    let out = compile(source, filename, options).expect("compiles").expect("rewrites");
-    assert_valid(&out.code, SourceType::from_path(filename).unwrap());
-    out
-}
-
-fn errors(source: &str) -> Vec<Diagnostic> {
-    compile(source, "test.tsx", &Options::default()).err().expect("fails")
-}
-
-fn assert_valid(code: &str, source_type: SourceType) {
-    let allocator = Allocator::default();
-    let parsed = Parser::new(&allocator, code, source_type).parse();
-    assert!(parsed.diagnostics.is_empty(), "{:?}\n{code}", parsed.diagnostics);
-    let semantic = SemanticBuilder::new().with_check_syntax_error(true).build(&parsed.program);
-    assert!(semantic.diagnostics.is_empty(), "{:?}\n{code}", semantic.diagnostics);
-}
+use common::{errors, output_for};
+use reze_compiler::{Code, CompileTarget, Options, Severity, compile};
 
 #[test]
-fn a_file_without_jsx_is_left_alone() {
-    assert!(compile("const a = 1 < 2;", "a.ts", &Options::default()).unwrap().is_none());
+fn unrelated_code_is_left_alone() {
+    for (source, filename) in [
+        ("const a = 1 < 2;", "a.ts"),
+        ("const signal = 1; export const a = signal;", "a.ts"),
+        ("const mergeProps = (...a) => a;\nconst m = mergeProps({ a: 1 });", "test.tsx"),
+    ] {
+        assert!(compile(source, filename, &Options::default()).unwrap().is_none(), "{source}");
+    }
 }
 
 #[test]
@@ -43,7 +30,7 @@ fn syntax_errors_are_parse_errors_at_their_position() {
 fn jsx_source_locations_do_not_become_identifier_names() {
     for jsx in ["<p />", "<p>{n}</p>"] {
         let source = format!("const n = 1;\nconst a = {jsx};\n");
-        let out = output_for(&source, "test.tsx", &Options::default());
+        let out = output_for(&source, &Options::default());
         let map = oxc_sourcemap::SourceMap::from_json_string(out.map.as_deref().unwrap()).unwrap();
         let token = map
             .get_tokens()
@@ -54,14 +41,14 @@ fn jsx_source_locations_do_not_become_identifier_names() {
 }
 
 #[test]
-fn intrinsics_used_as_values_are_errors() {
+fn control_flow_and_props_used_as_values_are_errors() {
     for source in [
         "import { Show } from \"reze-js\"; const X = Show;",
         "import { For } from \"reze-js\"; export { For };",
         "import { Match } from \"reze-js\"; f(Match);",
         "import * as R from \"reze-js\"; const X = R.Switch;",
     ] {
-        let errors = errors(source);
+        let errors = errors(source, &Options::default());
         assert_eq!(errors.len(), 1, "{source}: {errors:?}");
         assert_eq!(errors[0].code, Code::ControlFlowAsValue, "{source}");
     }
@@ -71,44 +58,35 @@ fn intrinsics_used_as_values_are_errors() {
     ] {
         assert!(compile(source, "test.tsx", &Options::default()).expect("compiles").is_some());
     }
-}
-
-#[test]
-fn props_used_as_a_value_is_an_error() {
     for source in [
         "import { mergeProps } from \"reze-js\";\n\nexport const view = mergeProps;\n",
         "import { splitProps } from \"reze-js\";\n\nexport const pick = splitProps.extra;\n",
         "import { omitProps } from \"reze-js\";\n\nexport const m = omitProps.unknown(a, b);\n",
     ] {
-        let diagnostics = errors(source);
+        let diagnostics = errors(source, &Options::default());
         assert_eq!(diagnostics.len(), 1, "{source}: {diagnostics:?}");
         assert_eq!(diagnostics[0].code, Code::PropsAsValue, "{source}");
     }
 }
 
 #[test]
-fn a_local_props_object_is_not_syntax() {
-    let source = "const mergeProps = (...a) => a;\nconst m = mergeProps({ a: 1 });";
-    assert!(compile(source, "test.tsx", &Options::default()).unwrap().is_none(), "{source}");
-}
-
-#[test]
 fn a_control_flow_attribute_fix_removes_it() {
     let source =
         "import { Show } from \"reze-js\";\nconst a = <Show when={x()} keyed><b /></Show>;";
-    let errors = errors(source);
-    assert_eq!(errors[0].code, Code::ControlFlowAttribute);
-    assert_eq!(errors[0].data["attribute"], "keyed");
-    let edit = &errors[0].fixes[0].edits[0];
+    let found = errors(source, &Options::default());
+    assert_eq!(found[0].code, Code::ControlFlowAttribute);
+    assert_eq!(found[0].data["attribute"], "keyed");
+    let edit = &found[0].fixes[0].edits[0];
     assert_eq!(&source[edit.start as usize..edit.end as usize], " keyed");
-    let errors = self::errors(
+    let found = errors(
         "import { For } from \"reze-js\";\nconst a = <For each={x()} {...rest}>{(r) => r()}</For>;",
+        &Options::default(),
     );
-    assert_eq!(errors[0].data["attribute"], "{...}");
+    assert_eq!(found[0].data["attribute"], "{...}");
 }
 
 #[test]
-fn unsupported_async_shapes_error_with_their_reason() {
+fn async_component_shapes_are_refused_with_their_code_and_reason() {
     for (source, reason) in [
         (
             "export async function Card(props) {\n  const id = props.id;\n  let user = await fetchUser(id);\n  user = normalize(user);\n  return <p>{user.name}</p>;\n}",
@@ -119,16 +97,12 @@ fn unsupported_async_shapes_error_with_their_reason() {
             "statement-between-awaits",
         ),
     ] {
-        let errs = errors(source);
+        let errs = errors(source, &Options::default());
         assert_eq!(errs.len(), 1, "{source}");
         assert_eq!(errs[0].code, Code::AsyncComponentShape, "{source}");
         assert_eq!(errs[0].severity, Severity::Error, "{source}");
         assert_eq!(errs[0].data["reason"], reason, "{source}");
     }
-}
-
-#[test]
-fn async_reads_and_try_refusals_report_their_own_code() {
     for (source, code) in [
         (
             "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  return <p>{user.name}</p>;\n}",
@@ -142,24 +116,6 @@ fn async_reads_and_try_refusals_report_their_own_code() {
             "export async function Card(props) {\n  const id = props.id;\n  try {\n    const user = await fetchUser(id);\n    return <p>{user.name}</p>;\n  } catch (error) {\n    return <p>Failed</p>;\n  }\n}",
             Code::AsyncTryAroundAwait,
         ),
-    ] {
-        let errs: Vec<_> =
-            errors(source).into_iter().filter(|d| d.severity == Severity::Error).collect();
-        assert_eq!(errs.len(), 1, "{source}");
-        assert_eq!(errs[0].code, code, "{source}");
-        assert_eq!(errs[0].severity, Severity::Error, "{source}");
-    }
-}
-
-#[test]
-fn hoisted_props_read_before_await_compiles() {
-    let source = "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}";
-    assert!(compile(source, "test.tsx", &Options::default()).is_ok(), "{source}");
-}
-
-#[test]
-fn abort_signal_and_pending_refusals_report_their_own_codes() {
-    for (source, code) in [
         (
             "import { abortSignal } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  const signal = abortSignal();\n  return <p>{user.name}</p>;\n}",
             Code::AbortSignalOutsideLoad,
@@ -173,17 +129,22 @@ fn abort_signal_and_pending_refusals_report_their_own_codes() {
             Code::IsPendingOutsideView,
         ),
     ] {
-        let errs: Vec<_> =
-            errors(source).into_iter().filter(|d| d.severity == Severity::Error).collect();
+        let errs: Vec<_> = errors(source, &Options::default())
+            .into_iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
         assert_eq!(errs.len(), 1, "{source}");
         assert_eq!(errs[0].code, code, "{source}");
+        assert_eq!(errs[0].severity, Severity::Error, "{source}");
     }
 }
 
 #[test]
-fn abort_signal_and_pending_lower_to_the_load_context_and_the_view() {
+fn async_loads_lower_to_the_load_context_and_the_view() {
+    let hoisted = "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}";
+    assert!(compile(hoisted, "test.tsx", &Options::default()).is_ok(), "{hoisted}");
     let source = "import { abortSignal, isPending } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const signal = abortSignal();\n  const user = await fetchUser(id, signal);\n  return <p>{isPending() ? \"Refreshing\" : user.name}</p>;\n}";
-    let out = output_for(source, "test.tsx", &Options::default());
+    let out = output_for(source, &Options::default());
     assert!(out.code.contains(".abortSignal()"), "{}", out.code);
     assert!(!out.code.contains(" abortSignal()"), "{}", out.code);
     assert!(!out.code.contains("isPending"), "{}", out.code);
@@ -194,7 +155,6 @@ fn abort_signal_and_pending_lower_to_the_load_context_and_the_view() {
 fn attribute_and_flow_warnings_report_their_codes() {
     let out = output_for(
         "import { For } from \"reze-js\";\nimport { signal } from \"reze-js\";\nlet n = signal(0);\nexport function bump() { n = 1; }\nfunction Greeting({ name = fallback() }) {\n  return <p key=\"k\" clas=\"x\" title={n} title=\"y\">{name}<For each={[1, 2]}>{(i) => i}</For></p>;\n}",
-        "test.tsx",
         &Options::default(),
     );
     assert_eq!(out.diagnostics.len(), 5);
@@ -210,20 +170,16 @@ fn client_code_with_signals(attributes: &str) -> String {
     let source = format!(
         "import {{ signal }} from \"reze-js\";\nexport function C() {{\n  let a = signal(0);\n  let b = signal(0);\n  return <div {attributes} onClick={{() => {{ a += 1; b += 1; }}}} />;\n}}"
     );
-    output_for(&source, "test.tsx", &Options::default()).code
+    output_for(&source, &Options::default()).code
 }
 
 #[test]
-fn bindings_with_unconditional_reads_are_fixed() {
+fn binding_fixing_follows_the_reads_and_matches_island_output() {
     for attributes in [r#"title={a + "-" + b}"#, r#"class={a > 1 ? "x" : "y"}"#] {
         let code = client_code_with_signals(attributes);
         assert!(code.contains("fixedRenderEffect("), "{attributes}\n{code}");
         assert!(!code.contains("_$renderEffect("), "{attributes}\n{code}");
     }
-}
-
-#[test]
-fn bindings_with_conditional_or_opaque_reads_stay_dynamic() {
     for attributes in [
         r#"title={a > 1 ? b : "y"}"#,
         r#"title={a.toString()}"#,
@@ -234,31 +190,36 @@ fn bindings_with_conditional_or_opaque_reads_stay_dynamic() {
         assert!(code.contains("_$renderEffect("), "{attributes}\n{code}");
         assert!(!code.contains("fixedRenderEffect("), "{attributes}\n{code}");
     }
-}
-
-#[test]
-fn a_group_is_fixed_only_when_every_member_is() {
     let code = client_code_with_signals(r#"title={a} data-x={a > 0 && a}"#);
     assert!(code.contains("_$renderEffect("), "{code}");
     assert!(!code.contains("fixedRenderEffect("), "{code}");
+    let source = "import { signal } from \"reze-js\";\nexport function C() {\n  let a = signal(0);\n  let b = signal(0);\n  return <div title={a + \"-\" + b} onClick={() => { a += 1; b += 1; }} />;\n}";
+    let options = Options {
+        target: CompileTarget::Island,
+        module_id: Some("m".into()),
+        ..Options::default()
+    };
+    let client = output_for(source, &Options::default()).code;
+    let island = output_for(source, &options).code;
+    assert_eq!(
+        island.matches("fixedRenderEffect").count(),
+        client.matches("fixedRenderEffect").count(),
+        "{island}"
+    );
 }
 
 #[test]
-fn provably_local_function_handlers_use_delegated_static_emission() {
+fn handlers_use_static_delegation_only_when_provably_local() {
     for source in [
         "function handle() {}\nexport function C() {\n  return <button onClick={handle}>x</button>;\n}",
         "const handle = () => {};\nexport function C() {\n  return <button onClick={handle}>x</button>;\n}",
         "export function C() {\n  function handle() {}\n  return <button onClick={handle}>x</button>;\n}",
         "export function C() {\n  const handle = () => {};\n  const alias = handle;\n  return <button onClick={alias}>x</button>;\n}",
     ] {
-        let code = output_for(source, "test.tsx", &Options::default()).code;
+        let code = output_for(source, &Options::default()).code;
         assert!(code.contains("$$click ="), "{source}\n{code}");
         assert!(!code.contains("addEventListener"), "{source}\n{code}");
     }
-}
-
-#[test]
-fn opaque_handlers_keep_delegated_dynamic_emission() {
     for source in [
         "export function C(props) {\n  return <button onClick={props.handle}>x</button>;\n}",
         "export function C(handle) {\n  return <button onClick={handle}>x</button>;\n}",
@@ -266,24 +227,20 @@ fn opaque_handlers_keep_delegated_dynamic_emission() {
         "export function C() {\n  function handle() {}\n  handle = () => {};\n  return <button onClick={handle}>x</button>;\n}",
         "export function handle() {}\nexport function C() {\n  return <button onClick={handle}>x</button>;\n}",
     ] {
-        let code = output_for(source, "test.tsx", &Options::default()).code;
+        let code = output_for(source, &Options::default()).code;
         assert!(code.contains("addEventListener"), "{source}\n{code}");
         assert!(!code.contains("$$click ="), "{source}\n{code}");
     }
 }
 
 #[test]
-fn closed_spreads_with_only_fixed_entries_use_fixed_render_effect() {
+fn closed_spreads_are_fixed_only_when_every_entry_is() {
     let code = client_body(
         "let a = signal(0); let b = signal(0);",
         r#"<><div {...{ title: a + "-" + b }} /><button onClick={() => { a += 1; b += 1; }}>x</button></>"#,
     );
     assert!(code.contains("fixedRenderEffect("), "{code}");
     assert!(!code.contains("_$renderEffect("), "{code}");
-}
-
-#[test]
-fn closed_spreads_with_a_conditional_entry_stay_dynamic() {
     let code = client_body(
         "let a = signal(0); let b = signal(0);",
         r#"<><div {...{ title: a > 0 ? b + "x" : "y" }} /><button onClick={() => { a += 1; b += 1; }}>x</button></>"#,
@@ -292,28 +249,15 @@ fn closed_spreads_with_a_conditional_entry_stay_dynamic() {
     assert!(!code.contains("fixedRenderEffect("), "{code}");
 }
 
-#[test]
-fn island_binding_fixing_matches_client() {
-    let source = "import { signal } from \"reze-js\";\nexport function C() {\n  let a = signal(0);\n  let b = signal(0);\n  return <div title={a + \"-\" + b} onClick={() => { a += 1; b += 1; }} />;\n}";
-    let options = Options {
-        target: reze_compiler::CompileTarget::Island,
-        module_id: Some("m".into()),
-        ..Options::default()
-    };
-    let client = output_for(source, "test.tsx", &Options::default()).code;
-    let island = output_for(source, "test.tsx", &options).code;
-    assert_eq!(island.matches("fixedRenderEffect").count(), client.matches("fixedRenderEffect").count(), "{island}");
-}
-
 fn client_body(declarations: &str, view: &str) -> String {
     let source = format!(
         "import {{ signal }} from \"reze-js\";\nexport function C(props) {{\n  {declarations}\n  return {view};\n}}"
     );
-    output_for(&source, "test.tsx", &Options::default()).code
+    output_for(&source, &Options::default()).code
 }
 
 #[test]
-fn a_child_read_of_a_signal_whose_every_write_keeps_its_kind_is_a_text_write() {
+fn child_reads_are_text_writes_only_while_every_write_keeps_the_kind() {
     for (declarations, view) in [
         ("let n = signal(0);", "<p onClick={() => { n += 1; }}>{n}</p>"),
         ("let n = signal(0);", "<p onClick={() => { n++; }}>{n}</p>"),
@@ -327,10 +271,6 @@ fn a_child_read_of_a_signal_whose_every_write_keeps_its_kind_is_a_text_write() {
         assert!(code.contains(".data ="), "{declarations} {view}\n{code}");
         assert!(!code.contains("_$insert("), "{declarations} {view}\n{code}");
     }
-}
-
-#[test]
-fn a_child_read_stays_an_insert_when_a_write_may_change_its_kind() {
     for (declarations, view) in [
         ("let n = signal(0);", "<p onClick={() => { n += props.step; }}>{n}</p>"),
         ("let n = signal(0);", "<p onClick={() => { n = props.value; }}>{n}</p>"),
@@ -347,35 +287,26 @@ fn a_child_read_stays_an_insert_when_a_write_may_change_its_kind() {
 }
 
 #[test]
-fn a_declared_plain_import_is_rewritten_to_the_runtime() {
+fn runtime_imports_and_props_calls_are_lowered_to_the_internal_runtime() {
     let source =
         "import { effect } from \"reze-js\";\nexport const f = () => { effect(() => {}); };";
-    let out = output_for(source, "test.tsx", &Options::default());
+    let out = output_for(source, &Options::default());
     assert!(out.code.contains("from \"reze-js/internal/runtime\""), "{}", out.code);
     assert!(!out.code.contains("from \"reze-js\""), "{}", out.code);
-}
 
-#[test]
-fn a_declared_reexport_is_rewritten_to_the_runtime_and_keeps_real_exports() {
     let source = "export { effect, render, type Getter } from \"reze-js\";";
-    let out = output_for(source, "test.tsx", &Options::default());
+    let out = output_for(source, &Options::default());
     assert!(out.code.contains("effect } from \"reze-js/internal/runtime\""), "{}", out.code);
     assert!(out.code.contains("render"), "{}", out.code);
     assert!(out.code.contains("from \"reze-js\""), "{}", out.code);
-    let only = output_for("export { effect } from \"reze-js\";", "test.tsx", &Options::default());
+    let only = output_for("export { effect } from \"reze-js\";", &Options::default());
     assert!(!only.code.contains("from \"reze-js\""), "{}", only.code);
-}
 
-#[test]
-fn a_namespace_member_call_is_lowered_to_a_named_runtime_import() {
     let source = "import * as R from \"reze-js\";\nexport const f = () => { R.effect(() => {}); };";
-    let out = output_for(source, "test.tsx", &Options::default());
+    let out = output_for(source, &Options::default());
     assert!(out.code.contains("from \"reze-js/internal/runtime\""), "{}", out.code);
     assert!(!out.code.contains("R.effect"), "{}", out.code);
-}
 
-#[test]
-fn props_calls_are_lowered_to_the_runtime() {
     for (source, callee) in [
         (
             "import { mergeProps } from \"reze-js\";\nexport function C(props) {\n  const m = mergeProps({ a: 1 }, props);\n  return <p>{m.a}</p>;\n}",
@@ -390,7 +321,7 @@ fn props_calls_are_lowered_to_the_runtime() {
             "_$omitProps(",
         ),
     ] {
-        let out = output_for(source, "test.tsx", &Options::default());
+        let out = output_for(source, &Options::default());
         assert!(out.code.contains(callee), "{source}\n{}", out.code);
         assert!(out.code.contains("from \"reze-js/internal/runtime\""), "{source}\n{}", out.code);
         assert!(!out.code.contains("from \"reze-js\""), "{source}\n{}", out.code);

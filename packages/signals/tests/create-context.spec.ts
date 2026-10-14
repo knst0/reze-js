@@ -2,10 +2,14 @@ import { expect, test } from "vite-plus/test";
 
 import { ContextNotFoundError, createContext, provideContext, root, useContext } from "../src";
 
-test("a default applies outside a provider", () => {
+test("a default applies outside a provider, including an explicit undefined default", () => {
   const Theme = createContext("light");
   expect(useContext(Theme)).toBe("light");
   root(() => expect(useContext(Theme)).toBe("light"));
+
+  const Maybe = createContext<string | undefined>(undefined);
+  expect(useContext(Maybe)).toBeUndefined();
+  root(() => expect(useContext(Maybe)).toBeUndefined());
 });
 
 test("the component shadows the default and the nearest wins", () => {
@@ -53,12 +57,6 @@ test("a default-less context throws outside a provider and reads inside", () => 
     return;
   }
   expect.unreachable();
-});
-
-test("an explicit undefined default is a default, not a missing one", () => {
-  const Maybe = createContext<string | undefined>(undefined);
-  expect(useContext(Maybe)).toBeUndefined();
-  root(() => expect(useContext(Maybe)).toBeUndefined());
 });
 
 test("the value is read once, so containers stay stable", () => {

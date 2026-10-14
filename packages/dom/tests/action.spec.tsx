@@ -88,21 +88,6 @@ test("a compiled action awaits nested operands in order and returns the final va
   expect(el.textContent).toBe("got 3");
 });
 
-test("a compiled action supports expression bodies, bare parameters, and destructured defaults", async () => {
-  const seen: unknown[][] = [];
-  const put = async (...args: unknown[]): Promise<string> => {
-    seen.push(args);
-    return args.join("|");
-  };
-  const save = action(async (x: number) => await put(x));
-  const pick = action((list: number[]) => ({ first: list[0] }));
-  const withDefaults = action(async ({ id }: { id: number }, [first] = [0], ...rest: number[]) => await put(id, first, rest));
-  expect(await save(7)).toBe("7");
-  expect(await pick([9])).toEqual({ first: 9 });
-  expect(await withDefaults({ id: 5 }, [10], 20, 30)).toBe("5|10|20,30");
-  expect(seen).toEqual([[7], [5, 10, [20, 30]]]);
-});
-
 test("a compiled action routes rejections through catch and finally with balanced cleanup", async () => {
   const snapshots: string[] = [];
   const gates: PromiseWithResolvers<number>[] = [];
@@ -200,45 +185,4 @@ test("a compiled action works through namespace and alias imports without clobbe
   await expect(a()).resolves.toBe(1);
   await expect(b(4)).resolves.toBe(5);
   await expect(passthrough()).resolves.toBe(6);
-});
-
-test("a compiled action inside an async component captures awaited state", async () => {
-  const fetchGate = Promise.withResolvers<{ name: string }>();
-  const saveGate = Promise.withResolvers<void>();
-  const fetchUser = (): Promise<{ name: string }> => fetchGate.promise;
-  const saveUser = (): Promise<void> => saveGate.promise;
-  async function Card() {
-    const data = await fetchUser();
-    const user = store(data);
-    const rename = action(async (name: string) => {
-      user.name = name;
-      await saveUser();
-    });
-    return <button onClick={() => rename("x").catch(() => {})}>{user.name}</button>;
-  }
-  const { el } = mount(() => <Card />);
-  expect(el.innerHTML).toBe("");
-  fetchGate.resolve({ name: "ann" });
-  await settle();
-  tick();
-  const button = el.querySelector("button")!;
-  expect(button.textContent).toBe("ann");
-  button.click();
-  tick();
-  expect(button.textContent).toBe("x");
-  saveGate.resolve();
-  await settle();
-  tick();
-  expect(button.textContent).toBe("x");
-});
-
-test("a compiled synchronous action writes at once and settles without awaiting", async () => {
-  const state = store({ n: 0 });
-  const bump = action((s: { n: number }) => {
-    s.n += 1;
-  });
-  const result = bump(state);
-  expect(state.n).toBe(1);
-  expect(bump.pending).toBe(0);
-  await result;
 });

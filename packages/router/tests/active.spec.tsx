@@ -54,49 +54,6 @@ function stateOf(el: Element): string {
   ].join(" ");
 }
 
-test("anchors carry current and active state for the current pathname", () => {
-  const { anchor } = setup(
-    () => (
-      <>
-        <a href="/">home</a>
-        <a href="/blog">blog</a>
-        <a href="/Blog/1/">post</a>
-        <a href="/blogs">blogs</a>
-        <a href="/blog/1?x=1#top">post query</a>
-      </>
-    ),
-    "/blog/1",
-  );
-  expect(stateOf(anchor("/"))).toBe("- - -");
-  expect(stateOf(anchor("/blog"))).toBe("- active -");
-  expect(stateOf(anchor("/Blog/1/"))).toBe("page active -");
-  expect(stateOf(anchor("/blogs"))).toBe("- - -");
-  expect(stateOf(anchor("/blog/1?x=1#top"))).toBe("page active -");
-});
-
-test("navigation moves the state and anchors mounted later start correct", () => {
-  const [isShown, setIsShown] = signal(false);
-  const { anchor, go } = setup(
-    () => (
-      <>
-        <a href="/">home</a>
-        <a href="/about">about</a>
-        <Show when={isShown()}>
-          <a href="/about/team">team</a>
-        </Show>
-      </>
-    ),
-    "/",
-  );
-  expect(stateOf(anchor("/"))).toBe("page active -");
-  go("/about/team");
-  expect(stateOf(anchor("/"))).toBe("- - -");
-  expect(stateOf(anchor("/about"))).toBe("- active -");
-  setIsShown(true);
-  tick();
-  expect(stateOf(anchor("/about/team"))).toBe("page active -");
-});
-
 test("a dynamic href is bound, re-keys on change and is evaluated once per change", () => {
   const [to, setTo] = signal("/a");
   let evaluations = 0;
@@ -118,7 +75,7 @@ test("a dynamic href is bound, re-keys on change and is evaluated once per chang
   expect(evaluations).toBe(2);
 });
 
-test("relative hrefs resolve against the current document URL and re-key on navigation", () => {
+test("relative hrefs resolve against the current document URL, re-key on navigation, and write only anchors whose state flipped", () => {
   window.history.replaceState(null, "", "/about/team");
   const { anchor, go } = setup(() => <a href="team">team</a>, "", CatchAll, createBrowserHistory());
   expect(stateOf(anchor("team"))).toBe("page active -");
@@ -126,6 +83,15 @@ test("relative hrefs resolve against the current document URL and re-key on navi
   expect(stateOf(anchor("team"))).toBe("- - -");
   go("/team");
   expect(stateOf(anchor("team"))).toBe("page active -");
+  cleanup();
+  const paths = Array.from({ length: 200 }, (_, i) => `/p${i}`);
+  const paged = setup(() => paths.map((path) => <a href={path}>{path}</a>), "/p0");
+  const observer = new MutationObserver(() => {});
+  observer.observe(paged.el, { attributes: true, subtree: true });
+  paged.go("/p1");
+  const changed = new Set(observer.takeRecords().map((record) => (record.target as Element).getAttribute("href")));
+  observer.disconnect();
+  expect(changed).toEqual(new Set(["/p0", "/p1"]));
 });
 
 test("hash history links written #/path carry state; in-page #anchors do not", () => {
@@ -147,7 +113,7 @@ test("hash history links written #/path carry state; in-page #anchors do not", (
   expect(stateOf(anchor("#/about"))).toBe("- - -");
 });
 
-test("an anchor to a loading route is pending until it commits, and a superseding navigation clears it", async () => {
+test("an anchor to a loading route is pending until it commits, a superseding navigation clears it, and navigation moves state to anchors mounted later", async () => {
   let module = Promise.withResolvers<RouteModule>();
   const routes: RouteDefinition[] = [
     { path: "/", component: Page },
@@ -175,18 +141,37 @@ test("an anchor to a loading route is pending until it commits, and a supersedin
   module = Promise.withResolvers<RouteModule>();
   go("/lazy");
   expect(stateOf(anchor("/lazy"))).toBe("page active -");
+  cleanup();
+  const [isShown, setIsShown] = signal(false);
+  const moved = setup(
+    () => (
+      <>
+        <a href="/">home</a>
+        <a href="/about">about</a>
+        <Show when={isShown()}>
+          <a href="/about/team">team</a>
+        </Show>
+      </>
+    ),
+    "/",
+  );
+  expect(stateOf(moved.anchor("/"))).toBe("page active -");
+  moved.go("/about/team");
+  expect(stateOf(moved.anchor("/"))).toBe("- - -");
+  expect(stateOf(moved.anchor("/about"))).toBe("- active -");
+  setIsShown(true);
+  tick();
+  expect(stateOf(moved.anchor("/about/team"))).toBe("page active -");
 });
 
-test("hrefs the router does not handle get no state", () => {
+test("hrefs the router does not handle or that sit outside its history base get no state", () => {
   const hrefs = ["#top", "?q=1", "https://other.test/", "//other.test/", "mailto:a@b.c", ""];
   const [isShown] = signal(true);
   const { el } = setup(() => hrefs.map((href) => <a href={isShown() ? href : undefined}>x</a>), "/");
   const anchors = el.querySelectorAll("nav a");
   expect(anchors).toHaveLength(hrefs.length);
   for (const a of anchors) expect(stateOf(a)).toBe("- - -");
-});
-
-test("hrefs outside the browser history base get no state", () => {
+  cleanup();
   window.history.replaceState(null, "", "/app/docs");
   const Router = createRouter({ routes: CatchAll, history: createBrowserHistory("/app") });
   const nav = mount(() => (
@@ -195,13 +180,15 @@ test("hrefs outside the browser history base get no state", () => {
         <>
           <a href="/app/docs">in</a>
           <a href="/docs">out</a>
+          <a href="/">home</a>
         </>
       )}
     />
   )).el;
-  const [inside, outside] = nav.querySelectorAll("a");
+  const [inside, outside, home] = nav.querySelectorAll("a");
   expect(stateOf(inside!)).toBe("page active -");
   expect(stateOf(outside!)).toBe("- - -");
+  expect(stateOf(home!)).toBe("- - -");
 });
 
 test("anchors outside a router still bind a dynamic href and get no state", () => {
@@ -219,17 +206,6 @@ test("anchors outside a router still bind a dynamic href and get no state", () =
   expect(dynamic!.getAttribute("href")).toBe("/b");
   expect(stateOf(dynamic!)).toBe("- - -");
   expect(stateOf(fixed!)).toBe("- - -");
-});
-
-test("a navigation writes attributes only on anchors whose state flipped", () => {
-  const paths = Array.from({ length: 200 }, (_, i) => `/p${i}`);
-  const { el, go } = setup(() => paths.map((path) => <a href={path}>{path}</a>), "/p0");
-  const observer = new MutationObserver(() => {});
-  observer.observe(el, { attributes: true, subtree: true });
-  go("/p1");
-  const changed = new Set(observer.takeRecords().map((record) => (record.target as Element).getAttribute("href")));
-  observer.disconnect();
-  expect(changed).toEqual(new Set(["/p0", "/p1"]));
 });
 
 test("useLinkState reports the same states as anchor attributes", async () => {

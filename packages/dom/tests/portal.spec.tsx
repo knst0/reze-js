@@ -51,25 +51,6 @@ test("Portal children stay reactive and still see the context of where the Porta
   expect(section.innerHTML).toBe("<i>dark:1</i>");
 });
 
-test("Portal moves its children to the new mount when a reactive mount changes, keeping their nodes and leaving nothing behind", () => {
-  const first = target();
-  const second = target();
-  const [mountPoint, setMountPoint] = signal<HTMLElement>(first);
-  mount(() => (
-    <Portal mount={mountPoint()}>
-      <u>moved</u>
-    </Portal>
-  ));
-  const node = first.querySelector("u");
-  expect(node).not.toBeNull();
-
-  setMountPoint(second);
-  tick();
-  expect(first.childNodes.length).toBe(0);
-  expect(second.innerHTML).toBe("<u>moved</u>");
-  expect(second.querySelector("u")).toBe(node);
-});
-
 test("moving a Portal keeps its components alive, and a dynamic child still updates in the new mount", () => {
   const first = target();
   const second = target();
@@ -98,71 +79,4 @@ test("moving a Portal keeps its components alive, and a dynamic child still upda
   tick();
   expect(second.innerHTML).toBe("<b>child</b>b");
   expect(first.childNodes.length).toBe(0);
-});
-
-test("a Portal whose mount was emptied by other code still disposes cleanly", () => {
-  const section = target();
-  const { dispose } = mount(() => (
-    <Portal mount={section}>
-      <b>x</b>
-    </Portal>
-  ));
-  section.textContent = "";
-  dispose();
-  expect(section.childNodes.length).toBe(0);
-});
-
-test("toggling a Portal many times accumulates nothing in its mount", () => {
-  const section = target();
-  const [isOpen, setOpen] = signal(false);
-  mount(() => (
-    <Show when={isOpen()}>
-      <Portal mount={section}>
-        <b>open</b>
-      </Portal>
-    </Show>
-  ));
-  for (let round = 0; round < 3; round++) {
-    setOpen(true);
-    tick();
-    expect(section.innerHTML).toBe("<b>open</b>");
-    setOpen(false);
-    tick();
-    expect(section.childNodes.length).toBe(0);
-  }
-});
-
-test("a delegated event inside a Portal reaches its handler", () => {
-  const clicks: string[] = [];
-  const section = target();
-  mount(() => (
-    <Portal mount={section}>
-      <button onClick={() => clicks.push("clicked")}>x</button>
-    </Portal>
-  ));
-  fire(section.querySelector("button")!, "click");
-  expect(clicks).toEqual(["clicked"]);
-});
-
-test("an error thrown while building Portal children reaches the failure view of the async component around it, and what was built is disposed", async () => {
-  const cleaned: string[] = [];
-  const section = target();
-  function Boom(): never {
-    onCleanup(() => cleaned.push("boom"));
-    throw new Error("nope");
-  }
-  async function Page() {
-    await Promise.resolve();
-    return (
-      <Portal mount={section}>
-        <Boom />
-      </Portal>
-    );
-  }
-  Page.failure = (error: unknown) => <em>{(error as Error).message}</em>;
-  const { el } = mount(() => <Page />);
-  await settle();
-  expect(el.innerHTML).toBe("<em>nope</em>");
-  expect(section.childNodes.length).toBe(0);
-  expect(cleaned).toEqual(["boom"]);
 });

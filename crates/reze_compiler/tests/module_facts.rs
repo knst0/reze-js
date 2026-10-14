@@ -40,7 +40,10 @@ fn exports_describe_functions_actions_values_and_reexports() {
 }
 
 #[test]
-fn a_module_with_an_error_has_no_facts() {
+fn compile_with_facts_reports_analyzed_facts_and_a_module_with_an_error_has_none() {
+    let compiled = compile_with_facts(LIB, "lib.tsx", &Options::default()).expect("compiles");
+    assert_eq!(compiled.facts, analyze(LIB, "lib.tsx").expect("analyzes"));
+
     assert!(
         analyze(
             "import { signal } from \"reze-js\";\nlet n = signal(0);\nexport default n;",
@@ -48,12 +51,6 @@ fn a_module_with_an_error_has_no_facts() {
         )
         .is_err()
     );
-}
-
-#[test]
-fn compile_with_facts_reports_the_same_facts_as_analyze() {
-    let compiled = compile_with_facts(LIB, "lib.tsx", &Options::default()).expect("compiles");
-    assert_eq!(compiled.facts, analyze(LIB, "lib.tsx").expect("analyzes"));
 }
 
 #[test]
@@ -68,19 +65,15 @@ fn an_imported_return_kind_joins_the_text_update_it_feeds() {
 }
 
 #[test]
-fn facts_of_a_different_compiler_version_are_ignored() {
-    let mut stale = analyze(LIB, "lib.tsx").unwrap();
-    stale.compiler = "0.0.0".to_string();
-    let with_stale = code(APP, &options_with(HashMap::from([("./lib".to_string(), stale)])));
-    assert_eq!(with_stale, code(APP, &Options::default()));
-}
-
-#[test]
-fn facts_of_a_different_format_version_are_ignored() {
-    let mut stale = analyze(LIB, "lib.tsx").unwrap();
-    stale.v = 0;
-    let with_stale = code(APP, &options_with(HashMap::from([("./lib".to_string(), stale)])));
-    assert_eq!(with_stale, code(APP, &Options::default()));
+fn facts_of_another_compiler_or_format_version_are_ignored() {
+    let mut other_compiler = analyze(LIB, "lib.tsx").unwrap();
+    other_compiler.compiler = "0.0.0".to_string();
+    let mut other_format = analyze(LIB, "lib.tsx").unwrap();
+    other_format.v = 0;
+    for stale in [other_compiler, other_format] {
+        let with_stale = code(APP, &options_with(HashMap::from([("./lib".to_string(), stale)])));
+        assert_eq!(with_stale, code(APP, &Options::default()));
+    }
 }
 
 const COUNTER: &str = "import { signal } from \"reze-js\";\nexport let count = signal(0);\nexport const bump = () => (count += 1);\nexport const doubled = () => count * 2;";
@@ -90,19 +83,13 @@ fn counter_facts() -> HashMap<String, ModuleFacts> {
 }
 
 #[test]
-fn an_imported_signal_read_lowers_to_its_getter_call() {
+fn imported_signal_reads_lower_to_getter_calls_and_dynamic_readers_are_marked() {
     let app = "import { count } from \"./counter\";\nexport const View = () => <p>{count + 1}</p>;";
     assert!(code(app, &options_with(counter_facts())).contains("count() + 1"));
-}
 
-#[test]
-fn a_namespace_read_of_an_imported_signal_calls_the_getter() {
     let app = "import * as k from \"./counter\";\nexport const View = () => <p>{k.count}</p>;";
     assert!(code(app, &options_with(counter_facts())).contains("k.count()"));
-}
 
-#[test]
-fn a_function_reading_an_imported_signal_reads_dynamically() {
     let reader = "import { count } from \"./counter\";\nexport const twice = () => count * 2;";
     let exports = analyze(reader, "reader.tsx").expect("analyzes").exports;
     let ExportFacts::Function { reads, .. } = &exports["twice"] else {

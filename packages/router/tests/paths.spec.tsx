@@ -46,7 +46,7 @@ const defs: RouteDefinition[] = [
   { path: "/docs/*path", name: "docs" },
 ];
 
-test("statics build hrefs, params bind and encode, search and hash append", () => {
+test("statics build hrefs, params bind and encode, search and hash append, and the served base prefixes every href", () => {
   const paths = buildPaths(defs);
   expect(call(paths.index)).toBe("/");
   expect(call(paths.about)).toBe("/about");
@@ -60,11 +60,16 @@ test("statics build hrefs, params bind and encode, search and hash append", () =
   expect(call(paths.docs, ["a", "b"])).toBe("/docs/a/b");
   expect(call(paths.docs, "a/b")).toBe("/docs/a/b");
   expect(call(paths.docs, ["a/b"])).toBe("/docs/a%2Fb");
+  expect(call(buildPaths(defs, "/app").about)).toBe("/app/about");
+  expect(call(buildPaths(defs, "/app").blog.byId, 1)).toBe("/app/blog/1");
+  expect(call(buildPaths(defs, "#").about)).toBe("#/about");
 });
 
-test("param calls continue into nested nodes", () => {
+test("param calls continue into nested nodes, and a definition name overrides the derived key", () => {
   const paths = buildPaths(defs);
   expect(paths.org("acme").repo("reze")).toBe("/org/acme/repo/reze");
+  const overridden = buildPaths([{ path: "/", name: "auth", children: [{ path: "/login" }] }]);
+  expect(call(overridden.auth.login)).toBe("/login");
 });
 
 test("a layout without an index is a branch, not a call", () => {
@@ -73,12 +78,6 @@ test("a layout without an index is a branch, not a call", () => {
   expect(String(paths.admin)).toBe("/admin");
   expect(call(paths.admin.users)).toBe("/admin/users");
   expect(call(paths.blog)).toBe("/blog");
-});
-
-test("builders carry the served base", () => {
-  expect(call(buildPaths(defs, "/app").about)).toBe("/app/about");
-  expect(call(buildPaths(defs, "/app").blog.byId, 1)).toBe("/app/blog/1");
-  expect(call(buildPaths(defs, "#").about)).toBe("#/about");
 });
 
 test("duplicate sibling names throw at build, multi-dynamic patterns on call", () => {
@@ -90,11 +89,6 @@ test("duplicate sibling names throw at build, multi-dynamic patterns on call", (
     '[reze-router] paths.byName has 2 dynamic segments; split "/org/:id/repo/:name" into nested routes',
   );
   expect(() => call(buildPaths(defs).blog.byId)).toThrow('[reze-router] paths.blog.byId requires a value for ":id"');
-});
-
-test("a definition name overrides the derived key", () => {
-  const paths = buildPaths([{ path: "/", name: "auth", children: [{ path: "/login" }] }]);
-  expect(call(paths.auth.login)).toBe("/login");
 });
 
 test("navigate accepts served-base hrefs from the builders", () => {

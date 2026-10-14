@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-14T06:28:20.958Z",
+  "sizes": {
+    "baseline": {
+      "raw": 6190,
+      "gzip": 2384,
+      "brotli": 2207
+    },
+    "links": {
+      "raw": 29222,
+      "gzip": 9964,
+      "brotli": 9031
+    },
+    "navigate": {
+      "raw": 30711,
+      "gzip": 10542,
+      "brotli": 9551
+    },
+    "params": {
+      "raw": 30300,
+      "gzip": 10368,
+      "brotli": 9418
+    },
+    "router": {
+      "raw": 29596,
+      "gzip": 10088,
+      "brotli": 9155
+    }
+  }
+}

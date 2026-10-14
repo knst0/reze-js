@@ -5,6 +5,7 @@ import { expect, test } from "vite-plus/test";
 
 const entry = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const profile = fileURLToPath(new URL("../src/profile.ts", import.meta.url));
+const render = fileURLToPath(new URL("../src/render.ts", import.meta.url));
 const nodeKinds = [
   "SignalNode",
   "ComputedNode",
@@ -38,21 +39,24 @@ async function bundledNodeKinds(imports: string): Promise<string[]> {
   return nodeKinds.filter((kind) => new RegExp(`\\b${kind}\\b`).test(code));
 }
 
-test.each([
-  ["signal", ["SignalNode"]],
-  ["computed", ["ComputedNode"]],
-  ["effect", ["EffectNode"]],
-  ["effectScope", ["EffectScopeNode"]],
-  ["trigger", []],
-  ["store", ["SignalNode"]],
-  ["readonly", ["SignalNode"]],
-  ["action", ["SignalNode"]],
-  ["selector", ["SignalNode", "RenderNode", "SelectorKeyNode"]],
-  ["asyncComputed", ["SignalNode", "AsyncComputedNode"]],
-  ["boundary", ["SignalNode", "BoundaryNode"]],
-])("bundling { %s } keeps only %j", async (imports, expected) => {
-  expect(await bundledNodeKinds(imports)).toEqual(expected);
-});
+test("bundling each public export keeps only the node kinds it reaches", async () => {
+  const expectations: [string, string[]][] = [
+    ["signal", ["SignalNode"]],
+    ["computed", ["ComputedNode"]],
+    ["effect", ["EffectNode"]],
+    ["effectScope", ["EffectScopeNode"]],
+    ["trigger", []],
+    ["store", ["SignalNode"]],
+    ["readonly", ["SignalNode"]],
+    ["action", ["SignalNode"]],
+    ["selector", ["SignalNode", "RenderNode", "SelectorKeyNode"]],
+    ["asyncComputed", ["SignalNode", "AsyncComputedNode"]],
+    ["boundary", ["SignalNode", "BoundaryNode"]],
+  ];
+  for (const [imports, expected] of expectations) {
+    expect(await bundledNodeKinds(imports), `{ ${imports} }`).toEqual(expected);
+  }
+}, 30_000);
 
 test("production bundles drop dev-only cycle detection", async () => {
   const imports = "signal, computed, effect";
@@ -82,7 +86,6 @@ test("production bundles drop the profile channel even when a session can instal
 });
 
 test("production bundles drop the fixed render binding's change check", async () => {
-  const render = fileURLToPath(new URL("../src/render.ts", import.meta.url));
   const fixed = `export { fixedRenderEffect } from ${JSON.stringify(render)};`;
   expect(await bundle("signal", "development", fixed)).toMatch(/A compiled binding read/);
   expect(await bundle("signal", "production", fixed)).not.toMatch(/A compiled binding read|rerunChecked|warnedFixed/);

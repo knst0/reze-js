@@ -35,7 +35,9 @@
     "access": "public"
   },
   "scripts": {
-    "bench:codspeed": "node --import ../../benches/kit/production-env.mjs benches/codspeed.ts",
+    "bench": "node --import ../../scripts/bench/production-env.mjs benches/codspeed.ts",
+    "bench:codspeed": "node --import ../../scripts/bench/production-env.mjs benches/codspeed.ts",
+    "bench:size": "node ../../scripts/bench/size.mjs",
     "build": "vp pack",
     "test": "vp test run && vp test run --config vitest.node.config.mts"
   },

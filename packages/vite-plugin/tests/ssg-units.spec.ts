@@ -118,39 +118,30 @@ test("redirect pages drop the bootstrap and carry an accessible target", () => {
   expect(JSON.parse(text(nodes.find((node) => attribute(node, "data-reze-redirect") !== undefined)!))).toEqual({ to, replace: true });
 });
 
-test("the export graph tells router apps from standalone ones", () => {
+test("the export graph tells router apps from standalone ones, follows export stars and rejects ambiguities", () => {
   const files = new Map([
     ["/r/app.tsx", `export { routes } from "./routes";\nexport { default } from "./shell";\n`],
     ["/r/routes.ts", `export const routes = [];\n`],
     ["/r/shell.tsx", `export default function Shell() {}\n`],
     ["/s/app.tsx", `export default function App() {}\n`],
-  ]);
-  const env = {
-    readFile: (id: string) => files.get(id),
-    resolveSpec: (spec: string, importer: string) => {
-      if (spec === "./routes") return "/r/routes.ts";
-      if (spec === "./shell") return "/r/shell.tsx";
-      void importer;
-      return undefined;
-    },
-    virtualExports: (_id: string) => undefined as readonly string[] | undefined,
-  };
-  expect(resolveAppMode("/r/app.tsx", env)).toEqual({ kind: "router", hasShell: true });
-  expect(resolveAppMode("/s/app.tsx", env)).toEqual({ kind: "standalone" });
-});
-
-test("the export graph follows export stars and rejects ambiguities", () => {
-  const files = new Map([
     ["/e/entry.ts", `export * from "./a";\nexport * from "./b";\n`],
     ["/e/a.ts", `export const routes = [];\n`],
     ["/e/b.ts", `export const routes = [];\n`],
     ["/f/entry.ts", `export * from "./a";\nexport const routes = [];\n`],
   ]);
+  const specifiers: Record<string, string> = {
+    "./routes": "/r/routes.ts",
+    "./shell": "/r/shell.tsx",
+    "./a": "/e/a.ts",
+    "./b": "/e/b.ts",
+  };
   const env = {
     readFile: (id: string) => files.get(id),
-    resolveSpec: (spec: string, importer: string) => (spec === "./a" ? "/e/a.ts" : spec === "./b" ? "/e/b.ts" : importer),
+    resolveSpec: (spec: string) => specifiers[spec],
     virtualExports: (_id: string) => undefined as readonly string[] | undefined,
   };
+  expect(resolveAppMode("/r/app.tsx", env)).toEqual({ kind: "router", hasShell: true });
+  expect(resolveAppMode("/s/app.tsx", env)).toEqual({ kind: "standalone" });
   expect(() => resolveAppMode("/e/entry.ts", env)).toThrow(/ambiguous/);
   expect(resolveAppMode("/f/entry.ts", env)).toEqual({ kind: "router", hasShell: false });
 });

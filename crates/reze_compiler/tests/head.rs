@@ -1,15 +1,11 @@
+mod common;
+
+use common::{errors, without_source_map};
 use reze_compiler::{Code, CompileTarget, Diagnostic, Options, compile};
 
-fn options(target: CompileTarget) -> Options {
-    Options { target, module_id: Some("test.tsx".into()), ..Options::default() }
-}
-
 fn code_for(source: &str, target: CompileTarget) -> String {
-    compile(source, "test.tsx", &options(target)).expect("compiles").expect("rewrites").code
-}
-
-fn errors(source: &str) -> Vec<Diagnostic> {
-    compile(source, "test.tsx", &Options::default()).err().expect("fails")
+    let options = Options { target, module_id: Some("test.tsx".into()), ..Options::default() };
+    compile(source, "test.tsx", &options).expect("compiles").expect("rewrites").code
 }
 
 fn has(errors: &[Diagnostic], code: Code) -> bool {
@@ -25,7 +21,7 @@ fn details(errors: &[Diagnostic]) -> Vec<String> {
 }
 
 #[test]
-fn head_emits_tagged_builders_per_target() {
+fn head_builders_are_tagged_per_target_and_unkeyed_without_src() {
     let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/sdk.js\" /><meta name=\"theme-color\" content=\"black\" /></Head>;\n";
     let client = code_for(source, CompileTarget::Client);
     assert!(client.contains("\"script:/sdk.js\""), "{client}");
@@ -36,53 +32,43 @@ fn head_emits_tagged_builders_per_target() {
     assert!(html.contains("hHead"), "{html}");
     assert!(html.contains("\"script:/sdk.js\""), "{html}");
     assert!(html.contains("\"meta:name:theme-color\""), "{html}");
-}
 
-#[test]
-fn head_without_src_emits_an_unkeyed_builder() {
     let source = "import { Head } from \"reze-js\";\n\nconst data = { kind: \"Site\" };\n\nexport const view = <Head><script type=\"application/ld+json\">{JSON.stringify(data)}</script></Head>;\n";
     let client = code_for(source, CompileTarget::Client);
     assert!(client.contains("void 0"), "{client}");
 }
 
 #[test]
-fn head_accepts_literal_keys_in_braces_and_templates() {
+fn literal_and_dynamic_identities_are_accepted() {
     let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src={\"/a.js\"} /><link rel=\"preconnect\" href={`/cdn`} /></Head>;\n";
     let client = code_for(source, CompileTarget::Client);
     assert!(client.contains("\"script:/a.js\""), "{client}");
     assert!(client.contains("\"link:preconnect\\n/cdn\""), "{client}");
-}
 
-#[test]
-fn head_accepts_dynamic_content() {
     let source = "import { Head, signal } from \"reze-js\";\n\nlet title = signal(\"a\");\n\nexport const view = <Head><meta property=\"og:title\" content={title} /></Head>;\n";
     let client = code_for(source, CompileTarget::Client);
     assert!(client.contains("\"meta:property:og:title\""), "{client}");
 }
 
 #[test]
-fn head_used_as_a_value_is_an_error() {
-    let errors = errors("import { Head } from \"reze-js\";\n\nexport const Alias = Head;\n");
-    assert!(has(&errors, Code::ControlFlowAsValue));
-}
+fn head_children_that_are_misused_are_refused() {
+    let options = without_source_map();
+    let found =
+        errors("import { Head } from \"reze-js\";\n\nexport const Alias = Head;\n", &options);
+    assert!(has(&found, Code::ControlFlowAsValue));
 
-#[test]
-fn head_attributes_are_errors() {
-    let errors = errors(
+    let found = errors(
         "import { Head } from \"reze-js\";\n\nexport const view = <Head mount={document.head}><meta name=\"a\" content=\"b\" /></Head>;\n",
+        &options,
     );
-    assert!(has(&errors, Code::ControlFlowAttribute));
-}
+    assert!(has(&found, Code::ControlFlowAttribute));
 
-#[test]
-fn head_without_children_is_an_error() {
-    let errors =
-        errors("import { Head } from \"reze-js\";\n\nexport const view = <Head></Head>;\n");
-    assert!(has(&errors, Code::ControlFlowChildren));
-}
+    let found = errors(
+        "import { Head } from \"reze-js\";\n\nexport const view = <Head></Head>;\n",
+        &options,
+    );
+    assert!(has(&found, Code::ControlFlowChildren));
 
-#[test]
-fn head_rejects_non_tag_children() {
     for child in [
         "<div />",
         "<Widget />",
@@ -94,31 +80,29 @@ fn head_rejects_non_tag_children() {
         let source = format!(
             "import {{ Head, Show }} from \"reze-js\";\n\nconst Widget = () => <i />;\n\nexport const view = <Head>{child}</Head>;\n"
         );
-        let found = errors(&source);
+        let found = errors(&source, &options);
         assert!(has(&found, Code::ControlFlowChildren), "{child}: {found:?}");
     }
+    let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/a.js\"><b>bold</b></script><meta name=\"a\" content=\"b\">text</meta></Head>;\n";
+    let found = details(&errors(source, &options));
+    assert_eq!(found.len(), 2, "{found:?}");
 }
 
 #[test]
-fn head_rejects_spreads_handlers_and_islands() {
+fn head_spreads_handlers_islands_identities_and_inline_scripts_are_refused() {
+    let options = without_source_map();
     let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><meta name=\"a\" content=\"b\" {...attrs} /><script src=\"/a.js\" onLoad={ready} /><link rel=\"preconnect\" href=\"/cdn\" island=\"idle\" /></Head>;\n";
-    let found = details(&errors(source));
+    let found = details(&errors(source, &options));
     assert_eq!(found.len(), 3, "{found:?}");
     assert!(found[0].contains("spread"), "{found:?}");
     assert!(found[1].contains("event handler"), "{found:?}");
     assert!(found[2].contains("island"), "{found:?}");
-}
 
-#[test]
-fn head_rejects_dynamic_identity() {
     let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src={url} /><link rel={rel} href=\"/cdn\" /><meta name={name} content=\"x\" /></Head>;\n";
-    let found = details(&errors(source));
+    let found = details(&errors(source, &options));
     assert_eq!(found.len(), 3, "{found:?}");
     assert!(found.iter().all(|detail| detail.contains("string literal")), "{found:?}");
-}
 
-#[test]
-fn head_rejects_bad_meta_and_link_identity() {
     for (tag, count) in [
         ("<meta content=\"x\" />", 1),
         ("<meta name=\"a\" property=\"b\" content=\"x\" />", 1),
@@ -128,13 +112,10 @@ fn head_rejects_bad_meta_and_link_identity() {
         let source = format!(
             "import {{ Head }} from \"reze-js\";\n\nexport const view = <Head>{tag}</Head>;\n"
         );
-        let found = details(&errors(&source));
+        let found = details(&errors(&source, &options));
         assert_eq!(found.len(), count, "{tag}: {found:?}");
     }
-}
 
-#[test]
-fn head_rejects_executable_inline_scripts() {
     for tag in [
         "<script>alert(1)</script>",
         "<script type=\"module\">import \"/a.js\"</script>",
@@ -143,13 +124,6 @@ fn head_rejects_executable_inline_scripts() {
         let source = format!(
             "import {{ Head }} from \"reze-js\";\n\nexport const view = <Head>{tag}</Head>;\n"
         );
-        assert!(has(&errors(&source), Code::HeadAttr), "{tag}");
+        assert!(has(&errors(&source, &options), Code::HeadAttr), "{tag}");
     }
-}
-
-#[test]
-fn head_rejects_nested_elements_and_void_children() {
-    let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/a.js\"><b>bold</b></script><meta name=\"a\" content=\"b\">text</meta></Head>;\n";
-    let found = details(&errors(source));
-    assert_eq!(found.len(), 2, "{found:?}");
 }

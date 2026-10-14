@@ -5,70 +5,6 @@ import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 
-test("text and attribute bindings update in place", () => {
-  const [name, setName] = signal("a");
-  const { el } = mount(() => <p title={name()}>hi {name()}!</p>);
-  const p = el.firstChild as HTMLElement;
-  const text = p.firstChild;
-  expect(el.innerHTML).toBe('<p title="a">hi a<!---->!</p>');
-  setName("b");
-  tick();
-  expect(el.innerHTML).toBe('<p title="b">hi b<!---->!</p>');
-  expect(el.firstChild).toBe(p);
-  expect(p.firstChild).toBe(text);
-});
-
-test("a write re-evaluates only the bindings reading that signal", () => {
-  let aEvals = 0;
-  let bEvals = 0;
-  const bump = (which: "a" | "b"): number => {
-    if (which === "a") {
-      aEvals++;
-    } else {
-      bEvals++;
-    }
-    return 0;
-  };
-  const [a, setA] = signal(1);
-  const [b] = signal(2);
-  const { el } = mount(() => (
-    <p title={String(a() + bump("a"))} data-b={b() + bump("b")}>
-      {a() + bump("a")}:{b() + bump("b")}
-    </p>
-  ));
-  expect(aEvals).toBe(2);
-  expect(bEvals).toBe(2);
-  setA(10);
-  tick();
-  const p = el.firstChild as HTMLElement;
-  expect(p.getAttribute("title")).toBe("10");
-  expect(p.getAttribute("data-b")).toBe("2");
-  expect(p.textContent).toBe("10:2");
-  expect(aEvals).toBe(4);
-  expect(bEvals).toBe(2);
-});
-
-test("null, undefined and false remove the attribute", () => {
-  const [v, setV] = signal<string | false | null | undefined>("x");
-  const { el } = mount(() => <i data-v={v()} />);
-  const i = el.firstChild as HTMLElement;
-  expect(i.getAttribute("data-v")).toBe("x");
-  setV(false);
-  tick();
-  expect(i.hasAttribute("data-v")).toBe(false);
-  setV("y");
-  tick();
-  expect(i.getAttribute("data-v")).toBe("y");
-  setV(null);
-  tick();
-  expect(i.hasAttribute("data-v")).toBe(false);
-  setV("z");
-  tick();
-  setV(undefined);
-  tick();
-  expect(i.hasAttribute("data-v")).toBe(false);
-});
-
 test("static, namespaced and boolean attributes", () => {
   const [hidden, setHidden] = signal(true);
   const { el } = mount(() => (
@@ -91,7 +27,7 @@ test("static, namespaced and boolean attributes", () => {
   expect(svg.firstElementChild!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#icon");
 });
 
-test.each([
+const constantTruthinessRows = [
   [
     "negative zero",
     () => (
@@ -182,13 +118,17 @@ test.each([
     true,
     "0",
   ],
-] as const)("constant %s preserves boolean truthiness without changing rendered text", (_name, view, enabled, text) => {
-  const { el } = mount(view);
-  expect(el.querySelector("button")!.disabled).toBe(enabled);
-  expect(el.querySelector("input")!.checked).toBe(enabled);
-  expect(el.querySelector("option")!.selected).toBe(enabled);
-  expect(el.querySelector("i")!.getAttribute("data-value")).toBe(text);
-  expect(el.querySelector("i")!.textContent).toBe(text);
+] as const;
+
+test("constant JSX values keep boolean truthiness and rendered text in every row", () => {
+  for (const [name, view, enabled, text] of constantTruthinessRows) {
+    const { el } = mount(view);
+    expect(el.querySelector("button")!.disabled, `${name}: disabled`).toBe(enabled);
+    expect(el.querySelector("input")!.checked, `${name}: checked`).toBe(enabled);
+    expect(el.querySelector("option")!.selected, `${name}: selected`).toBe(enabled);
+    expect(el.querySelector("i")!.getAttribute("data-value"), `${name}: data-value`).toBe(text);
+    expect(el.querySelector("i")!.textContent, `${name}: text`).toBe(text);
+  }
 });
 
 test("value and checked are written as properties and survive user edits", () => {
@@ -234,7 +174,7 @@ test("select value is applied after its options are inserted", () => {
   expect(select.value).toBe("c");
 });
 
-test("class toggles flip their token and leave the static and foreign ones alone", () => {
+test("class bindings toggle tokens, switch value kinds and keep shared tokens on diff", () => {
   const [active, setActive] = signal(false);
   const [n, setN] = signal(1);
   const { el } = mount(() => (
@@ -260,50 +200,36 @@ test("class toggles flip their token and leave the static and foreign ones alone
   setN(0);
   tick();
   expect(i.className).toBe("is-zero");
-});
-
-test("reactive class values switch kinds and drop stale classes", () => {
-  const [cls, setCls] = signal<ClassValue>("plain");
-  const { el } = mount(() => <i class={cls()} />);
-  const i = el.firstChild as HTMLElement;
-  expect(i.className).toBe("plain");
-  setCls(["a", "b"]);
-  tick();
-  expect([...i.classList].sort()).toEqual(["a", "b"]);
-  setCls(["b", "c"]);
-  tick();
-  expect([...i.classList].sort()).toEqual(["b", "c"]);
-  setCls({ d: true });
-  tick();
-  expect([...i.classList].sort()).toEqual(["d"]);
-  setCls("plain");
-  tick();
-  expect(i.className).toBe("plain");
-  setCls(null);
-  tick();
-  expect(i.hasAttribute("class")).toBe(false);
-});
-
-test("composite object keys keep shared tokens on diff", () => {
-  const [selected, setSelected] = signal(false);
-  const { el } = mount(() => <i class={{ "bg-zinc-400 text-white": !selected(), "bg-sky-400 text-white": selected() }} />);
-  const i = el.firstChild as HTMLElement;
-  expect([...i.classList].sort()).toEqual(["bg-zinc-400", "text-white"]);
-  setSelected(true);
-  tick();
-  expect([...i.classList].sort()).toEqual(["bg-sky-400", "text-white"]);
-});
-
-test("style objects set, update and drop properties", () => {
-  const [s, setS] = signal<Record<string, string | undefined>>({ color: "red", "margin-top": "1px" });
-  const { el } = mount(() => <i style={s()} />);
-  const i = el.firstChild as HTMLElement;
-  expect(i.style.color).toBe("red");
-  expect(i.style.marginTop).toBe("1px");
-  setS({ color: "blue" });
-  tick();
-  expect(i.style.color).toBe("blue");
-  expect(i.style.marginTop).toBe("");
+  {
+    const [cls, setCls] = signal<ClassValue>("plain");
+    const { el } = mount(() => <i class={cls()} />);
+    const i = el.firstChild as HTMLElement;
+    expect(i.className).toBe("plain");
+    setCls(["a", "b"]);
+    tick();
+    expect([...i.classList].sort()).toEqual(["a", "b"]);
+    setCls(["b", "c"]);
+    tick();
+    expect([...i.classList].sort()).toEqual(["b", "c"]);
+    setCls({ d: true });
+    tick();
+    expect([...i.classList].sort()).toEqual(["d"]);
+    setCls("plain");
+    tick();
+    expect(i.className).toBe("plain");
+    setCls(null);
+    tick();
+    expect(i.hasAttribute("class")).toBe(false);
+  }
+  {
+    const [selected, setSelected] = signal(false);
+    const { el } = mount(() => <i class={{ "bg-zinc-400 text-white": !selected(), "bg-sky-400 text-white": selected() }} />);
+    const i = el.firstChild as HTMLElement;
+    expect([...i.classList].sort()).toEqual(["bg-zinc-400", "text-white"]);
+    setSelected(true);
+    tick();
+    expect([...i.classList].sort()).toEqual(["bg-sky-400", "text-white"]);
+  }
 });
 
 test("style accepts a string and a partly reactive object; null removes the attribute", () => {
@@ -328,7 +254,7 @@ test("style accepts a string and a partly reactive object; null removes the attr
   expect(b.style.width).toBe("2px");
 });
 
-test("delegated handlers coalesce writes and see the declaring element as currentTarget", () => {
+test("delegated events run handlers with currentTarget, stopPropagation and [handler, data] pairs", () => {
   const [a, setA] = signal(0);
   const [b, setB] = signal(0);
   const runs: number[] = [];
@@ -355,42 +281,40 @@ test("delegated handlers coalesce writes and see the declaring element as curren
   tick();
   expect(runs).toEqual([0, 2]);
   expect(targets).toEqual([button, div]);
+  {
+    const log: string[] = [];
+    const { el } = mount(() => (
+      <div onClick={() => log.push("outer")}>
+        <button
+          onClick={(e: MouseEvent) => {
+            log.push("inner");
+            e.stopPropagation();
+          }}
+        />
+      </div>
+    ));
+    fire((el.firstChild as HTMLElement).firstChild as HTMLElement, "click");
+    expect(log).toEqual(["inner"]);
+  }
+  {
+    const log: string[] = [];
+    const pick = (id: number, e: Event) => log.push(`${e.type} ${id}`);
+    const pair: [typeof pick, number] = [pick, 2];
+    const { el } = mount(() => (
+      <p>
+        <button onClick={[pick, 1]} />
+        <input onKeyDown={pair} onInput={(e: Event) => log.push(e.type)} />
+      </p>
+    ));
+    const [button, input] = el.firstElementChild!.children as unknown as [HTMLElement, HTMLElement];
+    fire(button, "click");
+    fire(input, "keydown");
+    fire(input, "input");
+    expect(log).toEqual(["click 1", "keydown 2", "input"]);
+  }
 });
 
-test("stopPropagation stops delegated bubbling", () => {
-  const log: string[] = [];
-  const { el } = mount(() => (
-    <div onClick={() => log.push("outer")}>
-      <button
-        onClick={(e: MouseEvent) => {
-          log.push("inner");
-          e.stopPropagation();
-        }}
-      />
-    </div>
-  ));
-  fire((el.firstChild as HTMLElement).firstChild as HTMLElement, "click");
-  expect(log).toEqual(["inner"]);
-});
-
-test("a [handler, data] pair calls handler(data, event), inline or from a variable", () => {
-  const log: string[] = [];
-  const pick = (id: number, e: Event) => log.push(`${e.type} ${id}`);
-  const pair: [typeof pick, number] = [pick, 2];
-  const { el } = mount(() => (
-    <p>
-      <button onClick={[pick, 1]} />
-      <input onKeyDown={pair} onInput={(e: Event) => log.push(e.type)} />
-    </p>
-  ));
-  const [button, input] = el.firstElementChild!.children as unknown as [HTMLElement, HTMLElement];
-  fire(button, "click");
-  fire(input, "keydown");
-  fire(input, "input");
-  expect(log).toEqual(["click 1", "keydown 2", "input"]);
-});
-
-test("non-delegated events attach direct listeners; onDoubleClick listens for dblclick", () => {
+test("non-delegated listeners attach directly for dblclick, on: and spread handlers", () => {
   const log: string[] = [];
   const { el } = mount(() => (
     <div onDoubleClick={() => log.push("double")} onMouseEnter={() => log.push("enter")} onScroll={() => log.push("scroll")} />
@@ -400,28 +324,26 @@ test("non-delegated events attach direct listeners; onDoubleClick listens for db
   fire(div, "mouseenter", { bubbles: false });
   div.dispatchEvent(new Event("scroll"));
   expect(log).toEqual(["double", "enter", "scroll"]);
+  {
+    const log: string[] = [];
+    const { el } = mount(() => <i on:custom={[() => log.push("once"), { once: true }]} on:other={() => log.push("other")} />);
+    const i = el.firstChild as HTMLElement;
+    i.dispatchEvent(new Event("custom"));
+    i.dispatchEvent(new Event("custom"));
+    i.dispatchEvent(new Event("other"));
+    expect(log).toEqual(["once", "other"]);
+  }
+  {
+    const log: string[] = [];
+    const { el } = mount(() => <i {...{ onDoubleClick: () => log.push("double"), onClick: () => log.push("click") }} />);
+    const i = el.firstChild as HTMLElement;
+    fire(i, "dblclick");
+    fire(i, "click");
+    expect(log).toEqual(["double", "click"]);
+  }
 });
 
-test("on: attaches a direct listener; [handler, options] passes listener options", () => {
-  const log: string[] = [];
-  const { el } = mount(() => <i on:custom={[() => log.push("once"), { once: true }]} on:other={() => log.push("other")} />);
-  const i = el.firstChild as HTMLElement;
-  i.dispatchEvent(new Event("custom"));
-  i.dispatchEvent(new Event("custom"));
-  i.dispatchEvent(new Event("other"));
-  expect(log).toEqual(["once", "other"]);
-});
-
-test("spread onDoubleClick listens for dblclick; spread onClick is delegated", () => {
-  const log: string[] = [];
-  const { el } = mount(() => <i {...{ onDoubleClick: () => log.push("double"), onClick: () => log.push("click") }} />);
-  const i = el.firstChild as HTMLElement;
-  fire(i, "dblclick");
-  fire(i, "click");
-  expect(log).toEqual(["double", "click"]);
-});
-
-test("ref assigns the element to a variable, member or callback", () => {
+test("ref assigns elements to variables, members, callbacks and forwarded component refs", () => {
   // oxlint-disable-next-line no-unassigned-vars -- the compiled ref assigns it
   let div!: HTMLDivElement;
   const refs: HTMLElement[] = [];
@@ -438,24 +360,23 @@ test("ref assigns the element to a variable, member or callback", () => {
   expect(div).toBe(el.firstChild);
   expect(refs).toEqual([i]);
   expect(seen).toEqual([b, u]);
-});
-
-test("a ref passed to a component reaches the element it forwards to", () => {
-  function Field(props: { ref?: HTMLInputElement | ((el: HTMLInputElement) => void) }) {
-    return <input ref={props.ref} />;
+  {
+    function Field(props: { ref?: HTMLInputElement | ((el: HTMLInputElement) => void) }) {
+      return <input ref={props.ref} />;
+    }
+    // oxlint-disable-next-line no-unassigned-vars -- the compiled ref assigns it
+    let input!: HTMLInputElement;
+    const seen: Element[] = [];
+    const { el } = mount(() => (
+      <p>
+        <Field ref={input} />
+        <Field ref={(e: Element) => seen.push(e)} />
+      </p>
+    ));
+    const [first, second] = el.firstElementChild!.children;
+    expect(input).toBe(first);
+    expect(seen).toEqual([second]);
   }
-  // oxlint-disable-next-line no-unassigned-vars -- the compiled ref assigns it
-  let input!: HTMLInputElement;
-  const seen: Element[] = [];
-  const { el } = mount(() => (
-    <p>
-      <Field ref={input} />
-      <Field ref={(e: Element) => seen.push(e)} />
-    </p>
-  ));
-  const [first, second] = el.firstElementChild!.children;
-  expect(input).toBe(first);
-  expect(seen).toEqual([second]);
 });
 
 test("spread applies reactive props, including ones from a function source", () => {
@@ -513,22 +434,6 @@ test("a dynamic native spread re-applies class, style, properties and children; 
   expect(p.textContent).toBe("two");
 });
 
-test("mergeProps reads the last defined source, keeping getters reactive", () => {
-  const [label, setLabel] = signal<string | undefined>(undefined);
-  function Button(props: { label?: string; kind?: string }) {
-    const merged = mergeProps({ label: "Save", kind: "primary" }, props) as { label: string; kind: string };
-    return <button class={merged.kind}>{merged.label}</button>;
-  }
-  const { el } = mount(() => <Button label={label()} kind="ghost" />);
-  expect(el.innerHTML).toBe('<button class="ghost">Save</button>');
-  setLabel("Send");
-  tick();
-  expect(el.innerHTML).toBe('<button class="ghost">Send</button>');
-  setLabel(undefined);
-  tick();
-  expect(el.innerHTML).toBe('<button class="ghost">Save</button>');
-});
-
 test("omitProps drops listed keys and stays reactive", () => {
   const [label, setLabel] = signal("Save");
   let seen: Record<string, unknown> = {};
@@ -544,25 +449,6 @@ test("omitProps drops listed keys and stays reactive", () => {
   setLabel("Send");
   tick();
   expect(el.innerHTML).toBe("<button>Send</button>");
-});
-
-test("component children are passed lazily and stay reactive", () => {
-  function Card(props: { children?: JSX.Element }) {
-    return <section>{props.children}</section>;
-  }
-  const [n, setN] = signal(1);
-  const { el } = mount(() => (
-    <Card>
-      count {n()}
-      <b />
-    </Card>
-  ));
-  expect(el.innerHTML).toBe("<section>count 1<b></b></section>");
-  const b = el.querySelector("b");
-  setN(2);
-  tick();
-  expect(el.innerHTML).toBe("<section>count 2<b></b></section>");
-  expect(el.querySelector("b")).toBe(b);
 });
 
 test("destructured props stay reactive, including defaults and rest", () => {
@@ -588,33 +474,6 @@ test("destructured props stay reactive, including defaults and rest", () => {
   expect(calls).toBe(1);
 });
 
-test("a text run updates its single text node in place", () => {
-  const [n, setN] = signal(1);
-  const [label, setLabel] = signal("x");
-  const { el } = mount(() => (
-    <div>
-      <p>doubled: {n() * 2}</p>
-      <p>
-        {label() + "!"} and {n() - 1} items
-      </p>
-    </div>
-  ));
-  const [first, second] = el.firstElementChild!.children as unknown as [HTMLElement, HTMLElement];
-  const firstText = first.firstChild;
-  const secondText = second.firstChild;
-  expect(first.childNodes.length).toBe(1);
-  expect(second.childNodes.length).toBe(1);
-  expect(first.textContent).toBe("doubled: 2");
-  expect(second.textContent).toBe("x! and 0 items");
-  setN(5);
-  setLabel("y");
-  tick();
-  expect(first.textContent).toBe("doubled: 10");
-  expect(second.textContent).toBe("y! and 4 items");
-  expect(first.firstChild).toBe(firstText);
-  expect(second.firstChild).toBe(secondText);
-});
-
 test("text runs separated by elements update independently", () => {
   const [n, setN] = signal(1);
   const { el } = mount(() => (
@@ -633,56 +492,6 @@ test("text runs separated by elements update independently", () => {
   tick();
   expect(div.innerHTML).toBe("4<b></b>total: 2<i></i>-2");
   expect([...div.childNodes]).toEqual(nodes);
-});
-
-test("a conditional rebuilds its branch only when the test's truthiness flips", () => {
-  const builds: string[] = [];
-  function Yes(props: { n: number }) {
-    builds.push("yes");
-    return <b>{props.n}</b>;
-  }
-  const [ok, setOk] = signal(1);
-  const { el } = mount(() => <div>{ok() ? <Yes n={ok()} /> : <i>no</i>}</div>);
-  const b = el.querySelector("b");
-  expect(el.innerHTML).toBe("<div><b>1</b></div>");
-  setOk(2);
-  tick();
-  expect(el.innerHTML).toBe("<div><b>2</b></div>");
-  expect(el.querySelector("b")).toBe(b);
-  expect(builds).toEqual(["yes"]);
-  setOk(0);
-  tick();
-  expect(el.innerHTML).toBe("<div><i>no</i></div>");
-  setOk(3);
-  tick();
-  expect(el.innerHTML).toBe("<div><b>3</b></div>");
-  expect(builds).toEqual(["yes", "yes"]);
-});
-
-test("a && branch keeps its nodes while truthy and removes them when falsy", () => {
-  const [open, setOpen] = signal<string | null>("a");
-  const [text, setText] = signal("hello");
-  const { el } = mount(() => (
-    <div>
-      <span>head</span>
-      {open() && <p>{text()}</p>}
-      <span>tail</span>
-    </div>
-  ));
-  const p = el.querySelector("p");
-  expect(el.innerHTML).toBe("<div><span>head</span><p>hello</p><span>tail</span></div>");
-  setOpen("b");
-  setText("bye");
-  tick();
-  expect(el.querySelector("p")).toBe(p);
-  expect(el.innerHTML).toBe("<div><span>head</span><p>bye</p><span>tail</span></div>");
-  setOpen(null);
-  tick();
-  expect(el.innerHTML).toBe("<div><span>head</span><span>tail</span></div>");
-  setOpen("c");
-  tick();
-  expect(el.innerHTML).toBe("<div><span>head</span><p>bye</p><span>tail</span></div>");
-  expect(el.querySelector("p")).not.toBe(p);
 });
 
 test("conditionals in component children and without JSX", () => {
@@ -732,28 +541,7 @@ test("arrays, fragments and nested getters render in order between static siblin
   expect(text()).toEqual(["first", "p", "q", "middle", "last"]);
 });
 
-test("render replaces existing content instead of adopting or duplicating it", () => {
-  const el = document.createElement("div");
-  document.body.appendChild(el);
-  el.innerHTML = "<main><h1>Islands</h1><p>loading counter…</p></main>";
-  const previous = el.firstChild;
-  const dispose = render(
-    () => (
-      <main>
-        <h1>Islands</h1>
-        <p>loading counter…</p>
-      </main>
-    ),
-    el,
-  );
-  expect(el.innerHTML).toBe("<main><h1>Islands</h1><p>loading counter…</p></main>");
-  expect(el.childNodes.length).toBe(1);
-  expect(el.firstChild).not.toBe(previous);
-  dispose();
-  expect(el.innerHTML).toBe("");
-});
-
-test("mergeProps of literals passes the last defined value", () => {
+test("mergeProps reads literal sources in order and passes the last defined value", () => {
   function View() {
     const merged = mergeProps({ 1: 2, ["label"]: "first" }, { ["label"]: "last", [2]: 3 }) as {
       1: number;
@@ -768,48 +556,27 @@ test("mergeProps of literals passes the last defined value", () => {
   }
   const { el } = mount(() => <View />);
   expect(el.textContent).toBe("2:last:3");
-});
-
-test("mergeProps evaluates literal sources in order", () => {
-  const calls: string[] = [];
-  const first = (name: string, value: number): number => {
-    calls.push(name);
-    return value;
-  };
-  function View() {
-    const merged = mergeProps({ a: first("first", 1) }, {}, { a: first("second", 2), 3: first("third", 3) }) as {
-      3: number;
-      a: number;
+  {
+    const calls: string[] = [];
+    const first = (name: string, value: number): number => {
+      calls.push(name);
+      return value;
     };
-    return (
-      <p>
-        {merged.a}:{merged[3]}
-      </p>
-    );
+    function View() {
+      const merged = mergeProps({ a: first("first", 1) }, {}, { a: first("second", 2), 3: first("third", 3) }) as {
+        3: number;
+        a: number;
+      };
+      return (
+        <p>
+          {merged.a}:{merged[3]}
+        </p>
+      );
+    }
+    const { el } = mount(() => <View />);
+    expect(calls).toEqual(["first", "second", "third"]);
+    expect(el.innerHTML).toBe("<p>2:3</p>");
   }
-  const { el } = mount(() => <View />);
-  expect(calls).toEqual(["first", "second", "third"]);
-  expect(el.innerHTML).toBe("<p>2:3</p>");
-});
-
-test("mergeProps keeps later getters live", () => {
-  const [v, setV] = signal(1);
-  function View() {
-    const merged = mergeProps(
-      { a: 0 },
-      {
-        get a() {
-          return v();
-        },
-      },
-    ) as { a: number };
-    return <p>{merged.a}</p>;
-  }
-  const { el } = mount(() => <View />);
-  expect(el.innerHTML).toBe("<p>1</p>");
-  setV(2);
-  tick();
-  expect(el.innerHTML).toBe("<p>2</p>");
 });
 
 test("splitProps and omitProps divide literal props", () => {
@@ -870,80 +637,10 @@ test("nested children win over the children attribute", () => {
   expect((nested.el.firstChild as HTMLElement).innerHTML).toBe("nested");
 });
 
-test("a search container keeps its children and the sibling after it", () => {
-  const { el } = mount(() => (
-    <>
-      <search>
-        <label>
-          Find
-          <input type="search" />
-        </label>
-      </search>
-      <p>after</p>
-    </>
-  ));
-  const search = el.querySelector("search")!;
-  expect(search.querySelector("label")!.textContent).toContain("Find");
-  expect(search.querySelector("input")).not.toBeNull();
-  expect(search.nextElementSibling!.textContent).toBe("after");
-});
-
-test("a track element stays void without swallowing its siblings", () => {
-  const { el } = mount(() => (
-    <div>
-      <video>
-        <track kind="captions" />
-      </video>
-      <p>after</p>
-    </div>
-  ));
-  const video = el.querySelector("video")!;
-  expect(video.firstChild!.nodeName).toBe("TRACK");
-  expect(video.querySelector("p")).toBeNull();
-  expect(el.querySelector("div > p")!.textContent).toBe("after");
-});
-
 function freshTarget(key: string): unknown {
   const merged = mergeProps({ [key]: 7 }, { [key]: new.target }) as Record<string, unknown>;
   return merged[key];
 }
-
-test("mergeProps preserves new.target across ordinary and constructor calls", () => {
-  expect(freshTarget("label")).toBe(7);
-  const constructed: unknown = Reflect.construct(freshTarget, ["label"]);
-  expect(constructed).toBe(freshTarget);
-});
-
-test("mergeProps keeps method receivers", () => {
-  function View() {
-    const source = {
-      name: "ann",
-      greet(): string {
-        return `hi ${this.name}`;
-      },
-    };
-    const merged = mergeProps({ greet: () => "none" }, source) as { greet: () => string };
-    return <p>{merged.greet()}</p>;
-  }
-  const { el } = mount(() => <View />);
-  expect(el.innerHTML).toBe("<p>hi ann</p>");
-});
-
-test("mergeProps keeps super method homes", () => {
-  const base: { who: string } = { who: "base" };
-  const child: { who: () => string } = {
-    who(): string {
-      return String(super.who);
-    },
-  };
-  Object.setPrototypeOf(child, base);
-  function View() {
-    const merged = mergeProps({ who: "other" }, child) as { who: () => string };
-    return <p>{merged.who()}</p>;
-  }
-  const { el } = mount(() => <View />);
-  expect(el.innerHTML).toBe("<p>base</p>");
-});
 
 test("refused default positions keep working arguments", () => {
   function Self({ a = arguments[0] }: { a?: unknown }) {

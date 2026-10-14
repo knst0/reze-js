@@ -14,7 +14,7 @@ import {
 
 const Home = () => null;
 
-test("describeSsgRoutes keeps file ids, assigns structural chains, and skips layouts", () => {
+test("describeSsgRoutes keeps file ids, assigns structural chains, skips layouts, and rejects duplicate leaf patterns", () => {
   const routes: RouteDefinition[] = [
     { id: "blog/[id]", path: "/blog/:id", component: Home },
     {
@@ -33,17 +33,14 @@ test("describeSsgRoutes keeps file ids, assigns structural chains, and skips lay
     { id: "1/1", pattern: "/docs/:topic?", fullPath: "/docs/:topic?", dynamics: [{ name: "topic", kind: "optional" }] },
     { id: "2", pattern: "/about", fullPath: "/about", dynamics: [] },
   ]);
-});
-
-test("describeSsgRoutes rejects duplicate leaf patterns", () => {
-  const routes: RouteDefinition[] = [
+  const duplicates: RouteDefinition[] = [
     { path: "/a", component: Home },
     { path: "/a", component: Home },
   ];
-  expect(() => describeSsgRoutes(routes)).toThrow('share pattern "/a"');
+  expect(() => describeSsgRoutes(duplicates)).toThrow('share pattern "/a"');
 });
 
-test("enumerateSsgUrls lists static leaves once and expands dynamics per leaf", () => {
+test("enumerateSsgUrls lists static leaves once, expands dynamics per leaf, and rejects invalid entries", () => {
   const routes: RouteDefinition[] = [
     { path: "/", component: Home },
     { path: "/blog/:id", component: Home },
@@ -66,25 +63,22 @@ test("enumerateSsgUrls lists static leaves once and expands dynamics per leaf", 
   ]);
   const never = enumerateSsgUrls(descriptors, { "/blog/:id": [{ id: "one" }], "/docs/*path": [] }, { trailingSlash: "never" });
   expect(never.map((entry) => entry.url)).toEqual(["/", "/blog/one"]);
-});
-test("enumerateSsgUrls rejects unknown keys, static entries, bad params, and collisions", () => {
-  const descriptors = describeSsgRoutes([
+
+  const blogDescriptors = describeSsgRoutes([
     { path: "/", component: Home },
     { path: "/blog/:id", component: Home },
   ]);
-  expect(() => enumerateSsgUrls(descriptors, { "/missing": [] }, { trailingSlash: "always" })).toThrow("unknown route pattern");
-  expect(() => enumerateSsgUrls(descriptors, { "/": [] }, { trailingSlash: "always" })).toThrow("static route");
-  expect(() => enumerateSsgUrls(descriptors, { "/blog/:id": [{ id: "x", extra: "y" }] }, { trailingSlash: "always" })).toThrow(
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/missing": [] }, { trailingSlash: "always" })).toThrow("unknown route pattern");
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/": [] }, { trailingSlash: "always" })).toThrow("static route");
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "x", extra: "y" }] }, { trailingSlash: "always" })).toThrow(
     "unknown param",
   );
-  expect(() => enumerateSsgUrls(descriptors, {}, { trailingSlash: "always" })).toThrow("missing dynamic route");
-  expect(() => enumerateSsgUrls(descriptors, { "/blog/:id": [{}] }, { trailingSlash: "always" })).toThrow("missing required param");
-  expect(() => enumerateSsgUrls(descriptors, { "/blog/:id": [{ id: "a b" }, { id: "a%20b" }] }, { trailingSlash: "always" })).toThrow(
+  expect(() => enumerateSsgUrls(blogDescriptors, {}, { trailingSlash: "always" })).toThrow("missing dynamic route");
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{}] }, { trailingSlash: "always" })).toThrow("missing required param");
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "a b" }, { id: "a%20b" }] }, { trailingSlash: "always" })).toThrow(
     "duplicate output",
   );
-});
 
-test("enumerateSsgUrls rejects an empty page set and decoded collisions", () => {
   const dynamicOnly = describeSsgRoutes([{ path: "/blog/:id", component: Home }]);
   expect(() => enumerateSsgUrls(dynamicOnly, { "/blog/:id": [] }, { trailingSlash: "always" })).toThrow("enumerates no pages");
   const encodedPair = describeSsgRoutes([
@@ -94,7 +88,7 @@ test("enumerateSsgUrls rejects an empty page set and decoded collisions", () => 
   expect(() => enumerateSsgUrls(encodedPair, {}, { trailingSlash: "always" })).toThrow("colliding URLs");
 });
 
-test("normalizeSsgPath accepts pathnames and rejects everything else", () => {
+test("normalizeSsgPath accepts pathnames and rejects everything else; redirect targets resolve relatively and classify schemes", () => {
   expect(normalizeSsgPath("/")).toBe("/");
   expect(normalizeSsgPath("/blog/one")).toBe("/blog/one");
   expect(normalizeSsgPath("/blog/one/")).toBe("/blog/one");
@@ -102,9 +96,7 @@ test("normalizeSsgPath accepts pathnames and rejects everything else", () => {
   expect(() => normalizeSsgPath("/blog?x=1")).toThrow("excludes query and hash");
   expect(() => normalizeSsgPath("/blog/%2F")).toThrow("encoded slash");
   expect(() => normalizeSsgPath("/con")).toThrow("reserved");
-});
 
-test("redirect targets resolve relatively and classify schemes", () => {
   expect(resolveSsgRedirectTarget("/a/b/", "../c")).toBe("/a/c");
   expect(resolveSsgRedirectTarget("/a/b", "../c")).toBe("/c");
   expect(resolveSsgRedirectTarget("/a/b", "/c?x=1#h")).toBe("/c?x=1#h");
@@ -118,7 +110,7 @@ test("redirect targets resolve relatively and classify schemes", () => {
   assertRedirectTarget("/local");
 });
 
-test("prepareServerRoute settles preloads and merges metadata root-to-leaf", async () => {
+test("prepareServerRoute settles preloads, merges metadata root-to-leaf, and distinguishes missing preloads from undefined data", async () => {
   const routes: RouteDefinition[] = [
     {
       id: "root",
@@ -137,17 +129,33 @@ test("prepareServerRoute settles preloads and merges metadata root-to-leaf", asy
       ],
     },
   ];
-  const prepared = await prepareServerRoute(routes, "/blog/7");
-  expect(prepared.status).toBe("render");
-  if (prepared.status !== "render") return;
-  expect(prepared.metadata).toEqual({ title: "Post 7", description: "root desc" });
-  expect(prepared.matches).toEqual([
+  const merged = await prepareServerRoute(routes, "/blog/7");
+  expect(merged.status).toBe("render");
+  if (merged.status !== "render") return;
+  expect(merged.metadata).toEqual({ title: "Post 7", description: "root desc" });
+  expect(merged.matches).toEqual([
     { id: "root", params: { id: "7" }, hasData: true, data: "root-data" },
     { id: "post", params: { id: "7" }, hasData: true, data: { title: "Post 7" } },
   ]);
+
+  const undefinedRoutes: RouteDefinition[] = [
+    {
+      id: "root",
+      path: "/",
+      component: Home,
+      preload: () => undefined,
+      children: [{ id: "plain", path: "/plain", component: Home }],
+    },
+  ];
+  const plain = await prepareServerRoute(undefinedRoutes, "/plain");
+  if (plain.status !== "render") throw new Error("expected render");
+  expect(plain.matches).toEqual([
+    { id: "root", params: {}, hasData: true, data: undefined },
+    { id: "plain", params: {}, hasData: false },
+  ]);
 });
 
-test("prepareServerRoute concatenates head lists root-to-leaf with last entry winning", async () => {
+test("prepareServerRoute concatenates head lists root-to-leaf with last entry winning, and passes its context into data and metadata", async () => {
   const routes: RouteDefinition[] = [
     {
       id: "root",
@@ -191,11 +199,9 @@ test("prepareServerRoute concatenates head lists root-to-leaf with last entry wi
       { property: "og:title", content: "Leaf" },
     ],
   });
-});
 
-test("prepareServerRoute passes its context into route data and metadata", async () => {
   const context = { requestId: "ssr-42" };
-  const routes: RouteDefinition<typeof context>[] = [
+  const contextRoutes: RouteDefinition<typeof context>[] = [
     {
       path: "/",
       preload: ({ context }) => context.requestId,
@@ -203,45 +209,24 @@ test("prepareServerRoute passes its context into route data and metadata", async
       component: Home,
     },
   ];
-
-  const prepared = await prepareServerRoute(routes, "/", { context });
-  if (prepared.status !== "render") throw new Error("expected render");
-  expect(prepared.metadata.title).toBe("ssr-42");
-  expect(prepared.matches[0]?.data).toBe("ssr-42");
+  const withContext = await prepareServerRoute(contextRoutes, "/", { context });
+  if (withContext.status !== "render") throw new Error("expected render");
+  expect(withContext.metadata.title).toBe("ssr-42");
+  expect(withContext.matches[0]?.data).toBe("ssr-42");
 });
 
-test("prepareServerRoute distinguishes missing preloads from undefined data", async () => {
-  const routes: RouteDefinition[] = [
-    {
-      id: "root",
-      path: "/",
-      component: Home,
-      preload: () => undefined,
-      children: [{ id: "plain", path: "/plain", component: Home }],
-    },
-  ];
-  const prepared = await prepareServerRoute(routes, "/plain");
-  if (prepared.status !== "render") throw new Error("expected render");
-  expect(prepared.matches).toEqual([
-    { id: "root", params: {}, hasData: true, data: undefined },
-    { id: "plain", params: {}, hasData: false },
-  ]);
-});
-
-test("prepareServerRoute short-circuits literal redirects before preloads", async () => {
+test("prepareServerRoute short-circuits literal redirects before preloads, follows callback redirects with settled data, and reports not-found", async () => {
   const preload = vi.fn(() => "data");
-  const routes: RouteDefinition[] = [
+  const literalRoutes: RouteDefinition[] = [
     { path: "/old", redirect: { to: "/new" }, preload, component: Home },
     { path: "/new", component: Home },
   ];
-  const prepared = await prepareServerRoute(routes, "/old");
-  expect(prepared).toEqual({ status: "redirect", to: "/new", replace: true });
+  const literal = await prepareServerRoute(literalRoutes, "/old");
+  expect(literal).toEqual({ status: "redirect", to: "/new", replace: true });
   expect(preload).not.toHaveBeenCalled();
-});
 
-test("prepareServerRoute follows callback redirects with settled data", async () => {
   const seen: unknown[] = [];
-  const routes: RouteDefinition[] = [
+  const gatedRoutes: RouteDefinition[] = [
     {
       path: "/gated",
       component: Home,
@@ -253,14 +238,12 @@ test("prepareServerRoute follows callback redirects with settled data", async ()
     },
     { path: "/new", component: Home },
   ];
-  const prepared = await prepareServerRoute(routes, "/gated");
-  expect(prepared).toEqual({ status: "redirect", to: "/new", replace: true });
+  const gated = await prepareServerRoute(gatedRoutes, "/gated");
+  expect(gated).toEqual({ status: "redirect", to: "/new", replace: true });
   expect(seen).toEqual(["go"]);
-});
 
-test("prepareServerRoute reports not-found for unknown paths", async () => {
-  const prepared = await prepareServerRoute([{ path: "/", component: Home }], "/missing");
-  expect(prepared).toEqual({ status: "not-found" });
+  const missing = await prepareServerRoute([{ path: "/", component: Home }], "/missing");
+  expect(missing).toEqual({ status: "not-found" });
 });
 
 test("resolveSsgRedirectChain reaches the render and detects cycles", async () => {

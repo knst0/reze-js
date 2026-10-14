@@ -1,11 +1,14 @@
+mod common;
+
 use std::path::PathBuf;
 
+use common::apply_fix;
 use reze_compiler::{
     CATALOG, Code, CompileTarget, Diagnostic, Example, Options, compile, render_skill,
 };
 
-fn diagnostics(source: &str) -> Vec<Diagnostic> {
-    match compile(source, "example.tsx", &Options::default()) {
+fn diagnostics_for(source: &str, options: &Options) -> Vec<Diagnostic> {
+    match compile(source, "example.tsx", options) {
         Ok(Some(out)) => out.diagnostics,
         Ok(None) => Vec::new(),
         Err(errors) => errors,
@@ -22,27 +25,9 @@ fn example_options(code: Code) -> Options {
     }
 }
 
-fn diagnostics_for(source: &str, options: &Options) -> Vec<Diagnostic> {
-    match compile(source, "example.tsx", options) {
-        Ok(Some(out)) => out.diagnostics,
-        Ok(None) => Vec::new(),
-        Err(errors) => errors,
-    }
-}
-
 fn skill_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../packages/compiler/skills/reze-compiler-diagnostics/SKILL.md")
-}
-
-fn apply(source: &str, diagnostic: &Diagnostic) -> String {
-    let mut edits: Vec<_> = diagnostic.fixes[0].edits.iter().collect();
-    edits.sort_by_key(|edit| std::cmp::Reverse(edit.start));
-    let mut fixed = source.to_string();
-    for edit in edits {
-        fixed.replace_range(edit.start as usize..edit.end as usize, &edit.text);
-    }
-    fixed
 }
 
 fn has(diagnostics: &[Diagnostic], code: Code) -> bool {
@@ -50,7 +35,7 @@ fn has(diagnostics: &[Diagnostic], code: Code) -> bool {
 }
 
 #[test]
-fn skill_is_current() {
+fn skill_is_current_and_has_one_section_per_code() {
     let path = skill_path();
     let skill = render_skill();
     if std::env::var_os("REZE_UPDATE_SKILL").is_some() {
@@ -63,12 +48,33 @@ fn skill_is_current() {
         "{} is stale: run REZE_UPDATE_SKILL=1 cargo test -p reze_compiler --test catalog",
         path.display()
     );
+
+    let sections = skill.lines().filter(|line| {
+        line.strip_prefix("## ")
+            .is_some_and(|name| name.bytes().all(|b| b.is_ascii_uppercase() || b == b'_'))
+    });
+    assert_eq!(sections.count(), CATALOG.len());
+    assert!(skill.starts_with("---\nname: reze-compiler-diagnostics\n"));
 }
 
+/// Every `{key}` placeholder is filled; braces the template shows as text, like `{…}`, stay.
 #[test]
-fn examples_are_true() {
+fn examples_are_true_and_messages_have_no_placeholders() {
     for entry in CATALOG {
         let options = example_options(entry.code);
+        let (Example::Pair { bad: module, .. } | Example::Shows(module)) = entry.example;
+        for diagnostic in diagnostics_for(module, &options) {
+            for text in std::iter::once(&diagnostic.message)
+                .chain(diagnostic.fixes.iter().map(|fix| &fix.title))
+            {
+                let unfilled = text.split('{').skip(1).any(|rest| {
+                    rest.split_once('}').is_some_and(|(key, _)| {
+                        !key.is_empty() && key.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+                    })
+                });
+                assert!(!unfilled, "{}: {text}", entry.name);
+            }
+        }
         match entry.example {
             Example::Pair { bad, good } => {
                 let found = diagnostics_for(bad, &options);
@@ -97,7 +103,7 @@ fn examples_are_true() {
 fn fixes_repair() {
     for entry in CATALOG {
         let Example::Pair { bad, .. } = entry.example else { continue };
-        let found: Vec<_> = diagnostics(bad)
+        let found: Vec<_> = diagnostics_for(bad, &Options::default())
             .into_iter()
             .filter(|d| d.code == entry.code && !d.fixes.is_empty())
             .collect();
@@ -107,43 +113,12 @@ fn fixes_repair() {
             entry.name
         );
         for diagnostic in &found {
-            let fixed = apply(bad, diagnostic);
+            let fixed = apply_fix(bad, diagnostic);
             assert!(
-                !has(&diagnostics(&fixed), entry.code),
+                !has(&diagnostics_for(&fixed, &Options::default()), entry.code),
                 "{}: fixed source still reports it:\n{fixed}",
                 entry.name
             );
         }
     }
-}
-
-/// Every `{key}` placeholder is filled; braces the template shows as text, like `{…}`, stay.
-#[test]
-fn messages_have_no_placeholders() {
-    for entry in CATALOG {
-        let (Example::Pair { bad: module, .. } | Example::Shows(module)) = entry.example;
-        for diagnostic in diagnostics_for(module, &example_options(entry.code)) {
-            for text in std::iter::once(&diagnostic.message)
-                .chain(diagnostic.fixes.iter().map(|fix| &fix.title))
-            {
-                let unfilled = text.split('{').skip(1).any(|rest| {
-                    rest.split_once('}').is_some_and(|(key, _)| {
-                        !key.is_empty() && key.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
-                    })
-                });
-                assert!(!unfilled, "{}: {text}", entry.name);
-            }
-        }
-    }
-}
-
-#[test]
-fn every_code_has_one_section() {
-    let skill = render_skill();
-    let sections = skill.lines().filter(|line| {
-        line.strip_prefix("## ")
-            .is_some_and(|name| name.bytes().all(|b| b.is_ascii_uppercase() || b == b'_'))
-    });
-    assert_eq!(sections.count(), CATALOG.len());
-    assert!(skill.starts_with("---\nname: reze-compiler-diagnostics\n"));
 }

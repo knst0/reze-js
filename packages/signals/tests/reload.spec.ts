@@ -8,7 +8,7 @@ function tick(): Promise<void> {
   return promise;
 }
 
-test("isPending is false for a first load and true while a re-run is pending", async () => {
+test("isPending is false for a first load and true while a re-run is pending, in every enclosing scope of a nested reload", async () => {
   const [id, setId] = signal(1);
   const pending: boolean[] = [];
   withReloadScope((isPending) => {
@@ -29,15 +29,13 @@ test("isPending is false for a first load and true while a re-run is pending", a
   await tick();
   await tick();
   expect(pending).toEqual([false, true, false]);
-});
 
-test("a reload below a nested scope is pending in every enclosing scope", async () => {
-  const [id, setId] = signal(1);
+  const [nestedId, setNestedId] = signal(1);
   const outer: boolean[] = [];
   withReloadScope((isOuterPending) => {
     withReloadScope(() => {
       asyncComputed(async (c) => {
-        const current = c.get(id);
+        const current = c.get(nestedId);
         await tick();
         return current;
       });
@@ -49,7 +47,7 @@ test("a reload below a nested scope is pending in every enclosing scope", async 
   await tick();
   await tick();
 
-  setId(2);
+  setNestedId(2);
   flush();
   await tick();
   await tick();

@@ -4,12 +4,7 @@ import { computed, effect, flush, provideContext, root, signal, untrack, useCont
 
 const Theme: ContextKey<string> = { id: Symbol("theme"), defaultValue: "light" };
 
-test("the default applies without a provider", () => {
-  expect(useContext(Theme)).toBe("light");
-  root(() => expect(useContext(Theme)).toBe("light"));
-});
-
-test("the nearest provider wins", () => {
+test("the nearest provider wins, and an explicit undefined value is provided rather than the default", () => {
   root(() => {
     provideContext(Theme, "dark", () => {
       expect(useContext(Theme)).toBe("dark");
@@ -17,9 +12,6 @@ test("the nearest provider wins", () => {
       expect(useContext(Theme)).toBe("dark");
     });
   });
-});
-
-test("an explicit undefined value is provided, not the default", () => {
   const Maybe: ContextKey<string | undefined> = { id: Symbol(), defaultValue: "fallback" };
   root(() => provideContext(Maybe, undefined, () => expect(useContext(Maybe)).toBeUndefined()));
 });

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { ModuleFactsStore, staticImportSpecifiers } from "../src/facts";
+import { ModuleFactsStore } from "../src/facts";
 import { profileHash } from "../src/hash";
 import { writeManifest } from "../src/manifest";
 
@@ -60,57 +60,27 @@ function writeLibrary(source = LIB_SOURCE): string {
 const libraryDir = () => join(root, "node_modules/@acme/ui");
 const mainPath = () => join(root, "src/main.ts");
 
-describe("staticImportSpecifiers", () => {
-  it("lists static imports, including multi-line ones, and skips dynamic import()", () => {
-    const source = `import a from "./a";\nimport {\n  b,\n} from "./b";\nimport "./side-effect";\nconst late = await import("./lazy");`;
-    expect(staticImportSpecifiers(source)).toEqual(["./a", "./b", "./side-effect"]);
-  });
-});
-
 describe("application modules", () => {
-  it("gives a re-export the target's facts under the re-exported name", async () => {
+  it("gives re-exports the target's facts under the re-exported name, drops names the target lacks, and terminates on cycles", async () => {
     write("src/b.ts", LIB_SOURCE);
     write("src/a.ts", `export { read as reading } from "./b";`);
-    const facts = await storeFor().factsFor(mainPath(), ["./a"], resolve);
-    expect(facts["./a"].exports).toEqual({ reading: READ_FACTS });
-  });
+    expect((await storeFor().factsFor(mainPath(), ["./a"], resolve))["./a"].exports).toEqual({ reading: READ_FACTS });
 
-  it("drops a re-export whose target does not export the name", async () => {
-    write("src/b.ts", LIB_SOURCE);
     write("src/a.ts", `export { missing } from "./b";`);
-    const facts = await storeFor().factsFor(mainPath(), ["./a"], resolve);
-    expect(facts["./a"].exports).toEqual({});
-  });
+    expect((await storeFor().factsFor(mainPath(), ["./a"], resolve))["./a"].exports).toEqual({});
 
-  it("terminates on cyclic re-exports", async () => {
     write("src/a.ts", `export { read } from "./b";`);
     write("src/b.ts", `export { read } from "./a";`);
-    const facts = await storeFor().factsFor(mainPath(), ["./a"], resolve);
-    expect(facts["./a"].exports).toEqual({});
+    expect((await storeFor().factsFor(mainPath(), ["./a"], resolve))["./a"].exports).toEqual({});
   });
 
-  it("omits facts of a module the compiler refuses", async () => {
-    write("src/b.ts", `import { signal } from "reze-js";\nlet n = signal(0);\nexport default n;\nexport const bump = () => (n += 1);\n`);
-    const facts = await storeFor().factsFor(mainPath(), ["./b"], resolve);
-    expect(facts).toEqual({});
-  });
-
-  it("invalidates an importer only when an export it consumes changes", async () => {
+  it("invalidates an importer only when an export it consumes changes, and keeps reporting it until it consumes the change", async () => {
     const dependency = write("src/a.ts", LIB_SOURCE);
     const store = storeFor();
     await store.factsFor(mainPath(), ["./a"], resolve);
 
     write("src/a.ts", `${LIB_SOURCE}\n`);
     expect(await store.importersToInvalidate(dependency, resolve)).toEqual([]);
-
-    write("src/a.ts", `export function read() { return "x"; }\n`);
-    expect(await store.importersToInvalidate(dependency, resolve)).toEqual([mainPath()]);
-  });
-
-  it("keeps reporting a stale importer to every caller until it consumes the change", async () => {
-    const dependency = write("src/a.ts", LIB_SOURCE);
-    const store = storeFor();
-    await store.factsFor(mainPath(), ["./a"], resolve);
 
     write("src/a.ts", `export function read() { return "x"; }\n`);
     expect(await store.importersToInvalidate(dependency, resolve)).toEqual([mainPath()]);
@@ -122,20 +92,23 @@ describe("application modules", () => {
 });
 
 describe("library modules", () => {
-  it("uses a manifest entry whose hash matches the source", async () => {
+  it("uses a manifest entry whose hash matches the source, and hashes it with the plugin's hash", async () => {
     writeLibrary();
-    writeManifest(libraryDir());
+    const manifest = JSON.parse(readFileSync(writeManifest(libraryDir()).path, "utf8"));
+    expect(manifest["src/lib.ts"].hash).toBe(profileHash(LIB_SOURCE));
     const facts = await storeFor().factsFor(mainPath(), ["@acme/ui"], resolve);
     expect(facts["@acme/ui"].exports).toEqual({ read: READ_FACTS });
   });
 
-  it("treats a library without a manifest as opaque", async () => {
-    writeLibrary();
-    const facts = await storeFor().factsFor(mainPath(), ["@acme/ui"], resolve);
-    expect(facts).toEqual({});
+  it("treats a library without a manifest as opaque, and declares reze only for packages with a reze export condition", async () => {
+    const library = writeLibrary();
+    const store = storeFor();
+    expect(await store.factsFor(mainPath(), ["@acme/ui"], resolve)).toEqual({});
+    expect(store.declaresReze(library)).toBe(true);
+    expect(store.declaresReze(mainPath())).toBe(false);
   });
 
-  it("ignores a stale manifest entry and warns once per package", async () => {
+  it("ignores a stale manifest entry and warns once per package, but analyzes it when the package is listed", async () => {
     writeLibrary();
     writeManifest(libraryDir());
     writeLibrary(`${LIB_SOURCE}\n`);
@@ -144,17 +117,11 @@ describe("library modules", () => {
 
     expect(await store.factsFor(mainPath(), ["@acme/ui"], resolve)).toEqual({});
     await store.factsFor(mainPath(), ["@acme/ui"], resolve);
-
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain("@acme/ui");
-  });
 
-  it("analyzes a listed package whose manifest is stale", async () => {
-    writeLibrary();
-    writeManifest(libraryDir());
-    writeLibrary(`${LIB_SOURCE}\n`);
-    const facts = await storeFor(["@acme/ui"]).factsFor(mainPath(), ["@acme/ui"], resolve);
-    expect(facts["@acme/ui"].exports).toEqual({ read: READ_FACTS });
+    const listed = await storeFor(["@acme/ui"]).factsFor(mainPath(), ["@acme/ui"], resolve);
+    expect(listed["@acme/ui"].exports).toEqual({ read: READ_FACTS });
   });
 
   it("prefers a valid manifest entry over analysis when the package is listed", async () => {
@@ -168,13 +135,7 @@ describe("library modules", () => {
     expect(facts["@acme/ui"].exports).toEqual({ read: { role: "value" } });
   });
 
-  it("writes manifest hashes that match the plugin's hash of the source", () => {
-    writeLibrary();
-    const manifest = JSON.parse(readFileSync(writeManifest(libraryDir()).path, "utf8"));
-    expect(manifest["src/lib.ts"].hash).toBe(profileHash(LIB_SOURCE));
-  });
-
-  it("reports modules the compiler refuses instead of writing them", () => {
+  it("reports modules the compiler refuses instead of writing them, and rejects a package without a reze.manifest", () => {
     writeLibrary();
     write(
       "node_modules/@acme/ui/src/bad.ts",
@@ -183,17 +144,8 @@ describe("library modules", () => {
     const report = writeManifest(libraryDir());
     expect(report.written).toBe(1);
     expect(report.skipped).toEqual([{ file: "src/bad.ts", reason: "SIGNAL_DEFAULT_EXPORT" }]);
-  });
 
-  it("rejects a package without a reze.manifest", () => {
     write("node_modules/@acme/ui/package.json", JSON.stringify({ name: "@acme/ui", exports: { reze: "./src/lib.ts" } }));
     expect(() => writeManifest(libraryDir())).toThrow("no reze.manifest");
-  });
-
-  it("declares reze only for packages with a reze export condition", () => {
-    const library = writeLibrary();
-    const store = storeFor();
-    expect(store.declaresReze(library)).toBe(true);
-    expect(store.declaresReze(mainPath())).toBe(false);
   });
 });

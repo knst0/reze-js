@@ -34,16 +34,9 @@ describe("ssr output layout", () => {
   );
 
   test(
-    "refuses a server directory inside the client directory",
+    "refuses a server directory that nests in or contains the client directory",
     async () => {
       await expectBuildFails(reze({ ssr: { entry: "src/app.tsx" } }), FIXTURE, DIST, /overlaps build\.outDir/);
-    },
-    TIMEOUT,
-  );
-
-  test(
-    "refuses a server directory that contains the client directory",
-    async () => {
       await expectBuildFails(
         reze({ ssr: { entry: "src/app.tsx", outDir: "dist" } }),
         FIXTURE,

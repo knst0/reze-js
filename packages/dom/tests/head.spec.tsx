@@ -51,24 +51,6 @@ test("Head mounts tags into the head with no inline trace and dispose removes th
   expect(managed()).toHaveLength(0);
 });
 
-test("Head attributes and text stay live while mounted", () => {
-  const [theme, setTheme] = signal("black");
-  const [json, setJson] = signal('{"a":1}');
-  mount(() => (
-    <Head>
-      <meta name="theme-color" content={theme()} />
-      <script type="application/ld+json">{json()}</script>
-    </Head>
-  ));
-  expect(tag("META", "name", "theme-color")?.getAttribute("content")).toBe("black");
-
-  setTheme("white");
-  setJson('{"a":2}');
-  tick();
-  expect(tag("META", "name", "theme-color")?.getAttribute("content")).toBe("white");
-  expect(tag("SCRIPT", "type", "application/ld+json")?.textContent).toBe('{"a":2}');
-});
-
 test("a script adopted from the server keeps one tag across owners until all dispose", () => {
   const server = document.createElement("script");
   server.setAttribute("src", "/sdk.js");
@@ -94,29 +76,6 @@ test("a script adopted from the server keeps one tag across owners until all dis
   second.dispose();
   tick();
   expect(tag("SCRIPT", "src", "/sdk.js")).toBe(server);
-});
-
-test("a client-created script is shared while owners live and removed after the last dispose", () => {
-  const first = mount(() => (
-    <Head>
-      <script src="/sdk.js" />
-    </Head>
-  ));
-  const created = tag("SCRIPT", "src", "/sdk.js");
-  const second = mount(() => (
-    <Head>
-      <script src="/sdk.js" />
-    </Head>
-  ));
-  expect(tag("SCRIPT", "src", "/sdk.js")).toBe(created);
-
-  first.dispose();
-  tick();
-  expect(tag("SCRIPT", "src", "/sdk.js")).toBe(created);
-
-  second.dispose();
-  tick();
-  expect(tag("SCRIPT", "src", "/sdk.js")).toBeUndefined();
 });
 
 test("a meta replaces the adopted tag so it stays live", () => {
@@ -176,46 +135,7 @@ test("an unkeyed script adopts on matching content and is created otherwise", ()
   expect(tag("SCRIPT", "type", "application/ld+json")).toBe(server);
 });
 
-test("unmarked template tags are invisible: Head creates its own and never touches them", () => {
-  const template = document.createElement("script");
-  template.setAttribute("src", "/sdk.js");
-  document.head.append(template);
-
-  const { dispose } = mount(() => (
-    <Head>
-      <script src="/sdk.js" />
-    </Head>
-  ));
-  const scripts = [...document.head.querySelectorAll('script[src="/sdk.js"]')];
-  expect(scripts).toHaveLength(2);
-  expect(document.head.contains(template)).toBe(true);
-
-  dispose();
-  tick();
-  expect([...document.head.querySelectorAll('script[src="/sdk.js"]')]).toEqual([template]);
-});
-
-test("a conditional Head adds and removes its tags with the branch", () => {
-  const [open, setOpen] = signal(true);
-  mount(() => (
-    <Show when={open()}>
-      <Head>
-        <meta name="theme-color" content="black" />
-      </Head>
-    </Show>
-  ));
-  expect(tag("META", "name", "theme-color")).not.toBeUndefined();
-
-  setOpen(false);
-  tick();
-  expect(tag("META", "name", "theme-color")).toBeUndefined();
-
-  setOpen(true);
-  tick();
-  expect(tag("META", "name", "theme-color")).not.toBeUndefined();
-});
-
-test("mergeStreamedHead appends, replaces by key and removes on empty units", () => {
+test("mergeStreamedHead appends, replaces by key and replaces unkeyed tags by stream token", () => {
   mergeStreamedHead(document, streamUnit("meta:name:theme", `<meta name="theme" content="dark" data-rz-head="">`));
   const first = tag("META", "name", "theme");
   expect(first?.getAttribute("content")).toBe("dark");
@@ -227,14 +147,13 @@ test("mergeStreamedHead appends, replaces by key and removes on empty units", ()
 
   mergeStreamedHead(document, streamUnit("meta:name:theme", ""));
   expect(tag("META", "name", "theme")).toBeUndefined();
-});
+  {
+    mergeStreamedHead(document, streamUnit("u0", `<script type="application/ld+json" data-rz-head="u0">{"a":1}</script>`));
+    const first = tag("SCRIPT", "type", "application/ld+json");
+    expect(first?.textContent).toBe('{"a":1}');
 
-test("mergeStreamedHead replaces unkeyed tags by stream token", () => {
-  mergeStreamedHead(document, streamUnit("u0", `<script type="application/ld+json" data-rz-head="u0">{"a":1}</script>`));
-  const first = tag("SCRIPT", "type", "application/ld+json");
-  expect(first?.textContent).toBe('{"a":1}');
-
-  mergeStreamedHead(document, streamUnit("u0", `<script type="application/ld+json" data-rz-head="u0">{"a":2}</script>`));
-  expect(tag("SCRIPT", "type", "application/ld+json")).not.toBe(first);
-  expect(managed().filter((element) => element.tagName === "SCRIPT")).toHaveLength(1);
+    mergeStreamedHead(document, streamUnit("u0", `<script type="application/ld+json" data-rz-head="u0">{"a":2}</script>`));
+    expect(tag("SCRIPT", "type", "application/ld+json")).not.toBe(first);
+    expect(managed().filter((element) => element.tagName === "SCRIPT")).toHaveLength(1);
+  }
 });

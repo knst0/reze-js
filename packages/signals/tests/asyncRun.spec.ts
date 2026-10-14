@@ -8,7 +8,7 @@ function tick(): Promise<void> {
   return promise;
 }
 
-test("the signal of a run aborts when a newer run starts and stays live for the latest", async () => {
+test("a run's signal aborts when a newer run starts and stays live for the latest, and disposing aborts the latest run", async () => {
   const [id, setId] = signal(1);
   const runSignals: AbortSignal[] = [];
   asyncComputed(async (c) => {
@@ -28,9 +28,7 @@ test("the signal of a run aborts when a newer run starts and stays live for the 
   expect(runSignals).toHaveLength(2);
   expect(runSignals[0]!.aborted).toBe(true);
   expect(runSignals[1]!.aborted).toBe(false);
-});
 
-test("disposing the computation aborts the signal of its latest run", async () => {
   let latest: AbortSignal | undefined;
   const dispose = root((dispose) => {
     asyncComputed(async (c) => {

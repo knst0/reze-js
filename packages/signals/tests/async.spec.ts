@@ -8,7 +8,7 @@ function tick(): Promise<void> {
   return promise;
 }
 
-test("a source read through c.get after an await is tracked", async () => {
+async function tracksSourcesOfTheLatestRun(): Promise<void> {
   const [id, setId] = signal(1);
   const [lang, setLang] = signal("en");
   const runs: string[] = [];
@@ -34,28 +34,9 @@ test("a source read through c.get after an await is tracked", async () => {
   await tick();
   await tick();
   expect(runs).toEqual(["1:en", "1:fr", "2:fr"]);
-});
+}
 
-test("a superseded run never overwrites the latest one", async () => {
-  const [id, setId] = signal(1);
-  const requests = new Map<number, PromiseWithResolvers<string>>();
-  const user = asyncComputed((c) => {
-    const request = Promise.withResolvers<string>();
-    requests.set(c.get(id), request);
-    return request.promise;
-  });
-  setId(2);
-  flush();
-
-  requests.get(2)!.resolve("second");
-  await tick();
-  requests.get(1)!.resolve("first");
-  await tick();
-  expect(user.value()).toBe("second");
-  expect(user.isPending()).toBe(false);
-});
-
-test("reads a superseded run makes after its await are untracked", async () => {
+async function supersededReadsAreUntracked(): Promise<void> {
   const [id, setId] = signal(1);
   const [late, setLate] = signal(0);
   const gate = Promise.withResolvers<void>();
@@ -78,9 +59,9 @@ test("reads a superseded run makes after its await are untracked", async () => {
   flush();
   await tick();
   expect(runs).toBe(2);
-});
+}
 
-test("a source the latest run stopped reading is dropped once it settles", async () => {
+async function droppedSourceStopsRerunning(): Promise<void> {
   const [useA, setUseA] = signal(true);
   const [a, setA] = signal("a");
   let runs = 0;
@@ -98,9 +79,34 @@ test("a source the latest run stopped reading is dropped once it settles", async
   flush();
   await tick();
   expect(runs).toBe(2);
+}
+
+test("a run tracks the sources it reads, including after an await, and drops the ones it stops reading", async () => {
+  await tracksSourcesOfTheLatestRun();
+  await supersededReadsAreUntracked();
+  await droppedSourceStopsRerunning();
 });
 
-test("a rejection is exposed as error(), keeps the value, and clears on the next success", async () => {
+test("a superseded run never overwrites the latest one", async () => {
+  const [id, setId] = signal(1);
+  const requests = new Map<number, PromiseWithResolvers<string>>();
+  const user = asyncComputed((c) => {
+    const request = Promise.withResolvers<string>();
+    requests.set(c.get(id), request);
+    return request.promise;
+  });
+  setId(2);
+  flush();
+
+  requests.get(2)!.resolve("second");
+  await tick();
+  requests.get(1)!.resolve("first");
+  await tick();
+  expect(user.value()).toBe("second");
+  expect(user.isPending()).toBe(false);
+});
+
+test("a rejection or synchronous throw is exposed as error(), keeps the last value, and clears on the next success", async () => {
   const [id, setId] = signal(1);
   const user = asyncComputed(async (c) => {
     const current = c.get(id);
@@ -120,14 +126,12 @@ test("a rejection is exposed as error(), keeps the value, and clears on the next
   await tick();
   expect(user.error()).toBeUndefined();
   expect(user.value()).toBe(3);
-});
 
-test("a synchronous throw is exposed as error()", async () => {
-  const user = asyncComputed((): Promise<number> => {
+  const sync = asyncComputed((): Promise<number> => {
     throw new Error("sync");
   });
   await tick();
-  expect((user.error() as Error).message).toBe("sync");
+  expect((sync.error() as Error).message).toBe("sync");
 });
 
 test("readers re-run when the state they read changes", async () => {

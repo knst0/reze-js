@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-14T06:27:09.114Z",
+  "sizes": {
+    "action": {
+      "raw": 4362,
+      "gzip": 1758,
+      "brotli": 1621
+    },
+    "asyncComputed": {
+      "raw": 5863,
+      "gzip": 2031,
+      "brotli": 1875
+    },
+    "baseline": {
+      "raw": 0,
+      "gzip": 20,
+      "brotli": 1
+    },
+    "computed": {
+      "raw": 2791,
+      "gzip": 1125,
+      "brotli": 1043
+    },
+    "context": {
+      "raw": 1809,
+      "gzip": 810,
+      "brotli": 743
+    },
+    "effect": {
+      "raw": 2814,
+      "gzip": 1116,
+      "brotli": 1045
+    },
+    "selector": {
+      "raw": 4573,
+      "gzip": 1757,
+      "brotli": 1635
+    },
+    "signal": {
+      "raw": 1772,
+      "gzip": 825,
+      "brotli": 758
+    },
+    "store": {
+      "raw": 3504,
+      "gzip": 1463,
+      "brotli": 1352
+    }
+  }
+}

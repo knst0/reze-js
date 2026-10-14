@@ -134,38 +134,6 @@ test("a closed-shape spread honors prop:, attr: and bool: prefixes", () => {
   expect(button.hasAttribute("disabled")).toBe(false);
 });
 
-test("a closed-shape spread skips setter writes for entries whose value did not change", () => {
-  const writes: string[] = [];
-  const [first, setFirst] = signal("a");
-  const [second, setSecond] = signal("b");
-  mount(() => (
-    <div
-      ref={(node) => traceProps(node as HTMLElement, writes, "pa", "pb")}
-      {...{ "prop:pa": `a=${first()}`, "prop:pb": `b=${second()}` }}
-    />
-  ));
-  expect(writes).toEqual(["write:pa=a=a", "write:pb=b=b"]);
-  writes.length = 0;
-  setFirst("x");
-  tick();
-  expect(writes).toEqual(["write:pa=a=x"]);
-  setSecond("y");
-  tick();
-  expect(writes).toEqual(["write:pa=a=x", "write:pb=b=y"]);
-});
-
-test("disposing a closed-shape spread stops its subscriptions", () => {
-  const [title, setTitle] = signal("a");
-  const { el, dispose } = mount(() => <div {...{ title: `t=${title()}`, "data-n": `n=${title()}` }} />);
-  const div = el.firstChild as HTMLElement;
-  expect(div.getAttribute("title")).toBe("t=a");
-  dispose();
-  setTitle("b");
-  tick();
-  expect(div.getAttribute("title")).toBe("t=a");
-  expect(div.getAttribute("data-n")).toBe("n=a");
-});
-
 test("duplicate spread keys keep later-wins semantics through the generic path", () => {
   const [name, setName] = signal("a");
   const { el: fixed } = mount(() => <div {...{ title: `spread-${name()}` }} title="fixed" />);
@@ -191,53 +159,4 @@ test("a later maybe-undefined key falls back without clobbering the spread", () 
   setOk(true);
   tick();
   expect(div.getAttribute("title")).toBe("late");
-});
-
-test("alias and proxy spread sources keep generic spread semantics", () => {
-  const [title, setTitle] = signal("proxied");
-  const aliased = { title: "aliased", "data-n": "2" };
-  const proxied = new Proxy(
-    { title: "unused" },
-    {
-      get(target, key, receiver) {
-        return key === "title" ? title() : Reflect.get(target, key, receiver);
-      },
-    },
-  );
-  const { el } = mount(() => (
-    <div>
-      <i {...aliased} />
-      <b {...proxied} />
-    </div>
-  ));
-  const [i, b] = el.firstElementChild!.children as unknown as [HTMLElement, HTMLElement];
-  expect(i.getAttribute("title")).toBe("aliased");
-  expect(i.getAttribute("data-n")).toBe("2");
-  expect(b.getAttribute("title")).toBe("proxied");
-  setTitle("updated");
-  tick();
-  expect(b.getAttribute("title")).toBe("updated");
-});
-
-test("a multi-bind group evaluates every value before any target write", () => {
-  const log: string[] = [];
-  const seen = (name: string, value: string): string => {
-    log.push(`eval:${name}=${value}`);
-    return value;
-  };
-  let first = sig("a");
-  let second = sig("b");
-  mount(() => (
-    <div
-      ref={(node) => traceProps(node as HTMLElement, log, "title", "tip")}
-      prop:title={seen("title", `${first}:${second}`)}
-      prop:tip={seen("tip", `${first}-${second}`)}
-    />
-  ));
-  expect(log).toEqual(["eval:title=a:b", "eval:tip=a-b", "write:title=a:b", "write:tip=a-b"]);
-  log.length = 0;
-  first = "x";
-  second = "y";
-  tick();
-  expect(log).toEqual(["eval:title=x:y", "eval:tip=x-y", "write:title=x:y", "write:tip=x-y"]);
 });

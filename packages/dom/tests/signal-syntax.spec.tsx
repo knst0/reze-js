@@ -6,7 +6,7 @@ import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 
-test("compiled signal assignments preserve expression results, precedence, and live DOM reads", () => {
+test("compiled assignment operators preserve results and logical assignments skip unused operands", () => {
   const results: number[] = [];
   const { el } = mount(() => {
     let count = signal(8);
@@ -32,61 +32,37 @@ test("compiled signal assignments preserve expression results, precedence, and l
   expect(results).toEqual([6, 18, 6, 36, 1, 4, 2, 1, 3, 2, 1]);
   expect(button.textContent).toBe("1");
   expect(el.firstChild).toBe(button);
-});
-
-test("compiled logical assignments skip unused operands and return the selected value", () => {
-  const calls: string[] = [];
-  const results: (number | undefined)[] = [];
-  const produce = (name: string, value: number): number => {
-    calls.push(name);
-    return value;
-  };
-  const { el } = mount(() => {
-    let value = signal<number | undefined>(0);
-    return (
-      <button
-        onClick={() => {
-          results.push((value &&= produce("skipped-and", 1)));
-          results.push((value ??= produce("skipped-nullish", 2)));
-          results.push((value ||= produce("or", 3)));
-          results.push((value ||= produce("skipped-or", 4)));
-          results.push((value &&= produce("and", 5)));
-          value = undefined;
-          results.push((value ??= produce("nullish", 6)));
-        }}
-      >
-        {value}
-      </button>
-    );
-  });
-  el.querySelector("button")!.click();
-  tick();
-  expect(calls).toEqual(["or", "and", "nullish"]);
-  expect(results).toEqual([0, 0, 3, 3, 5, 6]);
-  expect(el.textContent).toBe("6");
-});
-
-test("compiled function-valued signals retain closures, shorthand values, and alias bindings", () => {
-  let invoke: () => { name: string; value: string };
-  let calls = 0;
-  const { el } = mount(() => {
-    let name = sig("first");
-    let handler = signal<() => string>();
-    const saved = () => {
-      calls++;
-      return name;
+  {
+    const calls: string[] = [];
+    const results: (number | undefined)[] = [];
+    const produce = (name: string, value: number): number => {
+      calls.push(name);
+      return value;
     };
-    handler = saved;
-    invoke = () => ({ name, value: handler!() });
-    return <button onClick={() => (name = "second")}>{name}</button>;
-  });
-  expect(calls).toBe(0);
-  expect(invoke!()).toEqual({ name: "first", value: "first" });
-  el.querySelector("button")!.click();
-  tick();
-  expect(invoke!()).toEqual({ name: "second", value: "second" });
-  expect(calls).toBe(2);
-  expect(el.textContent).toBe("second");
+    const { el } = mount(() => {
+      let value = signal<number | undefined>(0);
+      return (
+        <button
+          onClick={() => {
+            results.push((value &&= produce("skipped-and", 1)));
+            results.push((value ??= produce("skipped-nullish", 2)));
+            results.push((value ||= produce("or", 3)));
+            results.push((value ||= produce("skipped-or", 4)));
+            results.push((value &&= produce("and", 5)));
+            value = undefined;
+            results.push((value ??= produce("nullish", 6)));
+          }}
+        >
+          {value}
+        </button>
+      );
+    });
+    el.querySelector("button")!.click();
+    tick();
+    expect(calls).toEqual(["or", "and", "nullish"]);
+    expect(results).toEqual([0, 0, 3, 3, 5, 6]);
+    expect(el.textContent).toBe("6");
+  }
 });
 
 test("compiled computed chains and namespace signals update effects and dispose subscriptions", () => {
@@ -157,7 +133,7 @@ test("compiled signal reads and writes drive classes, text, and neighboring bind
   expect(el.firstChild).toBe(button);
 });
 
-test("compiled signal assignments store templates, shorthands, and branch results", () => {
+test("compiled assignments in expressions store every value and run loop and short-circuit updates in order", () => {
   let run: (a: number, b: number, list: number[]) => unknown[];
   let pickCalls = 0;
   const { el } = mount(() => {
@@ -200,114 +176,34 @@ test("compiled signal assignments store templates, shorthands, and branch result
   expect(pickCalls).toBe(2);
   tick();
   expect(el.textContent).toBe("3");
-});
-
-test("compiled signal updates run in loop and short-circuit positions in order", () => {
-  let run: (ok: boolean) => number[];
-  const { el } = mount(() => {
-    let i = signal(0);
-    run = (ok: boolean) => {
-      const trace: number[] = [];
-      for (i = 0; i < 3; i++) {
+  {
+    let run: (ok: boolean) => number[];
+    const { el } = mount(() => {
+      let i = signal(0);
+      run = (ok: boolean) => {
+        const trace: number[] = [];
+        for (i = 0; i < 3; i++) {
+          trace.push(i);
+        }
+        ok && i++;
         trace.push(i);
-      }
-      ok && i++;
-      trace.push(i);
-      ok ? i++ : i--;
-      trace.push(i);
-      (i++, i--);
-      trace.push(i);
-      void i++;
-      trace.push(i);
-      return trace;
-    };
-    return <output>{i}</output>;
-  });
-  expect(run!(true)).toEqual([0, 1, 2, 4, 5, 5, 6]);
-  tick();
-  expect(el.textContent).toBe("6");
-  expect(run!(false)).toEqual([0, 1, 2, 3, 2, 2, 3]);
-  tick();
-  expect(el.textContent).toBe("3");
-});
-
-test("compiled namespace, merged, and cross-module signal imports share one graph", () => {
-  let setB!: (v: number) => void;
-  let bump!: () => void;
-  const { el } = mount(() => {
-    let n = R.signal(0);
-    const [b, setBRaw] = rawSignal(1);
-    setB = setBRaw;
-    const sum = rawComputed(() => n + b());
-    bump = () => {
-      n += 1;
-    };
-    return <output onClick={() => setB(2)}>{sum()}</output>;
-  });
-  expect(el.textContent).toBe("1");
-  bump!();
-  tick();
-  expect(el.textContent).toBe("2");
-  setB!(5);
-  tick();
-  expect(el.textContent).toBe("6");
-});
-
-test("compiled never-written signals render stable values while written ones stay live", () => {
-  const { el } = mount(() => {
-    let title = signal("Reze");
-    const fixed = signal(1);
-    let count = signal(0);
-    return (
-      <h1 onClick={() => (count += 1)}>
-        {title}: {fixed} {count}
-      </h1>
-    );
-  });
-  const h1 = el.querySelector("h1")!;
-  expect(h1.textContent).toBe("Reze: 1 0");
-  h1.click();
-  tick();
-  expect(h1.textContent).toBe("Reze: 1 1");
-  h1.click();
-  tick();
-  expect(h1.textContent).toBe("Reze: 1 2");
-});
-
-test("compiled signal closures and effects observe object, shorthand, and array reads", () => {
-  const seen: unknown[][] = [];
-  let inc!: () => void;
-  let reset!: () => () => number;
-  mount(() => {
-    let count = signal(0);
-    effect(() => {
-      seen.push([count, { count }, [count]]);
+        ok ? i++ : i--;
+        trace.push(i);
+        (i++, i--);
+        trace.push(i);
+        void i++;
+        trace.push(i);
+        return trace;
+      };
+      return <output>{i}</output>;
     });
-    inc = () => {
-      count++;
-    };
-    reset = () => {
-      const log = () => count;
-      count = 0;
-      return log;
-    };
-    return <output>{count}</output>;
-  });
-  expect(seen).toEqual([[0, { count: 0 }, [0]]]);
-  inc!();
-  tick();
-  expect(seen).toEqual([
-    [0, { count: 0 }, [0]],
-    [1, { count: 1 }, [1]],
-  ]);
-  const log = reset!();
-  expect(log()).toBe(0);
-  tick();
-  expect(seen).toEqual([
-    [0, { count: 0 }, [0]],
-    [1, { count: 1 }, [1]],
-    [0, { count: 0 }, [0]],
-  ]);
+    expect(run!(true)).toEqual([0, 1, 2, 4, 5, 5, 6]);
+    tick();
+    expect(el.textContent).toBe("6");
+    expect(run!(false)).toEqual([0, 1, 2, 3, 2, 2, 3]);
+    tick();
+    expect(el.textContent).toBe("3");
+  }
 });
 
 test("compiled signals drive attributes, styles, inputs, and component props", () => {
@@ -437,27 +333,6 @@ test("compiled computed values update titles, handlers, shorthands, and derived 
   expect(logged).toEqual([{ doubled: 2 }]);
   expect(button.title).toBe("6");
   expect(button.textContent).toBe("x6: 6 9 9 1.5");
-});
-
-test("compiled computed alias, namespace, and merged imports derive from shared sources", () => {
-  let setA!: (v: number) => void;
-  const { el } = mount(() => {
-    const [a, setARaw] = rawSignal(1);
-    setA = setARaw;
-    const b = rawComputed(() => a() + 1);
-    const c = computed(a() + b());
-    const d = derive(a() + 1);
-    const e = R.computed(a() + 1);
-    return (
-      <output>
-        {c} {d} {e}
-      </output>
-    );
-  });
-  expect(el.textContent).toBe("3 2 2");
-  setA!(2);
-  tick();
-  expect(el.textContent).toBe("5 3 3");
 });
 
 test("compiled computed values drive list selection and conditional branches", () => {

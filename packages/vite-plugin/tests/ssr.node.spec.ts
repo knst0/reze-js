@@ -69,25 +69,22 @@ function islandDescriptors(html: string): Array<Record<string, unknown>> {
   );
 }
 
-test("router server context is created from each request", async () => {
-  const [first, second] = await Promise.all([
-    routerA
-      .handler(new Request("http://127.0.0.1/context", { headers: { "x-query-scope": "request-one" } }))
-      .then((response) => response.text()),
-    routerA
-      .handler(new Request("http://127.0.0.1/context", { headers: { "x-query-scope": "request-two" } }))
-      .then((response) => response.text()),
-  ]);
-
-  expect(first).toContain("request-one");
-  expect(second).toContain("request-two");
-  expect(first).not.toContain("request-two");
-  expect(second).not.toContain("request-one");
-});
-
 test(
-  "concurrent requests see their own module-level signals",
+  "server renders are isolated per request: router context and concurrent module-level signals",
   async () => {
+    const [first, second] = await Promise.all([
+      routerA
+        .handler(new Request("http://127.0.0.1/context", { headers: { "x-query-scope": "request-one" } }))
+        .then((response) => response.text()),
+      routerA
+        .handler(new Request("http://127.0.0.1/context", { headers: { "x-query-scope": "request-two" } }))
+        .then((response) => response.text()),
+    ]);
+    expect(first).toContain("request-one");
+    expect(second).toContain("request-two");
+    expect(first).not.toContain("request-two");
+    expect(second).not.toContain("request-one");
+
     const [slow, fast] = await Promise.all([
       moduleState.handler(new Request("http://127.0.0.1/?d=200")).then((response) => response.text()),
       moduleState.handler(new Request("http://127.0.0.1/?d=10")).then((response) => response.text()),
@@ -121,16 +118,49 @@ test(
   TIMEOUT,
 );
 
-test(
-  "the island descriptor for a static parent names the parent component",
-  async () => {
-    const html = await (await islands.handler(new Request("http://127.0.0.1/"))).text();
-    expect(islandDescriptors(html).map((descriptor) => descriptor.e)).toContain("Parent");
-  },
-  TIMEOUT,
-);
-
 for (const engine of ENGINES) {
+  test(
+    `${engine}: islands name their static parent, escalate function props, run async loads on the server and keep typed values`,
+    async () => {
+      const html = await (await islands.handler(new Request("http://127.0.0.1/"))).text();
+      expect(islandDescriptors(html).map((descriptor) => descriptor.e)).toContain("Parent");
+
+      const escalated = await openPage(browsers.get(engine)!, `${islandsOrigin.origin}/`);
+      try {
+        await clickUntil(escalated.page, "#pick-b", "document.querySelector('#picked')?.textContent === 'b'");
+        expect(escalated.errors).toEqual([]);
+      } finally {
+        await escalated.close();
+      }
+
+      const seeded = await openPage(browsers.get(engine)!, `${islandsOrigin.origin}/`);
+      try {
+        await clickUntil(seeded.page, "#seeded", "document.querySelector('#seeded')?.textContent === 'seeded value:1'");
+        expect(await seeded.page.evaluate("globalThis.__loads ?? 0")).toBe(0);
+        expect(seeded.errors).toEqual([]);
+      } finally {
+        await seeded.close();
+      }
+
+      const typed = await openPage(browsers.get(engine)!, `${islandsOrigin.origin}/`, {
+        beforeHydration: async (held) => {
+          await held.fill("#name", "typed text");
+          await held.focus("#name");
+          await held.evaluate("window.__before = document.querySelector('#name')");
+        },
+      });
+      try {
+        await waitFor(typed.page, "window.__before != null && document.querySelector('#name') !== window.__before");
+        expect(await typed.page.inputValue("#name")).toBe("typed text");
+        expect(await typed.page.evaluate("document.activeElement?.id")).toBe("name");
+        expect(typed.errors).toEqual([]);
+      } finally {
+        await typed.close();
+      }
+    },
+    TIMEOUT,
+  );
+
   test(
     `${engine}: patches reach the page, islands boot and static modules never load`,
     async () => {
@@ -151,89 +181,35 @@ for (const engine of ENGINES) {
   );
 
   test(
-    `${engine}: a static parent owning a function prop is escalated to the island root`,
+    `${engine}: swap navigation keeps the page, and a build mismatch turns the next swap into a full load`,
     async () => {
-      const { page, errors, close } = await openPage(browsers.get(engine)!, `${islandsOrigin.origin}/`);
+      const swap = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);
       try {
-        await clickUntil(page, "#pick-b", "document.querySelector('#picked')?.textContent === 'b'");
-        expect(errors).toEqual([]);
-      } finally {
-        await close();
-      }
-    },
-    TIMEOUT,
-  );
-
-  test(
-    `${engine}: async island loads run on the server only`,
-    async () => {
-      const { page, errors, close } = await openPage(browsers.get(engine)!, `${islandsOrigin.origin}/`);
-      try {
-        await clickUntil(page, "#seeded", "document.querySelector('#seeded')?.textContent === 'seeded value:1'");
-        expect(await page.evaluate("globalThis.__loads ?? 0")).toBe(0);
-        expect(errors).toEqual([]);
-      } finally {
-        await close();
-      }
-    },
-    TIMEOUT,
-  );
-
-  test(
-    `${engine}: typed values and focus survive the island boot`,
-    async () => {
-      const { page, errors, close } = await openPage(browsers.get(engine)!, `${islandsOrigin.origin}/`, {
-        beforeHydration: async (held) => {
-          await held.fill("#name", "typed text");
-          await held.focus("#name");
-          await held.evaluate("window.__before = document.querySelector('#name')");
-        },
-      });
-      try {
-        await waitFor(page, "window.__before != null && document.querySelector('#name') !== window.__before");
-        expect(await page.inputValue("#name")).toBe("typed text");
-        expect(await page.evaluate("document.activeElement?.id")).toBe("name");
-        expect(errors).toEqual([]);
-      } finally {
-        await close();
-      }
-    },
-    TIMEOUT,
-  );
-
-  test(
-    `${engine}: swap navigation keeps the page and updates the url and title`,
-    async () => {
-      const { page, errors, close } = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);
-      try {
-        await page.evaluate("window.__marker = 'kept'");
-        await page.click("#nav-about");
-        await waitFor(page, "location.pathname === '/about' && document.title === 'About' && document.querySelector('#about') !== null");
-        expect(await page.evaluate("window.__marker")).toBe("kept");
-        expect(errors).toEqual([]);
-      } finally {
-        await close();
-      }
-    },
-    TIMEOUT,
-  );
-
-  test(
-    `${engine}: a build mismatch turns a swap into a full load`,
-    async () => {
-      const { page, errors, close } = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);
-      try {
-        await page.evaluate("window.__marker = 'kept'");
-        routerActive = routerB;
-        await page.click("#nav-news");
+        await swap.page.evaluate("window.__marker = 'kept'");
+        await swap.page.click("#nav-about");
         await waitFor(
-          page,
+          swap.page,
+          "location.pathname === '/about' && document.title === 'About' && document.querySelector('#about') !== null",
+        );
+        expect(await swap.page.evaluate("window.__marker")).toBe("kept");
+        expect(swap.errors).toEqual([]);
+      } finally {
+        await swap.close();
+      }
+
+      const mismatch = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);
+      try {
+        await mismatch.page.evaluate("window.__marker = 'kept'");
+        routerActive = routerB;
+        await mismatch.page.click("#nav-news");
+        await waitFor(
+          mismatch.page,
           "location.pathname === '/news' && window.__marker === undefined && document.querySelector('#version')?.textContent === 'two'",
         );
-        expect(errors).toEqual([]);
+        expect(mismatch.errors).toEqual([]);
       } finally {
         routerActive = routerA;
-        await close();
+        await mismatch.close();
       }
     },
     TIMEOUT,

@@ -11,7 +11,7 @@ function shape(routes: FileRoute[]): Shape[] {
 }
 
 describe("scanRoutes", () => {
-  test("maps every segment kind and nests layouts", () => {
+  test("maps segment kinds, nests layouts, treats group files as pathless layouts, and names nodes for builders", () => {
     const routes = scanRoutes([
       "index.tsx",
       "about.tsx",
@@ -38,22 +38,21 @@ describe("scanRoutes", () => {
       { id: "docs/[...path]", path: "/docs/*path", fullPath: "/docs/*path" },
       { id: "index", path: "/", fullPath: "/" },
     ]);
-  });
-
-  test("a group file is a pathless layout for its directory", () => {
     expect(shape(scanRoutes(["(auth).tsx", "(auth)/login.tsx"]))).toEqual([
       { id: "(auth)", path: "/", fullPath: "/", children: [{ id: "(auth)/login", path: "/login", fullPath: "/login" }] },
     ]);
-  });
-  test("names nodes for the paths builders, groups by inner name", () => {
-    const routes = scanRoutes(["index.tsx", "(auth).tsx", "(auth)/login.tsx", "blog.tsx", "blog/[id].tsx", "docs/[...path].tsx"]);
-    const names = (list: FileRoute[]): unknown[] =>
-      list.map((route) => (route.children.length > 0 ? { [route.name]: names(route.children) } : route.name));
-    expect(names(routes)).toEqual([{ auth: ["login"] }, { blog: ["byId"] }, "byPath", "index"]);
+
+    const named = scanRoutes(["index.tsx", "(auth).tsx", "(auth)/login.tsx", "blog.tsx", "blog/[id].tsx", "docs/[...path].tsx"]);
+    expect(named.map((route) => ({ [route.name]: route.children.map((child) => child.name) }))).toEqual([
+      { auth: ["login"] },
+      { blog: ["byId"] },
+      { byPath: [] },
+      { index: [] },
+    ]);
   });
 
-  test("skips non-route files, declarations, tests, dot paths and underscore paths", () => {
-    const routes = scanRoutes([
+  test("skips non-route files and custom extensions scan as routes with the extension stripped", () => {
+    const skipped = scanRoutes([
       "a.tsx",
       "b.css",
       "c.d.ts",
@@ -66,10 +65,8 @@ describe("scanRoutes", () => {
       "blog/_draft.tsx",
       "c.mdx",
     ]);
-    expect(routes.map((route) => route.file)).toEqual(["a.tsx"]);
-  });
+    expect(skipped.map((route) => route.file)).toEqual(["a.tsx"]);
 
-  test("custom extensions scan as routes with the extension stripped", () => {
     const routes = scanRoutes(["index.mdx", "guide.md", "blog/[id].mdx", "notes.txt"], { extensions: ["mdx", ".md"] });
     expect(shape(routes)).toEqual([
       {
@@ -83,15 +80,18 @@ describe("scanRoutes", () => {
     expect(routes.map((route) => route.file)).toEqual(["blog/[id].mdx", "guide.md", "index.mdx"]);
   });
 
-  test.each([
-    [["a.tsx", "a.ts"], '[reze-router] duplicate route files for "a": a.ts, a.tsx'],
-    [["[id].tsx", "[slug].tsx"], '[reze-router] routes "[id].tsx" and "[slug].tsx" both match "/:slug"'],
-    [["(a).tsx", "(a)/Login.tsx", "login.tsx"], '[reze-router] routes "(a)/Login.tsx" and "login.tsx" both match "/login"'],
-    [["blog/index.tsx", "blog/[[page]].tsx"], '[reze-router] routes "blog/[[page]].tsx" and "blog/index.tsx" both match "/blog"'],
-    [["[...rest].tsx", "[...rest]/x.tsx"], '[reze-router] [...rest]/x.tsx: splat "rest" must be the last segment in "/*rest/x"'],
-    [["[id].tsx", "[id]/[id].tsx"], '[reze-router] [id]/[id].tsx: duplicate param "id" in "/:id/:id"'],
-    [["[1x].tsx"], '[reze-router] [1x].tsx: invalid param name "1x" in "/:1x"'],
-  ])("%j throws", (files, message) => {
-    expect(() => scanRoutes(files)).toThrow(message);
+  test("conflicting or invalid route file sets throw", () => {
+    const cases: [files: string[], message: string][] = [
+      [["a.tsx", "a.ts"], '[reze-router] duplicate route files for "a": a.ts, a.tsx'],
+      [["[id].tsx", "[slug].tsx"], '[reze-router] routes "[id].tsx" and "[slug].tsx" both match "/:slug"'],
+      [["(a).tsx", "(a)/Login.tsx", "login.tsx"], '[reze-router] routes "(a)/Login.tsx" and "login.tsx" both match "/login"'],
+      [["blog/index.tsx", "blog/[[page]].tsx"], '[reze-router] routes "blog/[[page]].tsx" and "blog/index.tsx" both match "/blog"'],
+      [["[...rest].tsx", "[...rest]/x.tsx"], '[reze-router] [...rest]/x.tsx: splat "rest" must be the last segment in "/*rest/x"'],
+      [["[id].tsx", "[id]/[id].tsx"], '[reze-router] [id]/[id].tsx: duplicate param "id" in "/:id/:id"'],
+      [["[1x].tsx"], '[reze-router] [1x].tsx: invalid param name "1x" in "/:1x"'],
+    ];
+    for (const [files, message] of cases) {
+      expect(() => scanRoutes(files), JSON.stringify(files)).toThrow(message);
+    }
   });
 });

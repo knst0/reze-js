@@ -11,8 +11,6 @@ test("a microtask flush left over after flush is a no-op (P03)", async () => {
   });
   flush();
   runs = 0;
-  // The write queues a microtask flush; flush drains the queue first, so the
-  // leftover microtask must find an empty queue and re-run nothing.
   setSrc(1);
   flush();
   expect(runs).toBe(1);
@@ -22,77 +20,7 @@ test("a microtask flush left over after flush is a no-op (P03)", async () => {
   expect(runs).toBe(1);
 });
 
-test("cleanup order on outer re-run: inner before outer, before new run", () => {
-  const log: string[] = [];
-  const [a, setA] = signal(0);
-
-  effect(() => {
-    a();
-    log.push("outer:run");
-    effect(() => {
-      log.push("inner:run");
-      return () => log.push("inner:cleanup");
-    });
-    return () => log.push("outer:cleanup");
-  });
-  expect(log).toEqual(["outer:run", "inner:run"]);
-
-  log.length = 0;
-  setA(1);
-  flush();
-  expect(log).toEqual(["inner:cleanup", "outer:cleanup", "outer:run", "inner:run"]);
-});
-
-test("computed unwatched: child effect cleanups run in reverse creation (LIFO)", () => {
-  // When the computed loses its last subscriber and gets unwatched, any
-  // effects it created during its getter must be cleaned up LIFO, not FIFO.
-  const log: string[] = [];
-  const c = computed(() => {
-    effect(() => () => log.push("e1"));
-    effect(() => () => log.push("e2"));
-    effect(() => () => log.push("e3"));
-    return 0;
-  });
-  const dispose = effect(() => {
-    c();
-  });
-  log.length = 0;
-  dispose();
-  expect(log).toEqual(["e3", "e2", "e1"]);
-});
-
-test("effect created inside computed: old inner cleanup runs before new inner setup", () => {
-  // When a computed re-evaluates, any effects its getter created on the
-  // previous run must be disposed (with cleanup) before the getter runs
-  // again. Otherwise the old inner's cleanup ends up running after the
-  // new inner has already been set up.
-  const [a, setA] = signal(0);
-  const log: string[] = [];
-
-  const c = computed(() => {
-    log.push("computed:eval");
-    effect(() => {
-      log.push("inner:run");
-      return () => log.push("inner:cleanup");
-    });
-    return a();
-  });
-
-  effect(() => {
-    c();
-  });
-  log.length = 0;
-
-  setA(1);
-  flush();
-  expect(log).toEqual(["inner:cleanup", "computed:eval", "inner:run"]);
-});
-
-test("cleanup order is correct on outer re-run after a prior inner-only re-run", () => {
-  // Regression: inner re-running alone routes outer through run()'s
-  // not-dirty branch (restore Watching), which must preserve any
-  // "has child effect" tracking so the next real outer re-run still
-  // disposes children before its own cleanup.
+test("outer re-runs dispose inner effects first, including after a prior inner-only re-run", () => {
   const [a, setA] = signal(0);
   const [b, setB] = signal(0);
   const log: string[] = [];
@@ -107,14 +35,50 @@ test("cleanup order is correct on outer re-run after a prior inner-only re-run",
     });
     return () => log.push("outer:cleanup");
   });
+  expect(log).toEqual(["outer:run", "inner:run"]);
 
-  setB(1); // inner re-runs alone; outer is touched via notify chain
+  log.length = 0;
+  setB(1);
   flush();
   log.length = 0;
 
   setA(1);
   flush();
   expect(log).toEqual(["inner:cleanup", "outer:cleanup", "outer:run", "inner:run"]);
+});
+
+test("effects created inside a computed are disposed LIFO on unwatch and before its next evaluation", () => {
+  const log: string[] = [];
+  const c = computed(() => {
+    effect(() => () => log.push("e1"));
+    effect(() => () => log.push("e2"));
+    effect(() => () => log.push("e3"));
+    return 0;
+  });
+  const dispose = effect(() => {
+    c();
+  });
+  log.length = 0;
+  dispose();
+  expect(log).toEqual(["e3", "e2", "e1"]);
+
+  const [a, setA] = signal(0);
+  const trail: string[] = [];
+  const derived = computed(() => {
+    trail.push("computed:eval");
+    effect(() => {
+      trail.push("inner:run");
+      return () => trail.push("inner:cleanup");
+    });
+    return a();
+  });
+  effect(() => {
+    derived();
+  });
+  trail.length = 0;
+  setA(1);
+  flush();
+  expect(trail).toEqual(["inner:cleanup", "computed:eval", "inner:run"]);
 });
 
 // https://github.com/stackblitz/alien-signals/issues/115

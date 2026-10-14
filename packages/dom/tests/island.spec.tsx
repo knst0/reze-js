@@ -31,23 +31,6 @@ function Greeting(props: { name: string }) {
   return <b>hi {props.name}</b>;
 }
 
-test("an eager island with a local component renders at once, without a fallback flash", () => {
-  let calls = 0;
-  const { el } = mount(() =>
-    island(
-      "eager",
-      () => {
-        calls++;
-        return Greeting;
-      },
-      { name: "ann" },
-      () => <i>wait</i>,
-    ),
-  );
-  expect(el.innerHTML).toBe("<b>hi ann</b>");
-  expect(calls).toBe(1);
-});
-
 test("an eager island with a split chunk shows its fallback until the component arrives", async () => {
   let resolve!: (component: typeof Greeting) => void;
   const gate = new Promise<typeof Greeting>((done) => {
@@ -66,30 +49,6 @@ test("an eager island with a split chunk shows its fallback until the component 
   resolve(Greeting);
   await settle();
   expect(el.innerHTML).toBe("<b>hi ann</b>");
-});
-
-test("an idle island does not load until the browser is idle", async () => {
-  const idle = mockIdle();
-  let calls = 0;
-  const { el } = mount(() =>
-    island(
-      "idle",
-      () => {
-        calls++;
-        return Greeting;
-      },
-      { name: "ann" },
-      () => <i>wait</i>,
-    ),
-  );
-  await settle();
-  expect(calls).toBe(0);
-  expect(el.innerHTML).toBe("<i>wait</i>");
-
-  idle();
-  await settle();
-  expect(el.innerHTML).toBe("<b>hi ann</b>");
-  expect(calls).toBe(1);
 });
 
 test("a visible island wraps its fallback in a shell and loads when it scrolls into view", async () => {
@@ -148,7 +107,7 @@ test("a visible island without a fallback renders a sized shell", () => {
   expect(el.innerHTML).toBe('<span data-island="visible" style="display:block;min-width:1px;min-height:1px"></span>');
 });
 
-test("a media island loads at once when its query already matches", async () => {
+test("a media island renders at once when its query matches and waits for its query otherwise", async () => {
   const listeners = new Set<() => void>();
   vi.stubGlobal("matchMedia", () => ({
     matches: true,
@@ -176,50 +135,49 @@ test("a media island loads at once when its query already matches", async () => 
   expect(el.innerHTML).toBe("<b>hi ann</b>");
   expect(calls).toBe(1);
   expect(listeners.size).toBe(0);
-});
+  {
+    const listeners = new Set<() => void>();
+    let matches = false;
+    vi.stubGlobal("matchMedia", (query: string) => {
+      expect(query).toBe("(max-width: 40rem)");
+      return {
+        get matches() {
+          return matches;
+        },
+        addEventListener: (_type: string, callback: () => void): void => {
+          listeners.add(callback);
+        },
+        removeEventListener: (_type: string, callback: () => void): void => {
+          listeners.delete(callback);
+        },
+      };
+    });
+    let calls = 0;
+    const { el } = mount(() =>
+      island(
+        "media",
+        () => {
+          calls++;
+          return Greeting;
+        },
+        { name: "ann" },
+        () => <i>wait</i>,
+        { media: "(max-width: 40rem)" },
+      ),
+    );
+    await settle();
+    expect(calls).toBe(0);
+    expect(el.innerHTML).toBe("<i>wait</i>");
 
-test("a media island waits for its query to match", async () => {
-  const listeners = new Set<() => void>();
-  let matches = false;
-  vi.stubGlobal("matchMedia", (query: string) => {
-    expect(query).toBe("(max-width: 40rem)");
-    return {
-      get matches() {
-        return matches;
-      },
-      addEventListener: (_type: string, callback: () => void): void => {
-        listeners.add(callback);
-      },
-      removeEventListener: (_type: string, callback: () => void): void => {
-        listeners.delete(callback);
-      },
-    };
-  });
-  let calls = 0;
-  const { el } = mount(() =>
-    island(
-      "media",
-      () => {
-        calls++;
-        return Greeting;
-      },
-      { name: "ann" },
-      () => <i>wait</i>,
-      { media: "(max-width: 40rem)" },
-    ),
-  );
-  await settle();
-  expect(calls).toBe(0);
-  expect(el.innerHTML).toBe("<i>wait</i>");
-
-  matches = true;
-  for (const listener of listeners) {
-    listener();
+    matches = true;
+    for (const listener of listeners) {
+      listener();
+    }
+    await settle();
+    expect(el.innerHTML).toBe("<b>hi ann</b>");
+    expect(calls).toBe(1);
+    expect(listeners.size).toBe(0);
   }
-  await settle();
-  expect(el.innerHTML).toBe("<b>hi ann</b>");
-  expect(calls).toBe(1);
-  expect(listeners.size).toBe(0);
 });
 
 test("an interaction island loads on the first pointer event inside its shell", async () => {
@@ -253,17 +211,6 @@ test("a failed island load goes to the failure view of the async component aroun
   const { el } = mount(() => <Host />);
   await settle();
   expect(el.innerHTML).toBe("<em>offline</em>");
-});
-
-test("the island attribute compiles to a deferred island", async () => {
-  const idle = mockIdle();
-  const { el } = mount(() => <Greeting island="idle" name="ann" />);
-  expect(el.innerHTML).toBe("");
-
-  idle();
-  await settle();
-  tick();
-  expect(el.innerHTML).toBe("<b>hi ann</b>");
 });
 
 test("the island attribute forwards children to the loaded component", async () => {

@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-14T06:27:26.437Z",
+  "sizes": {
+    "baseline": {
+      "raw": 6190,
+      "gzip": 2384,
+      "brotli": 2207
+    },
+    "for": {
+      "raw": 11440,
+      "gzip": 4089,
+      "brotli": 3734
+    },
+    "head": {
+      "raw": 8852,
+      "gzip": 3200,
+      "brotli": 2959
+    },
+    "island": {
+      "raw": 14909,
+      "gzip": 5384,
+      "brotli": 4893
+    },
+    "portal": {
+      "raw": 6710,
+      "gzip": 2522,
+      "brotli": 2331
+    },
+    "reactive-text": {
+      "raw": 8762,
+      "gzip": 3255,
+      "brotli": 2973
+    },
+    "show": {
+      "raw": 9058,
+      "gzip": 3355,
+      "brotli": 3075
+    },
+    "switch": {
+      "raw": 9289,
+      "gzip": 3438,
+      "brotli": 3166
+    }
+  }
+}
