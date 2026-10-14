@@ -30,7 +30,9 @@ type PreloadedRoute<S extends string, T, C> = RouteInput<S, T, C> & {
 export function defineRoute<const S extends string, T, C = RouterContext>(
   route: PreloadedRoute<S, T, C>,
 ): Omit<RouteDefinition<C>, "path" | "preload"> & Pick<PreloadedRoute<S, T, C>, "path" | "preload">;
-export function defineRoute<const S extends string, T = unknown, C = RouterContext>(route: RouteInput<S, T, C>): RouteDefinition<C> & { path: S };
+export function defineRoute<const S extends string, T = unknown, C = RouterContext>(
+  route: RouteInput<S, T, C>,
+): RouteDefinition<C> & { path: S };
 export function defineRoute(route: RouteDefinition<any>): RouteDefinition<any> {
   return route;
 }

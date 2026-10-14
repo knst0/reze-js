@@ -30,12 +30,5 @@
     "vite-plus": "catalog:",
     "vitest": "catalog:"
   },
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "12.6.0",
-      "onFail": "download"
-    }
-  },
-  "packageManager": "pnpm@12.6.0"
+  "packageManager": "pnpm@12.3.4"
 }

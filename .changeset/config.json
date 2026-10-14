@@ -2,6 +2,6 @@
   "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
   "baseBranch": "main",
   "access": "public",
-  "format": "oxfmt",
+  "format": false,
   "privatePackages": false
 }

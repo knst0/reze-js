@@ -37,6 +37,7 @@ jobs:
         id: plan
         run: |
           pnpm changeset version
+          pnpm fmt --no-error-on-unmatched-pattern 'packages/*/CHANGELOG.md'
           old=$(git show HEAD:packages/compiler/package.json | jq -r .version)
           new=$(jq -r .version packages/compiler/package.json)
           if [ "$old" != "$new" ]; then
