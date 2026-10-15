@@ -35,6 +35,29 @@
     --sh-comment: #a19595;
   }
 
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --color-bg: #121211;
+      --color-bg-surface: #1b1b19;
+      --color-bg-element: #2e2d2a;
+      --color-fg: #e4e3df;
+      --color-fg-strong: #f6f5f2;
+      --color-fg-muted: #9a9892;
+      --color-border: #272724;
+      --color-accent: #a58cf0;
+      --sh-class: #8fb4e8;
+      --sh-identifier: #d3d6dc;
+      --sh-sign: #7d8590;
+      --sh-property: #79b8f2;
+      --sh-entity: #5cc8c4;
+      --sh-jsxliterals: #a7a9f2;
+      --sh-string: #63d0b8;
+      --sh-keyword: #f7867c;
+      --sh-comment: #857f7a;
+    }
+  }
+
   ::selection {
     background: --alpha(var(--color-accent) / 20%);
   }
