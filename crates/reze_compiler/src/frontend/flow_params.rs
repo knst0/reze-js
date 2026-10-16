@@ -8,10 +8,9 @@ use oxc_semantic::Scoping;
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::symbol::SymbolId;
 
-use super::analysis::{Intrinsic, Primitive};
+use super::analysis::{Intrinsic, IntrinsicTags};
 use super::pure::is_meaningful;
 use crate::diagnostic::{Code, Edit, Report};
-use crate::exports;
 
 #[derive(Default)]
 pub struct Plan {
@@ -30,7 +29,7 @@ pub fn collect(program: &Program<'_>, scoping: &Scoping, reports: &mut Vec<Repor
     bindings.visit_program(program);
     let mut flows = Flows {
         scoping,
-        tags: &FlowTags::scan(program),
+        tags: &IntrinsicTags::scan(program),
         bindings: &bindings,
         plan: &mut plan,
         reports,
@@ -51,79 +50,6 @@ pub fn apply<'a>(
     let mut rewrite = Rewrite { alloc: allocator, scoping, getters: &plan.getters, changed: false };
     rewrite.visit_program(program);
     rewrite.changed
-}
-
-struct FlowTags {
-    tags: HashMap<SymbolId, Intrinsic>,
-    namespaces: HashMap<SymbolId, &'static str>,
-}
-
-impl FlowTags {
-    fn scan(program: &Program<'_>) -> Self {
-        let mut view = FlowTags { tags: HashMap::new(), namespaces: HashMap::new() };
-        for statement in &program.body {
-            let Statement::ImportDeclaration(import) = statement else { continue };
-            if import.import_kind.is_type() {
-                continue;
-            };
-            let Some(home) = exports::module(import.source.value.as_str()) else { continue };
-            for specifier in import.specifiers.iter().flatten() {
-                match specifier {
-                    ImportDeclarationSpecifier::ImportSpecifier(named) => {
-                        if named.import_kind.is_type() {
-                            continue;
-                        }
-                        if let Some(Primitive::Intrinsic(intrinsic)) =
-                            exports::primitive_named(home, named.imported.name().as_str())
-                            && matches!(
-                                intrinsic,
-                                Intrinsic::Show | Intrinsic::For | Intrinsic::Match
-                            )
-                        {
-                            view.tags.insert(named.local.symbol_id(), intrinsic);
-                        }
-                    }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
-                        view.namespaces.insert(namespace.local.symbol_id(), home);
-                    }
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
-                }
-            }
-        }
-        view
-    }
-
-    fn intrinsic(&self, scoping: &Scoping, name: &JSXElementName<'_>) -> Option<Intrinsic> {
-        match name {
-            JSXElementName::IdentifierReference(id) => {
-                let symbol = symbol_of(scoping, id)?;
-                self.tags.get(&symbol).copied()
-            }
-            JSXElementName::MemberExpression(member) => {
-                let JSXMemberExpressionObject::IdentifierReference(namespace) = &member.object
-                else {
-                    return None;
-                };
-                let source = self.namespaces.get(&symbol_of(scoping, namespace)?)?;
-                match exports::primitive_named(source, member.property.name.as_str()) {
-                    Some(Primitive::Intrinsic(intrinsic))
-                        if matches!(
-                            intrinsic,
-                            Intrinsic::Show | Intrinsic::For | Intrinsic::Match
-                        ) =>
-                    {
-                        Some(intrinsic)
-                    }
-                    _ => None,
-                }
-            }
-            _ => None,
-        }
-    }
-}
-
-fn symbol_of(scoping: &Scoping, id: &IdentifierReference<'_>) -> Option<SymbolId> {
-    scoping.get_reference(id.reference_id.get()?).symbol_id()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -222,7 +148,7 @@ fn plain_param(function: &Expression<'_>, index: usize) -> Option<(SymbolId, Str
 
 struct Flows<'s, 't, 'b, 'p> {
     scoping: &'s Scoping,
-    tags: &'t FlowTags,
+    tags: &'t IntrinsicTags,
     bindings: &'b Bindings,
     plan: &'p mut Plan,
     reports: &'p mut Vec<Report>,
@@ -230,7 +156,7 @@ struct Flows<'s, 't, 'b, 'p> {
 
 impl<'a> Visit<'a> for Flows<'_, '_, '_, '_> {
     fn visit_jsx_element(&mut self, it: &JSXElement<'a>) {
-        match self.tags.intrinsic(self.scoping, &it.opening_element.name) {
+        match self.tags.get(self.scoping, &it.opening_element.name) {
             Some(Intrinsic::Show | Intrinsic::Match) => self.value_param(it),
             Some(Intrinsic::For) => self.row_params(it),
             _ => {}

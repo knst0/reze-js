@@ -13,7 +13,7 @@ use oxc_syntax::node::NodeId;
 use oxc_syntax::symbol::SymbolId;
 
 use crate::diagnostic::{Code, Report};
-use crate::frontend::analysis::{Intrinsic, SharedFacts};
+use crate::frontend::analysis::{Intrinsic, SharedFacts, exported_symbols};
 use crate::frontend::pure::{has_jsx, inline_entries, is_defined, static_property};
 use crate::html::*;
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
@@ -2635,47 +2635,6 @@ impl<'a> Visit<'a> for DynamicCheck<'_> {
     fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
 }
 
-fn exported_symbols(
-    program: &Program<'_>,
-    scoping: &Scoping,
-) -> std::collections::HashSet<SymbolId> {
-    let mut exported = std::collections::HashSet::new();
-    let resolved = |local: &IdentifierReference<'_>| {
-        scoping.get_reference(local.reference_id.get()?).symbol_id()
-    };
-    for statement in &program.body {
-        match statement {
-            Statement::ExportDeclaration(export) => {
-                if let Declaration::VariableDeclaration(variables) = &export.declaration {
-                    for declarator in &variables.declarations {
-                        exported.extend(
-                            declarator.id.get_binding_identifiers().iter().map(|id| id.symbol_id()),
-                        );
-                    }
-                }
-            }
-            Statement::ExportNamedDeclaration(export) => {
-                for specifier in &export.specifiers {
-                    if let ModuleExportName::IdentifierReference(local) = &specifier.local
-                        && let Some(symbol) = resolved(local)
-                    {
-                        exported.insert(symbol);
-                    }
-                }
-            }
-            Statement::ExportDefaultDeclaration(export) => {
-                if let ExportDefaultDeclarationKind::Identifier(local) = &export.declaration
-                    && let Some(symbol) = resolved(local)
-                {
-                    exported.insert(symbol);
-                }
-            }
-            _ => {}
-        }
-    }
-    exported
-}
-
 pub struct SourceSites {
     sites: Option<SiteRegistry>,
     assigned: HashMap<(u32, u32), SiteId>,
@@ -3582,21 +3541,9 @@ impl Builder<'_> {
                     self.island_trigger_name(s.value.as_str(), a.span)
                 }
                 Some(Expression::BooleanLiteral(b)) if b.value => Some(IslandTrigger::Eager),
-                _ => {
-                    self.report(
-                        Report::new(Code::IslandTrigger, a.span)
-                            .arg("value", self.text(a.span).to_string()),
-                    );
-                    None
-                }
+                _ => self.reject_island_value(a),
             },
-            Some(_) => {
-                self.report(
-                    Report::new(Code::IslandTrigger, a.span)
-                        .arg("value", self.text(a.span).to_string()),
-                );
-                None
-            }
+            Some(_) => self.reject_island_value(a),
         }
     }
 
@@ -3616,34 +3563,22 @@ impl Builder<'_> {
 
     fn island_string(&mut self, a: &JSXAttribute<'_>) -> Option<String> {
         match &a.value {
-            None => {
-                self.report(
-                    Report::new(Code::IslandTrigger, a.span)
-                        .arg("value", self.text(a.span).to_string()),
-                );
-                None
-            }
             Some(JSXAttributeValue::StringLiteral(s)) => {
                 Some(decode_entities(s.value.as_str()).into_owned())
             }
             Some(JSXAttributeValue::ExpressionContainer(c)) => match c.expression.as_expression() {
                 Some(Expression::StringLiteral(s)) => Some(s.value.to_string()),
-                _ => {
-                    self.report(
-                        Report::new(Code::IslandTrigger, a.span)
-                            .arg("value", self.text(a.span).to_string()),
-                    );
-                    None
-                }
+                _ => self.reject_island_value(a),
             },
-            Some(_) => {
-                self.report(
-                    Report::new(Code::IslandTrigger, a.span)
-                        .arg("value", self.text(a.span).to_string()),
-                );
-                None
-            }
+            _ => self.reject_island_value(a),
         }
+    }
+
+    fn reject_island_value<T>(&mut self, a: &JSXAttribute<'_>) -> Option<T> {
+        self.report(
+            Report::new(Code::IslandTrigger, a.span).arg("value", self.text(a.span).to_string()),
+        );
+        None
     }
 
     fn island_fallback(&mut self, a: &JSXAttribute<'_>) -> Option<FlowRender> {

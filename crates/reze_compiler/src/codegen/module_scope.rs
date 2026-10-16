@@ -5,12 +5,12 @@ use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, VisitMut, walk_mut};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
-use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 
 use super::EmitContext;
 use super::html::HTML_SOURCE;
 use crate::ast::Ast;
+use crate::frontend::pure::has_await;
 
 #[derive(Clone, Copy)]
 enum Wrapper {
@@ -157,21 +157,7 @@ fn collect_bindings<'a>(
 }
 
 fn awaits(expression: &Expression<'_>) -> bool {
-    let mut finder = AwaitFinder(false);
-    finder.visit_expression(expression);
-    finder.0
-}
-
-struct AwaitFinder(bool);
-
-impl<'a> Visit<'a> for AwaitFinder {
-    fn visit_await_expression(&mut self, _: &AwaitExpression<'a>) {
-        self.0 = true;
-    }
-
-    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
-
-    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
+    has_await(|check| check.visit_expression(expression))
 }
 
 struct Rewrite<'a, 's> {

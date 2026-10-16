@@ -12,7 +12,8 @@ use oxc_syntax::scope::ScopeFlags;
 
 use super::Namer;
 use super::analysis::AsyncFacts;
-use super::pure::{is_component_name, is_declared_component};
+use super::pure::{has_await, is_component_name, is_declared_component};
+use crate::ast::{binding_parameter, identifier};
 use crate::diagnostic::{Code, Report};
 use crate::imports::HelperImports;
 
@@ -254,106 +255,59 @@ struct Rewrite<'x, 'p, 'a> {
     changed: bool,
 }
 
-impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
-    fn visit_function(&mut self, it: &mut Function<'a>, flags: ScopeFlags) {
-        if it.span != SPAN && !self.done.contains(&it.span.start) {
-            if let Some(entry) = self.plan.entry(it.span.start) {
-                if split_function(
-                    self.alloc,
-                    self.namer,
-                    self.async_component,
-                    it,
-                    &entry,
-                    self.views.remove(&entry.function_start),
-                ) {
-                    self.done.insert(it.span.start);
-                    self.changed = true;
-                }
+impl<'a> Rewrite<'_, '_, 'a> {
+    fn rewrite_function(
+        &mut self,
+        span: Span,
+        is_async: &mut bool,
+        mut body: Option<&mut FunctionBody<'a>>,
+        return_type: &mut Option<ArenaBox<'a, TSTypeAnnotation<'a>>>,
+    ) {
+        if span != SPAN
+            && !self.done.contains(&span.start)
+            && let Some(entry) = self.plan.entry(span.start)
+        {
+            let views = self.views.remove(&entry.function_start);
+            if let Some(body) = body.as_deref_mut()
+                && split_body(self.alloc, self.namer, self.async_component, body, &entry, views)
+            {
+                *is_async = false;
+                narrow_return(self.alloc, return_type);
+                self.done.insert(span.start);
+                self.changed = true;
             }
         }
-        if it.span != SPAN
-            && !self.done.contains(&it.span.start)
-            && let Some(view) = self.plan.resource_view(it.span.start)
+        if span != SPAN
+            && !self.done.contains(&span.start)
+            && let Some(view) = self.plan.resource_view(span.start)
             && let Some(views) = self.views.remove(&view.function_start)
-            && let Some(body) = it.body.as_mut()
+            && let Some(body) = body
         {
             wrap_resource_return(self.alloc, body, views, view.function_span);
-            self.done.insert(it.span.start);
+            self.done.insert(span.start);
             self.changed = true;
         }
-        if self.plan.synchronous.contains(&it.span.start) {
-            it.r#async = false;
+        if self.plan.synchronous.contains(&span.start) {
+            *is_async = false;
             self.changed = true;
         }
+    }
+}
+
+impl<'a> VisitMut<'a> for Rewrite<'_, '_, 'a> {
+    fn visit_function(&mut self, it: &mut Function<'a>, flags: ScopeFlags) {
+        self.rewrite_function(it.span, &mut it.r#async, it.body.as_deref_mut(), &mut it.return_type);
         walk_mut::walk_function(self, it, flags);
     }
 
     fn visit_arrow_function_expression(&mut self, it: &mut ArrowFunctionExpression<'a>) {
-        if it.span != SPAN && !self.done.contains(&it.span.start) {
-            if let Some(entry) = self.plan.entry(it.span.start) {
-                if split_arrow(
-                    self.alloc,
-                    self.namer,
-                    self.async_component,
-                    it,
-                    &entry,
-                    self.views.remove(&entry.function_start),
-                ) {
-                    self.done.insert(it.span.start);
-                    self.changed = true;
-                }
-            }
-        }
-        if it.span != SPAN
-            && !self.done.contains(&it.span.start)
-            && let Some(view) = self.plan.resource_view(it.span.start)
-            && let Some(views) = self.views.remove(&view.function_start)
-            && let ArrowFunctionBody::FunctionBody(body) = &mut it.body
-        {
-            wrap_resource_return(self.alloc, body, views, view.function_span);
-            self.done.insert(it.span.start);
-            self.changed = true;
-        }
-        if self.plan.synchronous.contains(&it.span.start) {
-            it.r#async = false;
-            self.changed = true;
-        }
+        let body = match &mut it.body {
+            ArrowFunctionBody::FunctionBody(body) => Some(&mut **body),
+            _ => None,
+        };
+        self.rewrite_function(it.span, &mut it.r#async, body, &mut it.return_type);
         walk_mut::walk_arrow_function_expression(self, it);
     }
-}
-
-fn split_function<'a>(
-    alloc: &'a Allocator,
-    namer: &mut Namer<'a>,
-    async_component: &'a str,
-    it: &mut Function<'a>,
-    entry: &Entry,
-    views: Option<Views<'a>>,
-) -> bool {
-    let Some(body) = it.body.as_mut() else { return false };
-    if !split_body(alloc, namer, async_component, body, entry, views) {
-        return false;
-    }
-    it.r#async = false;
-    narrow_return(alloc, &mut it.return_type);
-    true
-}
-
-fn split_arrow<'a>(
-    alloc: &'a Allocator,
-    namer: &mut Namer<'a>,
-    async_component: &'a str,
-    it: &mut ArrowFunctionExpression<'a>,
-    entry: &Entry,
-    views: Option<Views<'a>>,
-) -> bool {
-    let ArrowFunctionBody::FunctionBody(body) = &mut it.body else { return false };
-    if !split_body(alloc, namer, async_component, body, entry, views) {
-        return false;
-    }
-    it.r#async = false;
-    narrow_return(alloc, &mut it.return_type);
-    true
 }
 
 fn split_body<'a>(
@@ -386,7 +340,7 @@ fn split_body<'a>(
             if index < first || index > last {
                 continue;
             }
-            if has_await(statement) {
+            if has_await(|check| check.visit_statement(statement)) {
                 if index == first {
                     continue;
                 }
@@ -445,7 +399,7 @@ fn split_body<'a>(
     let mut elements = ArenaVec::new_in(&builder);
     for name in &entry.values {
         let text: &'a str = alloc.alloc_str(name);
-        elements.push(ArrayExpressionElement::from(reference(alloc, SPAN, text)));
+        elements.push(ArrayExpressionElement::from(identifier(alloc, SPAN, text)));
     }
     let array = Expression::new_array_expression(SPAN, elements, &builder);
     load.push(Statement::new_return_statement(SPAN, Some(array), &builder));
@@ -457,7 +411,7 @@ fn split_body<'a>(
     arguments.push(Argument::from(body_arrow));
     let call = Expression::new_call_expression(
         entry.function_span,
-        reference(alloc, SPAN, async_component),
+        identifier(alloc, SPAN, async_component),
         None,
         arguments,
         false,
@@ -640,16 +594,16 @@ fn wrap_views<'a>(
     let children = loader(alloc, false, &[], returning(&builder, call));
     let pending = match views.pending {
         Some(value) => loader(alloc, false, &[], returning(&builder, value)),
-        None => reference(alloc, SPAN, "undefined"),
+        None => identifier(alloc, SPAN, "undefined"),
     };
-    let failure = views.failure.unwrap_or_else(|| reference(alloc, SPAN, "undefined"));
+    let failure = views.failure.unwrap_or_else(|| identifier(alloc, SPAN, "undefined"));
     let mut arguments = ArenaVec::new_in(&builder);
     arguments.push(Argument::from(children));
     arguments.push(Argument::from(pending));
     arguments.push(Argument::from(failure));
     Expression::new_call_expression(
         span,
-        reference(alloc, SPAN, views.helper),
+        identifier(alloc, SPAN, views.helper),
         None,
         arguments,
         false,
@@ -706,7 +660,7 @@ fn wrap_tracked<'a>(alloc: &'a Allocator, context: &'a str, slot: &mut Expressio
     let property = IdentifierName::new(SPAN, Ident::from("get"), &builder);
     let callee = Expression::new_static_member_expression(
         SPAN,
-        reference(alloc, SPAN, context),
+        identifier(alloc, SPAN, context),
         property,
         false,
         &builder,
@@ -759,11 +713,6 @@ impl<'a> VisitMut<'a> for ReadRewrite<'_, 'a> {
     }
 }
 
-fn reference<'a>(alloc: &'a Allocator, span: Span, name: &'a str) -> Expression<'a> {
-    let builder = AstBuilder::new(alloc);
-    Expression::new_identifier(span, Ident::from(name), &builder)
-}
-
 fn values_read<'a>(
     alloc: &'a Allocator,
     span: Span,
@@ -774,7 +723,7 @@ fn values_read<'a>(
     let empty: ArenaVec<'a, Argument<'a>> = ArenaVec::new_in(&builder);
     let call = Expression::new_call_expression(
         span,
-        reference(alloc, SPAN, values),
+        identifier(alloc, SPAN, values),
         None,
         empty,
         false,
@@ -799,13 +748,13 @@ impl<'a> Replacement<'a> {
                 let property = IdentifierName::new(SPAN, Ident::from("abortSignal"), &builder);
                 Expression::new_static_member_expression(
                     span,
-                    reference(alloc, SPAN, context),
+                    identifier(alloc, SPAN, context),
                     property,
                     false,
                     &builder,
                 )
             }
-            Replacement::Pending(pending) => reference(alloc, span, pending),
+            Replacement::Pending(pending) => identifier(alloc, span, pending),
         }
     }
 }
@@ -843,19 +792,7 @@ fn loader<'a>(
     let builder = AstBuilder::new(alloc);
     let mut items = ArenaVec::new_in(&builder);
     for &name in names {
-        let pattern = BindingPattern::new_binding_identifier(SPAN, Ident::from(name), &builder);
-        items.push(FormalParameter::new(
-            SPAN,
-            ArenaVec::new_in(&builder),
-            pattern,
-            None,
-            None,
-            false,
-            None,
-            false,
-            false,
-            &builder,
-        ));
+        items.push(binding_parameter(&builder, SPAN, name));
     }
     let params = FormalParameters::boxed(
         SPAN,
@@ -873,31 +810,3 @@ fn loader<'a>(
     Expression::new_arrow_function_expression(SPAN, is_async, None, params, None, body, &builder)
 }
 
-#[derive(Default)]
-struct AwaitCheck {
-    found: bool,
-}
-
-impl<'a> Visit<'a> for AwaitCheck {
-    fn visit_await_expression(&mut self, _: &AwaitExpression<'a>) {
-        self.found = true;
-    }
-
-    fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
-        if it.r#await {
-            self.found = true;
-        } else {
-            walk::walk_for_of_statement(self, it);
-        }
-    }
-
-    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
-
-    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
-}
-
-fn has_await(statement: &Statement<'_>) -> bool {
-    let mut check = AwaitCheck::default();
-    check.visit_statement(statement);
-    check.found
-}

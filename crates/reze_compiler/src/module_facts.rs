@@ -10,6 +10,7 @@ use oxc_semantic::{Scoping, SymbolFlags, SymbolId};
 use serde::{Deserialize, Serialize};
 
 use crate::frontend::analysis::{self, Primitive, SharedFacts};
+use crate::frontend::pure::value_imports;
 use crate::kind::Kind;
 
 pub const VERSION: u32 = 1;
@@ -313,27 +314,19 @@ pub(crate) fn imported_getters(
             getters.bindings.insert(specifier.local.symbol_id());
         }
     }
-    for statement in &program.body {
-        let Statement::ImportDeclaration(import) = statement else { continue };
-        if import.import_kind.is_type() {
-            continue;
-        }
-        let Some(module) = compatible_module(import.source.value.as_str(), imported) else {
+    for (source, specifier) in value_imports(program) {
+        let ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) = specifier else {
             continue;
         };
-        for specifier in import.specifiers.iter().flatten() {
-            let ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) = specifier else {
-                continue;
-            };
-            let names: HashSet<String> = module
-                .exports
-                .iter()
-                .filter(|(_, export)| is_getter(export))
-                .map(|(name, _)| name.clone())
-                .collect();
-            if !names.is_empty() {
-                getters.members.insert(namespace.local.symbol_id(), names);
-            }
+        let Some(module) = compatible_module(source, imported) else { continue };
+        let names: HashSet<String> = module
+            .exports
+            .iter()
+            .filter(|(_, export)| is_getter(export))
+            .map(|(name, _)| name.clone())
+            .collect();
+        if !names.is_empty() {
+            getters.members.insert(namespace.local.symbol_id(), names);
         }
     }
     getters
@@ -355,24 +348,11 @@ fn imported_exports<'b, 'a>(
     imported: &'b HashMap<String, ModuleFacts>,
 ) -> Vec<(&'b ImportSpecifier<'a>, &'b ExportFacts)> {
     let mut exports = Vec::new();
-    for statement in &program.body {
-        let Statement::ImportDeclaration(import) = statement else { continue };
-        if import.import_kind.is_type() {
-            continue;
-        }
-        let Some(module) = compatible_module(import.source.value.as_str(), imported) else {
-            continue;
-        };
-        for specifier in import.specifiers.iter().flatten() {
-            let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
-                continue;
-            };
-            if specifier.import_kind.is_type() {
-                continue;
-            }
-            if let Some(export) = module.exports.get(specifier.imported.name().as_str()) {
-                exports.push((&**specifier, export));
-            }
+    for (source, specifier) in value_imports(program) {
+        let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else { continue };
+        let Some(module) = compatible_module(source, imported) else { continue };
+        if let Some(export) = module.exports.get(specifier.imported.name().as_str()) {
+            exports.push((&**specifier, export));
         }
     }
     exports
