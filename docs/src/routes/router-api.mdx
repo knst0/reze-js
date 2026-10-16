@@ -46,7 +46,7 @@ export const Router = createRouter({
 | `headDefaults` | `PageHeadDefaults`           | None                                                      | Title and metadata used when no matched route sets them.                                       |
 | `context`      | `C`                          | `undefined`                                               | Value passed to route `preload`, `meta`, and `redirect` callbacks.                             |
 
-`RouterContext` is the default type of route callback `context` and is open to module augmentation. Importing `@rezejs/query` alone does not change it; add `import "@rezejs/query/router"` to add `queryClient: QueryClient`. Supply that value through `RouterConfig.context` or the server context factory—the type augmentation does not create a client at runtime.
+`RouterContext` is the default type of route callback `context` and is open to module augmentation. Supply its value through `RouterConfig.context` or the server context factory—augmenting the type does not create the value at runtime.
 
 ### The `RouterInstance` members
 
