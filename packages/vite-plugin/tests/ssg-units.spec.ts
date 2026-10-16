@@ -138,10 +138,28 @@ test("the export graph tells router apps from standalone ones, follows export st
     resolveSpec: (spec: string) => specifiers[spec],
     virtualExports: (_id: string) => undefined as readonly string[] | undefined,
   };
-  expect(resolveAppMode("/r/app.tsx", env)).toEqual({ kind: "router", hasShell: true });
-  expect(resolveAppMode("/s/app.tsx", env)).toEqual({ kind: "standalone" });
-  expect(() => resolveAppMode("/e/entry.ts", env)).toThrow(/ambiguous/);
-  expect(resolveAppMode("/f/entry.ts", env)).toEqual({ kind: "router", hasShell: false });
+  const manual = { fileRoutes: false };
+  expect(resolveAppMode("/r/app.tsx", env, manual)).toEqual({ kind: "router", hasShell: true, fileRoutes: false });
+  expect(resolveAppMode("/s/app.tsx", env, manual)).toEqual({ kind: "standalone" });
+  expect(() => resolveAppMode("/e/entry.ts", env, manual)).toThrow(/ambiguous/);
+  expect(resolveAppMode("/f/entry.ts", env, manual)).toEqual({ kind: "router", hasShell: false, fileRoutes: false });
+});
+
+test("with file routes the entry holds only the shell and never re-exports the route table", () => {
+  const files = new Map([
+    ["/app.tsx", `export default function Shell() {}\nexport function createContext() {}\n`],
+    ["/bare.tsx", `export function createContext() {}\n`],
+    ["/reexport.tsx", `export { paths, routes } from "virtual:reze-routes";\n`],
+  ]);
+  const env = {
+    readFile: (id: string) => files.get(id),
+    resolveSpec: (spec: string) => spec,
+    virtualExports: (id: string) => (id === "virtual:reze-routes" ? ["routes", "paths"] : undefined),
+  };
+  const fileRoutes = { fileRoutes: true };
+  expect(resolveAppMode("/app.tsx", env, fileRoutes)).toEqual({ kind: "router", hasShell: true, fileRoutes: true });
+  expect(resolveAppMode("/bare.tsx", env, fileRoutes)).toEqual({ kind: "router", hasShell: false, fileRoutes: true });
+  expect(() => resolveAppMode("/reexport.tsx", env, fileRoutes)).toThrow(/remove the routes export/);
 });
 
 test("page urls reject traversal, encoded slashes and reserved segments", () => {

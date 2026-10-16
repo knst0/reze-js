@@ -505,19 +505,17 @@ export default defineConfig({
 });
 ```
 
-The entry exports the route table and the shell:
+The plugin reads the route table from the file routes, so the entry exports only the shell:
 
 ```tsx file=src/entry-server.tsx
 import { Shell } from "./Shell";
-import { routes } from "virtual:reze-routes";
 
-export { routes };
 export default Shell;
 ```
 
 The `ssg` options are:
 
-- `entry` is required. It exports named `routes` for a router app. An entry that exports only a default component renders `/` alone.
+- `entry` is required. With `fileRoutes` on, it exports only the optional shell as `default` and `createContext`; exporting `routes` from it fails the build. Without `fileRoutes`, it exports named `routes` for a router app, and an entry that exports only a default component renders `/` alone.
 - `document` is the [document module](/vite-plugin#the-document) that each page is written into. It defaults to `src/document.tsx`.
 - `trailingSlash` is `"always"` by default. With `"always"`, `/about` is written to `/about/`. With `"never"`, it stays `/about`. Each page is written to an `index.html` in its folder.
 - `timeoutMs` limits how long the build waits for the route discovery step and for each page to render. It defaults to `30000`.

@@ -250,11 +250,15 @@ export function createServerPlugin(
       documentFile = toPosixAbsolute(root, primary.document);
       appDocument = undefined;
       if (!isServe) currentDocument();
-      mode = resolveAppMode(entryAbs, {
-        readFile: (id) => (existsSync(id) ? readFileSync(id, "utf8") : undefined),
-        resolveSpec: (spec, importer) => resolveImport(spec, importer, root),
-        virtualExports: (id) => (id === "virtual:reze-routes" || id === "\0virtual:reze-routes" ? ["routes", "paths"] : undefined),
-      });
+      mode = resolveAppMode(
+        entryAbs,
+        {
+          readFile: (id) => (existsSync(id) ? readFileSync(id, "utf8") : undefined),
+          resolveSpec: (spec, importer) => resolveImport(spec, importer, root),
+          virtualExports: (id) => (id === "virtual:reze-routes" || id === "\0virtual:reze-routes" ? ["routes", "paths"] : undefined),
+        },
+        { fileRoutes: fileRoutes !== false && fileRoutes !== undefined },
+      );
       if (mode.kind === "standalone" && ssgOptions !== undefined && Object.keys(ssgOptions.paths).length > 0) {
         throw new Error("[reze] ssg.paths needs a router app; a standalone entry renders only /");
       }

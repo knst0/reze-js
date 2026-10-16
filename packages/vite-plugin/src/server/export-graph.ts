@@ -1,4 +1,4 @@
-export type AppMode = { kind: "router"; hasShell: boolean } | { kind: "standalone" };
+export type AppMode = { kind: "router"; hasShell: boolean; fileRoutes: boolean } | { kind: "standalone" };
 
 interface ModuleExports {
   explicit: Record<string, string>;
@@ -53,7 +53,7 @@ export interface ExportGraphEnv {
 
 const Interesting = ["routes", "default", "paths"] as const;
 
-export function resolveAppMode(entryId: string, env: ExportGraphEnv): AppMode {
+export function resolveAppMode(entryId: string, env: ExportGraphEnv, options: { fileRoutes: boolean }): AppMode {
   const stack: string[] = [];
   const ambiguous: Record<string, string[]> = {};
   const resolved = (id: string): { names: Record<string, string>; starred: Record<string, true> } => {
@@ -102,9 +102,19 @@ export function resolveAppMode(entryId: string, env: ExportGraphEnv): AppMode {
       );
     }
   }
-  if (names.routes !== undefined) return { kind: "router", hasShell: names.default !== undefined };
+  if (options.fileRoutes) {
+    if (names.routes !== undefined) {
+      throw new Error(
+        `[reze] with fileRoutes the plugin reads routes from "virtual:reze-routes" itself; remove the routes export from ${JSON.stringify(entryId)}`,
+      );
+    }
+    return { kind: "router", hasShell: names.default !== undefined, fileRoutes: true };
+  }
+  if (names.routes !== undefined) return { kind: "router", hasShell: names.default !== undefined, fileRoutes: false };
   if (names.default !== undefined) return { kind: "standalone" };
-  throw new Error("[reze] SSG entry must export a named `routes` table (router app) or a default component (standalone app)");
+  throw new Error(
+    "[reze] SSG entry must export a named `routes` table (router app) or a default component (standalone app), or turn on fileRoutes",
+  );
 }
 
 function missing(spec: string, importer: string): never {

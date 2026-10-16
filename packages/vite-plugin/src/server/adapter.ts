@@ -27,8 +27,9 @@ export function ssgView() {
 }
 `
     : "";
+  const routesSource = mode.fileRoutes ? JSON.stringify("virtual:reze-routes") : entry;
   return `import { createBrowserHistory, createRouter } from "@rezejs/router";
-import { routes } from ${entry};
+import { routes } from ${routesSource};
 export { routes };
 ${shellImport}${shellExport}export function ssgView(props = {}) {
   const Router = props.router ?? createRouter({ routes, history: createBrowserHistory(import.meta.env.BASE_URL) });
@@ -241,7 +242,7 @@ async function respond(pathname, search, mode, signal, overrides, request) {
             mode: mode === "stream" ? "ssr" : "ssg",
           });
       const prepared = await session.load(() =>
-        routerServer.prepareServerRoute(application.app.routes, appPath, { base: basePath, context }),
+        routerServer.prepareServerRoute(application.view.routes, appPath, { base: basePath, context }),
       );
       if (prepared.status === "redirect") return redirectResult(appPath, prepared);
       if (prepared.status === "not-found") return { status: "not-found" };
@@ -306,8 +307,7 @@ export async function discover(input) {
   try {
     const application = await session.load(loadApplication);
     if (!router) return { mode: "standalone", urls: ["/"] };
-    if (application.app.routes === undefined) throw new Error("[reze] SSG entry analyzed as router app but exports no routes");
-    const descriptors = routerServer.describeSsgRoutes(application.app.routes);
+    const descriptors = routerServer.describeSsgRoutes(application.view.routes);
     const urls = routerServer.enumerateSsgUrls(descriptors, input.paths, { trailingSlash: input.trailingSlash });
     return { mode: "router", urls: urls.map((entry) => entry.url) };
   } finally {
