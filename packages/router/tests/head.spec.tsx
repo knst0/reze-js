@@ -42,69 +42,88 @@ function setup(routes: RouteDefinition[], initial: string): (to: string) => void
 
 const Home = () => null;
 
-test("commits insert marked head tags and leaving removes them back to the template baseline", () => {
+test("layout and leaf Head tags shadow the document head with the deepest winning, and leaving shows each shadowed tag again", () => {
   document.title = "Base";
+  const templateTitle = document.head.querySelector("title")!;
   const templateDescription = document.createElement("meta");
   templateDescription.setAttribute("name", "description");
   templateDescription.setAttribute("content", "base desc");
   document.head.append(templateDescription);
+  const templateCanonical = document.createElement("link");
+  templateCanonical.setAttribute("rel", "canonical");
+  templateCanonical.setAttribute("href", "https://site.example/");
+  document.head.append(templateCanonical);
   const templateScript = document.createElement("script");
   templateScript.setAttribute("src", "/template.js");
   document.head.append(templateScript);
 
+  const Docs = (props: { children: JSX.Element }) => (
+    <section>
+      <Head>
+        <title>Docs</title>
+        <meta name="description" content="docs desc" />
+        <link rel="preconnect" href="https://cdn.example.test" />
+      </Head>
+      {props.children}
+    </section>
+  );
+  const Leaf = () => (
+    <Head>
+      <title>Leaf</title>
+      <link rel="canonical" href="https://site.example/docs/leaf" />
+      <meta property="og:title" content="Leaf" />
+    </Head>
+  );
   const navigate = setup(
     [
       { path: "/", component: Home },
-      {
-        path: "/about",
-        component: Home,
-        meta: {
-          title: "About",
-          description: "about desc",
-          scripts: [
-            { src: "/widget.js", async: true },
-            { src: "/ordered.js", defer: true, type: "text/javascript", crossorigin: "anonymous", integrity: "sha1-x" },
-          ],
-          links: [{ rel: "preconnect", href: "https://cdn.example.test" }],
-          metas: [{ property: "og:title", content: "About" }],
-        },
-      },
+      { path: "/docs", component: Docs, children: [{ path: "/", component: Home }, { path: "/leaf", component: Leaf }] },
     ],
     "/",
   );
   expect(document.title).toBe("Base");
   expect(managed()).toHaveLength(0);
 
-  navigate("/about");
+  navigate("/docs/leaf");
   tick();
-  expect(document.title).toBe("About");
-  expect(document.head.querySelector('meta[name="description"]:not([data-rz-head])')?.getAttribute("content")).toBe("about desc");
-  const widget = tag("SCRIPT", "src", "/widget.js");
-  expect(widget?.hasAttribute("async")).toBe(true);
-  expect((widget as HTMLScriptElement | undefined)?.async).toBe(true);
-  const ordered = tag("SCRIPT", "src", "/ordered.js") as HTMLScriptElement | undefined;
-  expect(ordered?.hasAttribute("defer")).toBe(true);
-  expect(ordered?.getAttribute("integrity")).toBe("sha1-x");
-  expect(ordered?.async).toBe(false);
-  expect(tag("LINK", "href", "https://cdn.example.test")?.getAttribute("rel")).toBe("preconnect");
-  expect(tag("META", "property", "og:title")?.getAttribute("content")).toBe("About");
-  expect(managed()).toHaveLength(4);
-  expect(document.head.contains(templateScript)).toBe(true);
+  expect(document.title).toBe("Leaf");
+  expect(document.head.querySelectorAll("title")).toHaveLength(1);
+  expect([...document.head.querySelectorAll('meta[name="description"]')].map((tag) => tag.getAttribute("content"))).toEqual([
+    "docs desc",
+  ]);
+  expect([...document.head.querySelectorAll('link[rel="canonical"]')].map((tag) => tag.getAttribute("href"))).toEqual([
+    "https://site.example/docs/leaf",
+  ]);
+  expect(tag("META", "property", "og:title")?.getAttribute("content")).toBe("Leaf");
+  expect(tag("LINK", "rel", "preconnect")).not.toBeUndefined();
+
+  navigate("/docs");
+  tick();
+  expect(document.title).toBe("Docs");
+  expect(document.head.querySelector('link[rel="canonical"]')).toBe(templateCanonical);
+  expect(tag("META", "property", "og:title")).toBeUndefined();
 
   navigate("/");
   tick();
   expect(document.title).toBe("Base");
-  expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toBe("base desc");
+  expect(document.head.querySelector("title")).toBe(templateTitle);
+  expect(document.head.querySelector('meta[name="description"]')).toBe(templateDescription);
   expect(managed()).toHaveLength(0);
   expect(document.head.contains(templateScript)).toBe(true);
+  document.title = "";
 });
 
-test("a script shared by two routes keeps its node while changed attributes replace it", () => {
+test("a script shared by two routes keeps its node and leaves after the turn no route claims it", async () => {
+  const Shared = () => (
+    <Head>
+      <script src="/shared.js" />
+    </Head>
+  );
   const navigate = setup(
     [
-      { path: "/a", component: Home, meta: { scripts: [{ src: "/shared.js" }] } },
-      { path: "/b", component: Home, meta: { scripts: [{ src: "/shared.js" }] } },
-      { path: "/c", component: Home, meta: { scripts: [{ src: "/shared.js", async: true }] } },
+      { path: "/a", component: Shared },
+      { path: "/b", component: Shared },
+      { path: "/c", component: Home },
     ],
     "/a",
   );
@@ -114,95 +133,40 @@ test("a script shared by two routes keeps its node while changed attributes repl
   navigate("/b");
   tick();
   expect(tag("SCRIPT", "src", "/shared.js")).toBe(first);
+  expect(document.head.querySelectorAll('script[src="/shared.js"]')).toHaveLength(1);
 
   navigate("/c");
   tick();
-  const replaced = tag("SCRIPT", "src", "/shared.js");
-  expect(replaced).not.toBeUndefined();
-  expect(replaced).not.toBe(first);
-  expect(replaced?.hasAttribute("async")).toBe(true);
-});
-
-test("a managed entry suppresses the same-key scalar without duplicating the tag", () => {
-  const baseline = document.createElement("meta");
-  baseline.setAttribute("name", "description");
-  baseline.setAttribute("content", "base desc");
-  document.head.append(baseline);
-
-  const navigate = setup(
-    [
-      { path: "/", component: Home },
-      {
-        path: "/about",
-        component: Home,
-        meta: {
-          description: "scalar desc",
-          canonical: "https://example.test/scalar",
-          links: [{ rel: "canonical", href: "https://example.test/managed" }],
-          metas: [{ name: "description", content: "managed desc" }],
-        },
-      },
-    ],
-    "/",
-  );
-  navigate("/about");
-  tick();
-  const descriptions = [...document.head.querySelectorAll('meta[name="description"]')];
-  expect(descriptions).toHaveLength(1);
-  expect(descriptions[0]?.hasAttribute("data-rz-head")).toBe(true);
-  expect(descriptions[0]?.getAttribute("content")).toBe("managed desc");
-  const canonicals = [...document.head.querySelectorAll('link[rel="canonical"]')];
-  expect(canonicals).toHaveLength(1);
-  expect(canonicals[0]?.getAttribute("href")).toBe("https://example.test/managed");
-
-  navigate("/");
-  tick();
-  expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toBe("base desc");
-  expect(document.head.querySelector('link[rel="canonical"]')).toBeNull();
-  expect(managed()).toHaveLength(0);
-});
-
-test("a Head adopts the route script and the tag leaves with the route, and a Head meta replaces the route meta until disposed", () => {
-  const About = () => (
-    <Head>
-      <script src="/shared.js" />
-    </Head>
-  );
-  const navigate = setup(
-    [
-      { path: "/", component: Home },
-      { path: "/about", component: About, meta: { scripts: [{ src: "/shared.js" }] } },
-    ],
-    "/",
-  );
-  navigate("/about");
-  tick();
-  const adopted = tag("SCRIPT", "src", "/shared.js");
-  expect(adopted).not.toBeUndefined();
-  expect(document.head.querySelectorAll('script[src="/shared.js"]')).toHaveLength(1);
-
-  navigate("/");
-  tick();
+  await Promise.resolve();
   expect(tag("SCRIPT", "src", "/shared.js")).toBeUndefined();
-  expect(adopted?.isConnected).toBe(false);
-  cleanup();
+});
 
+test("a Head inside a toggled view shadows the route's tag only while it is shown", () => {
   const [open, setOpen] = signal(true);
-  const Meta = () => (
-    <Show when={open()}>
+  const Page = () => (
+    <>
       <Head>
-        <meta property="og:title" content="head" />
+        <meta property="og:title" content="route" />
       </Head>
-    </Show>
+      <Show when={open()}>
+        <Head>
+          <meta property="og:title" content="dialog" />
+        </Head>
+      </Show>
+    </>
   );
-  setup([{ path: "/about", component: Meta, meta: { metas: [{ property: "og:title", content: "route" }] } }], "/about");
-  const live = tag("META", "property", "og:title");
+  setup([{ path: "/", component: Page }], "/");
   expect(document.head.querySelectorAll('meta[property="og:title"]')).toHaveLength(1);
-  expect(live?.getAttribute("content")).toBe("head");
+  expect(tag("META", "property", "og:title")?.getAttribute("content")).toBe("dialog");
 
   setOpen(false);
   tick();
-  expect(tag("META", "property", "og:title")).toBe(live);
+  expect(document.head.querySelectorAll('meta[property="og:title"]')).toHaveLength(1);
+  expect(tag("META", "property", "og:title")?.getAttribute("content")).toBe("route");
+
+  setOpen(true);
+  tick();
+  expect(tag("META", "property", "og:title")?.getAttribute("content")).toBe("dialog");
 });
 
 test("syncManagedHead keeps shared tags, clones new scripts and adopts links and metas", () => {
@@ -245,4 +209,30 @@ test("syncManagedHead keeps shared tags, clones new scripts and adopts links and
   expect(
     managed().map((element) => element.getAttribute("src") ?? element.getAttribute("href") ?? element.getAttribute("property")),
   ).toEqual(["/shared.js", "/fresh.js", "https://new.example.test", "og:title"]);
+});
+
+test("syncManagedHead keeps a claimed tag and shows the fetched one once its owner disposes", () => {
+  const [open, setOpen] = signal(true);
+  mount(() => (
+    <Show when={open()}>
+      <Head>
+        <title>Island</title>
+      </Head>
+    </Show>
+  ));
+  const claimed = document.head.querySelector("title");
+  expect(document.title).toBe("Island");
+
+  const incoming = new DOMParser().parseFromString(
+    `<html><head><title data-rz-head>Next page</title></head><body></body></html>`,
+    "text/html",
+  );
+  syncManagedHead(document, incoming);
+  expect(document.head.querySelector("title")).toBe(claimed);
+  expect(document.title).toBe("Island");
+
+  setOpen(false);
+  tick();
+  expect(document.title).toBe("Next page");
+  expect(document.head.querySelectorAll("title")).toHaveLength(1);
 });

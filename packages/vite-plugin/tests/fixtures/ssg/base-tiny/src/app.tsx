@@ -1,6 +1,6 @@
 import publicLogo from "/brand.svg";
 import { defineRoute, defineRoutes, useLocation, useNavigate } from "@rezejs/router";
-import type { JSX } from "reze-js";
+import { Head, type JSX } from "reze-js";
 
 import { PackageBadge } from "../../linked-ui/src";
 import logo from "./logo café.svg?no-inline";
@@ -9,16 +9,30 @@ import logo2x from "./logo café@2x.svg?no-inline";
 import "./styles.css";
 
 function Home() {
-  return <h1 id="tiny-home">tiny home</h1>;
+  return (
+    <h1 id="tiny-home">
+      <Head>
+        <title>Tiny</title>
+      </Head>
+      tiny home
+    </h1>
+  );
 }
 
 function Deep() {
-  return <h1 id="tiny-deep">tiny deep</h1>;
+  return (
+    <h1 id="tiny-deep">
+      <Head>
+        <title>Deep</title>
+      </Head>
+      tiny deep
+    </h1>
+  );
 }
 
 export const routes = defineRoutes([
-  defineRoute({ path: "/", meta: { title: "Tiny" }, component: Home }),
-  defineRoute({ path: "/a/b", meta: { title: "Deep" }, component: Deep }),
+  defineRoute({ path: "/", component: Home }),
+  defineRoute({ path: "/a/b", component: Deep }),
 ]);
 
 export default function Shell(props: { children: JSX.Element }) {

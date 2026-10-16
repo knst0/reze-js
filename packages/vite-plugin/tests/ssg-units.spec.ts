@@ -73,7 +73,11 @@ test("template preparation keeps nested roots out of the shell and reads head de
   validateTemplate(templateHtml, "index.html", "app", "./assets/boot.js");
   expect(countRootIds(templateHtml, "app")).toBe(1);
   const { parts, headDefaults } = prepareTemplate(templateHtml, "app");
-  expect(headDefaults).toEqual({ title: "Base & title", description: "base & description" });
+  expect(headDefaults).toEqual([
+    { key: "title", html: '<title data-rz-head="">Base &amp; title</title>' },
+    { key: "meta:name:description", html: '<meta name="description" content="base &amp; description" data-rz-head="">' },
+  ]);
+  expect(parts.beforeHeadEnd).not.toContain("<title");
   const nodes = elements(parse(parts.beforeHeadEnd + parts.headEndToRoot + parts.rootEndToBodyEnd + parts.bodyEndToEnd));
   expect(text(nodes.find((node) => attribute(node, "id") === "app")!)).toBe("");
   expect(text(nodes.find((node) => attribute(node, "id") === "after")!)).toBe("kept");

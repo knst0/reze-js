@@ -238,6 +238,8 @@ The compiler turns the document into HTML once, at build time and when the dev s
 
 The server plugin renders every page from the document and never reads `index.html`. A project that still has an `index.html` at the root fails with a message that asks you to move its head tags into the document.
 
+The document's `<title>`, `<base>`, canonical link, and `<meta>` tags with a `name`, `property`, or `http-equiv` are defaults. A [`<Head>`](/building-interfaces#head-tags) tag with the same key replaces one on the pages where it renders, and the default comes back on the pages where none does.
+
 When a page fails before its first byte is sent, the response is a `500` page built from the same document without its module scripts, with `Internal Server Error` inside the mount root. During `vite` dev the page also shows the Vite error overlay with the error, and it keeps the dev client, so saving a fix reloads the page.
 
 ### Build output

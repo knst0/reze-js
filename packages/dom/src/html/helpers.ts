@@ -6,7 +6,7 @@ import { renderEffect } from "@rezejs/signals/render";
 import { SVGElements } from "../../../../crates/reze_compiler/src/html-data.json";
 import { errored } from "../errored";
 import { branch, choose } from "../flow";
-import { HeadManagedAttribute, headKeyKind, headLinkKey, headMetaNameKey, headMetaPropertyKey, headScriptKey } from "../head";
+import { HeadManagedAttribute } from "../head";
 import type { JSX } from "../jsx";
 import { list } from "../list";
 import { loading } from "../loading";
@@ -515,41 +515,13 @@ export function hHead(site: Site, items: [string | undefined, () => unknown][]):
   return managedRange("head", site, () => {
     const session = htmlSession();
     for (const [key, build] of items) {
-      if (key !== undefined) {
-        if (session.headKeys.has(key)) continue;
-        session.headKeys.add(key);
-      }
       const content = managedRange("head-tag", site, build);
       const id = key ?? `u${session.headTokens++}`;
       markHeadTag(content, key === undefined ? id : undefined);
-      session.headTags.push({
-        id,
-        script: key !== undefined && headKeyKind(key) === "script",
-        node: content,
-        instance: instances.get(content)!,
-        emitted: false,
-        html: "",
-      });
+      session.headTags.push({ id, node: content, instance: instances.get(content)! });
     }
     return undefined;
   });
-}
-
-export interface HeadListInput {
-  readonly scripts?: readonly { readonly src: string }[];
-  readonly links?: readonly { readonly rel: string; readonly href: string }[];
-  readonly metas?: readonly ({ readonly name: string } | { readonly property: string })[];
-}
-
-export function headListKeys(input: HeadListInput | undefined): string[] {
-  if (input === undefined) return [];
-  const keys: string[] = [];
-  for (const script of input.scripts ?? []) keys.push(headScriptKey(script.src));
-  for (const link of input.links ?? []) keys.push(headLinkKey(link.rel, link.href));
-  for (const meta of input.metas ?? []) {
-    keys.push("name" in meta ? headMetaNameKey(meta.name) : headMetaPropertyKey(meta.property));
-  }
-  return keys;
 }
 
 function markHeadTag(content: HtmlRange, token: string | undefined): void {

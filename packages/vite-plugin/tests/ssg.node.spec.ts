@@ -315,9 +315,10 @@ describe("preboot html, metadata, assets and lazy execution", () => {
     expect(attr(aboutAuthor, "content")).toBe("Reze");
     const aboutPreconnect = elements(about.html, "link", { "data-rz-head": "", rel: "preconnect" })[0];
     expect(attr(aboutPreconnect, "href")).toBe("https://cdn.example.test");
-    const aboutOgTitle = elements(about.html, "meta", { "data-rz-head": "" })[0];
-    expect(attr(aboutOgTitle, "property")).toBe("og:title");
+    const aboutOgTitle = elements(about.html, "meta", { "data-rz-head": "", property: "og:title" })[0];
     expect(attr(aboutOgTitle, "content")).toBe("About the site");
+    expect(elements(about.html, "title")).toHaveLength(1);
+    expect(elements(about.html, "meta", { name: "description" })).toHaveLength(1);
     expect(elements(home.html, "script", { "data-rz-head": "" })).toHaveLength(0);
     const post = await fetchHtml(pages.router, "/blog/a/");
     expect(post.status).toBe(200);
@@ -328,6 +329,9 @@ describe("preboot html, metadata, assets and lazy execution", () => {
     const intro = await fetchHtml(pages.router, "/docs/intro/");
     expect(intro.html).toContain("docs");
     expect(intro.html).toContain("intro");
+    expect(titleOf(intro.html)).toBe("Intro");
+    expect(metaOf(intro.html, "robots")).toBe("noindex");
+    expect(metaOf(home.html, "robots")).toBe("index,follow");
 
     const one = await fetchHtml(pages.router, "/context/one/");
     const two = await fetchHtml(pages.router, "/context/two/");

@@ -44,48 +44,6 @@ export interface RouterServerContextArgs {
 
 export type RouterServerContextFactory<C> = (args: RouterServerContextArgs) => Awaitable<C>;
 
-export interface PageHeadScript {
-  src: string;
-  async?: boolean;
-  defer?: boolean;
-  type?: string;
-  crossorigin?: "anonymous" | "use-credentials";
-  integrity?: string;
-}
-
-export interface PageHeadLink {
-  rel: string;
-  href: string;
-  as?: string;
-  type?: string;
-  media?: string;
-  hreflang?: string;
-  crossorigin?: "anonymous" | "use-credentials";
-}
-
-export type PageHeadMeta =
-  | { name: string; property?: undefined; content: string }
-  | { property: string; name?: undefined; content: string };
-
-export interface PageHeadDefaults {
-  title?: string;
-  description?: string;
-  canonical?: string;
-  robots?: string;
-}
-
-/**
- * Merged root-to-leaf with the last defined scalar winning. `scripts`, `links` and `metas`
- * concatenate root-to-leaf and dedupe by `src`, `rel` plus `href`, and `name` or `property`,
- * with the last entry winning. Entries render only while a matched route declares them; a
- * managed entry suppresses the same-key scalar (`description`, `robots`, `canonical`).
- */
-export interface PageMetadata extends PageHeadDefaults {
-  scripts?: PageHeadScript[];
-  links?: PageHeadLink[];
-  metas?: PageHeadMeta[];
-}
-
 export interface RouteRedirect {
   to: string;
   replace?: boolean;
@@ -98,11 +56,6 @@ export interface RouteConfig<D = unknown, C = RouterContext> {
    * May return a promise-like; navigations await it and deliver the settled value, never the promise.
    */
   preload?: (args: PreloadArgs<any, C>) => D;
-  /**
-   * Page metadata, merged root-to-leaf with the last defined field winning. A function receives the route's settled
-   * preload data; navigations await it. Hover warming never runs it.
-   */
-  meta?: PageMetadata | ((args: RouteResolvedArgs<any, D, C>) => Awaitable<PageMetadata>);
   /**
    * A literal object short-circuits the navigation before any preload runs. A function receives the route's settled
    * preload data; navigations await it and follow the first defined result root-to-leaf. Hover warming never runs it.
@@ -123,7 +76,7 @@ export interface RouteDefinition<C = RouterContext> extends RouteConfig<any, C> 
   /** Node key in `Router.paths`, from the file segment (`blog/[id]` → `byId`) or derived from `path`; the plugin sets it, hand-written tables may. Siblings sharing a key throw at factory creation. */
   name?: string;
   component?: RouteComponent<any, any>;
-  /** Code-split module; its `default` and `route` override `component`, `preload`, `meta`, `redirect` and `info` once loaded. */
+  /** Code-split module; its `default` and `route` override `component`, `preload`, `redirect` and `info` once loaded. */
   load?: () => Promise<RouteModule<C>>;
   children?: readonly RouteDefinition<C>[];
 }
@@ -220,7 +173,6 @@ export type RoutePropsFor<P extends RoutePattern> = RouteProps<ParamsFor<P>, Dat
  */
 export interface RouteConfigFor<P extends RoutePattern, D = unknown, C = RouterContext> {
   preload?: (args: PreloadArgs<ParamsFor<P>, C>) => D;
-  meta?: PageMetadata | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<PageMetadata>);
   redirect?: RouteRedirect | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<RouteRedirect | undefined>);
   info?: Readonly<Record<string, unknown>>;
 }

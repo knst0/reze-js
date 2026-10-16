@@ -9,6 +9,10 @@ function Home() {
   let n = signal(0);
   return (
     <article>
+      <Head>
+        <title>Home</title>
+        <meta name="description" content="home page" />
+      </Head>
       <h1 id="home-title">home</h1>
       <p id="home-data">home-data</p>
       <button id="home-inc" type="button" onClick={() => (n += 1)}>
@@ -31,7 +35,11 @@ function About() {
   return (
     <article>
       <Head>
-        <script src="/about-widget.js" />
+        <title>About</title>
+        <link rel="canonical" href="https://example.test/about" />
+        <script src="/about-widget.js" defer />
+        <link rel="preconnect" href="https://cdn.example.test" />
+        <meta property="og:title" content="About the site" />
         <script type="application/ld+json">{'{"@type":"AboutPage"}'}</script>
         <meta name="author" content="Reze" />
       </Head>
@@ -43,6 +51,10 @@ function About() {
 function PostPage(props: RouteProps<{ id: string }, { title: string }>) {
   return (
     <article id="post" ref={(node) => node.setAttribute("data-hydrated", "")}>
+      <Head>
+        <title>{props.data.title}</title>
+        <meta name="description" content={`post ${props.data.title}`} />
+      </Head>
       <h1 id="post-title">{props.data.title}</h1>
       <p id="post-id">{props.params.id}</p>
     </article>
@@ -60,6 +72,10 @@ function FilesPage(props: RouteProps<{ rest: string }, unknown>) {
 function DocsLayout(props: { children: JSX.Element }) {
   return (
     <section>
+      <Head>
+        <title>Docs</title>
+        <meta name="robots" content="noindex" />
+      </Head>
       <h2 id="docs-title">docs</h2>
       {props.children}
     </section>
@@ -204,11 +220,25 @@ interface CodecData {
 }
 
 function IntroPage() {
-  return <p id="intro">intro</p>;
+  return (
+    <p id="intro">
+      <Head>
+        <title>Intro</title>
+      </Head>
+      intro
+    </p>
+  );
 }
 
 function ApiPage() {
-  return <p id="api">api</p>;
+  return (
+    <p id="api">
+      <Head>
+        <title>Api</title>
+      </Head>
+      api
+    </p>
+  );
 }
 
 function CondPage() {
@@ -231,18 +261,10 @@ export const routes = defineRoutes([
   defineRoute({
     path: "/",
     preload: () => ({ greeting: "home-data" }),
-    meta: { title: "Home", description: "home page" },
     component: Home,
   }),
   defineRoute({
     path: "/about",
-    meta: {
-      title: "About",
-      canonical: "https://example.test/about",
-      scripts: [{ src: "/about-widget.js", defer: true }],
-      links: [{ rel: "preconnect", href: "https://cdn.example.test" }],
-      metas: [{ property: "og:title", content: "About the site" }],
-    },
     component: About,
   }),
   defineRoute({
@@ -254,7 +276,6 @@ export const routes = defineRoutes([
           if (typeof document !== "undefined") await fetch(`/preload-probe.json?intent=${intent}`);
           return { title: `Post ${params.id}` };
         },
-        meta: ({ data }) => ({ title: data.title, description: `post ${data.title}` }),
         info: { tag: "blog-info-canary" },
         component: PostPage,
       }),
@@ -273,8 +294,8 @@ export const routes = defineRoutes([
     path: "/docs",
     component: DocsLayout,
     children: [
-      defineRoute({ path: "/intro", meta: { title: "Intro" }, component: IntroPage }),
-      defineRoute({ path: "/api", meta: { title: "Api" }, component: ApiPage }),
+      defineRoute({ path: "/intro", component: IntroPage }),
+      defineRoute({ path: "/api", component: ApiPage }),
     ],
   }),
   defineRoute({ path: "/lazy", load: () => import("./LazyPage") }),

@@ -155,8 +155,8 @@ catalog! {
         severity: Error,
         title: "Control-flow tag with children it cannot render",
         message: "`<{tag}>` expects {expected} as children, so this cannot be compiled.",
-        explanation: "`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only `<meta>`, `<link>` and `<script>` elements. `data.tag` is the tag and `data.expected` what it takes.",
-        repair: "Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`, and keep only `<meta>`, `<link>` and `<script>` in `<Head>`.",
+        explanation: "`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only the head elements `<title>`, `<base>`, `<meta>`, `<link>`, `<script>` and `<style>`; a `<noscript>` in the head parses as text while scripts run, so it belongs in `document.tsx`. `data.tag` is the tag and `data.expected` what it takes.",
+        repair: "Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`, and keep only head elements in `<Head>`.",
         fix: None,
         example: Pair {
             bad: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()}><li>item</li></For></ul>;\n",
@@ -181,7 +181,7 @@ catalog! {
         severity: Error,
         title: "Invalid `<Head>` tag",
         message: "`<{tag}>` in `<Head>` {detail}.",
-        explanation: "`<Head>` tags need static identity: `src`, `rel`, `href`, `name` and `property` must be string literals, `meta` needs exactly one of `name` and `property`, `link` needs `rel` and `href`, and a `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta` and `link` take no children, and `script` takes only text. `data.tag` is the tag and `data.detail` what is wrong.",
+        explanation: "A keyed `<Head>` tag replaces the tag of the same key from `document.tsx` or an outer component while it is mounted, so its key must be static. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `link rel=\"canonical\"` by its `rel` and any other `link` by `rel` and `href`, and `script` by `src`; those attributes must be string literals. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta`, `link` and `base` take no children, and `script`, `style` and `title` take only text. `data.tag` is the tag and `data.detail` what is wrong.",
         repair: "Write the identity attributes as string literals, or move the tag out of `<Head>`.",
         fix: None,
         example: Pair {

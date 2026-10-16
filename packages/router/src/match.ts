@@ -1,6 +1,5 @@
 import type {
   Awaitable,
-  PageMetadata,
   Params,
   RouteComponent,
   RouteDefinition,
@@ -28,7 +27,6 @@ export interface CompiledRoute {
   readonly pattern: string;
   component: RouteComponent<any, any> | undefined;
   preload: ((args: PreloadArgs<any>) => unknown) | undefined;
-  meta: (PageMetadata | ((args: RouteResolvedArgs<any, any>) => Awaitable<PageMetadata>)) | undefined;
   redirect: (RouteRedirect | ((args: RouteResolvedArgs<any, any>) => Awaitable<RouteRedirect | undefined>)) | undefined;
   info: Readonly<Record<string, unknown>> | undefined;
   loading: Promise<void> | undefined;
@@ -127,7 +125,6 @@ function compileRoute(def: RouteDefinition, pattern: string, id: string): Compil
     pattern,
     component: def.component,
     preload: def.preload,
-    meta: def.meta,
     redirect: def.redirect,
     info: def.info,
     loading: undefined,

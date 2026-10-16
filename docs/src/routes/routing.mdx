@@ -206,7 +206,7 @@ The router calls `preload` with an intent that tells it why the page loads:
 
 While a navigation waits for `preload`, the current page stays on screen, and `useIsRouting()` returns `true`. [Show pending state and errors](#show-pending-state-and-errors) describes the pending state.
 
-A navigation that changes only the hash, such as `/about` to `/about#intro`, skips `preload` and `meta`.
+A navigation that changes only the hash, such as `/about` to `/about#intro`, skips `preload`.
 
 ### Hover warming
 
@@ -214,7 +214,7 @@ With `preload` enabled, which is the default, the router starts loading a route 
 
 - Hovering a link starts a 20 ms timer. When the timer ends, the router loads the route's chunk and runs its `preload` with intent `preload`. Moving the pointer away before the timer ends cancels the warming.
 - Focusing a link, or touching it, starts warming at once.
-- Warming never runs `meta` or `redirect`.
+- Warming never runs a `redirect` function or renders the route.
 - An error during warming is ignored. The navigation runs `preload` again and reports the error if it repeats.
 - A `navigate` call made while warming is running a `preload` is ignored.
 
@@ -222,7 +222,7 @@ Set `preload: false` in `createRouter` to turn warming off. Clicks still route t
 
 ### Pass request context to routes
 
-For SSR and SSG, export `createContext` from the server entry. Reze calls it for every request or generated page and passes the result to route `preload`, `meta`, and `redirect` callbacks as `context`:
+For SSR and SSG, export `createContext` from the server entry. Reze calls it for every request or generated page and passes the result to route `preload` and `redirect` callbacks as `context`:
 
 ```tsx file=src/entry-server.tsx
 import type { RouterContext, RouterServerContextFactory } from "@rezejs/router";
@@ -240,33 +240,31 @@ export const createContext: RouterServerContextFactory<RouterContext> = ({ reque
 
 ## Set page metadata
 
-A route can set the document title, description, canonical URL, robots directive, and extra head tags: scripts, links, and meta tags. Export a `meta` object from `route`:
+Page metadata lives in [`<Head>`](/building-interfaces#head-tags), inside the components that render the page. `src/document.tsx` gives the defaults, and each shell, layout and route component overrides them for its part of the tree:
 
 ```tsx file=src/routes/about.tsx
-import type { RouteConfigFor } from "@rezejs/router";
-
-export const route = {
-  meta: {
-    title: "About",
-    description: "Who we are",
-    scripts: [{ src: "https://cdn.example.test/widget.js", async: true }],
-    links: [{ rel: "preconnect", href: "https://cdn.example.test" }],
-    metas: [{ property: "og:title", content: "About" }],
-  },
-} satisfies RouteConfigFor<"/about">;
+import { Head } from "reze-js";
 
 export default function About() {
-  return <h1>About</h1>;
+  return (
+    <>
+      <Head>
+        <title>About</title>
+        <meta name="description" content="Who we are" />
+        <link rel="canonical" href="https://site.example/about" />
+        <script src="https://cdn.example.test/widget.js" async />
+      </Head>
+      <h1>About</h1>
+    </>
+  );
 }
 ```
 
-`meta` can also be a function. The function receives the route's settled data and params, and it can return the object or a promise of it. When several matched routes set a field, the leaf route wins. A field that no matched route sets returns to its baseline. The baseline is the `headDefaults` option of `createRouter` when you set it. Otherwise it is the head the document had at the first commit.
+Values can be dynamic, such as `<title>{props.data.title}</title>` with the data from `preload`, and the tag follows them.
 
-`scripts`, `links`, and `metas` concatenate from the root to the leaf instead. Entries dedupe by `src`, by `rel` plus `href`, and by `name` or `property`, with the last entry winning. A tag renders while a matched route declares it, and leaving the route removes it. A script shared by two routes keeps its tag, so it loads once; removing a tag never undoes the script's effects. A `metas` entry named `description` or `robots`, and a `links` entry with `rel` set to `canonical`, replace the same-named scalar instead of duplicating it.
+Each head tag has a key: `<title>` and `<base>` are their own keys, a `<meta>` is keyed by its `name`, `property` or `http-equiv`, `<link rel="canonical">` by its `rel`, any other `<link>` by `rel` plus `href`, and a `<script>` by `src`. While a component is mounted, its tag replaces the tag with the same key from `src/document.tsx` or from an outer component, so the deepest route wins. Leaving the route shows the replaced tag again, down to the document's own tag. Tags without a key, such as `<style>` or a JSON-LD `<script>`, add to the head instead.
 
-A script needs a `src`; there is no inline source, so a page keeps the static hosting property of carrying no inline executable script. A script without `async` loads in document order. The server renders the same tags into the head of SSR and SSG pages.
-
-For tags that belong to a component rather than a route, use [`<Head>`](/building-interfaces#head-tags) instead. Declare each tag in one place: when `meta` and `<Head>` name the same tag, the route version wins.
+The rule is the same everywhere: the browser applies it on every navigation, and the server applies it to SSR and SSG pages, so the first byte already carries the route's title.
 
 ## Redirect routes
 
@@ -283,7 +281,7 @@ export const route = {
 
 These rules apply to redirects:
 
-- The router checks object redirects from every matched route before it runs any `preload`. Then it checks each matched route, from the root to the leaf: `preload`, `meta`, and the `redirect` function.
+- The router checks object redirects from every matched route before it runs any `preload`. Then it checks each matched route, from the root to the leaf: `preload`, then the `redirect` function.
 - A `redirect` function that returns `undefined` or `null` keeps the page. The first redirect that returns a value, checked from the root to the leaf, wins.
 - A redirect replaces the current history entry unless you set `replace: false`.
 
@@ -391,7 +389,7 @@ Code can read the same state. The `useLinkState` hook returns getters for `curre
 
 `useIsRouting()` returns a getter. It is `true` before the first commit, and while a navigation waits for route modules or async `preload` data. It becomes `false` when the new page commits. Hover warming does not change it.
 
-An error thrown during a route's `preload`, `meta`, or `redirect` is rethrown when the page renders. The nearest `catchError` boundary handles it. See [Lifecycle](/lifecycle) for how boundaries work.
+An error thrown during a route's `preload` or `redirect` is rethrown when the page renders. The nearest `catchError` boundary handles it. See [Lifecycle](/lifecycle) for how boundaries work.
 
 When a route module fails to load, the page renders the load error. The next navigation to that route tries to load the module again.
 
@@ -535,9 +533,9 @@ Prerendering rejects these setups:
 
 ### Navigate in server-rendered and prerendered apps
 
-With `ssr` or `ssg` set, the browser does not run the route table. A click on a link to another page of the app fetches that page's HTML and replaces the content of the mount element, then updates the address bar, the title, and the page metadata. Nothing else in the document reloads, so state outside the mount element survives. Everything inside the mount element is new, including the DOM of a layout that appeared on both pages.
+With `ssr` or `ssg` set, the browser does not run the route table. A click on a link to another page of the app fetches that page's HTML and replaces the content of the mount element, then updates the address bar and the `<Head>` tags of the new page. Nothing else in the document reloads, so state outside the mount element survives. Everything inside the mount element is new, including the DOM of a layout that appeared on both pages.
 
-- `preload`, `meta`, and `redirect` run on the server for each request, or once for each page at build time. They do not run in the browser. A component receives the result through `props.data`.
+- `preload` and `redirect` run on the server for each request, or once for each page at build time. They do not run in the browser. A component receives the result through `props.data`.
 - Hovering, focusing, or touching a link fetches its page ahead of the click, once for each link within 10 seconds. `useIsRouting()` is `true` while a navigation waits for its page.
 - A response that is not HTML, a failed fetch, or a build ID that differs from the current page's loads the destination as an ordinary navigation.
 - `useLocation`, `useParams`, `useNavigate`, `useSearchParams`, `useIsRouting`, `useBeforeLeave`, and `link` work inside islands. `useCurrentMatches` returns each match's `path` and `params`, and `data` is `undefined` there.

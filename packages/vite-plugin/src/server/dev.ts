@@ -7,7 +7,7 @@ import type { Connect, EnvironmentModuleGraph, EnvironmentModuleNode, ViteDevSer
 
 import { HtmlEnv, ServerEntryId } from "./adapter";
 import type { AppDocument } from "./document";
-import type { TemplateHead, TemplateParts } from "./template";
+import type { HeadDefault, PreparedTemplate, TemplateParts } from "./template";
 import { buildErrorPage, prepareTemplate } from "./template";
 
 export interface DevDocumentOptions {
@@ -21,7 +21,7 @@ interface DevServerEntry {
 
 interface DevOverrides {
   template: TemplateParts;
-  headDefaults: TemplateHead;
+  headDefaults: HeadDefault[];
   clientModules: ClientModules;
   errorHead: (error: unknown) => string;
 }
@@ -51,12 +51,11 @@ function isDocumentRequest(req: IncomingMessage): boolean {
 async function renderDocument(server: ViteDevServer, options: DevDocumentOptions, request: Request): Promise<Response> {
   const url = new URL(request.url);
   const errorHead = (error: unknown) => errorOverlayScript(server, error);
-  let template: TemplateParts | undefined;
+  let prepared: PreparedTemplate | undefined;
   try {
     const document = options.document();
     const html = await server.transformIndexHtml(url.pathname + url.search, document.html);
-    const prepared = prepareTemplate(html, document.rootId);
-    template = prepared.parts;
+    prepared = prepareTemplate(html, document.rootId);
     const environment = server.environments[HtmlEnv];
     if (environment === undefined || !isRunnableDevEnvironment(environment)) {
       throw new Error(`[reze] ${HtmlEnv} environment is not runnable in dev`);
@@ -70,7 +69,8 @@ async function renderDocument(server: ViteDevServer, options: DevDocumentOptions
     });
   } catch (error) {
     server.config.logger.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
-    const html = buildErrorPage(template ?? BareDocument, errorHead(error));
+    const defaults = (prepared?.headDefaults ?? []).map((entry) => entry.html).join("");
+    const html = buildErrorPage(prepared?.parts ?? BareDocument, defaults + errorHead(error));
     return new Response(html, { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
   }
 }

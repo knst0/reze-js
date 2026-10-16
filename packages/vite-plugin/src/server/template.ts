@@ -1,14 +1,12 @@
-import { defaultTreeAdapter, parse, serialize } from "parse5";
+import { defaultTreeAdapter, parse, serialize, serializeOuter } from "parse5";
 import type { DefaultTreeAdapterMap } from "parse5";
 
 type HtmlElement = DefaultTreeAdapterMap["element"];
 type HtmlParent = DefaultTreeAdapterMap["parentNode"];
 
-export interface TemplateHead {
-  title?: string;
-  description?: string;
-  canonical?: string;
-  robots?: string;
+export interface HeadDefault {
+  key: string;
+  html: string;
 }
 
 export interface TemplateParts {
@@ -20,7 +18,7 @@ export interface TemplateParts {
 
 export interface PreparedTemplate {
   parts: TemplateParts;
-  headDefaults: TemplateHead;
+  headDefaults: HeadDefault[];
 }
 
 const HeadSentinel = "<!--rz-head-->";
@@ -57,39 +55,28 @@ function findRoot(document: DefaultTreeAdapterMap["document"], rootId: string): 
   return roots[0]!;
 }
 
-function metadataKind(node: HtmlElement): keyof TemplateHead | undefined {
-  if (node.tagName === "title") return "title";
-  if (node.tagName === "meta") {
-    const name = attribute(node, "name")?.toLowerCase();
-    return name === "description" || name === "robots" ? name : undefined;
+function defaultKey(node: HtmlElement): string | undefined {
+  if (node.tagName === "title" || node.tagName === "base") return node.tagName;
+  if (node.tagName === "link") return attribute(node, "rel")?.toLowerCase() === "canonical" ? "link:canonical" : undefined;
+  if (node.tagName !== "meta") return undefined;
+  for (const name of ["name", "property", "http-equiv"]) {
+    const value = attribute(node, name);
+    if (value !== undefined) return `meta:${name}:${value}`;
   }
-  if (node.tagName === "link" && attribute(node, "rel")?.toLowerCase() === "canonical") return "canonical";
   return undefined;
 }
 
-function metadataValue(node: HtmlElement, kind: keyof TemplateHead): string | undefined {
-  if (kind === "title") {
-    const text = node.childNodes
-      .filter((child) => child.nodeName === "#text")
-      .map((child) => (child as DefaultTreeAdapterMap["textNode"]).value)
-      .join("")
-      .trim();
-    return text === "" ? undefined : text;
-  }
-  return kind === "canonical" ? attribute(node, "href") : attribute(node, "content");
-}
-
-function takeHeadDefaults(head: HtmlElement): TemplateHead {
-  const result: TemplateHead = {};
+function takeHeadDefaults(head: HtmlElement): HeadDefault[] {
+  const defaults: HeadDefault[] = [];
   for (const child of [...head.childNodes]) {
     if (!("tagName" in child)) continue;
-    const kind = metadataKind(child);
-    if (kind === undefined) continue;
-    const value = metadataValue(child, kind);
-    if (value !== undefined) result[kind] ??= value;
+    const key = defaultKey(child);
+    if (key === undefined) continue;
+    setAttribute(child, "data-rz-head", "");
+    defaults.push({ key, html: serializeOuter(child) });
     defaultTreeAdapter.detachNode(child);
   }
-  return result;
+  return defaults;
 }
 
 function splitSentinels(html: string): TemplateParts {

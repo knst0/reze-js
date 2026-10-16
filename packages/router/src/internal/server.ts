@@ -6,7 +6,7 @@ import { compileRoutes, joinRoutePaths, matchPath, routeEntryId } from "../match
 import { commit, initRouterState, pathnameOf, settleEntry, type RouterState } from "../navigation";
 import { createSettledRouter } from "../router";
 import { installLinkTarget } from "../target";
-import type { PageMetadata, Params, RouteDefinition } from "../types";
+import type { Params, RouteDefinition } from "../types";
 
 export type SsgParamKind = "required" | "optional" | "splat";
 
@@ -55,7 +55,6 @@ export interface SsgRenderResult {
     readonly hasData: boolean;
     readonly data?: unknown;
   }[];
-  readonly metadata: PageMetadata;
   readonly handle: SsgRouteHandle;
 }
 
@@ -342,7 +341,7 @@ export function uninstallServerLinkTarget(): void {
 }
 
 /**
- * Prepares one router path entirely off-DOM: same matcher, IDs, params, settled preloads, metadata merge and redirect
+ * Prepares one router path entirely off-DOM: same matcher, IDs, params, settled preloads and redirect
  * rules as the browser router. Call inside the page scope; mount the returned component inside
  * `session.run(hMount(...))`. The adapter records `matches` through its own session hook after preparation and before
  * mounting, then mounts, settles, and polls `takeServerRedirect(handle)` for imperative navigation during the view.
@@ -362,7 +361,7 @@ export function prepareServerRoute<C = unknown>(
     if (outcome.matches.length === 0) return { status: "not-found" };
     const entry = state.target!;
     const location = state.targetLocation!;
-    commit(state, entry, location, outcome.matches, undefined, "none");
+    commit(state, entry, location, outcome.matches, "none");
     return {
       status: "render",
       component: hStaticComponent(createSettledRouter(state)),
@@ -371,7 +370,6 @@ export function prepareServerRoute<C = unknown>(
         params: match.params,
         ...(match.hasData ? { hasData: true as const, data: match.data } : { hasData: false as const }),
       })),
-      metadata: outcome.metadata ?? {},
       handle: { state },
     } satisfies SsgRenderResult;
   });

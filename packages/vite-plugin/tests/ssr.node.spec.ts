@@ -107,7 +107,7 @@ test(
     expect(first).toMatch(/loading slow[\s\S]*<\/div>/);
     expect(first).not.toContain("data-rz-patch");
     expect(chunks.some((chunk) => chunk.includes("<template data-rz-patch=") && chunk.includes("done"))).toBe(true);
-    expect(first).not.toContain("data-rz-head");
+    expect(first).not.toContain("content=settled");
     expect(
       chunks.some(
         (chunk) => chunk.includes('<template data-rz-head data-rz-head-key="meta:name:slow">') && chunk.includes("content=settled"),
@@ -128,7 +128,7 @@ test(
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const html = await response.text();
     expect(html).toMatch(/^<!doctype html>/i);
-    expect(html).toContain("<title>Router</title>");
+    expect(html).toMatch(/<title data-rz-head="">Router<\/title>/);
     expect(html).toContain("navigator.serviceWorker?.register");
     expect(html).toMatch(/<div id="?app"?>Internal Server Error<\/div>/);
     expect(html).not.toContain('type="module"');
@@ -273,7 +273,7 @@ for (const engine of ENGINES) {
     async () => {
       const response = await fetch(`${devRouterOrigin.origin}/broken`, { headers: { accept: "text/html" } });
       expect(response.status).toBe(500);
-      expect(await response.text()).toContain("<title>Router</title>");
+      expect(await response.text()).toMatch(/<title data-rz-head="">Router<\/title>/);
       const { page, close } = await openPage(browsers.get(engine)!, `${devRouterOrigin.origin}/broken`);
       try {
         await waitFor(page, "document.querySelector('vite-error-overlay')?.shadowRoot?.textContent.includes('broken preload') === true");
