@@ -693,6 +693,8 @@ The attribute form moves the component's code into its own chunk when the import
 
 In server-rendered and statically generated output, an `eager` island renders its component into the HTML and the browser boots it at once. Every other trigger renders only its fallback, inside the `<span data-island>` shell for `visible` and `interaction`, and never renders the component. The server still calls `load` to learn which module the island boots from, and it sends the trigger and the `islandMedia` and `islandRootMargin` values with the island. The browser arms the trigger and loads the component when it fires.
 
+When an island boots, it does not hydrate the server markup. It renders its component again and replaces the markup inside its range, reusing the data the server already loaded. Slot content stays in place. Form fields the user has edited keep their values, and the focused field keeps its focus and cursor. Other DOM state inside the island, such as scroll positions and references to the server elements, does not carry over.
+
 For `<Counter island="visible" islandFallback={<p>loading counter</p>} />`, the HTML contains the `data-island="visible"` span with the paragraph inside, and no markup from `Counter`. To produce this output, see [Server rendering](/vite-plugin#server-rendering) and [Static site generation](/vite-plugin#static-site-generation).
 
 The `island` attribute is optional in server-rendered output. The compiler already finds the components that need the browser, and only those load. The attribute chooses when a component loads, and it keeps a component out of the HTML.
