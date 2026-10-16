@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -279,6 +279,27 @@ for (const engine of ENGINES) {
         await waitFor(page, "document.querySelector('vite-error-overlay')?.shadowRoot?.textContent.includes('broken preload') === true");
       } finally {
         await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test.skipIf(engine !== "chromium")(
+    `${engine}: editing the document in dev reloads the page with the new shell`,
+    async () => {
+      const root = join(OUT, "dev-document");
+      cpSync(fixture("streaming"), root, { recursive: true });
+      symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "dir");
+      const origin = await startDevServer(root);
+      const { page, close } = await openPage(browsers.get(engine)!, `${origin.origin}/`);
+      try {
+        await waitFor(page, "document.title === 'Streaming'");
+        const file = join(root, "src", "document.tsx");
+        writeFileSync(file, readFileSync(file, "utf8").replace("<title>Streaming</title>", "<title>Edited</title>"));
+        await waitFor(page, "document.title === 'Edited' && document.querySelector('#slow')?.textContent === 'done'");
+      } finally {
+        await close();
+        await origin.close();
       }
     },
     TIMEOUT,
