@@ -210,12 +210,7 @@ export function createServerPlugin(
     },
     configEnvironment(name, envConfig) {
       if (name !== HtmlEnv) return;
-      const resolveOptions = envConfig.resolve ?? {};
-      const conditions = resolveOptions.conditions ?? [];
-      if (!conditions.includes("reze-html")) conditions.push("reze-html");
-      resolveOptions.noExternal = true;
-      resolveOptions.conditions = conditions;
-      envConfig.resolve = resolveOptions;
+      envConfig.resolve = { ...envConfig.resolve, noExternal: true };
     },
     configResolved(config) {
       root = config.root;

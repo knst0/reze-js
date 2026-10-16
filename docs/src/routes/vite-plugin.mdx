@@ -69,6 +69,8 @@ Give the library two things in `package.json`: a `reze` export condition that po
 }
 ```
 
+The plugin adds the `reze` condition to the client and to the server HTML environment, on top of Vite's default conditions, so a package that exports only `reze` resolves in both without extra config. The HTML environment also gets `reze-html` ahead of it, for packages that ship a separate server build.
+
 The `reze.manifest` path is relative to the package root. The plugin scans the directory that contains each `reze` export target. It collects `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs` files, excluding `.d.ts` files and `node_modules`.
 
 Run the `reze-manifest` command from the library's root. It is installed with `@rezejs/vite-plugin`:
@@ -249,7 +251,7 @@ The client and the server must come from the same build. The server writes a bui
 
 ### Serve the handler
 
-`handler` takes a web `Request`. It answers `302` for a route redirect, `404` with `Not Found` for a path that no route matches, and `500` with `Internal Server Error` when rendering fails before the first byte. `reze-js/server` picks the implementation with export conditions (`bun`, `node`), not with runtime detection in code, so a runtime without a matching condition fails at import. The next sample is a fragment, because `dist/server/entry.js` exists only after a build:
+`handler` takes a web `Request`. It answers `302` for a route redirect, `404` with `Not Found` for a path that no route matches, and `500` with the [document](#the-document) around `Internal Server Error` when rendering fails before the first byte. `reze-js/server` picks the implementation with export conditions (`bun`, `node`), not with runtime detection in code, so a runtime without a matching condition fails at import. The next sample is a fragment, because `dist/server/entry.js` exists only after a build:
 
 ```ts fragment
 import { serve } from "reze-js/server";

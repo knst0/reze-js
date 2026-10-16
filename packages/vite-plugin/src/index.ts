@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path";
 
 import { compile } from "@rezejs/compiler";
+import { defaultClientConditions, defaultServerConditions } from "vite";
 import type { DevEnvironment, Environment, EnvironmentModuleNode, Plugin } from "vite";
 
 import { ModuleFactsStore, staticImportSpecifiers, type Resolver } from "./facts";
@@ -249,8 +250,11 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
       },
     },
     applyToEnvironment: (environment) => environment.name === "client" || environment.name === HtmlEnv,
-    config() {
-      return { resolve: { conditions: ["reze"] } };
+    configEnvironment(name, envConfig) {
+      if (name !== "client" && name !== HtmlEnv) return;
+      const added = name === HtmlEnv ? ["reze-html", "reze"] : ["reze"];
+      const conditions = envConfig.resolve?.conditions ?? (name === HtmlEnv ? defaultServerConditions : defaultClientConditions);
+      envConfig.resolve = { ...envConfig.resolve, conditions: [...added.filter((c) => !conditions.includes(c)), ...conditions] };
     },
     configResolved(config) {
       isServe = config.command === "serve";
