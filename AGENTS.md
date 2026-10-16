@@ -49,7 +49,5 @@ can decide into the compiler, even when it costs compile time or compiler comple
 ## Process
 
 - Review snapshot updates by hand, never accept blindly.
-- NEVER create, edit, or delete `.changeset/*.md`; NEVER run `pnpm changeset` (add) or
-  `pnpm changeset version`. Read-only `pnpm changeset status` is allowed.
 - One logical change per commit, with the tests and docs it needs. Imperative subject,
   optional scope prefix (`router: …`); body says why. Never commit build output or scratch.
