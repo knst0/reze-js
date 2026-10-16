@@ -28,6 +28,12 @@ export interface AnalyzeResult {
  */
 export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult
 
+/**
+ * Renders the default-exported document component of `source` to static HTML. Errors come back
+ * as diagnostics, and the call never throws on them.
+ */
+export declare function compileDocument(source: string, filename: string): DocumentResult
+
 export interface CompileOptions {
   /** Default: `true`. */
   sourceMap?: boolean
@@ -80,6 +86,14 @@ export interface Diagnostic {
   docs: string
   /** Message, `in` path, location, code frame and fixes. */
   rendered: string
+}
+
+export interface DocumentResult {
+  /** The whole page with an empty root element; absent when `diagnostics` holds an `error`. */
+  html?: string
+  /** `id` of the root element; absent when `diagnostics` holds an `error`. */
+  rootId?: string
+  diagnostics: Array<Diagnostic>
 }
 
 /** Replaces source bytes `start..end` with `text`. */

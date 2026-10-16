@@ -27,6 +27,7 @@ let streamingOrigin: SsrOrigin;
 let islandsOrigin: SsrOrigin;
 let routerOrigin: SsrOrigin;
 let devOrigin: SsrOrigin;
+let devRouterOrigin: SsrOrigin;
 
 function fixture(name: string): string {
   return join(FIXTURES, name);
@@ -53,7 +54,8 @@ beforeAll(async () => {
   islandsOrigin = await serveSsrApp(() => islands);
   routerOrigin = await serveSsrApp(() => routerActive);
   devOrigin = await startDevServer(fixture("streaming"));
-  origins.push(streamingOrigin, islandsOrigin, routerOrigin, devOrigin);
+  devRouterOrigin = await startDevServer(fixture("router"), [defineGlobals({ __RZ_TEST_VERSION__: "dev" })]);
+  origins.push(streamingOrigin, islandsOrigin, routerOrigin, devOrigin, devRouterOrigin);
   for (const engine of ENGINES) browsers.set(engine, await launchEngine(engine));
 }, 900_000);
 
@@ -114,6 +116,23 @@ test(
     const endIndex = chunks.findIndex((chunk) => chunk.includes("data-rz-end"));
     expect(endIndex).toBeGreaterThan(0);
     expect(chunks.slice(endIndex).join("")).toMatch(/<\/body>\s*<\/html>\s*$/);
+  },
+  TIMEOUT,
+);
+
+test(
+  "a render that fails before the first byte answers 500 inside the document",
+  async () => {
+    const response = await routerA.handler(new Request("http://127.0.0.1/broken"));
+    expect(response.status).toBe(500);
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const html = await response.text();
+    expect(html).toMatch(/^<!doctype html>/i);
+    expect(html).toContain("<title>Router</title>");
+    expect(html).toContain("navigator.serviceWorker?.register");
+    expect(html).toMatch(/<div id="?app"?>Internal Server Error<\/div>/);
+    expect(html).not.toContain('type="module"');
+    expect(html).not.toContain("broken preload");
   },
   TIMEOUT,
 );
@@ -243,6 +262,22 @@ for (const engine of ENGINES) {
         expect(errors).toEqual([]);
       } finally {
         await page.context().setOffline(false);
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: a failing dev render keeps the document and shows the error overlay`,
+    async () => {
+      const response = await fetch(`${devRouterOrigin.origin}/broken`, { headers: { accept: "text/html" } });
+      expect(response.status).toBe(500);
+      expect(await response.text()).toContain("<title>Router</title>");
+      const { page, close } = await openPage(browsers.get(engine)!, `${devRouterOrigin.origin}/broken`);
+      try {
+        await waitFor(page, "document.querySelector('vite-error-overlay')?.shadowRoot?.textContent.includes('broken preload') === true");
+      } finally {
         await close();
       }
     },

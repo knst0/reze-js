@@ -157,6 +157,19 @@ export function prepareTemplate(source: string, rootId: string): PreparedTemplat
   return { parts: splitSentinels(serialize(document)), headDefaults };
 }
 
+export function withBootstrap(html: string, bootstrapSrc: string): string {
+  const document = parse(html);
+  const top = document.childNodes.find((node) => "tagName" in node) as HtmlElement | undefined;
+  const head = top?.childNodes.find((node) => node.nodeName === "head") as HtmlElement | undefined;
+  if (head === undefined) throw new Error("[reze] the document must contain a head");
+  const script = defaultTreeAdapter.createElement("script", head.namespaceURI, [
+    { name: "type", value: "module" },
+    { name: "src", value: bootstrapSrc },
+  ]);
+  defaultTreeAdapter.appendChild(head, script);
+  return serialize(document);
+}
+
 export function rebaseParts(parts: TemplateParts, depth: number): TemplateParts {
   const prefix = depth === 0 ? "./" : "../".repeat(depth);
   const rebase = (html: string) => html.replace(/(\s(?:src|href)=")\.\//g, (_, lead: string) => `${lead}${prefix}`);
@@ -175,6 +188,17 @@ function escapeAttribute(value: string): string {
 const ModuleSrcScript = /<script\b[^>]*\btype="module"[^>]*\bsrc="[^"]*"[^>]*><\/script>/g;
 function withoutBootstrap(html: string): string {
   return html.replace(ModuleSrcScript, "");
+}
+
+export function buildErrorPage(parts: TemplateParts, errorHead: string): string {
+  return [
+    withoutBootstrap(parts.beforeHeadEnd),
+    errorHead,
+    withoutBootstrap(parts.headEndToRoot),
+    "Internal Server Error",
+    withoutBootstrap(parts.rootEndToBodyEnd),
+    parts.bodyEndToEnd,
+  ].join("");
 }
 
 export function buildRedirectPage(options: { parts: TemplateParts; to: string; replace: boolean; redirectSrc: string }): string {

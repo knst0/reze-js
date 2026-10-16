@@ -98,12 +98,12 @@ export async function serveSsrApp(select: () => SsrBuild): Promise<SsrOrigin> {
   return { origin: `http://127.0.0.1:${server.port}`, close: () => server.close() };
 }
 
-export async function startDevServer(fixtureDir: string): Promise<SsrOrigin> {
+export async function startDevServer(fixtureDir: string, plugins: Plugin[] = []): Promise<SsrOrigin> {
   const server = await createDevServer({
     root: fixtureDir,
     configFile: false,
     logLevel: "silent",
-    plugins: [...reze({ ssr: { entry: "src/app.tsx" } })],
+    plugins: [...reze({ ssr: { entry: "src/app.tsx" } }), ...plugins],
     server: { host: "127.0.0.1", port: 0 },
   });
   await server.listen();

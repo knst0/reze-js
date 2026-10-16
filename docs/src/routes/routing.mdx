@@ -518,8 +518,7 @@ export default Shell;
 The `ssg` options are:
 
 - `entry` is required. It exports named `routes` for a router app. An entry that exports only a default component renders `/` alone.
-- `template` is the HTML file that each page is written into. It defaults to `index.html`.
-- `selector` is the element that receives the rendered markup. It defaults to `#app`, and it must be `#` followed by an identifier.
+- `document` is the [document module](/vite-plugin#the-document) that each page is written into. It defaults to `src/document.tsx`.
 - `trailingSlash` is `"always"` by default. With `"always"`, `/about` is written to `/about/`. With `"never"`, it stays `/about`. Each page is written to an `index.html` in its folder.
 - `timeoutMs` limits how long the build waits for the route discovery step and for each page to render. It defaults to `30000`.
 - `paths` maps each route pattern to its params. The value is an array of param records, or a function that returns the array, synchronously or as a promise. A param value is a string, an array of strings, or `undefined`.

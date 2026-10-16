@@ -41,10 +41,8 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("ssg options reject a missing entry, a loose selector and a dead timeout", () => {
+test("ssg options reject a missing entry and a dead timeout", () => {
   expect(() => resolveSsgOptions({ entry: "" })).toThrow(/ssg\.entry/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", selector: ".app" as `#${string}` })).toThrow(/selector/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", selector: "#a b" as `#${string}` })).toThrow(/selector/);
   expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: 0 })).toThrow(/timeoutMs/);
   expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: Number.NaN })).toThrow(/timeoutMs/);
   expect(() => resolveSsgOptions({ entry: "src/app.tsx", trailingSlash: "sometimes" as "always" })).toThrow(/trailingSlash/);

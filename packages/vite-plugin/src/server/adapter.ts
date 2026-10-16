@@ -268,6 +268,13 @@ async function respond(pathname, search, mode, signal, overrides, request) {
 function text(status, body) {
   return new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
 }
+const ModuleSrcScript = /<script\b[^>]*\btype="module"[^>]*\bsrc="[^"]*"[^>]*><\/script>/g;
+function errorDocument(template, head) {
+  const strip = (html) => html.replace(ModuleSrcScript, "");
+  const html = strip(template.beforeHeadEnd) + head + strip(template.headEndToRoot) + "Internal Server Error" +
+    strip(template.rootEndToBodyEnd) + template.bodyEndToEnd;
+  return new Response(html, { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
+}
 export async function handler(request, overrides) {
   const url = new URL(request.url);
   try {
@@ -277,7 +284,9 @@ export async function handler(request, overrides) {
     return new Response(result.body, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
   } catch (error) {
     console.error(error);
-    return text(500, "Internal Server Error");
+    const template = overrides?.template ?? rebaseTemplate(facts.template, pageDepth(url.pathname));
+    const head = headHtml(overrides?.headDefaults ?? facts.headDefaults, {}, undefined);
+    return errorDocument(template, head + (overrides?.errorHead(error) ?? ""));
   }
 }
 export async function prerender(input) {

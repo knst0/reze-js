@@ -296,6 +296,9 @@ Errors:
 | `CONTROL_FLOW_CHILDREN`       | A control-flow tag has children it cannot render.                                                          |
 | `MATCH_OUTSIDE_SWITCH`        | `<Match>` is not a direct child of `<Switch>`.                                                             |
 | `HEAD_ATTR`                   | A `<Head>` tag cannot be placed in the document head.                                                      |
+| `DOCUMENT_SHAPE`              | The document module is not one default export that returns `<html>` with a `<head>` and a `<body>`.        |
+| `DOCUMENT_DYNAMIC`            | The document holds a value the compiler cannot write as static HTML.                                       |
+| `DOCUMENT_ROOT`               | The document has no single element that holds only `children`, or its `id` is not unique.                  |
 | `FLOW_PARAM_CALLED`           | A flow parameter that reads as a signal is called as a function.                                           |
 | `FOR_KEYED_DYNAMIC`           | `<For keyed>` is not `true`, `false`, or a key function written in place.                                  |
 | `SIGNAL_NOT_DECLARED`         | `signal` or `computed` is used outside a variable declaration.                                             |

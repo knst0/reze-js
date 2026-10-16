@@ -258,6 +258,100 @@ import { Head } from "reze-js";
 export const view = <Head><script src="/sdk.js" /></Head>;
 ```
 
+## DOCUMENT_SHAPE
+
+**Document is not a static `<html>` page** · severity `error`
+
+> The document {detail}.
+
+`data` keys: `detail`
+
+Automatic fix: no
+
+A document module default-exports a function that returns one `<html>` element holding a `<head>` and then a `<body>`. The compiler renders it to HTML once, at build time, so the function only returns that element and the module holds nothing else but type imports and type declarations. Raw-text elements such as `<script>` and `<style>` take only text, and void elements take no children. `data.detail` is what is wrong.
+
+**Repair:** Default-export `function Document(props) { return <html><head>…</head><body>…</body></html>; }` and move every other statement out of the module.
+
+Before:
+
+```tsx
+export const lang = "en";
+
+export default function Document(props) {
+  return <html><head /><body><div>{props.children}</div></body></html>;
+}
+```
+
+After:
+
+```tsx
+export default function Document(props) {
+  return <html><head /><body><div>{props.children}</div></body></html>;
+}
+```
+
+## DOCUMENT_DYNAMIC
+
+**Dynamic value in the document** · severity `error`
+
+> The document holds {detail}, which is not static: the document renders once, at build time.
+
+`data` keys: `detail`
+
+Automatic fix: no
+
+Every attribute and child of the document is fixed at build time: string, number and boolean literals, template literals without substitutions, and the `children` slot. Components, spreads and any other expression would need a render per request, which the document never gets. `data.detail` names what was found.
+
+**Repair:** Inline the value as a literal. Move per-page content into a route component or `<Head>`, and load scripts and styles through `<script src>` and `<link href>`.
+
+Before:
+
+```tsx
+const lang = "en";
+
+export default function Document(props) {
+  return <html lang={lang}><head /><body><div>{props.children}</div></body></html>;
+}
+```
+
+After:
+
+```tsx
+export default function Document(props) {
+  return <html lang="en"><head /><body><div>{props.children}</div></body></html>;
+}
+```
+
+## DOCUMENT_ROOT
+
+**Missing or misplaced document root** · severity `error`
+
+> The document {detail}.
+
+`data` keys: `detail`
+
+Automatic fix: no
+
+The app renders into the element that holds the document's `children`: the server streams into it and client navigation replaces its content. That element exists exactly once, holds nothing else, sits inside `<body>`, and is an ordinary element, not `<body>` itself, a raw-text, void, `<template>` or SVG element. Its literal `id` names the root, `app` when it has none, and no other element may reuse that `id`. `data.detail` is what is wrong.
+
+**Repair:** Render `{props.children}` once, alone, in an element inside `<body>`, for example `<body><div id="app">{props.children}</div></body>`.
+
+Before:
+
+```tsx
+export default function Document(props) {
+  return <html><head /><body>{props.children}</body></html>;
+}
+```
+
+After:
+
+```tsx
+export default function Document(props) {
+  return <html><head /><body><div>{props.children}</div></body></html>;
+}
+```
+
 ## FLOW_PARAM_CALLED
 
 **Flow parameter called as a function** · severity `error`

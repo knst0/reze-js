@@ -6,8 +6,7 @@ export type StaticPathsValue = readonly StaticParams[] | (() => readonly StaticP
 
 export interface SsgOptions {
   entry: string;
-  template?: string;
-  selector?: `#${string}`;
+  document?: string;
   trailingSlash?: "always" | "never";
   timeoutMs?: number;
   paths?: Readonly<Record<string, StaticPathsValue>>;
@@ -15,9 +14,7 @@ export interface SsgOptions {
 
 export interface ResolvedSsgOptions {
   entry: string;
-  template: string;
-  selector: `#${string}`;
-  rootId: string;
+  document: string;
   trailingSlash: "always" | "never";
   timeoutMs: number;
   paths: Readonly<Record<string, StaticPathsValue>>;
@@ -25,36 +22,26 @@ export interface ResolvedSsgOptions {
 
 export interface SsrOptions {
   entry: string;
-  template?: string;
-  selector?: `#${string}`;
+  document?: string;
   timeoutMs?: number;
   outDir?: string;
 }
 
 export interface ResolvedSsrOptions {
   entry: string;
-  template: string;
-  selector: `#${string}`;
-  rootId: string;
+  document: string;
   timeoutMs: number;
   outDir: string;
 }
 
-export const SelectorPattern = /^#[A-Za-z_][A-Za-z0-9_-]*$/;
-
 const TimeoutDefault = 30_000;
 const OutDirDefault = "dist/server";
+const DocumentDefault = "src/document.tsx";
 export const ClientOutDirDefault = "dist/client";
 
 function checkEntry(prefix: string, entry: unknown): void {
   if (typeof entry !== "string" || entry.length === 0) {
     throw new Error(`[reze] ${prefix}.entry is required: a project-relative module exporting the application`);
-  }
-}
-
-function checkSelector(prefix: string, selector: string): void {
-  if (!SelectorPattern.test(selector)) {
-    throw new Error(`[reze] ${prefix}.selector must be "#" plus an ASCII identifier, got ${JSON.stringify(selector)}`);
   }
 }
 
@@ -66,8 +53,6 @@ function checkTimeout(prefix: string, timeoutMs: unknown): void {
 
 export function resolveSsgOptions(input: SsgOptions): ResolvedSsgOptions {
   checkEntry("ssg", input.entry);
-  const selector = input.selector ?? "#app";
-  checkSelector("ssg", selector);
   const trailingSlash = input.trailingSlash ?? "always";
   if (trailingSlash !== "always" && trailingSlash !== "never") {
     throw new Error(`[reze] ssg.trailingSlash must be "always" or "never", got ${JSON.stringify(trailingSlash)}`);
@@ -79,9 +64,7 @@ export function resolveSsgOptions(input: SsgOptions): ResolvedSsgOptions {
   }
   return {
     entry: input.entry,
-    template: input.template ?? "index.html",
-    selector,
-    rootId: selector.slice(1),
+    document: input.document ?? DocumentDefault,
     trailingSlash,
     timeoutMs,
     paths: input.paths ?? {},
@@ -90,23 +73,19 @@ export function resolveSsgOptions(input: SsgOptions): ResolvedSsgOptions {
 
 export function resolveSsrOptions(input: SsrOptions): ResolvedSsrOptions {
   checkEntry("ssr", input.entry);
-  const selector = input.selector ?? "#app";
-  checkSelector("ssr", selector);
   const timeoutMs = input.timeoutMs ?? TimeoutDefault;
   checkTimeout("ssr", timeoutMs);
   return {
     entry: input.entry,
-    template: input.template ?? "index.html",
-    selector,
-    rootId: selector.slice(1),
+    document: input.document ?? DocumentDefault,
     timeoutMs,
     outDir: input.outDir ?? OutDirDefault,
   };
 }
 
 export function assertSharedServerOptions(ssg: ResolvedSsgOptions, ssr: ResolvedSsrOptions): void {
-  if (ssg.entry !== ssr.entry || ssg.template !== ssr.template || ssg.selector !== ssr.selector) {
-    throw new Error("[reze] ssg and ssr must use the same entry, template and selector");
+  if (ssg.entry !== ssr.entry || ssg.document !== ssr.document) {
+    throw new Error("[reze] ssg and ssr must use the same entry and document");
   }
 }
 

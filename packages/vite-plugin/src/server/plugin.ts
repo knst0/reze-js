@@ -31,6 +31,8 @@ import type { CapturedState } from "./build";
 import { runServerBuild } from "./build";
 import { captureOutput } from "./capture";
 import { createDevDocumentMiddleware } from "./dev";
+import { loadDocument } from "./document";
+import type { AppDocument } from "./document";
 import { resolveAppMode } from "./export-graph";
 import type { AppMode } from "./export-graph";
 import { ClientOutDirDefault, assertDisjointOutDirs, assertSharedServerOptions, resolveSsgOptions, resolveSsrOptions } from "./options";
@@ -91,6 +93,10 @@ export function createServerPlugin(
   let primary: ResolvedSsgOptions | ResolvedSsrOptions | undefined;
   let mode: AppMode | undefined;
   let entryAbs = "";
+  let documentFile = "";
+  let htmlInput = "";
+  let appDocument: AppDocument | undefined;
+  const currentDocument = (): AppDocument => (appDocument ??= loadDocument(documentFile));
   let redirectRef: string | undefined;
   const state: CapturedState = { outputs: [], templateHtml: "", templateFile: "", redirectFile: "", htmlChunks: [] };
   const assets: ClientAssetInputs = { files: new Map(), inlined: new Map(), publicFiles: new Map() };
@@ -101,13 +107,15 @@ export function createServerPlugin(
     applyToEnvironment: isServerEnvironment,
     resolveId(id, importer) {
       if (id === ClientRequest) return ClientId;
+      if (!isServe && id === htmlInput && this.environment.name === "client") return id;
       if (isServe && id === ServerFactsSpecifier && importer === ServerEntryId) return DevFactsId;
       if (GeneratedIds.includes(id) || id === SsgViewId) return id;
       return undefined;
     },
     load(id) {
       if (primary === undefined || mode === undefined) return undefined;
-      if (id === ClientId) return clientEntrySource({ router: mode.kind === "router", rootId: primary.rootId });
+      if (!isServe && id === htmlInput && this.environment.name === "client") return currentDocument().html;
+      if (id === ClientId) return clientEntrySource({ router: mode.kind === "router", rootId: currentDocument().rootId });
       if (id === IslandsId) return { code: islandsSource(islandEntries()), moduleSideEffects: "no-treeshake" };
       if (id === ServerEntryId) {
         return this.environment.name === HtmlEnv ? serverEntrySource({ mode, entrySpecifier: entryAbs }) : undefined;
@@ -115,7 +123,7 @@ export function createServerPlugin(
       if (id === SsgViewId) return viewSource(mode, entryAbs);
       if (id === SsgRedirectId) return redirectModuleSource();
       if (id === DevFactsId) {
-        return devFactsSource({ base, rootId: primary.rootId, timeoutMs: (ssrOptions ?? primary).timeoutMs });
+        return devFactsSource({ base, rootId: currentDocument().rootId, timeoutMs: (ssrOptions ?? primary).timeoutMs });
       }
       return undefined;
     },
@@ -193,6 +201,7 @@ export function createServerPlugin(
             captured: state,
             assets,
             moduleFiles: shared.moduleFiles,
+            rootId: currentDocument().rootId,
             ssg: ssgOptions,
             ssr: ssrOptions,
           });
@@ -237,11 +246,15 @@ export function createServerPlugin(
         checkBundlerInput(config.build.rollupOptions, "rollupOptions");
         checkBundlerInput(config.build.rolldownOptions, "rolldownOptions");
       }
-      const templateFile = resolve(root, primary.template);
-      if (!existsSync(templateFile)) {
-        throw new Error(`[reze] ${label} template not found: ${JSON.stringify(primary.template)}`);
+      htmlInput = toPosixAbsolute(root, "index.html");
+      if (existsSync(htmlInput)) {
+        throw new Error(
+          `[reze] ${label} renders every page from ${JSON.stringify(primary.document)} and never reads index.html; move its <head> tags into that document and delete index.html`,
+        );
       }
-      validateTemplate(readFileSync(templateFile, "utf8"), primary.template, primary.rootId, ClientRequest);
+      documentFile = toPosixAbsolute(root, primary.document);
+      appDocument = undefined;
+      if (!isServe) currentDocument();
       mode = resolveAppMode(entryAbs, {
         readFile: (id) => (existsSync(id) ? readFileSync(id, "utf8") : undefined),
         resolveSpec: (spec, importer) => resolveImport(spec, importer, root),
@@ -255,8 +268,7 @@ export function createServerPlugin(
       if (primary === undefined) return;
       server.middlewares.use(
         createDevDocumentMiddleware(server, {
-          templateFile: resolve(root, primary.template),
-          rootId: primary.rootId,
+          document: currentDocument,
           moduleFiles: shared.moduleFiles,
         }),
       );
@@ -270,7 +282,7 @@ export function createServerPlugin(
       order: "pre",
       handler(html) {
         if (primary === undefined) return html;
-        validateTemplate(html, primary.template, primary.rootId, ClientRequest);
+        validateTemplate(html, primary.document, currentDocument().rootId, ClientRequest);
         return html;
       },
     },
@@ -299,6 +311,14 @@ export function createServerPlugin(
       },
     },
     hotUpdate({ file, server }) {
+      if (file === documentFile) {
+        appDocument = undefined;
+        const graph = this.environment.moduleGraph;
+        for (const id of [ClientId, DevFactsId]) {
+          const node = graph.getModuleById(id);
+          if (node !== undefined) graph.invalidateModule(node);
+        }
+      }
       if (!file.startsWith(`${root}/`) || file.includes("/node_modules/")) return;
       server.ws.send({ type: "full-reload" });
       return [];

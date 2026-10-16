@@ -26,15 +26,15 @@ export interface ServerBuildInput {
   captured: CapturedState;
   assets: ClientAssetInputs;
   moduleFiles: ReadonlyMap<string, string>;
+  rootId: string;
   ssg: ResolvedSsgOptions | undefined;
   ssr: ResolvedSsrOptions | undefined;
 }
 
 export async function runServerBuild(input: ServerBuildInput): Promise<void> {
-  const { captured, ssg, ssr } = input;
+  const { captured, rootId, ssg, ssr } = input;
   const primary = ssg ?? ssr;
   if (primary === undefined) throw new Error("[reze] server build needs ssg or ssr options");
-  const { rootId } = primary;
   const registry = buildClientRegistry(captured.outputs, input.root, input.assets);
   const bootstrapFile = registry.entryChunk(ClientId).fileName;
   bootstrapScriptSrc(captured.templateHtml, bootstrapFile);

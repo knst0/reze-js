@@ -189,6 +189,45 @@ catalog! {
             good: "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/sdk.js\" /></Head>;\n",
         },
     }
+    DocumentShape {
+        name: "DOCUMENT_SHAPE",
+        severity: Error,
+        title: "Document is not a static `<html>` page",
+        message: "The document {detail}.",
+        explanation: "A document module default-exports a function that returns one `<html>` element holding a `<head>` and then a `<body>`. The compiler renders it to HTML once, at build time, so the function only returns that element and the module holds nothing else but type imports and type declarations. Raw-text elements such as `<script>` and `<style>` take only text, and void elements take no children. `data.detail` is what is wrong.",
+        repair: "Default-export `function Document(props) { return <html><head>…</head><body>…</body></html>; }` and move every other statement out of the module.",
+        fix: None,
+        example: Pair {
+            bad: "export const lang = \"en\";\n\nexport default function Document(props) {\n  return <html><head /><body><div>{props.children}</div></body></html>;\n}\n",
+            good: "export default function Document(props) {\n  return <html><head /><body><div>{props.children}</div></body></html>;\n}\n",
+        },
+    }
+    DocumentDynamic {
+        name: "DOCUMENT_DYNAMIC",
+        severity: Error,
+        title: "Dynamic value in the document",
+        message: "The document holds {detail}, which is not static: the document renders once, at build time.",
+        explanation: "Every attribute and child of the document is fixed at build time: string, number and boolean literals, template literals without substitutions, and the `children` slot. Components, spreads and any other expression would need a render per request, which the document never gets. `data.detail` names what was found.",
+        repair: "Inline the value as a literal. Move per-page content into a route component or `<Head>`, and load scripts and styles through `<script src>` and `<link href>`.",
+        fix: None,
+        example: Pair {
+            bad: "const lang = \"en\";\n\nexport default function Document(props) {\n  return <html lang={lang}><head /><body><div>{props.children}</div></body></html>;\n}\n",
+            good: "export default function Document(props) {\n  return <html lang=\"en\"><head /><body><div>{props.children}</div></body></html>;\n}\n",
+        },
+    }
+    DocumentRoot {
+        name: "DOCUMENT_ROOT",
+        severity: Error,
+        title: "Missing or misplaced document root",
+        message: "The document {detail}.",
+        explanation: "The app renders into the element that holds the document's `children`: the server streams into it and client navigation replaces its content. That element exists exactly once, holds nothing else, sits inside `<body>`, and is an ordinary element, not `<body>` itself, a raw-text, void, `<template>` or SVG element. Its literal `id` names the root, `app` when it has none, and no other element may reuse that `id`. `data.detail` is what is wrong.",
+        repair: "Render `{props.children}` once, alone, in an element inside `<body>`, for example `<body><div id=\"app\">{props.children}</div></body>`.",
+        fix: None,
+        example: Pair {
+            bad: "export default function Document(props) {\n  return <html><head /><body>{props.children}</body></html>;\n}\n",
+            good: "export default function Document(props) {\n  return <html><head /><body><div>{props.children}</div></body></html>;\n}\n",
+        },
+    }
     FlowParamCalled {
         name: "FLOW_PARAM_CALLED",
         severity: Error,

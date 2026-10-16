@@ -188,8 +188,7 @@ export default defineConfig({
       fileRoutes: true,
       ssr: {
         entry: "src/app.tsx",
-        template: "index.html",
-        selector: "#app",
+        document: "src/document.tsx",
         timeoutMs: 30000,
         outDir: "dist/server",
       },
@@ -200,15 +199,44 @@ export default defineConfig({
 
 The `ssr` options are:
 
-| Option      | Type     | Default         | Purpose                                                                                                                                                      |
-| ----------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `entry`     | `string` | Required        | Module that renders the app. The entry shapes are the same as for [static generation](#entry-shapes).                                                        |
-| `template`  | `string` | `"index.html"`  | HTML template for every response. It must contain exactly one `<script type="module" src="/@reze/client.js">` and one element whose `id` matches `selector`. |
-| `selector`  | `string` | `"#app"`        | Mount element. The value must be `#` followed by an ASCII identifier.                                                                                        |
-| `timeoutMs` | `number` | `30000`         | Time one request has to finish rendering, in milliseconds. The value must be finite and greater than zero.                                                   |
-| `outDir`    | `string` | `"dist/server"` | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers.                           |
+| Option      | Type     | Default              | Purpose                                                                                                                            |
+| ----------- | -------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `entry`     | `string` | Required             | Module that renders the app. The entry shapes are the same as for [static generation](#entry-shapes).                              |
+| `document`  | `string` | `"src/document.tsx"` | The page around the app. See [The document](#the-document).                                                                        |
+| `timeoutMs` | `number` | `30000`              | Time one request has to finish rendering, in milliseconds. The value must be finite and greater than zero.                         |
+| `outDir`    | `string` | `"dist/server"`      | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers. |
 
-When you set both `ssr` and `ssg`, they must use the same `entry`, `template`, and `selector`. Otherwise the plugin fails with `[reze] ssg and ssr must use the same entry, template and selector`.
+When you set both `ssr` and `ssg`, they must use the same `entry` and `document`. Otherwise the plugin fails with `[reze] ssg and ssr must use the same entry and document`.
+
+### The document
+
+The document is the HTML page that holds the app. It is a module whose default export returns `<html>` with a `<head>` and a `<body>`, and one element in the body holds `children`:
+
+```tsx file=src/document.tsx
+import type { JSX } from "reze-js";
+
+export default function Document(props: { children: JSX.Element }) {
+  return (
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>My app</title>
+        <link rel="stylesheet" href="/src/styles.css" />
+      </head>
+      <body>
+        <div id="app">{props.children}</div>
+      </body>
+    </html>
+  );
+}
+```
+
+The compiler turns the document into HTML once, at build time and when the dev server starts, so every value in it must be static: literals and template literals without substitutions. A call, a variable, or a component in the document fails with `DOCUMENT_DYNAMIC`. The element that holds `children` is the mount root. Its `id` names the root, and the compiler gives it `id="app"` when it has none. The plugin adds the client script itself, so the document needs no `<script type="module">`. Without the file, the plugin uses a document like the one above without the title and the stylesheet.
+
+The server plugin renders every page from the document and never reads `index.html`. A project that still has an `index.html` at the root fails with a message that asks you to move its head tags into the document.
+
+When a page fails before its first byte is sent, the response is a `500` page built from the same document without its module scripts, with `Internal Server Error` inside the mount root. During `vite` dev the page also shows the Vite error overlay with the error, and it keeps the dev client, so saving a fix reloads the page.
 
 ### Build output
 
@@ -279,8 +307,7 @@ export default defineConfig({
       fileRoutes: true,
       ssg: {
         entry: "src/app.tsx",
-        template: "index.html",
-        selector: "#app",
+        document: "src/document.tsx",
         trailingSlash: "always",
         timeoutMs: 30000,
         paths: {
@@ -295,14 +322,13 @@ export default defineConfig({
 
 The `ssg` options are:
 
-| Option          | Type                    | Default        | Purpose                                                                                                                                                  |
-| --------------- | ----------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entry`         | `string`                | Required       | Module that renders the app. The path is relative to the Vite `root`. A missing file fails with `[reze] ssg.entry not found: "<entry>"`.                 |
-| `template`      | `string`                | `"index.html"` | HTML template for every page. It must contain exactly one `<script type="module" src="/@reze/client.js">` and one element whose `id` matches `selector`. |
-| `selector`      | `string`                | `"#app"`       | Mount element. The value must be `#` followed by an ASCII identifier. Other values fail with `[reze] ssg.selector must be "#" plus an ASCII identifier`. |
-| `trailingSlash` | `"always"` or `"never"` | `"always"`     | URL form of generated pages. `"always"` uses `/todos/1/`, and `"never"` uses `/todos/1`. Output file names do not change.                                |
-| `timeoutMs`     | `number`                | `30000`        | Render deadline for one page, in milliseconds. The value must be finite and greater than zero. See [Failures and timeouts](#failures-and-timeouts).      |
-| `paths`         | Object                  | `{}`           | Parameter values for dynamic routes. See [Map dynamic routes](#map-dynamic-routes).                                                                      |
+| Option          | Type                    | Default              | Purpose                                                                                                                                             |
+| --------------- | ----------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entry`         | `string`                | Required             | Module that renders the app. The path is relative to the Vite `root`. A missing file fails with `[reze] ssg.entry not found: "<entry>"`.            |
+| `document`      | `string`                | `"src/document.tsx"` | The page around the app. See [The document](#the-document).                                                                                         |
+| `trailingSlash` | `"always"` or `"never"` | `"always"`           | URL form of generated pages. `"always"` uses `/todos/1/`, and `"never"` uses `/todos/1`. Output file names do not change.                           |
+| `timeoutMs`     | `number`                | `30000`              | Render deadline for one page, in milliseconds. The value must be finite and greater than zero. See [Failures and timeouts](#failures-and-timeouts). |
+| `paths`         | Object                  | `{}`                 | Parameter values for dynamic routes. See [Map dynamic routes](#map-dynamic-routes).                                                                 |
 
 ### Entry shapes
 

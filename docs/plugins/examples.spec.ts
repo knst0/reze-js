@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 
-import { compile, type CompileTarget } from "@rezejs/compiler";
+import { compile, compileDocument, type CompileTarget } from "@rezejs/compiler";
 import { DEFAULT_ROUTE_EXTENSIONS, routesDts, scanRoutes } from "@rezejs/router/fs";
 import { expect, test } from "vite-plus/test";
 
@@ -13,6 +13,7 @@ const docsDir = join(import.meta.dirname, "..");
 const workspaceDir = join(docsDir, "..");
 const projectsDir = join(docsDir, "node_modules/.cache/examples");
 const examples = (await readPages(join(docsDir, "src/routes"))).flatMap(collectExamples);
+const isDocument = (example: Example) => example.file === "src/document.tsx";
 const targets: CompileTarget[] = ["client", "island", "html"];
 const runFile = promisify(execFile);
 
@@ -24,10 +25,19 @@ const genericRoutes = `declare module "virtual:reze-routes" {
 `;
 const buildConstants = "declare const __REZE_HTML__: boolean;\n";
 
-test.each(examples.flatMap((example) => targets.map((target) => ({ ...example, target }))))(
+test.each(examples.filter((example) => !isDocument(example)).flatMap((example) => targets.map((target) => ({ ...example, target }))))(
   "$id compiles for $target with diagnostics $expectedCodes",
   ({ file, source, expectedCodes, target }) => {
     const { diagnostics } = compile(source, file, { target, moduleId: file, sourceMap: false });
+    const reported = diagnostics.map((diagnostic) => diagnostic.code).sort();
+    expect(reported, diagnostics.map((diagnostic) => diagnostic.rendered).join("\n")).toEqual(expectedCodes);
+  },
+);
+
+test.each(examples.filter(isDocument))(
+  "$id compiles as the document with diagnostics $expectedCodes",
+  ({ file, source, expectedCodes }) => {
+    const { diagnostics } = compileDocument(source, file);
     const reported = diagnostics.map((diagnostic) => diagnostic.code).sort();
     expect(reported, diagnostics.map((diagnostic) => diagnostic.rendered).join("\n")).toEqual(expectedCodes);
   },

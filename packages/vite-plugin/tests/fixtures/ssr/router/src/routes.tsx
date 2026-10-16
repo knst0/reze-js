@@ -30,4 +30,11 @@ export const routes = defineRoutes([
     preload: ({ context }) => context.requestId,
     component: (props) => <h1 id="request-scope">{props.data}</h1>,
   }),
+  defineRoute({
+    path: "/broken",
+    preload: () => {
+      throw new Error("broken preload");
+    },
+    component: () => <h1 id="broken">unreachable</h1>,
+  }),
 ]);
