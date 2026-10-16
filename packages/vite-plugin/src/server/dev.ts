@@ -84,7 +84,10 @@ const BareDocument: TemplateParts = {
 
 function errorOverlayScript(server: ViteDevServer, error: unknown): string {
   const payload = error instanceof Error ? overlayPayload(error) : { message: String(error), stack: "" };
-  const json = JSON.stringify(payload).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+  const json = JSON.stringify(payload)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
   const client = JSON.stringify(`${server.config.base}@vite/client`);
   return `<script type="module">import { ErrorOverlay } from ${client};\ndocument.body.appendChild(new ErrorOverlay(${json}));</script>`;
 }
