@@ -1,13 +1,8 @@
-import type {
-  Awaitable,
-  PageMetadata,
-  Params,
-  RouteComponent,
-  RouteDefinition,
-  PreloadArgs,
-  RouteRedirect,
-  RouteResolvedArgs,
-} from "./types";
+import type { Awaitable, Params, RouteComponent, RouteDefinition, PreloadArgs, RouteRedirect, RouteResolvedArgs } from "./types";
+
+declare const __REZE_BEFORE_LOAD__: boolean | undefined;
+
+export const usesBeforeLoad = typeof __REZE_BEFORE_LOAD__ !== "boolean" || __REZE_BEFORE_LOAD__;
 
 const Static = 0;
 const Param = 1;
@@ -27,8 +22,8 @@ export interface CompiledRoute {
   /** The joined pattern from the root (`/blog/:id`); `Router.match` reports one per level. */
   readonly pattern: string;
   component: RouteComponent<any, any> | undefined;
+  beforeLoad: ((args: PreloadArgs<any>) => unknown) | undefined;
   preload: ((args: PreloadArgs<any>) => unknown) | undefined;
-  meta: (PageMetadata | ((args: RouteResolvedArgs<any, any>) => Awaitable<PageMetadata>)) | undefined;
   redirect: (RouteRedirect | ((args: RouteResolvedArgs<any, any>) => Awaitable<RouteRedirect | undefined>)) | undefined;
   info: Readonly<Record<string, unknown>> | undefined;
   loading: Promise<void> | undefined;
@@ -126,8 +121,8 @@ function compileRoute(def: RouteDefinition, pattern: string, id: string): Compil
     id,
     pattern,
     component: def.component,
+    beforeLoad: usesBeforeLoad ? def.beforeLoad : undefined,
     preload: def.preload,
-    meta: def.meta,
     redirect: def.redirect,
     info: def.info,
     loading: undefined,

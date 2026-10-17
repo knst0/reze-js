@@ -13,7 +13,7 @@ use oxc_syntax::node::NodeId;
 use oxc_syntax::symbol::SymbolId;
 
 use crate::diagnostic::{Code, Report};
-use crate::frontend::analysis::{Intrinsic, SharedFacts};
+use crate::frontend::analysis::{Intrinsic, SharedFacts, exported_symbols};
 use crate::frontend::pure::{has_jsx, inline_entries, is_defined, static_property};
 use crate::html::*;
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
@@ -2635,47 +2635,6 @@ impl<'a> Visit<'a> for DynamicCheck<'_> {
     fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
 }
 
-fn exported_symbols(
-    program: &Program<'_>,
-    scoping: &Scoping,
-) -> std::collections::HashSet<SymbolId> {
-    let mut exported = std::collections::HashSet::new();
-    let resolved = |local: &IdentifierReference<'_>| {
-        scoping.get_reference(local.reference_id.get()?).symbol_id()
-    };
-    for statement in &program.body {
-        match statement {
-            Statement::ExportDeclaration(export) => {
-                if let Declaration::VariableDeclaration(variables) = &export.declaration {
-                    for declarator in &variables.declarations {
-                        exported.extend(
-                            declarator.id.get_binding_identifiers().iter().map(|id| id.symbol_id()),
-                        );
-                    }
-                }
-            }
-            Statement::ExportNamedDeclaration(export) => {
-                for specifier in &export.specifiers {
-                    if let ModuleExportName::IdentifierReference(local) = &specifier.local
-                        && let Some(symbol) = resolved(local)
-                    {
-                        exported.insert(symbol);
-                    }
-                }
-            }
-            Statement::ExportDefaultDeclaration(export) => {
-                if let ExportDefaultDeclarationKind::Identifier(local) = &export.declaration
-                    && let Some(symbol) = resolved(local)
-                {
-                    exported.insert(symbol);
-                }
-            }
-            _ => {}
-        }
-    }
-    exported
-}
-
 pub struct SourceSites {
     sites: Option<SiteRegistry>,
     assigned: HashMap<(u32, u32), SiteId>,
@@ -3056,7 +3015,10 @@ impl Builder<'_> {
             self.head_child_error(tag.span, intrinsic);
             return None;
         };
-        if !matches!(name.as_str(), "meta" | "link" | "script") {
+        if !matches!(
+            name.as_str(),
+            "title" | "base" | "meta" | "link" | "script" | "style"
+        ) {
             self.head_child_error(tag.span, intrinsic);
             return None;
         }
@@ -3069,7 +3031,10 @@ impl Builder<'_> {
         self.report(
             Report::new(Code::ControlFlowChildren, span)
                 .arg("tag", intrinsic.name().to_string())
-                .arg("expected", "only `<meta>`, `<link>` and `<script>` elements"),
+                .arg(
+                    "expected",
+                    "only `<title>`, `<base>`, `<meta>`, `<link>`, `<script>` and `<style>` elements",
+                ),
         );
     }
 
@@ -3081,7 +3046,7 @@ impl Builder<'_> {
 
     fn head_key(&mut self, tag: &JSXElement<'_>, name: &str) -> Option<Option<String>> {
         let mut values: HashMap<String, String> = HashMap::new();
-        let mut reported: HashSet<String> = HashSet::new();
+        let mut dynamic: HashMap<String, Span> = HashMap::new();
         let mut is_valid = true;
         for item in &tag.opening_element.attributes {
             let JSXAttributeItem::Attribute(a) = item else {
@@ -3112,7 +3077,7 @@ impl Builder<'_> {
                 is_valid = false;
                 continue;
             }
-            if !matches!(attr.as_str(), "src" | "rel" | "href" | "name" | "property") {
+            if !matches!(attr.as_str(), "src" | "rel" | "href" | "name" | "property" | "http-equiv") {
                 continue;
             }
             match head_string(a) {
@@ -3120,74 +3085,103 @@ impl Builder<'_> {
                     values.insert(attr, value);
                 }
                 None => {
-                    self.head_attr(
-                        name,
-                        a.span,
-                        format!("needs `{attr}` as a string literal so the tag keeps one identity"),
-                    );
-                    reported.insert(attr);
-                    is_valid = false;
+                    dynamic.insert(attr, a.span);
                 }
             }
         }
-        let present = |key: &str| values.contains_key(key) || reported.contains(key);
-        let key = match name {
-            "meta" => {
-                let identity = ["name", "property"].into_iter().filter(|key| present(key)).count();
-                if identity != 1 {
-                    self.head_attr(
-                        name,
-                        tag.opening_element.span,
-                        String::from("needs exactly one of `name` and `property`"),
-                    );
-                    is_valid = false;
-                    None
-                } else if let Some(value) = values.get("name") {
-                    Some(format!("meta:name:{value}"))
-                } else if let Some(value) = values.get("property") {
-                    Some(format!("meta:property:{value}"))
-                } else {
-                    is_valid = false;
-                    None
-                }
+        let identity = |builder: &mut Self, attr: &str| -> Option<String> {
+            if let Some(value) = values.get(attr) {
+                return Some(value.clone());
             }
-            "link" => match (values.get("rel"), values.get("href")) {
-                (Some(rel), Some(href)) => Some(format!("link:{rel}\n{href}")),
-                _ => {
-                    if !present("rel") || !present("href") {
+            if let Some(span) = dynamic.get(attr) {
+                builder.head_attr(
+                    name,
+                    *span,
+                    format!("needs `{attr}` as a string literal so the tag keeps one identity"),
+                );
+            }
+            None
+        };
+        let key = match name {
+            "title" | "base" => Some(name.to_string()),
+            "style" => None,
+            "meta" => {
+                let present: Vec<&str> = ["name", "property", "http-equiv"]
+                    .into_iter()
+                    .filter(|attr| values.contains_key(*attr) || dynamic.contains_key(*attr))
+                    .collect();
+                match present.as_slice() {
+                    [attr] => match identity(self, attr) {
+                        Some(value) => Some(format!("meta:{attr}:{value}")),
+                        None => {
+                            is_valid = false;
+                            None
+                        }
+                    },
+                    _ => {
                         self.head_attr(
                             name,
                             tag.opening_element.span,
-                            String::from("needs `rel` and `href`"),
+                            String::from("needs exactly one of `name`, `property` and `http-equiv`"),
                         );
+                        is_valid = false;
+                        None
                     }
-                    is_valid = false;
-                    None
                 }
-            },
-            _ => match values.get("src") {
+            }
+            "link" => {
+                let has_rel = values.contains_key("rel") || dynamic.contains_key("rel");
+                let has_href = values.contains_key("href") || dynamic.contains_key("href");
+                match identity(self, "rel") {
+                    Some(rel) if rel.eq_ignore_ascii_case("canonical") => {
+                        Some(String::from("link:canonical"))
+                    }
+                    Some(rel) if has_href => match identity(self, "href") {
+                        Some(href) => Some(format!("link:{rel}\n{href}")),
+                        None => {
+                            is_valid = false;
+                            None
+                        }
+                    },
+                    rel => {
+                        if rel.is_some() || !has_rel {
+                            self.head_attr(
+                                name,
+                                tag.opening_element.span,
+                                String::from(if has_rel { "needs `href`" } else { "needs `rel` and `href`" }),
+                            );
+                        }
+                        is_valid = false;
+                        None
+                    }
+                }
+            }
+            _ => match identity(self, "src") {
                 Some(src) => Some(format!("script:{src}")),
                 None => {
-                    if !reported.contains("src") {
-                        self.head_static_type(tag, name, &mut is_valid);
-                    } else {
+                    if dynamic.contains_key("src") {
                         is_valid = false;
+                    } else {
+                        self.head_static_type(tag, name, &mut is_valid);
                     }
                     None
                 }
             },
         };
-        if name == "script" {
-            for child in &tag.children {
-                if matches!(child, JSXChild::Element(_)) {
-                    self.head_attr(name, child.span(), String::from("takes only text"));
-                    is_valid = false;
+        match name {
+            "script" | "style" | "title" => {
+                for child in &tag.children {
+                    if matches!(child, JSXChild::Element(_) | JSXChild::Fragment(_)) {
+                        self.head_attr(name, child.span(), String::from("takes only text"));
+                        is_valid = false;
+                    }
                 }
             }
-        } else {
-            for child in tag.children.iter().filter(|child| is_meaningful(child)) {
-                self.head_attr(name, child.span(), String::from("takes no children"));
-                is_valid = false;
+            _ => {
+                for child in tag.children.iter().filter(|child| is_meaningful(child)) {
+                    self.head_attr(name, child.span(), String::from("takes no children"));
+                    is_valid = false;
+                }
             }
         }
         is_valid.then_some(key)
@@ -3582,21 +3576,9 @@ impl Builder<'_> {
                     self.island_trigger_name(s.value.as_str(), a.span)
                 }
                 Some(Expression::BooleanLiteral(b)) if b.value => Some(IslandTrigger::Eager),
-                _ => {
-                    self.report(
-                        Report::new(Code::IslandTrigger, a.span)
-                            .arg("value", self.text(a.span).to_string()),
-                    );
-                    None
-                }
+                _ => self.reject_island_value(a),
             },
-            Some(_) => {
-                self.report(
-                    Report::new(Code::IslandTrigger, a.span)
-                        .arg("value", self.text(a.span).to_string()),
-                );
-                None
-            }
+            Some(_) => self.reject_island_value(a),
         }
     }
 
@@ -3616,34 +3598,22 @@ impl Builder<'_> {
 
     fn island_string(&mut self, a: &JSXAttribute<'_>) -> Option<String> {
         match &a.value {
-            None => {
-                self.report(
-                    Report::new(Code::IslandTrigger, a.span)
-                        .arg("value", self.text(a.span).to_string()),
-                );
-                None
-            }
             Some(JSXAttributeValue::StringLiteral(s)) => {
                 Some(decode_entities(s.value.as_str()).into_owned())
             }
             Some(JSXAttributeValue::ExpressionContainer(c)) => match c.expression.as_expression() {
                 Some(Expression::StringLiteral(s)) => Some(s.value.to_string()),
-                _ => {
-                    self.report(
-                        Report::new(Code::IslandTrigger, a.span)
-                            .arg("value", self.text(a.span).to_string()),
-                    );
-                    None
-                }
+                _ => self.reject_island_value(a),
             },
-            Some(_) => {
-                self.report(
-                    Report::new(Code::IslandTrigger, a.span)
-                        .arg("value", self.text(a.span).to_string()),
-                );
-                None
-            }
+            _ => self.reject_island_value(a),
         }
+    }
+
+    fn reject_island_value<T>(&mut self, a: &JSXAttribute<'_>) -> Option<T> {
+        self.report(
+            Report::new(Code::IslandTrigger, a.span).arg("value", self.text(a.span).to_string()),
+        );
+        None
     }
 
     fn island_fallback(&mut self, a: &JSXAttribute<'_>) -> Option<FlowRender> {

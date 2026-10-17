@@ -159,6 +159,15 @@ pub struct AnalyzeResult {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+#[napi(object)]
+pub struct DocumentResult {
+    /// The whole page with an empty root element; absent when `diagnostics` holds an `error`.
+    pub html: Option<String>,
+    /// `id` of the root element; absent when `diagnostics` holds an `error`.
+    pub root_id: Option<String>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 fn facts_value(facts: &reze_compiler::ModuleFacts) -> napi::Result<serde_json::Value> {
     serde_json::to_value(facts).map_err(|error| napi::Error::from_reason(error.to_string()))
 }
@@ -242,5 +251,21 @@ pub fn analyze(source: String, filename: String) -> napi::Result<AnalyzeResult> 
             Ok(AnalyzeResult { facts: Some(facts_value(&facts)?), diagnostics: Vec::new() })
         }
         Err(errors) => Ok(AnalyzeResult { facts: None, diagnostics: diagnostics(errors) }),
+    }
+}
+
+/// Renders the default-exported document component of `source` to static HTML. Errors come back
+/// as diagnostics, and the call never throws on them.
+#[napi]
+pub fn compile_document(source: String, filename: String) -> DocumentResult {
+    match reze_compiler::compile_document(&source, &filename) {
+        Ok(document) => DocumentResult {
+            html: Some(document.html),
+            root_id: Some(document.root_id),
+            diagnostics: Vec::new(),
+        },
+        Err(errors) => {
+            DocumentResult { html: None, root_id: None, diagnostics: diagnostics(errors) }
+        }
     }
 }

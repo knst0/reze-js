@@ -7,6 +7,7 @@ use oxc_syntax::scope::ScopeFlags;
 use super::EmitContext;
 use crate::CompileTarget;
 use crate::ast::Ast;
+use crate::frontend::pure::has_await;
 
 pub fn prepare<'a>(ctx: &mut EmitContext<'a, '_>, call: &mut CallExpression<'a>) {
     let Some(Argument::ArrowFunctionExpression(loader)) = call.arguments.first_mut() else {
@@ -51,9 +52,7 @@ fn prepare_body<'a>(
     origin: Span,
     action_run: Option<&'a str>,
 ) {
-    let mut check = AwaitCheck(false);
-    check.visit_function_body(body);
-    if !check.0 {
+    if !has_await(|check| check.visit_function_body(body)) {
         return;
     }
     let ast = Ast::new(ctx.allocator);
@@ -111,18 +110,6 @@ fn prepare_body<'a>(
         &ast.builder,
     ));
     ctx.changed = true;
-}
-
-struct AwaitCheck(bool);
-
-impl<'a> Visit<'a> for AwaitCheck {
-    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
-
-    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
-
-    fn visit_await_expression(&mut self, _: &AwaitExpression<'a>) {
-        self.0 = true;
-    }
 }
 
 struct Awaits<'c, 'a, 'm> {

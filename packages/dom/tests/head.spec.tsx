@@ -33,7 +33,7 @@ function streamUnit(key: string, html: string): HTMLTemplateElement {
   return unit;
 }
 
-test("Head mounts tags into the head with no inline trace and dispose removes them", () => {
+test("Head mounts tags into the head with no inline trace and dispose removes them", async () => {
   const { el, dispose } = mount(() => (
     <p>
       <Head>
@@ -48,6 +48,8 @@ test("Head mounts tags into the head with no inline trace and dispose removes th
   expect(managed()).toHaveLength(2);
 
   dispose();
+  expect(managed()).toHaveLength(1);
+  await Promise.resolve();
   expect(managed()).toHaveLength(0);
 });
 
@@ -78,7 +80,7 @@ test("a script adopted from the server keeps one tag across owners until all dis
   expect(tag("SCRIPT", "src", "/sdk.js")).toBe(server);
 });
 
-test("a meta replaces the adopted tag so it stays live", () => {
+test("a meta shadows the page tag so it stays live, and disposing shows the page tag again", () => {
   const [theme, setTheme] = signal("white");
   const server = document.createElement("meta");
   server.setAttribute("name", "theme-color");
@@ -101,7 +103,8 @@ test("a meta replaces the adopted tag so it stays live", () => {
 
   dispose();
   tick();
-  expect(tag("META", "name", "theme-color")).toBeUndefined();
+  expect(tag("META", "name", "theme-color")).toBe(server);
+  expect(document.head.querySelectorAll('meta[name="theme-color"]')).toHaveLength(1);
 });
 
 test("an unkeyed script adopts on matching content and is created otherwise", () => {
@@ -156,4 +159,55 @@ test("mergeStreamedHead appends, replaces by key and replaces unkeyed tags by st
     expect(tag("SCRIPT", "type", "application/ld+json")).not.toBe(first);
     expect(managed().filter((element) => element.tagName === "SCRIPT")).toHaveLength(1);
   }
+});
+
+test("title and style mount from Head and a later owner shadows an earlier one per key", () => {
+  document.title = "Document";
+  const template = document.head.querySelector("title");
+  const [page, setPage] = signal("One");
+  const outer = mount(() => (
+    <Head>
+      <title>Site</title>
+      <style>{"body{margin:0}"}</style>
+    </Head>
+  ));
+  expect(document.title).toBe("Site");
+  expect(managed().map((element) => element.tagName)).toEqual(["TITLE", "STYLE"]);
+
+  const inner = mount(() => (
+    <Head>
+      <title>{page()} | Site</title>
+    </Head>
+  ));
+  expect(document.title).toBe("One | Site");
+  setPage("Two");
+  tick();
+  expect(document.title).toBe("Two | Site");
+  expect(document.head.querySelectorAll("title")).toHaveLength(1);
+
+  inner.dispose();
+  tick();
+  expect(document.title).toBe("Site");
+
+  outer.dispose();
+  tick();
+  expect(document.head.querySelector("title")).toBe(template);
+  expect(document.title).toBe("Document");
+  expect(managed()).toHaveLength(0);
+  document.title = "";
+});
+
+test("a streamed unit for a claimed key becomes the tag shown after the owner disposes", () => {
+  const { dispose } = mount(() => (
+    <Head>
+      <meta name="theme" content="client" />
+    </Head>
+  ));
+  mergeStreamedHead(document, streamUnit("meta:name:theme", `<meta name="theme" content="server" data-rz-head="">`));
+  expect(tag("META", "name", "theme")?.getAttribute("content")).toBe("client");
+
+  dispose();
+  tick();
+  expect(tag("META", "name", "theme")?.getAttribute("content")).toBe("server");
+  expect(document.head.querySelectorAll('meta[name="theme"]')).toHaveLength(1);
 });

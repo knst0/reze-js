@@ -110,21 +110,19 @@ test("normalizeSsgPath accepts pathnames and rejects everything else; redirect t
   assertRedirectTarget("/local");
 });
 
-test("prepareServerRoute settles preloads, merges metadata root-to-leaf, and distinguishes missing preloads from undefined data", async () => {
+test("prepareServerRoute settles preloads and distinguishes missing preloads from undefined data", async () => {
   const routes: RouteDefinition[] = [
     {
       id: "root",
       path: "/",
       component: Home,
       preload: () => Promise.resolve("root-data"),
-      meta: { title: "Root", description: "root desc" },
       children: [
         {
           id: "post",
           path: "/blog/:id",
           component: Home,
           preload: ({ params }) => ({ title: `Post ${params.id}` }),
-          meta: ({ data }) => ({ title: data.title }),
         },
       ],
     },
@@ -132,7 +130,6 @@ test("prepareServerRoute settles preloads, merges metadata root-to-leaf, and dis
   const merged = await prepareServerRoute(routes, "/blog/7");
   expect(merged.status).toBe("render");
   if (merged.status !== "render") return;
-  expect(merged.metadata).toEqual({ title: "Post 7", description: "root desc" });
   expect(merged.matches).toEqual([
     { id: "root", params: { id: "7" }, hasData: true, data: "root-data" },
     { id: "post", params: { id: "7" }, hasData: true, data: { title: "Post 7" } },
@@ -155,64 +152,31 @@ test("prepareServerRoute settles preloads, merges metadata root-to-leaf, and dis
   ]);
 });
 
-test("prepareServerRoute concatenates head lists root-to-leaf with last entry winning, and passes its context into data and metadata", async () => {
-  const routes: RouteDefinition[] = [
+test("prepareServerRoute cascades beforeLoad context from layouts into descendant preloads and redirects", async () => {
+  const seen: unknown[] = [];
+  const cascadeRoutes: RouteDefinition<any>[] = [
     {
-      id: "root",
       path: "/",
+      beforeLoad: async () => ({ user: "ada", role: "guest" }),
       component: Home,
-      meta: {
-        scripts: [{ src: "https://cdn.example.test/shared.js" }, { src: "https://cdn.example.test/root.js", defer: true }],
-        links: [{ rel: "preconnect", href: "https://cdn.example.test" }],
-        metas: [
-          { name: "description", content: "root" },
-          { property: "og:title", content: "Root" },
-        ],
-      },
       children: [
         {
-          id: "leaf",
-          path: "/leaf",
-          component: Home,
-          meta: {
-            scripts: [
-              { src: "https://cdn.example.test/shared.js", async: true },
-              { src: "https://cdn.example.test/leaf.js", type: "module" },
-            ],
-            metas: [{ property: "og:title", content: "Leaf" }],
+          path: "/admin",
+          beforeLoad: ({ context }) => ({ role: context.user === "ada" ? "admin" : "guest" }),
+          preload: ({ context }) => `${context.user}:${context.role}`,
+          redirect: ({ context }) => {
+            seen.push(context);
+            return undefined;
           },
+          component: Home,
         },
       ],
     },
   ];
-  const prepared = await prepareServerRoute(routes, "/leaf");
+  const prepared = await prepareServerRoute(cascadeRoutes, "/admin");
   if (prepared.status !== "render") throw new Error("expected render");
-  expect(prepared.metadata).toEqual({
-    scripts: [
-      { src: "https://cdn.example.test/root.js", defer: true },
-      { src: "https://cdn.example.test/shared.js", async: true },
-      { src: "https://cdn.example.test/leaf.js", type: "module" },
-    ],
-    links: [{ rel: "preconnect", href: "https://cdn.example.test" }],
-    metas: [
-      { name: "description", content: "root" },
-      { property: "og:title", content: "Leaf" },
-    ],
-  });
-
-  const context = { requestId: "ssr-42" };
-  const contextRoutes: RouteDefinition<typeof context>[] = [
-    {
-      path: "/",
-      preload: ({ context }) => context.requestId,
-      meta: ({ context }) => ({ title: context.requestId }),
-      component: Home,
-    },
-  ];
-  const withContext = await prepareServerRoute(contextRoutes, "/", { context });
-  if (withContext.status !== "render") throw new Error("expected render");
-  expect(withContext.metadata.title).toBe("ssr-42");
-  expect(withContext.matches[0]?.data).toBe("ssr-42");
+  expect(prepared.matches[1]?.data).toBe("ada:admin");
+  expect(seen).toEqual([{ user: "ada", role: "admin" }]);
 });
 
 test("prepareServerRoute short-circuits literal redirects before preloads, follows callback redirects with settled data, and reports not-found", async () => {
@@ -250,11 +214,10 @@ test("resolveSsgRedirectChain reaches the render and detects cycles", async () =
   const routes: RouteDefinition[] = [
     { path: "/a", redirect: { to: "/b" }, component: Home },
     { path: "/b", redirect: { to: "/c" }, component: Home },
-    { path: "/c", component: Home, meta: { title: "C" } },
+    { path: "/c", component: Home },
   ];
   const done = await resolveSsgRedirectChain(routes, "/a");
   if (done.status !== "render") throw new Error("expected render");
-  expect(done.metadata).toEqual({ title: "C" });
   expect(done.matches.map((match) => match.id)).toEqual(["2"]);
   const loop: RouteDefinition[] = [
     { path: "/a", redirect: { to: "/b" }, component: Home },

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 import type * as routerFs from "@rezejs/router/fs";
 import type { FileRoute } from "@rezejs/router/fs";
@@ -16,12 +16,23 @@ export interface FileRoutesOptions {
   history?: "browser" | "hash";
   /** Route file extensions, with or without a leading dot. Default the top-level `extensions`, else script extensions. */
   extensions?: string[];
+  /** Fill a new empty `.tsx` or `.jsx` route file with a starter component during dev. Default `true`. */
+  template?: boolean;
 }
 
 export type FileRoutesApi = typeof routerFs;
 
 const VirtualId = "virtual:reze-routes";
 const ResolvedId = "\0" + VirtualId;
+
+function findRoute(routes: readonly FileRoute[], file: string): FileRoute | undefined {
+  for (const route of routes) {
+    if (route.file === file) return route;
+    const child = findRoute(route.children, file);
+    if (child !== undefined) return child;
+  }
+  return undefined;
+}
 
 function writeIfChanged(file: string, content: string): void {
   if (existsSync(file) && readFileSync(file, "utf8") === content) return;
@@ -46,8 +57,18 @@ export function createFileRoutesPlugin(fs: FileRoutesApi, options: FileRoutesOpt
     return fs.scanRoutes(files, { extensions });
   }
 
-  function generate(): boolean {
+  function scaffold(routes: readonly FileRoute[], file: string): void {
+    if (statSync(file).size !== 0) return;
+    const route = findRoute(routes, relative(dir, file).split(sep).join("/"));
+    if (route === undefined) return;
+    const layoutDir = join(dir, route.id);
+    const template = fs.routeTemplate(route, existsSync(layoutDir) && statSync(layoutDir).isDirectory());
+    if (template !== undefined) writeFileSync(file, template);
+  }
+
+  function generate(addedFile?: string): boolean {
     const routes = scan();
+    if (addedFile !== undefined) scaffold(routes, addedFile);
     const next = fs.routesModule(routes, dir, hrefBase);
     if (typesFile !== undefined) writeIfChanged(typesFile, fs.routesDts(routes, hrefBase, typesFile, dir));
     const isChanged = next !== code;
@@ -77,11 +98,11 @@ export function createFileRoutesPlugin(fs: FileRoutesApi, options: FileRoutesOpt
     },
     configureServer(server) {
       server.watcher.add(dir);
-      const onChange = (file: string): void => {
+      const regenerate = (file: string, addedFile?: string): void => {
         if (file !== dir && !file.startsWith(dir + sep)) return;
         let isChanged: boolean;
         try {
-          isChanged = generate();
+          isChanged = generate(addedFile);
         } catch (error) {
           server.config.logger.error(String(error instanceof Error ? error.message : error));
           return;
@@ -92,7 +113,9 @@ export function createFileRoutesPlugin(fs: FileRoutesApi, options: FileRoutesOpt
         if (module !== undefined) client.moduleGraph.invalidateModule(module);
         client.hot.send({ type: "full-reload" });
       };
-      server.watcher.on("add", onChange);
+      const onChange = (file: string): void => regenerate(file);
+      const isTemplated = options.template !== false;
+      server.watcher.on("add", (file) => regenerate(file, isTemplated ? file : undefined));
       server.watcher.on("unlink", onChange);
       server.watcher.on("addDir", onChange);
       server.watcher.on("unlinkDir", onChange);

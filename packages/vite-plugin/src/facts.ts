@@ -200,6 +200,10 @@ export class ModuleFactsStore {
     return facts;
   }
 
+  packageName(file: string): string | undefined {
+    return this.packageOf(file)?.json.name;
+  }
+
   private packageOf(file: string): Package | undefined {
     for (let dir = dirname(file); ; dir = dirname(dir)) {
       const json = this.packageJson(dir);

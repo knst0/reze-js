@@ -36,7 +36,7 @@ export function resolveBrowsers(raw: string | undefined = process.env.REZE_SSG_B
 export interface BuildSsgFixtureOptions {
   fixtureDir: string;
   outDir: string;
-  plugins: Plugin | Plugin[];
+  plugins: Plugin | Plugin[] | Promise<Plugin[]>;
   base?: string;
   htmlInput?: string;
 }
@@ -59,13 +59,18 @@ export async function buildSsgFixture(options: BuildSsgFixtureOptions): Promise<
       modulePreload: { polyfill: false },
       rollupOptions: options.htmlInput === undefined ? undefined : { input: join(options.fixtureDir, options.htmlInput) },
     },
-    plugins: Array.isArray(options.plugins) ? options.plugins : [options.plugins],
+    plugins: [await options.plugins],
   });
   await builder.buildApp();
   return { distDir: options.outDir, viteVersion };
 }
 
-export async function expectBuildFails(plugins: Plugin | Plugin[], fixtureDir: string, outDir: string, pattern: RegExp): Promise<string> {
+export async function expectBuildFails(
+  plugins: Plugin | Plugin[] | Promise<Plugin[]>,
+  fixtureDir: string,
+  outDir: string,
+  pattern: RegExp,
+): Promise<string> {
   let message = "";
   try {
     const builder = await createBuilder({
@@ -73,7 +78,7 @@ export async function expectBuildFails(plugins: Plugin | Plugin[], fixtureDir: s
       configFile: false,
       logLevel: "silent",
       build: { outDir, emptyOutDir: true, manifest: false, modulePreload: { polyfill: false } },
-      plugins: Array.isArray(plugins) ? plugins : [plugins],
+      plugins: [await plugins],
     });
     await builder.buildApp();
   } catch (error) {

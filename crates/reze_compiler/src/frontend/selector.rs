@@ -6,18 +6,17 @@ use oxc_ast::{ast::*, builder::AstBuilder};
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_semantic::{AstNodes, Scoping};
 use oxc_span::{SPAN, Span};
-use oxc_str::Ident;
 use oxc_syntax::operator::{BinaryOperator, UnaryOperator};
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
 
 use super::Namer;
-use super::analysis::{AsyncFacts, Intrinsic, Primitive, exported_symbols};
+use super::analysis::{AsyncFacts, Intrinsic, IntrinsicTags, exported_symbols};
 use super::dsl::PreScan;
 use super::imports::Syntax;
 use super::pure::{is_foldable_signal_shape, is_meaningful};
+use crate::ast::{binding_parameter, identifier};
 use crate::diagnostic::{Code, Report};
-use crate::exports;
 use crate::imports::HelperImports;
 
 #[derive(Default)]
@@ -62,7 +61,7 @@ pub fn collect(
     pre: &PreScan,
     _reports: &mut Vec<Report>,
 ) -> Plan {
-    let imports = ImportView::scan(program);
+    let imports = IntrinsicTags::scan(program);
     let mut getters: HashMap<SymbolId, Getter> = HashMap::new();
     let mut declarators = Declarators { scoping, pre, getters: &mut getters };
     declarators.visit_program(program);
@@ -324,7 +323,7 @@ fn rewrite_comparison<'x, 'p, 'a>(
     arguments.push(Argument::from(key));
     let mut lookup = Expression::new_call_expression(
         span,
-        ident(row.alloc, SPAN, name),
+        identifier(row.alloc, SPAN, name),
         None,
         arguments,
         false,
@@ -442,25 +441,13 @@ fn iife<'a>(
     let mut arguments = ArenaVec::new_in(&builder);
     for uses in uses {
         let name: &'a str = alloc.alloc_str(&uses.name);
-        let pattern = BindingPattern::new_binding_identifier(SPAN, Ident::from(name), &builder);
-        params.push(FormalParameter::new(
-            SPAN,
-            ArenaVec::new_in(&builder),
-            pattern,
-            None,
-            None,
-            false,
-            None,
-            false,
-            false,
-            &builder,
-        ));
+        params.push(binding_parameter(&builder, SPAN, name));
         let source: &'a str = alloc.alloc_str(&uses.source);
         let mut inner = ArenaVec::new_in(&builder);
-        inner.push(Argument::from(ident(alloc, uses.source_span, source)));
+        inner.push(Argument::from(identifier(alloc, uses.source_span, source)));
         arguments.push(Argument::from(Expression::new_call_expression(
             uses.source_span,
-            ident(alloc, SPAN, helper),
+            identifier(alloc, SPAN, helper),
             None,
             inner,
             false,
@@ -484,11 +471,6 @@ fn iife<'a>(
         &builder,
     );
     Expression::new_call_expression(SPAN, arrow, None, arguments, false, &builder)
-}
-
-fn ident<'a>(alloc: &'a Allocator, span: Span, name: &'a str) -> Expression<'a> {
-    let builder = AstBuilder::new(alloc);
-    Expression::new_identifier(span, Ident::from(name), &builder)
 }
 
 enum RowFunction<'b, 'a> {
@@ -542,67 +524,6 @@ fn as_row_function<'b, 'a>(expression: &'b mut Expression<'a>) -> Option<RowFunc
             Some(RowFunction::Function(function))
         }
         _ => None,
-    }
-}
-
-fn is_for_export(source: &str, name: &str) -> bool {
-    exports::primitive_named(source, name) == Some(Primitive::Intrinsic(Intrinsic::For))
-}
-
-struct ImportView {
-    tags: HashSet<SymbolId>,
-    namespaces: HashMap<SymbolId, &'static str>,
-}
-
-impl ImportView {
-    fn scan(program: &Program<'_>) -> Self {
-        let mut view = ImportView { tags: HashSet::new(), namespaces: HashMap::new() };
-        for statement in &program.body {
-            let Statement::ImportDeclaration(import) = statement else { continue };
-            if import.import_kind.is_type() {
-                continue;
-            }
-            let Some(home) = exports::module(import.source.value.as_str()) else { continue };
-            for specifier in import.specifiers.iter().flatten() {
-                match specifier {
-                    ImportDeclarationSpecifier::ImportSpecifier(named) => {
-                        if !named.import_kind.is_type()
-                            && is_for_export(home, named.imported.name().as_str())
-                        {
-                            view.tags.insert(named.local.symbol_id());
-                        }
-                    }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
-                        view.namespaces.insert(namespace.local.symbol_id(), home);
-                    }
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
-                }
-            }
-        }
-        view
-    }
-
-    fn is_for(&self, scoping: &Scoping, name: &JSXElementName<'_>) -> bool {
-        match name {
-            JSXElementName::IdentifierReference(id) => id
-                .reference_id
-                .get()
-                .and_then(|r| scoping.get_reference(r).symbol_id())
-                .is_some_and(|symbol| self.tags.contains(&symbol)),
-            JSXElementName::MemberExpression(member) => {
-                let JSXMemberExpressionObject::IdentifierReference(namespace) = &member.object
-                else {
-                    return false;
-                };
-                let source = namespace
-                    .reference_id
-                    .get()
-                    .and_then(|r| scoping.get_reference(r).symbol_id())
-                    .and_then(|symbol| self.namespaces.get(&symbol));
-                source.is_some_and(|source| is_for_export(source, member.property.name.as_str()))
-            }
-            _ => false,
-        }
     }
 }
 
@@ -665,7 +586,7 @@ impl<'a> Visit<'a> for Called<'_> {
 
 struct Fors<'s, 'p, 'l> {
     scoping: &'s Scoping,
-    imports: &'p ImportView,
+    imports: &'p IntrinsicTags,
     getters: &'p HashMap<SymbolId, Getter>,
     selectable: &'p HashSet<SymbolId>,
     plan: &'l mut Plan,
@@ -673,7 +594,7 @@ struct Fors<'s, 'p, 'l> {
 
 impl<'a> Visit<'a> for Fors<'_, '_, '_> {
     fn visit_jsx_element(&mut self, it: &JSXElement<'a>) {
-        if self.imports.is_for(self.scoping, &it.opening_element.name) {
+        if self.imports.get(self.scoping, &it.opening_element.name) == Some(Intrinsic::For) {
             self.for_element(it);
         }
         walk::walk_jsx_element(self, it);

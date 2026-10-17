@@ -10,6 +10,7 @@ use oxc_syntax::symbol::SymbolId;
 
 use super::Namer;
 use super::analysis::Primitive;
+use super::pure::value_imports;
 use crate::diagnostic::{Code, Edit, Report};
 use crate::exports::{self, REACTIVITY, Role};
 use crate::imports::HelperImports;
@@ -54,36 +55,24 @@ pub struct SyntaxImports {
 impl SyntaxImports {
     pub fn collect(program: &Program<'_>) -> Self {
         let mut imports = SyntaxImports { declared: Vec::new(), namespaces: HashMap::new() };
-        for statement in &program.body {
-            let Statement::ImportDeclaration(import) = statement else { continue };
-            if import.import_kind.is_type() {
-                continue;
-            }
-            let source = import.source.value.as_str();
-            let Some(module) = exports::module(source) else {
-                continue;
-            };
-            for specifier in import.specifiers.iter().flatten() {
-                match specifier {
-                    ImportDeclarationSpecifier::ImportSpecifier(named) => {
-                        if named.import_kind.is_type() {
-                            continue;
-                        }
-                        let imported = named.imported.name();
-                        if let Some(syntax) = exports::syntax_named(source, imported.as_str()) {
-                            imports.declared.push(SyntaxImport {
-                                specifier: named.span,
-                                symbol: named.local.symbol_id(),
-                                syntax,
-                                is_unaliased: named.local.name.as_str() == imported.as_str(),
-                            });
-                        }
+        for (source, specifier) in value_imports(program) {
+            let Some(module) = exports::module(source) else { continue };
+            match specifier {
+                ImportDeclarationSpecifier::ImportSpecifier(named) => {
+                    let imported = named.imported.name();
+                    if let Some(syntax) = exports::syntax_named(source, imported.as_str()) {
+                        imports.declared.push(SyntaxImport {
+                            specifier: named.span,
+                            symbol: named.local.symbol_id(),
+                            syntax,
+                            is_unaliased: named.local.name.as_str() == imported.as_str(),
+                        });
                     }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
-                        imports.namespaces.insert(namespace.local.symbol_id(), module);
-                    }
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
                 }
+                ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
+                    imports.namespaces.insert(namespace.local.symbol_id(), module);
+                }
+                ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
             }
         }
         imports
@@ -179,23 +168,16 @@ pub(crate) fn apply<'a>(
         };
         plan.insert(import.specifier.start, relocation);
     }
-    for statement in &program.body {
-        let Statement::ImportDeclaration(import) = statement else { continue };
-        if import.import_kind.is_type() {
+    for (source, specifier) in value_imports(program) {
+        let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else { continue };
+        if plan.contains_key(&named.span.start) {
             continue;
         }
-        let source = import.source.value.as_str();
-        for specifier in import.specifiers.iter().flatten() {
-            let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else { continue };
-            if named.import_kind.is_type() || plan.contains_key(&named.span.start) {
-                continue;
-            }
-            if let Some(home) = exports::lowered_home(source, named.imported.name().as_str()) {
-                plan.insert(
-                    named.span.start,
-                    Some(Relocation { local: named.local.name.to_string(), home }),
-                );
-            }
+        if let Some(home) = exports::lowered_home(source, named.imported.name().as_str()) {
+            plan.insert(
+                named.span.start,
+                Some(Relocation { local: named.local.name.to_string(), home }),
+            );
         }
     }
     if plan.is_empty() {

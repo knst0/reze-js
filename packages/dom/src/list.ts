@@ -100,6 +100,56 @@ export function list<T>(
   );
 }
 
+type Reconcile<T> = (items: readonly T[], rows: Row<T>[], out: JSX.Element[]) => Row<T>[];
+
+function rowList<T>(
+  each: () => readonly T[] | null | undefined | false,
+  fallback: (() => JSX.Element) | undefined,
+  reconcile: Reconcile<T>,
+): () => JSX.Element {
+  let items: readonly T[] = Empty;
+  let rows: Row<T>[] = [];
+  let shownFallback: Rendered | undefined;
+
+  onCleanup(() => {
+    disposeRows(rows);
+    shownFallback?.dispose();
+  });
+
+  const update = (): JSX.Element => {
+    if (items.length === 0) {
+      disposeRows(rows);
+      rows = [];
+      if (fallback === undefined) {
+        return undefined;
+      }
+      return (shownFallback ??= root((dispose) => ({ value: fallback(), dispose }))).value;
+    }
+    if (shownFallback !== undefined) {
+      shownFallback.dispose();
+      shownFallback = undefined;
+    }
+    const out: JSX.Element[] = [];
+    rows = reconcile(items, rows, out);
+    return out;
+  };
+
+  return computed(() => {
+    const next = each() || Empty;
+    for (let i = 0, n = next.length; i < n; i++) {
+      void next[i];
+    }
+    items = next;
+    return untrack(update);
+  });
+}
+
+function disposeRows<T>(rows: Row<T>[]): void {
+  for (let i = 0; i < rows.length; i++) {
+    rows[i]!.dispose();
+  }
+}
+
 function keyedList<T>(
   each: () => readonly T[] | null | undefined | false,
   map: (item: T | (() => T), index: () => number) => JSX.Element,
@@ -107,16 +157,6 @@ function keyedList<T>(
   key: ((item: T) => unknown) | undefined,
 ): () => JSX.Element {
   const hasIndex = map.length > 1;
-  let items: readonly T[] = Empty;
-  let rows: Row<T>[] = [];
-  let shownFallback: Rendered | undefined;
-
-  onCleanup(() => {
-    for (let i = 0; i < rows.length; i++) {
-      rows[i]!.dispose();
-    }
-    shownFallback?.dispose();
-  });
 
   const createRow = (item: T, rowKey: unknown, index: number): Row<T> =>
     root((dispose) => {
@@ -137,24 +177,9 @@ function keyedList<T>(
       return row;
     });
 
-  const update = (): JSX.Element => {
+  return rowList(each, fallback, (items, rows, out) => {
     const n = items.length;
-    if (n === 0) {
-      for (let i = 0; i < rows.length; i++) {
-        rows[i]!.dispose();
-      }
-      rows = [];
-      if (fallback === undefined) {
-        return undefined;
-      }
-      return (shownFallback ??= root((dispose) => ({ value: fallback(), dispose }))).value;
-    }
-    if (shownFallback !== undefined) {
-      shownFallback.dispose();
-      shownFallback = undefined;
-    }
     const nextRows: Row<T>[] = [];
-    const out: JSX.Element[] = [];
     let start = 0;
     for (const end = Math.min(n, rows.length); start < end; start++) {
       const item = items[start]!;
@@ -206,17 +231,7 @@ function keyedList<T>(
         }
       }
     }
-    rows = nextRows;
-    return out;
-  };
-
-  return computed(() => {
-    const next = each() || Empty;
-    for (let i = 0, n = next.length; i < n; i++) {
-      void next[i];
-    }
-    items = next;
-    return untrack(update);
+    return nextRows;
   });
 }
 
@@ -225,33 +240,8 @@ function indexed<T>(
   map: (item: () => T, index: number) => JSX.Element,
   fallback: (() => JSX.Element) | undefined,
 ): () => JSX.Element {
-  let items: readonly T[] = Empty;
-  let rows: Row<T>[] = [];
-  let shownFallback: Rendered | undefined;
-
-  onCleanup(() => {
-    for (let i = 0; i < rows.length; i++) {
-      rows[i]!.dispose();
-    }
-    shownFallback?.dispose();
-  });
-
-  const update = (): JSX.Element => {
+  return rowList(each, fallback, (items, rows, out) => {
     const n = items.length;
-    if (n === 0) {
-      for (let i = 0; i < rows.length; i++) {
-        rows[i]!.dispose();
-      }
-      rows = [];
-      if (fallback === undefined) {
-        return undefined;
-      }
-      return (shownFallback ??= root((dispose) => ({ value: fallback(), dispose }))).value;
-    }
-    if (shownFallback !== undefined) {
-      shownFallback.dispose();
-      shownFallback = undefined;
-    }
     while (rows.length < n) {
       const index = rows.length;
       rows.push(
@@ -267,21 +257,11 @@ function indexed<T>(
     while (rows.length > n) {
       rows.pop()!.dispose();
     }
-    const out: JSX.Element[] = [];
     for (let i = 0; i < n; i++) {
       const row = rows[i]!;
       row.update(items[i]!, i);
       out.push(row.value);
     }
-    return out;
-  };
-
-  return computed(() => {
-    const next = each() || Empty;
-    for (let i = 0, n = next.length; i < n; i++) {
-      void next[i];
-    }
-    items = next;
-    return untrack(update);
+    return rows;
   });
 }

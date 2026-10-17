@@ -1,24 +1,9 @@
-import { HeadManagedAttribute } from "@rezejs/dom/internal/client";
 import { flush, untrack, type ContextKey, type Getter, type Owner } from "@rezejs/signals";
 import { signal } from "reze-js";
 
-import { applyRouteHead, headWants, type HeadWant } from "./head";
 import type { HistoryEntry, RouterHistory } from "./history";
-import { decode, matchBranches, pathKey, type Branch, type BranchMatch, type CompiledRoute } from "./match";
-import type {
-  Awaitable,
-  BeforeLeaveEvent,
-  Location,
-  NavigateOptions,
-  PageHeadLink,
-  PageHeadMeta,
-  PageHeadScript,
-  PageMetadata,
-  Params,
-  PreloadIntent,
-  RouteRedirect,
-  RouterContext,
-} from "./types";
+import { decode, matchBranches, pathKey, usesBeforeLoad, type Branch, type BranchMatch, type CompiledRoute } from "./match";
+import type { Awaitable, BeforeLeaveEvent, Location, NavigateOptions, Params, PreloadIntent, RouteRedirect, RouterContext } from "./types";
 
 export interface ActiveMatch {
   readonly route: CompiledRoute;
@@ -28,8 +13,6 @@ export interface ActiveMatch {
   /** False when the route has no preload or its preload failed; true even when the settled data is `undefined`. */
   readonly hasData: boolean;
   readonly error: unknown;
-  /** The route's own resolved metadata, before the root-to-leaf merge. */
-  readonly meta: PageMetadata;
   readonly info: Readonly<Record<string, unknown>> | undefined;
 }
 
@@ -60,11 +43,7 @@ export interface RouterState {
   swap: RouterSwap | undefined;
   /** Imperative navigation captured during server preparation instead of touching history. */
   redirectCaptured: { to: string; replace: boolean } | undefined;
-  /** Template metadata the merged page metadata restores absent fields to; from config or captured on first apply. */
-  headBaseline: PageMetadata | undefined;
-  /** Token the router claims managed head tags with; released when the router disposes. */
-  readonly headOwner: object;
-  /** Hover-warming depth: while nonzero, preloads run but navigations are ignored and metadata/redirects never run. */
+  /** Hover-warming depth: while nonzero, preloads run but navigations are ignored and redirects never run. */
   warming: number;
   owner: Owner | undefined;
   /** The committed entry, whose view and scroll position are on screen. */
@@ -103,7 +82,6 @@ export interface RouterStateInit {
   readonly branches: readonly Branch[];
   readonly env: RouterEnv;
   readonly context?: unknown;
-  readonly headBaseline?: PageMetadata;
   readonly swap?: RouterSwap;
 }
 
@@ -120,8 +98,6 @@ export function initRouterState(init: RouterStateInit): RouterState {
     context: init.context as RouterContext,
     swap: init.swap,
     redirectCaptured: undefined,
-    headBaseline: init.headBaseline,
-    headOwner: {},
     warming: 0,
     owner: undefined,
     entry: undefined,
@@ -249,8 +225,8 @@ export function ensureLoaded(route: CompiledRoute): Promise<void> {
       (module) => {
         const config = module.route;
         route.component = module.default ?? route.def.component;
+        if (usesBeforeLoad) route.beforeLoad = config?.beforeLoad ?? route.def.beforeLoad;
         route.preload = config?.preload ?? route.def.preload;
-        route.meta = config?.meta ?? route.def.meta;
         route.redirect = config?.redirect ?? route.def.redirect;
         route.info = config?.info ?? route.def.info;
         route.loadError = undefined;
@@ -288,7 +264,7 @@ export function matchPathname(state: RouterState, pathname: string): BranchMatch
 
 /** The settled result of one navigation: rendered matches, one redirect step, or abandonment by a newer navigation. */
 export type SettleOutcome =
-  | { kind: "render"; matches: ActiveMatch[]; metadata: PageMetadata | undefined }
+  | { kind: "render"; matches: ActiveMatch[] }
   | { kind: "redirect"; to: string; replace: boolean }
   | { kind: "aborted" };
 
@@ -300,7 +276,7 @@ export function start(state: RouterState, entry: HistoryEntry, intent: PreloadIn
   if (isHashChange(state, location)) {
     const matches = untrack(state.matches);
     const apply = (): void => {
-      if (generation === state.generation) commit(state, entry, location, [...matches], undefined, scrollMode);
+      if (generation === state.generation) commit(state, entry, location, [...matches], scrollMode);
     };
     if (state.renderDepth > 0) queueMicrotask(apply);
     else apply();
@@ -316,7 +292,7 @@ export function start(state: RouterState, entry: HistoryEntry, intent: PreloadIn
   const begin = (): void => {
     if (generation !== state.generation) return;
     const outcome: SettleOutcome | Promise<SettleOutcome> =
-      match === undefined ? { kind: "render", matches: [], metadata: {} } : settleMatch(state, generation, match, location, intent);
+      match === undefined ? { kind: "render", matches: [] } : settleMatch(state, generation, match, location, intent);
     if (isThenable(outcome)) {
       state.setIsRouting(true);
       state.setPendingKey(pathKey(location.pathname));
@@ -360,7 +336,7 @@ function finishSettled(
     navigate(state, outcome.to, { replace: outcome.replace });
     return;
   }
-  commit(state, entry, location, outcome.matches, outcome.metadata, scrollMode);
+  commit(state, entry, location, outcome.matches, scrollMode);
 }
 
 /** Runs one entry's match to completion without committing; SSG preparation drives this directly. */
@@ -370,7 +346,7 @@ export function settleEntry(state: RouterState, entry: HistoryEntry, intent: Pre
   state.target = entry;
   state.targetLocation = location;
   const match = matchPathname(state, location.pathname);
-  if (match === undefined) return Promise.resolve({ kind: "render", matches: [], metadata: {} });
+  if (match === undefined) return Promise.resolve({ kind: "render", matches: [] });
   const loading = loadBranch(match);
   const settle = (): Promise<SettleOutcome> | SettleOutcome => {
     if (generation !== state.generation) return { kind: "aborted" };
@@ -400,175 +376,128 @@ function settleMatch(
       return { kind: "redirect", to: redirect.to, replace: redirect.replace ?? true };
     }
   }
-  return settleRoute(state, generation, routes, match.params, match.path, location, intent, 0, []);
+  const run: Settling = {
+    state,
+    generation,
+    routes,
+    params: match.params,
+    path: match.path,
+    location,
+    intent,
+    context: state.context,
+    matches: [],
+  };
+  return settleRoute(run, 0);
 }
 
-function mergeEntry<T>(entries: Map<string, T>, key: string, value: T): void {
-  entries.delete(key);
-  entries.set(key, value);
+interface Settling {
+  readonly state: RouterState;
+  readonly generation: number;
+  readonly routes: readonly CompiledRoute[];
+  readonly params: Params;
+  readonly path: string;
+  readonly location: Location;
+  readonly intent: PreloadIntent;
+  context: RouterContext;
+  readonly matches: ActiveMatch[];
 }
 
-function mergeHeadLists(metadata: PageMetadata, matches: readonly ActiveMatch[]): void {
-  const scripts = new Map<string, PageHeadScript>();
-  const links = new Map<string, PageHeadLink>();
-  const metas = new Map<string, PageHeadMeta>();
-  for (const settled of matches) {
-    for (const want of headWants(settled.meta)) {
-      if (want.kind === "script") mergeEntry(scripts, want.key, want.spec);
-      else if (want.kind === "link") mergeEntry(links, want.key, want.spec);
-      else mergeEntry(metas, want.key, want.spec);
-    }
-  }
-  if (scripts.size > 0) metadata.scripts = [...scripts.values()];
-  if (links.size > 0) metadata.links = [...links.values()];
-  if (metas.size > 0) metadata.metas = [...metas.values()];
-}
-
-function settleRoute(
-  state: RouterState,
-  generation: number,
-  routes: readonly CompiledRoute[],
-  params: Params,
-  path: string,
-  location: Location,
-  intent: PreloadIntent,
-  index: number,
-  matches: ActiveMatch[],
-): SettleOutcome | Promise<SettleOutcome> {
-  if (index >= routes.length) {
-    const metadata: PageMetadata = {};
-    for (const settled of matches) {
-      if (settled.meta.title !== undefined) metadata.title = settled.meta.title;
-      if (settled.meta.description !== undefined) metadata.description = settled.meta.description;
-      if (settled.meta.canonical !== undefined) metadata.canonical = settled.meta.canonical;
-      if (settled.meta.robots !== undefined) metadata.robots = settled.meta.robots;
-    }
-    mergeHeadLists(metadata, matches);
-    return { kind: "render", matches, metadata };
-  }
-  const stopped = checkpoint(state, generation);
+function settleRoute(run: Settling, index: number): SettleOutcome | Promise<SettleOutcome> {
+  if (index >= run.routes.length) return { kind: "render", matches: run.matches };
+  const stopped = checkpoint(run.state, run.generation);
   if (stopped !== undefined) return stopped;
-  const route = routes[index]!;
+  const route = run.routes[index]!;
   if (!route.isLoaded) {
-    matches.push({ route, path, params, data: undefined, hasData: false, error: route.loadError, meta: {}, info: route.info });
-    return settleRoute(state, generation, routes, params, path, location, intent, index + 1, matches);
+    run.matches.push({
+      route,
+      path: run.path,
+      params: run.params,
+      data: undefined,
+      hasData: false,
+      error: route.loadError,
+      info: route.info,
+    });
+    return settleRoute(run, index + 1);
   }
-  if (route.preload === undefined) {
-    return settleData(state, generation, routes, params, path, location, intent, index, matches, undefined, false, undefined);
+  if (!usesBeforeLoad || route.beforeLoad === undefined) return settlePreload(run, index);
+  let extension: unknown;
+  try {
+    extension = untrack(() => route.beforeLoad!({ params: run.params, location: run.location, intent: run.intent, context: run.context }));
+  } catch (thrown) {
+    return settleData(run, index, undefined, false, thrown);
   }
+  if (!isThenable(extension)) return extendContext(run, index, extension);
+  return Promise.resolve(extension).then(
+    (value) => checkpoint(run.state, run.generation) ?? extendContext(run, index, value),
+    (thrown) => checkpoint(run.state, run.generation) ?? settleData(run, index, undefined, false, thrown),
+  );
+}
+
+function extendContext(run: Settling, index: number, extension: unknown): SettleOutcome | Promise<SettleOutcome> {
+  if (typeof extension === "object" && extension !== null) run.context = { ...run.context, ...extension };
+  return settlePreload(run, index);
+}
+
+function settlePreload(run: Settling, index: number): SettleOutcome | Promise<SettleOutcome> {
+  const route = run.routes[index]!;
+  if (route.preload === undefined) return settleData(run, index, undefined, false, undefined);
   let produced: unknown;
   try {
-    produced = untrack(() => route.preload!({ params, location, intent, context: state.context }));
+    produced = untrack(() => route.preload!({ params: run.params, location: run.location, intent: run.intent, context: run.context }));
   } catch (thrown) {
-    return settleData(state, generation, routes, params, path, location, intent, index, matches, undefined, false, thrown);
+    return settleData(run, index, undefined, false, thrown);
   }
-  if (isThenable(produced)) {
-    return Promise.resolve(produced).then(
-      (value) => {
-        const early = checkpoint(state, generation);
-        if (early !== undefined) return early;
-        return settleData(state, generation, routes, params, path, location, intent, index, matches, value, true, undefined);
-      },
-      (thrown) => {
-        const early = checkpoint(state, generation);
-        if (early !== undefined) return early;
-        return settleData(state, generation, routes, params, path, location, intent, index, matches, undefined, false, thrown);
-      },
-    );
-  }
-  return settleData(state, generation, routes, params, path, location, intent, index, matches, produced, true, undefined);
+  if (!isThenable(produced)) return settleData(run, index, produced, true, undefined);
+  return Promise.resolve(produced).then(
+    (value) => checkpoint(run.state, run.generation) ?? settleData(run, index, value, true, undefined),
+    (thrown) => checkpoint(run.state, run.generation) ?? settleData(run, index, undefined, false, thrown),
+  );
 }
 
-function settleData(
-  state: RouterState,
-  generation: number,
-  routes: readonly CompiledRoute[],
-  params: Params,
-  path: string,
-  location: Location,
-  intent: PreloadIntent,
-  index: number,
-  matches: ActiveMatch[],
-  data: unknown,
-  hasData: boolean,
-  error: unknown,
-): SettleOutcome | Promise<SettleOutcome> {
-  const route = routes[index]!;
-  const push = (ownMeta: PageMetadata, failure: unknown): SettleOutcome | Promise<SettleOutcome> => {
-    matches.push({
+function settleData(run: Settling, index: number, data: unknown, hasData: boolean, error: unknown): SettleOutcome | Promise<SettleOutcome> {
+  const route = run.routes[index]!;
+  const push = (failure: unknown): SettleOutcome | Promise<SettleOutcome> => {
+    run.matches.push({
       route,
-      path,
-      params,
+      path: run.path,
+      params: run.params,
       data,
       hasData: failure === undefined ? hasData : false,
       error: failure,
-      meta: ownMeta,
       info: route.info,
     });
-    return settleRoute(state, generation, routes, params, path, location, intent, index + 1, matches);
+    return settleRoute(run, index + 1);
   };
-  const afterMeta = (ownMeta: PageMetadata): SettleOutcome | Promise<SettleOutcome> => {
-    const redirect = route.redirect;
-    if (error !== undefined || redirect === undefined || typeof redirect !== "function") return push(ownMeta, error);
-    const args = { params, location, intent, data, context: state.context };
-    let decided: Awaitable<RouteRedirect | undefined>;
-    try {
-      decided = untrack(() => redirect(args));
-    } catch (thrown) {
-      return push(ownMeta, thrown);
-    }
-    if (isThenable(decided)) {
-      return Promise.resolve(decided).then(
-        (value) => {
-          const early = checkpoint(state, generation);
-          if (early !== undefined) return early;
-          if (value === undefined || value === null) return push(ownMeta, error);
-          return { kind: "redirect", to: value.to, replace: value.replace ?? true };
-        },
-        (thrown) => {
-          const early = checkpoint(state, generation);
-          if (early !== undefined) return early;
-          return push(ownMeta, thrown);
-        },
-      );
-    }
-    if (decided === undefined || decided === null) return push(ownMeta, error);
-    return { kind: "redirect", to: decided.to, replace: decided.replace ?? true };
-  };
-  const meta = route.meta;
-  if (error !== undefined || meta === undefined) return afterMeta({});
-  if (typeof meta !== "function") return afterMeta(meta);
-  const resolvedArgs = { params, location, intent, data, context: state.context };
-  let produced: Awaitable<PageMetadata>;
+  const redirect = route.redirect;
+  if (error !== undefined || redirect === undefined || typeof redirect !== "function") return push(error);
+  const args = { params: run.params, location: run.location, intent: run.intent, data, context: run.context };
+  let decided: Awaitable<RouteRedirect | undefined>;
   try {
-    produced = untrack(() => meta(resolvedArgs));
+    decided = untrack(() => redirect(args));
   } catch (thrown) {
-    return push({}, thrown);
+    return push(thrown);
   }
-  if (isThenable(produced)) {
-    return Promise.resolve(produced).then(
+  if (isThenable(decided)) {
+    return Promise.resolve(decided).then(
       (value) => {
-        const early = checkpoint(state, generation);
+        const early = checkpoint(run.state, run.generation);
         if (early !== undefined) return early;
-        return afterMeta(value ?? {});
+        if (value === undefined || value === null) return push(error);
+        return { kind: "redirect", to: value.to, replace: value.replace ?? true };
       },
-      (thrown) => {
-        const early = checkpoint(state, generation);
-        if (early !== undefined) return early;
-        return push({}, thrown);
-      },
+      (thrown) => checkpoint(run.state, run.generation) ?? push(thrown),
     );
   }
-  return afterMeta(produced ?? {});
+  if (decided === undefined || decided === null) return push(error);
+  return { kind: "redirect", to: decided.to, replace: decided.replace ?? true };
 }
 
-/** Commits settled matches; server preparation and swap navigation share this with `start`. `metadata: undefined` skips head writes (hash changes, swapped pages). */
+/** Commits settled matches; server preparation and swap navigation share this with `start`. */
 export function commit(
   state: RouterState,
   entry: HistoryEntry,
   location: Location,
   matches: readonly ActiveMatch[],
-  metadata: PageMetadata | undefined,
   scrollMode: ScrollMode,
 ): void {
   const isScrollManaged = state.env === "browser" && state.history.scroll;
@@ -578,72 +507,11 @@ export function commit(
   state.setMatches(matches);
   state.setIsRouting(false);
   state.setPendingKey(undefined);
-  if (metadata !== undefined) applyMetadata(state, metadata);
   flush();
   if (!isScrollManaged || scrollMode === "none") return;
   if ((scrollMode === "restore" || scrollMode === "initial") && restorePosition(state, entry.index)) return;
   if (location.hash !== "") document.getElementById(decode(location.hash.slice(1)))?.scrollIntoView();
   else if (scrollMode !== "initial") scrollTo(0, 0);
-}
-
-function readHeadMetadata(): PageMetadata {
-  const description =
-    document.querySelector(`meta[name="description"]:not([${HeadManagedAttribute}])`)?.getAttribute("content") ?? undefined;
-  const canonical = document.querySelector(`link[rel="canonical"]:not([${HeadManagedAttribute}])`)?.getAttribute("href") ?? undefined;
-  const robots = document.querySelector(`meta[name="robots"]:not([${HeadManagedAttribute}])`)?.getAttribute("content") ?? undefined;
-  return { title: document.title || undefined, description, canonical, robots };
-}
-
-function writeHeadText(kind: "description" | "robots", value: string | undefined): void {
-  const selector = `meta[name="${kind}"]:not([${HeadManagedAttribute}])`;
-  if (value === undefined) {
-    document.querySelector(selector)?.remove();
-    return;
-  }
-  const existing = document.querySelector(selector);
-  if (existing !== null) {
-    existing.setAttribute("content", value);
-    return;
-  }
-  const tag = document.createElement("meta");
-  tag.setAttribute("name", kind);
-  tag.setAttribute("content", value);
-  document.head.append(tag);
-}
-
-function writeHeadCanonical(value: string | undefined): void {
-  const selector = `link[rel="canonical"]:not([${HeadManagedAttribute}])`;
-  if (value === undefined) {
-    document.querySelector(selector)?.remove();
-    return;
-  }
-  const existing = document.querySelector(selector);
-  if (existing !== null) {
-    existing.setAttribute("href", value);
-    return;
-  }
-  const tag = document.createElement("link");
-  tag.setAttribute("rel", "canonical");
-  tag.setAttribute("href", value);
-  document.head.append(tag);
-}
-
-function suppresses(wants: readonly HeadWant[], kind: "description" | "robots" | "canonical"): boolean {
-  return wants.some((want) =>
-    kind === "canonical" ? want.kind === "link" && want.spec.rel === "canonical" : want.kind === "meta" && want.spec.name === kind,
-  );
-}
-
-function applyMetadata(state: RouterState, metadata: PageMetadata): void {
-  if (state.env !== "browser" || typeof document === "undefined") return;
-  const baseline = (state.headBaseline ??= readHeadMetadata());
-  const wants = headWants(metadata);
-  const title = metadata.title ?? baseline.title;
-  if (title !== undefined) document.title = title;
-  writeHeadText("description", suppresses(wants, "description") ? undefined : (metadata.description ?? baseline.description));
-  writeHeadCanonical(suppresses(wants, "canonical") ? undefined : (metadata.canonical ?? baseline.canonical));
-  writeHeadText("robots", suppresses(wants, "robots") ? undefined : (metadata.robots ?? baseline.robots));
-  applyRouteHead(wants, state.headOwner);
 }
 
 function savePosition(state: RouterState, index: number): void {

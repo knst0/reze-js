@@ -17,7 +17,9 @@ use super::Namer;
 use super::props_shape::{has_unnameable_type_read, is_literal_default, props_plan};
 use super::pure::{
     has_jsx, is_component_name, is_declared_component, merge_property_is_static, static_property,
+    value_imports,
 };
+use crate::ast::{identifier, take_expression};
 use crate::diagnostic::{Code, Report};
 use crate::exports;
 use crate::imports::HelperImports;
@@ -115,20 +117,10 @@ pub fn collect(
     reports: &mut Vec<Report>,
 ) -> Plan {
     let mut symbols = Vec::new();
-    for statement in &program.body {
-        let Statement::ImportDeclaration(import) = statement else { continue };
-        if import.import_kind.is_type() {
-            continue;
-        }
-        let source = import.source.value.as_str();
-        for specifier in import.specifiers.iter().flatten() {
-            let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else { continue };
-            if named.import_kind.is_type() {
-                continue;
-            }
-            if let Some(method) = exports::props_named(source, named.imported.name().as_str()) {
-                symbols.push((named.local.symbol_id(), method));
-            }
+    for (source, specifier) in value_imports(program) {
+        let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier else { continue };
+        if let Some(method) = exports::props_named(source, named.imported.name().as_str()) {
+            symbols.push((named.local.symbol_id(), method));
         }
     }
     let mut plan = Plan::default();
@@ -604,7 +596,7 @@ impl<'a> Rewrite<'_, '_, 'a> {
                     DefaultKind::Hoisted { .. } => {
                         let temps = self.temps.get(&read.param)?;
                         let temp = temps.get(index)?.as_ref()?;
-                        reference_expr(self.alloc, SPAN, temp)
+                        identifier(self.alloc, SPAN, temp)
                     }
                 };
                 Some(conditional(self.alloc, span, props, &read.path, fallback))
@@ -629,7 +621,7 @@ impl<'a> Rewrite<'_, '_, 'a> {
             PropsMethod::Omit => "omitProps",
         };
         let alias = self.helpers.require(self.alloc, self.namer, crate::RUNTIME_MODULE, export);
-        call.callee = reference_expr(self.alloc, Span::new(callee.0, callee.1), alias);
+        call.callee = identifier(self.alloc, Span::new(callee.0, callee.1), alias);
         self.changed = true;
     }
 }
@@ -770,7 +762,7 @@ fn take_defaults<'a>(
             BindingPattern::AssignmentPattern(assignment) => {
                 let span = assignment.right.span();
                 if hoisted.contains(&(span.start, span.end)) {
-                    taken.insert((span.start, span.end), take_expr(alloc, &mut assignment.right));
+                    taken.insert((span.start, span.end), take_expression(alloc, &mut assignment.right));
                 }
             }
             _ => {}
@@ -928,11 +920,11 @@ fn rest_decl<'a>(
         key_list.push(ArrayExpressionElement::from(string_expr(alloc, SPAN, key)));
     }
     let mut arguments = ArenaVec::new_in(&builder);
-    arguments.push(Argument::from(reference_expr(alloc, SPAN, props)));
+    arguments.push(Argument::from(identifier(alloc, SPAN, props)));
     arguments.push(Argument::from(Expression::new_array_expression(SPAN, key_list, &builder)));
     let split_call = Expression::new_call_expression(
         SPAN,
-        reference_expr(alloc, SPAN, split),
+        identifier(alloc, SPAN, split),
         None,
         arguments,
         false,
@@ -968,7 +960,7 @@ fn const_decl_pattern<'a>(
 
 fn chain<'a>(alloc: &'a Allocator, outer: Span, props: &str, path: &[String]) -> Expression<'a> {
     let builder = AstBuilder::new(alloc);
-    let mut expr = reference_expr(alloc, SPAN, alloc.alloc_str(props));
+    let mut expr = identifier(alloc, SPAN, alloc.alloc_str(props));
     let last = path.len().saturating_sub(1);
     for (index, key) in path.iter().enumerate() {
         let span = if index == last { outer } else { SPAN };
@@ -1002,7 +994,7 @@ fn conditional<'a>(
         SPAN,
         chain(alloc, SPAN, props, path),
         BinaryOperator::StrictEquality,
-        reference_expr(alloc, SPAN, undefined),
+        identifier(alloc, SPAN, undefined),
         &builder,
     );
     Expression::new_conditional_expression(
@@ -1075,11 +1067,6 @@ fn build_literal<'a>(alloc: &'a Allocator, span: Span, shape: &LitShape) -> Expr
     }
 }
 
-fn reference_expr<'a>(alloc: &'a Allocator, span: Span, name: &'a str) -> Expression<'a> {
-    let builder = AstBuilder::new(alloc);
-    Expression::new_identifier(span, Ident::from(name), &builder)
-}
-
 fn string_expr<'a>(alloc: &'a Allocator, span: Span, value: &str) -> Expression<'a> {
     let builder = AstBuilder::new(alloc);
     Expression::new_string_literal(span, Str::from_str_in(value, &alloc), None, &builder)
@@ -1103,12 +1090,3 @@ fn array_expr<'a>(
     Expression::new_array_expression(span, elements, &builder)
 }
 
-fn dummy_expr<'a>(alloc: &'a Allocator, span: Span) -> Expression<'a> {
-    let builder = AstBuilder::new(alloc);
-    Expression::new_null_literal(span, &builder)
-}
-
-fn take_expr<'a>(alloc: &'a Allocator, it: &mut Expression<'a>) -> Expression<'a> {
-    let span = it.span();
-    std::mem::replace(it, dummy_expr(alloc, span))
-}

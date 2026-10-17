@@ -3,7 +3,6 @@ import { dirname, join } from "node:path";
 
 import { workerEntrySource } from "./adapter";
 import type { BundleChunk } from "./assets";
-import type { AppMode } from "./export-graph";
 import { materializeServerBundle } from "./facts";
 import type { ServerFacts } from "./facts";
 import type { ResolvedSsgOptions } from "./options";
@@ -15,17 +14,13 @@ import { createTempDir, removeTempDir, runWorker } from "./workers";
 
 export type RenderedPage = { status: "render"; html: string } | { status: "redirect"; to: string; replace: boolean };
 
-interface PrerenderOutput {
-  mode: AppMode["kind"];
-  pages: { pathname: string; result: RenderedPage }[];
-}
+type PrerenderedPages = { pathname: string; result: RenderedPage }[];
 
 export interface SsgBuildInput {
   root: string;
   base: string;
   outDir: string;
   publicDir: string;
-  mode: AppMode;
   options: ResolvedSsgOptions;
   htmlChunks: readonly BundleChunk[];
   facts: ServerFacts;
@@ -41,14 +36,11 @@ export async function prerenderSite(input: SsgBuildInput): Promise<void> {
     const entry = materializeServerBundle(input.htmlChunks, tempDir, input.facts);
     const workerFile = join(tempDir, "reze-ssg-worker.mjs");
     writeFileSync(workerFile, workerEntrySource(`./${entry}`));
-    const rendered = await runWorker<PrerenderOutput>(workerFile, { paths, trailingSlash: options.trailingSlash }, options.timeoutMs);
-    if (rendered.mode !== input.mode.kind) {
-      throw new Error(`[reze] SSG entry mode changed between analysis (${input.mode.kind}) and discovery (${rendered.mode})`);
-    }
-    const urls = rendered.pages.map((page) => page.pathname);
+    const pages = await runWorker<PrerenderedPages>(workerFile, { paths, trailingSlash: options.trailingSlash }, options.timeoutMs);
+    const urls = pages.map((page) => page.pathname);
     checkPublicCollisions(input.publicDir, [...planOutputs(urls).keys()]);
     const redirects = new Map<string, string>();
-    for (const page of rendered.pages) {
+    for (const page of pages) {
       if (page.result.status === "redirect") {
         const target = redirectPageTarget(page.result.to, input.base, options);
         if (target !== undefined) redirects.set(page.pathname, target);

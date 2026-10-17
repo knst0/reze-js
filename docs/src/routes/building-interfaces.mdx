@@ -482,7 +482,7 @@ An error thrown while building portal children reaches the nearest `catchError`,
 
 ## Head tags
 
-`Head` renders its children into the document head and leaves nothing inline. Children can only be `<meta>`, `<link>` and `<script>` elements; anything else fails to compile:
+`Head` renders its children into the document head and leaves nothing inline. Children can be `<title>`, `<base>`, `<meta>`, `<link>`, `<script>` and `<style>` elements; anything else fails to compile:
 
 ```tsx
 import { Head, signal } from "reze-js";
@@ -492,6 +492,7 @@ export function Gallery() {
   return (
     <section>
       <Head>
+        <title>{caption}</title>
         <script src="https://cdn.example.test/gallery.js" async />
         <link rel="preconnect" href="https://cdn.example.test" />
         <meta property="og:title" content={caption} />
@@ -504,9 +505,11 @@ export function Gallery() {
 }
 ```
 
-Tags need static identity: `src`, `rel`, `href`, `name` and `property` must be string literals. `meta` needs exactly one of `name` and `property`, `link` needs `rel` and `href`, and a `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta` and `link` take no children, and `script` takes only text. Set the document title with [`route.meta`](/routing#set-page-metadata) instead; `<Head>` cannot carry `<title>`.
+Each tag has a key that names it in the head. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `<link rel="canonical">` by its `rel`, any other `link` by `rel` plus `href`, and `script` by `src`. The attributes that form a key must be string literals, except the `href` of a canonical link. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `title`, `script` and `style` take only text, and the other tags take no children. `<noscript>` is not supported, because a parser moves its children out of the head.
 
-The server renders head tags into the head of SSR and SSG pages, including tags from async components, which arrive with a later patch. Scripts adopt the live tag, so a script shared by two components or with `route.meta` executes once. Links and metas stay live: mounting replaces the previous tag, and disposing removes the tags no live owner claims. Tags from the template stay untouched. Declare each tag once: when `route.meta` and `<Head>` name the same tag, the route version wins.
+A keyed tag replaces the tag with the same key while its component is mounted: the tags of `src/document.tsx` come first, then each shell, layout and route component overrides them, and the deepest one wins. Disposing the component shows the replaced tag again. A script with the same `src` adopts the live tag, so it executes once even when two routes share it. Tags without a key, such as `<style>` or a JSON-LD `<script>`, add to the head and leave with their last owner.
+
+The server applies the same rule to SSR and SSG pages, including tags from async components, which arrive with a later patch. See [page metadata](/routing#set-page-metadata) for routes.
 
 ## Async components
 
@@ -692,6 +695,8 @@ The attribute form moves the component's code into its own chunk when the import
 ### Render islands on the server
 
 In server-rendered and statically generated output, an `eager` island renders its component into the HTML and the browser boots it at once. Every other trigger renders only its fallback, inside the `<span data-island>` shell for `visible` and `interaction`, and never renders the component. The server still calls `load` to learn which module the island boots from, and it sends the trigger and the `islandMedia` and `islandRootMargin` values with the island. The browser arms the trigger and loads the component when it fires.
+
+When an island boots, it does not hydrate the server markup. It renders its component again and replaces the markup inside its range, reusing the data the server already loaded. Slot content stays in place. Form fields the user has edited keep their values, and the focused field keeps its focus and cursor. Other DOM state inside the island, such as scroll positions and references to the server elements, does not carry over.
 
 For `<Counter island="visible" islandFallback={<p>loading counter</p>} />`, the HTML contains the `data-island="visible"` span with the paragraph inside, and no markup from `Counter`. To produce this output, see [Server rendering](/vite-plugin#server-rendering) and [Static site generation](/vite-plugin#static-site-generation).
 

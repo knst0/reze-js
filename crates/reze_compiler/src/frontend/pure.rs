@@ -1,6 +1,7 @@
 use oxc_ast::ast::*;
-use oxc_ast_visit::Visit;
+use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::operator::{AssignmentOperator, LogicalOperator, UnaryOperator};
+use oxc_syntax::scope::ScopeFlags;
 
 use crate::html::{clean_jsx_text, decode_entities};
 
@@ -35,6 +36,61 @@ impl<'a> Visit<'a> for JsxCheck {
     fn visit_jsx_fragment(&mut self, _: &JSXFragment<'a>) {
         self.found = true;
     }
+}
+
+/// Whether the nodes `visit` walks suspend their own function: an `await`
+/// or a `for await` outside nested functions.
+pub fn has_await(visit: impl FnOnce(&mut AwaitCheck)) -> bool {
+    let mut check = AwaitCheck { found: false };
+    visit(&mut check);
+    check.found
+}
+
+pub struct AwaitCheck {
+    found: bool,
+}
+
+impl<'a> Visit<'a> for AwaitCheck {
+    fn visit_await_expression(&mut self, _: &AwaitExpression<'a>) {
+        self.found = true;
+    }
+
+    fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
+        if it.r#await {
+            self.found = true;
+        } else {
+            walk::walk_for_of_statement(self, it);
+        }
+    }
+
+    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
+
+    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
+}
+
+/// The value-level import specifiers with their source: `import type`
+/// declarations and `type`-only named specifiers are left out.
+pub fn value_imports<'b, 'a>(
+    program: &'b Program<'a>,
+) -> impl Iterator<Item = (&'b str, &'b ImportDeclarationSpecifier<'a>)> {
+    program
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::ImportDeclaration(import) if !import.import_kind.is_type() => Some(import),
+            _ => None,
+        })
+        .flat_map(|import| {
+            let source = import.source.value.as_str();
+            import
+                .specifiers
+                .iter()
+                .flatten()
+                .filter(|specifier| {
+                    !matches!(specifier, ImportDeclarationSpecifier::ImportSpecifier(named) if named.import_kind.is_type())
+                })
+                .map(move |specifier| (source, specifier))
+        })
 }
 
 /// Whitespace-only text and empty `{}` render nothing.

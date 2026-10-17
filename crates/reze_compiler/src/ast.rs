@@ -1,11 +1,43 @@
 use oxc_allocator::{Allocator, ArenaVec};
 use oxc_ast::{ast::*, builder::AstBuilder};
-use oxc_span::SPAN;
+use oxc_span::{GetSpan, SPAN, Span};
 use oxc_str::{Ident, Str};
 use oxc_syntax::{
     number::NumberBase,
     operator::{AssignmentOperator, BinaryOperator, UnaryOperator},
 };
+
+pub fn identifier<'a>(allocator: &'a Allocator, span: Span, name: &'a str) -> Expression<'a> {
+    Expression::new_identifier(span, Ident::from(name), &AstBuilder::new(allocator))
+}
+
+pub fn placeholder<'a>(allocator: &'a Allocator, span: Span) -> Expression<'a> {
+    Expression::new_null_literal(span, &AstBuilder::new(allocator))
+}
+
+pub fn take_expression<'a>(allocator: &'a Allocator, it: &mut Expression<'a>) -> Expression<'a> {
+    let span = it.span();
+    std::mem::replace(it, placeholder(allocator, span))
+}
+
+pub fn binding_parameter<'a>(
+    builder: &AstBuilder<'a>,
+    span: Span,
+    name: &'a str,
+) -> FormalParameter<'a> {
+    FormalParameter::new(
+        span,
+        ArenaVec::new_in(builder),
+        BindingPattern::new_binding_identifier(span, Ident::from(name), builder),
+        None,
+        None,
+        false,
+        None,
+        false,
+        false,
+        builder,
+    )
+}
 
 pub struct Ast<'a> {
     pub builder: AstBuilder<'a>,
@@ -181,22 +213,7 @@ impl<'a> Ast<'a> {
         names: impl IntoIterator<Item = &'a str>,
         kind: FormalParameterKind,
     ) -> oxc_allocator::ArenaBox<'a, FormalParameters<'a>> {
-        let params = names.into_iter().map(|name| {
-            let pattern =
-                BindingPattern::new_binding_identifier(SPAN, Ident::from(name), &self.builder);
-            FormalParameter::new(
-                SPAN,
-                ArenaVec::new_in(&self.builder),
-                pattern,
-                None,
-                None,
-                false,
-                None,
-                false,
-                false,
-                &self.builder,
-            )
-        });
+        let params = names.into_iter().map(|name| binding_parameter(&self.builder, SPAN, name));
         FormalParameters::boxed(
             SPAN,
             kind,

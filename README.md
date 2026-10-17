@@ -24,7 +24,6 @@ The documentation site lives in [`docs/`](docs). Start with
 | Package                                               | Purpose                                                           |
 | ----------------------------------------------------- | ----------------------------------------------------------------- |
 | [`reze-js`](packages/reze-js)                         | Compiler syntax declarations and `render` for applications        |
-| [`@rezejs/query`](packages/query)                     | Isolated query cache for route data                               |
 | [`@rezejs/router`](packages/router)                   | Typed client router                                               |
 | [`@rezejs/compiler`](packages/compiler)               | Native compiler bindings (`compile`, `analyze`)                   |
 | [`@rezejs/testing-library`](packages/testing-library) | Test helpers for compiled components                              |

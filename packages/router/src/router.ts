@@ -1,5 +1,4 @@
 import { createComponent, type JSX } from "@rezejs/dom";
-import { releaseHeadOwner } from "@rezejs/dom/internal/client";
 import { getOwner, onCleanup, provideContext, untrack } from "@rezejs/signals";
 import { computed } from "reze-js";
 
@@ -16,11 +15,11 @@ import {
   start,
   type RouterState,
 } from "./navigation";
-import type { OutputMatch, PageHeadDefaults, PathsTree, RouteDefinition, RouterContext } from "./types";
+import type { OutputMatch, PathsTree, RouteDefinition, RouterContext } from "./types";
 
 export interface RouterConfig<C = RouterContext> {
   routes: readonly RouteDefinition<C>[];
-  /** Values made available to route `preload`, `meta`, and `redirect` callbacks. */
+  /** Values made available to route `preload` and `redirect` callbacks. */
   context?: C;
   /** Prebuilt href builders (`paths` from `virtual:reze-routes`, or `buildPaths` for hand-written tables); the factory never builds them, so apps that skip it skip the code. */
   paths?: PathsTree;
@@ -30,11 +29,6 @@ export interface RouterConfig<C = RouterContext> {
   links?: boolean;
   /** Default `true`: load and preload a link's route on hover, focus or touch. Needs `links`. */
   preload?: boolean;
-  /**
-   * Template head metadata the merged page metadata restores absent fields to; without it the router captures the live
-   * document on first apply.
-   */
-  headDefaults?: PageHeadDefaults;
 }
 
 export interface RouterInstance<C = RouterContext> {
@@ -129,7 +123,6 @@ export function createRouter(config: RouterConfig<any>): RouterInstance<any> {
       branches,
       env: "browser",
       context: config.context,
-      headBaseline: config.headDefaults,
     });
     const root = props.root;
     return provideContext(RouterStateContext, state, () => {
@@ -163,7 +156,6 @@ function installRouterListeners(state: RouterState, isLinking: boolean, isPreloa
   onCleanup(() => {
     state.generation++;
     unlisten();
-    releaseHeadOwner(state.headOwner);
     removeEventListener("beforeunload", state.onUnload);
     if (scrollRestoration === undefined) return;
     removeEventListener("pagehide", onPageHide);

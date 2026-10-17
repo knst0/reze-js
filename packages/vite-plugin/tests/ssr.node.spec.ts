@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,6 +27,7 @@ let streamingOrigin: SsrOrigin;
 let islandsOrigin: SsrOrigin;
 let routerOrigin: SsrOrigin;
 let devOrigin: SsrOrigin;
+let devRouterOrigin: SsrOrigin;
 
 function fixture(name: string): string {
   return join(FIXTURES, name);
@@ -53,7 +54,10 @@ beforeAll(async () => {
   islandsOrigin = await serveSsrApp(() => islands);
   routerOrigin = await serveSsrApp(() => routerActive);
   devOrigin = await startDevServer(fixture("streaming"));
-  origins.push(streamingOrigin, islandsOrigin, routerOrigin, devOrigin);
+  devRouterOrigin = await startDevServer(fixture("router"), [defineGlobals({ __RZ_TEST_VERSION__: "dev" })], {
+    devContext: (request) => ({ tenant: request.headers.get("x-tenant") ?? undefined }),
+  });
+  origins.push(streamingOrigin, islandsOrigin, routerOrigin, devOrigin, devRouterOrigin);
   for (const engine of ENGINES) browsers.set(engine, await launchEngine(engine));
 }, 900_000);
 
@@ -70,20 +74,14 @@ function islandDescriptors(html: string): Array<Record<string, unknown>> {
 }
 
 test(
-  "server renders are isolated per request: router context and concurrent module-level signals",
+  "server renders are isolated per request: beforeLoad context and concurrent module-level signals",
   async () => {
     const [first, second] = await Promise.all([
-      routerA
-        .handler(new Request("http://127.0.0.1/context", { headers: { "x-query-scope": "request-one" } }))
-        .then((response) => response.text()),
-      routerA
-        .handler(new Request("http://127.0.0.1/context", { headers: { "x-query-scope": "request-two" } }))
-        .then((response) => response.text()),
+      routerA.handler(new Request("http://127.0.0.1/context?scope=request-one")).then((response) => response.text()),
+      routerA.handler(new Request("http://127.0.0.1/context?scope=request-two")).then((response) => response.text()),
     ]);
-    expect(first).toContain("request-one");
-    expect(second).toContain("request-two");
-    expect(first).not.toContain("request-two");
-    expect(second).not.toContain("request-one");
+    expect(first).toMatch(/id="?request-scope"?>none:request-one</);
+    expect(second).toMatch(/id="?request-scope"?>none:request-two</);
 
     const [slow, fast] = await Promise.all([
       moduleState.handler(new Request("http://127.0.0.1/?d=200")).then((response) => response.text()),
@@ -91,6 +89,17 @@ test(
     ]);
     expect(slow).toMatch(/<p id="?hits"?>1<\/p>/);
     expect(fast).toMatch(/<p id="?hits"?>1<\/p>/);
+  },
+  TIMEOUT,
+);
+
+test(
+  "the handler's context is the base that layout beforeLoad extends, and devContext supplies it in dev",
+  async () => {
+    const built = await routerA.handler(new Request("http://127.0.0.1/context?scope=built"), { context: { tenant: "acme" } });
+    expect(await built.text()).toMatch(/id="?request-scope"?>acme:built</);
+    const dev = await fetch(`${devRouterOrigin.origin}/context?scope=dev`, { headers: { accept: "text/html", "x-tenant": "globex" } });
+    expect(await dev.text()).toMatch(/id="?request-scope"?>globex:dev</);
   },
   TIMEOUT,
 );
@@ -105,7 +114,7 @@ test(
     expect(first).toMatch(/loading slow[\s\S]*<\/div>/);
     expect(first).not.toContain("data-rz-patch");
     expect(chunks.some((chunk) => chunk.includes("<template data-rz-patch=") && chunk.includes("done"))).toBe(true);
-    expect(first).not.toContain("data-rz-head");
+    expect(first).not.toContain("content=settled");
     expect(
       chunks.some(
         (chunk) => chunk.includes('<template data-rz-head data-rz-head-key="meta:name:slow">') && chunk.includes("content=settled"),
@@ -114,6 +123,23 @@ test(
     const endIndex = chunks.findIndex((chunk) => chunk.includes("data-rz-end"));
     expect(endIndex).toBeGreaterThan(0);
     expect(chunks.slice(endIndex).join("")).toMatch(/<\/body>\s*<\/html>\s*$/);
+  },
+  TIMEOUT,
+);
+
+test(
+  "a render that fails before the first byte answers 500 inside the document",
+  async () => {
+    const response = await routerA.handler(new Request("http://127.0.0.1/broken"));
+    expect(response.status).toBe(500);
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const html = await response.text();
+    expect(html).toMatch(/^<!doctype html>/i);
+    expect(html).toMatch(/<title data-rz-head="">Router<\/title>/);
+    expect(html).toContain("navigator.serviceWorker?.register");
+    expect(html).toMatch(/<div id="?app"?>Internal Server Error<\/div>/);
+    expect(html).not.toContain('type="module"');
+    expect(html).not.toContain("broken preload");
   },
   TIMEOUT,
 );
@@ -244,6 +270,43 @@ for (const engine of ENGINES) {
       } finally {
         await page.context().setOffline(false);
         await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: a failing dev render keeps the document and shows the error overlay`,
+    async () => {
+      const response = await fetch(`${devRouterOrigin.origin}/broken`, { headers: { accept: "text/html" } });
+      expect(response.status).toBe(500);
+      expect(await response.text()).toMatch(/<title data-rz-head="">Router<\/title>/);
+      const { page, close } = await openPage(browsers.get(engine)!, `${devRouterOrigin.origin}/broken`);
+      try {
+        await waitFor(page, "document.querySelector('vite-error-overlay')?.shadowRoot?.textContent.includes('broken preload') === true");
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test.skipIf(engine !== "chromium")(
+    `${engine}: editing the document in dev reloads the page with the new shell`,
+    async () => {
+      const root = join(OUT, "dev-document");
+      cpSync(fixture("streaming"), root, { recursive: true });
+      symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "dir");
+      const origin = await startDevServer(root);
+      const { page, close } = await openPage(browsers.get(engine)!, `${origin.origin}/`);
+      try {
+        await waitFor(page, "document.title === 'Streaming'");
+        const file = join(root, "src", "document.tsx");
+        writeFileSync(file, readFileSync(file, "utf8").replace("<title>Streaming</title>", "<title>Edited</title>"));
+        await waitFor(page, "document.title === 'Edited' && document.querySelector('#slow')?.textContent === 'done'");
+      } finally {
+        await close();
+        await origin.close();
       }
     },
     TIMEOUT,

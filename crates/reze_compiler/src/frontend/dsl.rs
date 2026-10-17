@@ -17,6 +17,7 @@ use oxc_ast_visit::{VisitMut, walk_mut};
 use super::Namer;
 use super::imports::{ImportResult, Syntax, SyntaxImports};
 use super::pure::is_component_name;
+use crate::ast::{binding_parameter, identifier, placeholder, take_expression};
 use crate::diagnostic::{Code, Edit, Report};
 use crate::module_facts::ImportedGetters;
 
@@ -1186,21 +1187,6 @@ fn init_call_mut<'e, 'a>(init: &'e mut Expression<'a>) -> Option<&'e mut CallExp
         }
     }
 }
-fn dummy<'a>(alloc: &'a Allocator, span: Span) -> Expression<'a> {
-    let builder = AstBuilder::new(alloc);
-    Expression::new_null_literal(span, &builder)
-}
-
-fn take<'a>(alloc: &'a Allocator, it: &mut Expression<'a>) -> Expression<'a> {
-    let span = it.span();
-    std::mem::replace(it, dummy(alloc, span))
-}
-
-fn ident_expr<'a>(alloc: &'a Allocator, span: Span, name: &'a str) -> Expression<'a> {
-    let builder = AstBuilder::new(alloc);
-    Expression::new_identifier(span, name, &builder)
-}
-
 fn call_expr<'a>(
     alloc: &'a Allocator,
     span: Span,
@@ -1212,7 +1198,7 @@ fn call_expr<'a>(
 }
 
 fn getter_call<'a>(alloc: &'a Allocator, span: Span, name: &'a str) -> Expression<'a> {
-    call_expr(alloc, span, ident_expr(alloc, span, name), ArenaVec::new_in(&alloc))
+    call_expr(alloc, span, identifier(alloc, span, name), ArenaVec::new_in(&alloc))
 }
 
 fn member_expr<'a>(
@@ -1264,22 +1250,6 @@ fn arrow_expr<'a>(
 
 pub(super) fn is_await_arrow(arrow: &ArrowFunctionExpression<'_>) -> bool {
     arrow.r#async && arrow.span.is_empty()
-}
-
-fn run_param<'a>(alloc: &'a Allocator, span: Span, run: &'a str) -> FormalParameter<'a> {
-    let builder = AstBuilder::new(alloc);
-    FormalParameter::new(
-        span,
-        ArenaVec::new_in(&alloc),
-        BindingPattern::new_binding_identifier(span, run, &builder),
-        None,
-        None,
-        false,
-        None,
-        false,
-        false,
-        &builder,
-    )
 }
 
 fn expr_statement<'a>(
@@ -1427,7 +1397,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
     fn rename_callee(&mut self, call: &mut CallExpression<'a>) -> bool {
         let Some(runtime) = self.runtime_local(&call.callee) else { return false };
         let span = call.callee.without_parentheses().span();
-        call.callee = ident_expr(self.alloc, span, runtime);
+        call.callee = identifier(self.alloc, span, runtime);
         self.changed = true;
         true
     }
@@ -1601,28 +1571,16 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
             Logical(LogicalOperator),
             Compound(BinaryOperator),
         }
-        let shape = match operator {
-            AssignmentOperator::Assign => Shape::Set,
-            AssignmentOperator::LogicalOr => Shape::Logical(LogicalOperator::Or),
-            AssignmentOperator::LogicalAnd => Shape::Logical(LogicalOperator::And),
-            AssignmentOperator::LogicalNullish => Shape::Logical(LogicalOperator::Coalesce),
-            _ => match operator.as_str() {
-                "+=" => Shape::Compound(BinaryOperator::Addition),
-                "-=" => Shape::Compound(BinaryOperator::Subtraction),
-                "*=" => Shape::Compound(BinaryOperator::Multiplication),
-                "/=" => Shape::Compound(BinaryOperator::Division),
-                "%=" => Shape::Compound(BinaryOperator::Remainder),
-                "**=" => Shape::Compound(BinaryOperator::Exponential),
-                "<<=" => Shape::Compound(BinaryOperator::ShiftLeft),
-                ">>=" => Shape::Compound(BinaryOperator::ShiftRight),
-                ">>>=" => Shape::Compound(BinaryOperator::ShiftRightZeroFill),
-                "|=" => Shape::Compound(BinaryOperator::BitwiseOR),
-                "^=" => Shape::Compound(BinaryOperator::BitwiseXOR),
-                "&=" => Shape::Compound(BinaryOperator::BitwiseAnd),
-                _ => return false,
-            },
+        let shape = if operator == AssignmentOperator::Assign {
+            Shape::Set
+        } else if let Some(logical) = operator.to_logical_operator() {
+            Shape::Logical(logical)
+        } else if let Some(binary) = operator.to_binary_operator() {
+            Shape::Compound(binary)
+        } else {
+            return false;
         };
-        let taken = take(self.alloc, it);
+        let taken = take_expression(self.alloc, it);
         let Expression::AssignmentExpression(boxed) = taken else {
             *it = taken;
             return false;
@@ -1641,7 +1599,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
                 };
                 let mut args = ArenaVec::new_in(&builder);
                 args.push(Argument::from(value));
-                call_expr(self.alloc, span, ident_expr(self.alloc, SPAN, setter_text), args)
+                call_expr(self.alloc, span, identifier(self.alloc, SPAN, setter_text), args)
             }
             Shape::Logical(op) => {
                 let value = if !is_never_function(&right) && !suspends(&right) {
@@ -1652,7 +1610,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
                 let mut args = ArenaVec::new_in(&builder);
                 args.push(Argument::from(value));
                 let set =
-                    call_expr(self.alloc, SPAN, ident_expr(self.alloc, SPAN, setter_text), args);
+                    call_expr(self.alloc, SPAN, identifier(self.alloc, SPAN, setter_text), args);
                 Expression::new_logical_expression(
                     span,
                     getter_call(self.alloc, SPAN, getter_name),
@@ -1676,7 +1634,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
                     right,
                     &builder,
                 )));
-                call_expr(self.alloc, span, ident_expr(self.alloc, SPAN, setter_text), args)
+                call_expr(self.alloc, span, identifier(self.alloc, SPAN, setter_text), args)
             }
         };
         *it = rebuilt;
@@ -1702,7 +1660,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         let Some(setter) = plan.setter.clone() else { return false };
         let span = update.span;
         let operator = update.operator;
-        take(self.alloc, it);
+        take_expression(self.alloc, it);
         let builder = AstBuilder::new(self.alloc);
         let setter_text: &'a str = self.alloc.alloc_str(&setter);
         let getter_name: &'a str = self.alloc.alloc_str(self.scoping.symbol_name(symbol));
@@ -1720,7 +1678,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
             one,
             &builder,
         )));
-        *it = call_expr(self.alloc, span, ident_expr(self.alloc, SPAN, setter_text), args);
+        *it = call_expr(self.alloc, span, identifier(self.alloc, SPAN, setter_text), args);
         self.changed = true;
         walk_mut::walk_expression(self, it);
         true
@@ -1733,7 +1691,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         }
         let runtime = self.runtime_local(&call.callee);
         if let Some(runtime) = runtime {
-            call.callee = ident_expr(self.alloc, callee_span, runtime);
+            call.callee = identifier(self.alloc, callee_span, runtime);
             self.changed = true;
         }
         let taken = std::mem::replace(&mut call.arguments, ArenaVec::new_in(&self.alloc));
@@ -1784,7 +1742,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         let run_text: &'a str = self.alloc.alloc_str(&self.pre.run);
         let items = std::mem::replace(&mut arrow.params.items, ArenaVec::new_in(&self.alloc));
         let mut params = ArenaVec::new_in(&self.alloc);
-        params.push(run_param(self.alloc, SPAN, run_text));
+        params.push(binding_parameter(&AstBuilder::new(self.alloc), SPAN, run_text));
         for item in items {
             params.push(item);
         }
@@ -1807,7 +1765,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
                     )),
                 );
                 let expression =
-                    Expression::try_from(taken).unwrap_or_else(|_| dummy(self.alloc, params_span));
+                    Expression::try_from(taken).unwrap_or_else(|_| placeholder(self.alloc, params_span));
                 let span = expression.span();
                 let mut statements = ArenaVec::new_in(&builder);
                 statements.push(Statement::new_return_statement(span, Some(expression), &builder));
@@ -1842,7 +1800,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         let run_text: &'a str = self.alloc.alloc_str(&self.pre.run);
         let items = std::mem::replace(&mut function.params.items, ArenaVec::new_in(&self.alloc));
         let mut params = ArenaVec::new_in(&self.alloc);
-        params.push(run_param(self.alloc, SPAN, run_text));
+        params.push(binding_parameter(&AstBuilder::new(self.alloc), SPAN, run_text));
         for item in items {
             params.push(item);
         }
@@ -1875,7 +1833,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         let end_call = call_expr(
             self.alloc,
             span,
-            member_expr(self.alloc, span, ident_expr(self.alloc, SPAN, run), "end", SPAN),
+            member_expr(self.alloc, span, identifier(self.alloc, SPAN, run), "end", SPAN),
             ArenaVec::new_in(&builder),
         );
         let finalizer = BlockStatement::boxed(
@@ -1902,7 +1860,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
             call_expr(
                 self.alloc,
                 span,
-                member_expr(self.alloc, span, ident_expr(self.alloc, SPAN, run), "resume", SPAN),
+                member_expr(self.alloc, span, identifier(self.alloc, SPAN, run), "resume", SPAN),
                 ArenaVec::new_in(&self.alloc),
             ),
         );
@@ -1921,7 +1879,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
             return false;
         }
         let Expression::AwaitExpression(_) = it else { return false };
-        let taken = take(self.alloc, it);
+        let taken = take_expression(self.alloc, it);
         let Expression::AwaitExpression(boxed) = taken else {
             *it = taken;
             return false;
@@ -1937,7 +1895,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         let suspended = call_expr(
             self.alloc,
             arg_span,
-            member_expr(self.alloc, arg_span, ident_expr(self.alloc, SPAN, run), "suspend", SPAN),
+            member_expr(self.alloc, arg_span, identifier(self.alloc, SPAN, run), "suspend", SPAN),
             suspend_args,
         );
         let awaited = Expression::new_await_expression(await_span, suspended, &builder);
@@ -1946,7 +1904,7 @@ impl<'x, 'p, 's, 'a> Normalizer<'x, 'p, 's, 'a> {
         *it = call_expr(
             self.alloc,
             await_span,
-            member_expr(self.alloc, await_span, ident_expr(self.alloc, SPAN, run), "resume", SPAN),
+            member_expr(self.alloc, await_span, identifier(self.alloc, SPAN, run), "resume", SPAN),
             resume_args,
         );
         self.changed = true;

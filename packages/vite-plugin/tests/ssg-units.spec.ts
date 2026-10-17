@@ -7,8 +7,7 @@ import type { DefaultTreeAdapterMap } from "parse5";
 import { afterEach, beforeEach, expect, test } from "vite-plus/test";
 
 import { buildClientRegistry } from "../src/server/assets";
-import { resolveAppMode } from "../src/server/export-graph";
-import { resolvePathsCallbacks, resolveSsgOptions } from "../src/server/options";
+import { resolvePathsCallbacks, resolveSsgOptions, resolveSsrOptions } from "../src/server/options";
 import {
   bootstrapScriptSrc,
   buildRedirectPage,
@@ -41,13 +40,15 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("ssg options reject a missing entry, a loose selector and a dead timeout", () => {
-  expect(() => resolveSsgOptions({ entry: "" })).toThrow(/ssg\.entry/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", selector: ".app" as `#${string}` })).toThrow(/selector/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", selector: "#a b" as `#${string}` })).toThrow(/selector/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: 0 })).toThrow(/timeoutMs/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: Number.NaN })).toThrow(/timeoutMs/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", trailingSlash: "sometimes" as "always" })).toThrow(/trailingSlash/);
+test("server options take true for the defaults and reject a leftover entry and a dead timeout", () => {
+  expect(resolveSsgOptions(true)).toEqual(resolveSsgOptions({}));
+  expect(resolveSsrOptions(true)).toEqual({ document: "src/document.tsx", timeoutMs: 30_000, outDir: "dist/server" });
+  expect(() => resolveSsgOptions({ entry: "src/app.tsx" } as never)).toThrow(/ssg\.entry is gone.*document/);
+  expect(() => resolveSsrOptions({ entry: "src/app.tsx" } as never)).toThrow(/ssr\.entry is gone/);
+  expect(() => resolveSsrOptions({ devContext: "src/context.ts" } as never)).toThrow(/ssr\.devContext must be a function/);
+  expect(() => resolveSsgOptions({ timeoutMs: 0 })).toThrow(/timeoutMs/);
+  expect(() => resolveSsgOptions({ timeoutMs: Number.NaN })).toThrow(/timeoutMs/);
+  expect(() => resolveSsgOptions({ trailingSlash: "sometimes" as "always" })).toThrow(/trailingSlash/);
 });
 
 test("paths callbacks resolve once and validate every param shape", async () => {
@@ -75,7 +76,11 @@ test("template preparation keeps nested roots out of the shell and reads head de
   validateTemplate(templateHtml, "index.html", "app", "./assets/boot.js");
   expect(countRootIds(templateHtml, "app")).toBe(1);
   const { parts, headDefaults } = prepareTemplate(templateHtml, "app");
-  expect(headDefaults).toEqual({ title: "Base & title", description: "base & description" });
+  expect(headDefaults).toEqual([
+    { key: "title", html: '<title data-rz-head="">Base &amp; title</title>' },
+    { key: "meta:name:description", html: '<meta name="description" content="base &amp; description" data-rz-head="">' },
+  ]);
+  expect(parts.beforeHeadEnd).not.toContain("<title");
   const nodes = elements(parse(parts.beforeHeadEnd + parts.headEndToRoot + parts.rootEndToBodyEnd + parts.bodyEndToEnd));
   expect(text(nodes.find((node) => attribute(node, "id") === "app")!)).toBe("");
   expect(text(nodes.find((node) => attribute(node, "id") === "after")!)).toBe("kept");
@@ -116,34 +121,6 @@ test("redirect pages drop the bootstrap and carry an accessible target", () => {
     ),
   ).toBe(`0;url=${to}`);
   expect(JSON.parse(text(nodes.find((node) => attribute(node, "data-reze-redirect") !== undefined)!))).toEqual({ to, replace: true });
-});
-
-test("the export graph tells router apps from standalone ones, follows export stars and rejects ambiguities", () => {
-  const files = new Map([
-    ["/r/app.tsx", `export { routes } from "./routes";\nexport { default } from "./shell";\n`],
-    ["/r/routes.ts", `export const routes = [];\n`],
-    ["/r/shell.tsx", `export default function Shell() {}\n`],
-    ["/s/app.tsx", `export default function App() {}\n`],
-    ["/e/entry.ts", `export * from "./a";\nexport * from "./b";\n`],
-    ["/e/a.ts", `export const routes = [];\n`],
-    ["/e/b.ts", `export const routes = [];\n`],
-    ["/f/entry.ts", `export * from "./a";\nexport const routes = [];\n`],
-  ]);
-  const specifiers: Record<string, string> = {
-    "./routes": "/r/routes.ts",
-    "./shell": "/r/shell.tsx",
-    "./a": "/e/a.ts",
-    "./b": "/e/b.ts",
-  };
-  const env = {
-    readFile: (id: string) => files.get(id),
-    resolveSpec: (spec: string) => specifiers[spec],
-    virtualExports: (_id: string) => undefined as readonly string[] | undefined,
-  };
-  expect(resolveAppMode("/r/app.tsx", env)).toEqual({ kind: "router", hasShell: true });
-  expect(resolveAppMode("/s/app.tsx", env)).toEqual({ kind: "standalone" });
-  expect(() => resolveAppMode("/e/entry.ts", env)).toThrow(/ambiguous/);
-  expect(resolveAppMode("/f/entry.ts", env)).toEqual({ kind: "router", hasShell: false });
 });
 
 test("page urls reject traversal, encoded slashes and reserved segments", () => {

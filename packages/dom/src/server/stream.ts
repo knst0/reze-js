@@ -1,3 +1,4 @@
+import { isHeadScriptKey } from "../head";
 import { hMount } from "../html/helpers";
 import { serializeNodes, serializeRangeContent, type HtmlSerializeContext } from "../html/serialize";
 import type { HtmlSession } from "../html/session";
@@ -11,12 +12,18 @@ export interface TemplateParts {
   readonly bodyEndToEnd: string;
 }
 
+/** A keyed tag of the document head, emitted unless a `<Head>` tag of the same key shadows it. */
+export interface HeadDefault {
+  readonly key: string;
+  readonly html: string;
+}
+
 export interface RenderStreamOptions {
   readonly build: () => unknown;
   readonly session: HtmlSession;
   readonly template: TemplateParts;
   readonly head: string;
-  readonly headKeys?: readonly string[];
+  readonly headDefaults: readonly HeadDefault[];
   readonly clientModules: ClientModules;
   readonly mode: "stream" | "buffered";
   readonly signal?: AbortSignal;
@@ -43,12 +50,14 @@ class Writer {
   private readonly styles = new Set<string>();
   private readonly preloads = new Set<string>();
   private readonly context: HtmlSerializeContext;
+  private readonly sentHead = new Map<string, string>();
   private portalCount = 0;
 
   constructor(
     private readonly session: HtmlSession,
     private readonly modules: ClientModules,
     template: TemplateParts,
+    private readonly headDefaults: readonly HeadDefault[],
   ) {
     this.context = { tokenOf: (range) => session.tokenOf(range) };
     for (const [, tag] of template.beforeHeadEnd.matchAll(LinkTag)) {
@@ -96,36 +105,38 @@ class Writer {
     return this.session.portals.length === this.portalCount ? "" : `<template data-rz-patch="p">${this.portals()}</template>\n`;
   }
 
-  shellHead(): string {
-    let out = "";
+  private wantedHead(): Map<string, string> {
+    const wanted = new Map<string, string>();
+    for (const entry of this.headDefaults) wanted.set(entry.key, entry.html);
     for (const tag of this.session.headTags) {
       if (tag.instance.retired) continue;
-      tag.html = serializeNodes([tag.node], this.context);
-      tag.emitted = true;
-      out += tag.html;
+      const sent = isHeadScriptKey(tag.id) ? this.sentHead.get(tag.id) : undefined;
+      wanted.set(tag.id, sent ?? serializeNodes([tag.node], this.context));
+    }
+    return wanted;
+  }
+
+  shellHead(): string {
+    let out = "";
+    for (const [id, html] of this.wantedHead()) {
+      this.sentHead.set(id, html);
+      out += html;
     }
     return out;
   }
 
   lateHead(): string {
+    const wanted = this.wantedHead();
     let out = "";
-    for (const tag of this.session.headTags) {
-      if (tag.instance.retired) {
-        if (tag.emitted) {
-          out += `<template data-rz-head data-rz-head-key="${escapeAttribute(tag.id)}"></template>\n`;
-          tag.emitted = false;
-        }
-        continue;
-      }
-      const html = serializeNodes([tag.node], this.context);
-      if (!tag.emitted) {
-        tag.emitted = true;
-        tag.html = html;
-        out += `<template data-rz-head data-rz-head-key="${escapeAttribute(tag.id)}">${html}</template>\n`;
-      } else if (!tag.script && html !== tag.html) {
-        tag.html = html;
-        out += `<template data-rz-head data-rz-head-key="${escapeAttribute(tag.id)}">${html}</template>\n`;
-      }
+    for (const [id, html] of wanted) {
+      if (this.sentHead.get(id) === html) continue;
+      this.sentHead.set(id, html);
+      out += `<template data-rz-head data-rz-head-key="${escapeAttribute(id)}">${html}</template>\n`;
+    }
+    for (const id of this.sentHead.keys()) {
+      if (wanted.has(id)) continue;
+      this.sentHead.delete(id);
+      out += `<template data-rz-head data-rz-head-key="${escapeAttribute(id)}"></template>\n`;
     }
     return out;
   }
@@ -187,7 +198,7 @@ class Writer {
 export async function renderStream(options: RenderStreamOptions): Promise<ReadableStream<Uint8Array>> {
   const { session, template, mode } = options;
   const encoder = new TextEncoder();
-  const writer = new Writer(session, options.clientModules, template);
+  const writer = new Writer(session, options.clientModules, template, options.headDefaults);
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   let closed = false;
   const close = (): void => {
@@ -215,7 +226,6 @@ export async function renderStream(options: RenderStreamOptions): Promise<Readab
   options.signal?.addEventListener("abort", close, { once: true });
 
   try {
-    for (const key of options.headKeys ?? []) session.headKeys.add(key);
     session.run(() => hMount(options.build));
     for (;;) {
       session.flush();

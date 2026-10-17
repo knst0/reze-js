@@ -3,6 +3,7 @@
 mod ast;
 mod codegen;
 mod diagnostic;
+mod document;
 mod exports;
 mod frontend;
 mod html;
@@ -24,6 +25,7 @@ pub use diagnostic::{
     render_skill,
 };
 
+pub use document::{Document, compile_document};
 pub use inspect::{BindingKind, Inspection, inspect};
 pub use module_facts::{ExportFacts, FactKind, ModuleFacts, Reads, Written};
 

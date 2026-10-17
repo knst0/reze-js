@@ -51,6 +51,17 @@ fn literal_and_dynamic_identities_are_accepted() {
 }
 
 #[test]
+fn every_head_element_compiles_with_its_standard_key() {
+    let source = "import { Head, signal } from \"reze-js\";\n\nlet page = signal(\"a\");\n\nexport const view = <Head><title>{page} | Site</title><base href=\"/app/\" /><meta http-equiv=\"content-security-policy\" content=\"default-src 'self'\" /><link rel=\"canonical\" href={`/p/${page}`} /><style>{\"body{margin:0}\"}</style></Head>;\n";
+    for target in [CompileTarget::Client, CompileTarget::Html] {
+        let code = code_for(source, target);
+        for key in ["\"title\"", "\"base\"", "\"meta:http-equiv:content-security-policy\"", "\"link:canonical\""] {
+            assert!(code.contains(key), "{key}: {code}");
+        }
+    }
+}
+
+#[test]
 fn head_children_that_are_misused_are_refused() {
     let options = without_source_map();
     let found =
@@ -71,6 +82,8 @@ fn head_children_that_are_misused_are_refused() {
 
     for child in [
         "<div />",
+        "<template />",
+        "<noscript />",
         "<Widget />",
         "<Show when={open()}><meta name=\"a\" content=\"b\" /></Show>",
         "<Head><meta name=\"a\" content=\"b\" /></Head>",
@@ -83,9 +96,9 @@ fn head_children_that_are_misused_are_refused() {
         let found = errors(&source, &options);
         assert!(has(&found, Code::ControlFlowChildren), "{child}: {found:?}");
     }
-    let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/a.js\"><b>bold</b></script><meta name=\"a\" content=\"b\">text</meta></Head>;\n";
+    let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/a.js\"><b>bold</b></script><meta name=\"a\" content=\"b\">text</meta><title><b>bold</b></title><style><i /></style></Head>;\n";
     let found = details(&errors(source, &options));
-    assert_eq!(found.len(), 2, "{found:?}");
+    assert_eq!(found.len(), 4, "{found:?}");
 }
 
 #[test]
@@ -106,6 +119,8 @@ fn head_spreads_handlers_islands_identities_and_inline_scripts_are_refused() {
     for (tag, count) in [
         ("<meta content=\"x\" />", 1),
         ("<meta name=\"a\" property=\"b\" content=\"x\" />", 1),
+        ("<meta charset=\"utf-8\" />", 1),
+        ("<link rel={rel} href=\"/cdn\" />", 1),
         ("<link rel=\"preconnect\" />", 1),
         ("<link href=\"/cdn\" />", 1),
     ] {
