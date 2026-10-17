@@ -1,4 +1,7 @@
-import { ClientId } from "./adapter";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { ClientId, documentWorkerSource } from "./adapter";
 import type { BundleChunk, BundleOutput, ClientAssetInputs } from "./assets";
 import { buildClientRegistry } from "./assets";
 import { clientBuildId, createServerFacts, writeAssetManifest } from "./facts";
@@ -7,6 +10,7 @@ import type { ResolvedSsrOptions } from "./options";
 import { prerenderSite } from "./ssg";
 import { writeServerBundle } from "./ssr";
 import { bootstrapScriptSrc, countRootIds, prepareTemplate } from "./template";
+import { createTempDir, materializeBundle, removeTempDir, runWorker } from "./workers";
 
 export interface CapturedState {
   outputs: BundleOutput[];
@@ -66,5 +70,22 @@ export async function runServerBuild(input: ServerBuildInput): Promise<void> {
       template: prepared.parts,
       redirectFile: captured.redirectFile,
     });
+  }
+}
+
+export async function renderBuiltDocument(
+  root: string,
+  htmlChunks: readonly BundleChunk[],
+  viewFile: string,
+  timeoutMs: number,
+): Promise<string> {
+  const tempDir = createTempDir(root);
+  try {
+    materializeBundle(htmlChunks, tempDir);
+    const workerFile = join(tempDir, "reze-document-worker.mjs");
+    writeFileSync(workerFile, documentWorkerSource(`./${viewFile}`));
+    return await runWorker<string>(workerFile, undefined, timeoutMs);
+  } finally {
+    removeTempDir(tempDir);
   }
 }

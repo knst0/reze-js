@@ -235,7 +235,34 @@ export default function Document(props: { children: JSX.Element }) {
 }
 ```
 
-The compiler turns the document into HTML once, at build time and when the dev server starts, so every value in it must be static: literals and template literals without substitutions. A call, a variable, or a component in the document fails with `DOCUMENT_DYNAMIC`. The element that holds `children` is the mount root. Its `id` names the root, and the compiler gives it `id="app"` when it has none. The plugin adds the client script itself, so the document needs no `<script type="module">`. Without the file, the plugin uses a document like the one above without the title and the stylesheet.
+The compiler turns the document into HTML at build time and when the dev server starts. It inlines the components the document uses, wherever they come from: the document module, another source file, or a package that ships its source under the `reze` export condition, such as a library `<Preload>` that adds `<link>` tags. A component's props take the literal values passed where it is used, constants declared with a literal fold in, and `children` takes the markup between its tags, including the document's own `children`:
+
+```tsx file=src/document.tsx
+import type { JSX } from "reze-js";
+
+function Meta(props: { name: string; content: string }) {
+  return <meta name={props.name} content={props.content} />;
+}
+
+function Shell(props: { children: JSX.Element }) {
+  return <main id="app">{props.children}</main>;
+}
+
+export default function Document(props: { children: JSX.Element }) {
+  return (
+    <html lang="en">
+      <head>
+        <Meta name="color-scheme" content="light dark" />
+      </head>
+      <body>
+        <Shell>{props.children}</Shell>
+      </body>
+    </html>
+  );
+}
+```
+
+A document the compiler cannot read statically, such as one with a call, a `let`, or a component from a package without source, still works: the plugin compiles it for the server and runs it once, at build time and at the first dev render, and reports `DOCUMENT_DYNAMIC` as information naming the part that made it run. Either way the page is plain HTML, and the document's code never reaches the browser. A document that does not return `<html>` with a `<head>` and a `<body>` fails with `DOCUMENT_SHAPE`. The element that holds `children` is the mount root. Its `id` names the root, and the compiler gives it `id="app"` when it has none. The plugin adds the client script itself, so the document needs no `<script type="module">`. Without the file, the plugin uses a document like the one above without the title and the stylesheet.
 
 The server plugin renders every page from the document and never reads `index.html`. A project that still has an `index.html` at the root fails with a message that asks you to move its head tags into the document.
 

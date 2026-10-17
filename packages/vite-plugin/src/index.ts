@@ -11,7 +11,7 @@ import { ModuleFactsStore, staticImportSpecifiers, type Resolver } from "./facts
 import { profileHash } from "./hash";
 import { canonicalModuleId } from "./module-identity";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
-import { GeneratedIds, HtmlEnv, SsgViewId } from "./server/adapter";
+import { DocumentViewId, GeneratedIds, HtmlEnv, SsgViewId } from "./server/adapter";
 import type { SsgOptions, SsrOptions } from "./server/options";
 import { createServerPlugin, createServerShared } from "./server/plugin";
 import type { ServerShared } from "./server/plugin";
@@ -298,7 +298,8 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
           `[reze] ${file} uses beforeLoad, but no source under ${beforeLoadSources} mentions it, so the build compiled the beforeLoad cascade out; declare the beforeLoad route config in a module under ${beforeLoadSources}`,
         );
       }
-      if (id !== SsgViewId && (!filter.include.test(id) || (filter.exclude.test(id) && !moduleFacts.declaresReze(file)))) return null;
+      const isView = id === SsgViewId || id === DocumentViewId;
+      if (!isView && (!filter.include.test(id) || (filter.exclude.test(id) && !moduleFacts.declaresReze(file)))) return null;
       if (runtimeEntries.has(file) || GeneratedIds.includes(id)) return;
       if (id.startsWith("\0vite/") || id.startsWith("\0rolldown/")) return;
       for (const directory of runtimeDirectories) if (file.startsWith(directory)) return;
@@ -310,7 +311,7 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
       if (moduleId !== undefined) {
         if (isServe) shared.registry.update(moduleId, code);
         else shared.registry.register(moduleId, code);
-        if (target === "html" && id !== SsgViewId) shared.moduleFiles.set(moduleId, file);
+        if (target === "html" && !isView) shared.moduleFiles.set(moduleId, file);
       }
       const imported = await moduleFacts.factsFor(
         file,

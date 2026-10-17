@@ -12,7 +12,7 @@ import type { HeadDefault, PreparedTemplate, TemplateParts } from "./template";
 import { buildErrorPage, prepareTemplate } from "./template";
 
 export interface DevDocumentOptions {
-  document: () => AppDocument;
+  document: () => Promise<AppDocument>;
   moduleFiles: ReadonlyMap<string, string>;
   context: DevContext | undefined;
 }
@@ -56,7 +56,7 @@ async function renderDocument(server: ViteDevServer, options: DevDocumentOptions
   const errorHead = (error: unknown) => errorOverlayScript(server, error);
   let prepared: PreparedTemplate | undefined;
   try {
-    const document = options.document();
+    const document = await options.document();
     const html = await server.transformIndexHtml(url.pathname + url.search, document.html);
     prepared = prepareTemplate(html, document.rootId);
     const environment = server.environments[HtmlEnv];

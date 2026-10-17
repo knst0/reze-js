@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 
-import { createRunnableDevEnvironment, version as viteVersion } from "vite";
-import type { EnvironmentOptions, Plugin } from "vite";
+import { createRunnableDevEnvironment, isRunnableDevEnvironment, version as viteVersion } from "vite";
+import type { EnvironmentOptions, Logger, Plugin, ViteDevServer } from "vite";
 
 import { createModuleRegistry } from "../module-identity";
 import type { ModuleRegistry } from "../module-identity";
@@ -11,6 +11,7 @@ import {
   ClientId,
   ClientRequest,
   DevFactsId,
+  DocumentViewId,
   GeneratedIds,
   HtmlEnv,
   IslandsId,
@@ -20,6 +21,7 @@ import {
   SsgViewId,
   clientEntrySource,
   devFactsSource,
+  documentViewSource,
   islandsSource,
   redirectModuleSource,
   serverEntrySource,
@@ -28,11 +30,11 @@ import {
 import { createAssetPlugins } from "./asset-plugin";
 import type { ClientAssetInputs } from "./assets";
 import type { CapturedState } from "./build";
-import { runServerBuild } from "./build";
+import { renderBuiltDocument, runServerBuild } from "./build";
 import { captureOutput } from "./capture";
 import { createDevDocumentMiddleware } from "./dev";
-import { loadDocument } from "./document";
-import type { AppDocument } from "./document";
+import { analyzeDocument, renderedDocument } from "./document";
+import type { AppDocument, ImportResolver } from "./document";
 import { ClientOutDirDefault, assertDisjointOutDirs, assertSharedServerOptions, resolveSsgOptions, resolveSsrOptions } from "./options";
 import type { ResolvedSsgOptions, ResolvedSsrOptions, SsgOptions, SsrOptions } from "./options";
 import { validateTemplate } from "./template";
@@ -69,6 +71,12 @@ function toPosixAbsolute(root: string, file: string): string {
   return /^[A-Za-z]:\//.test(absolute) ? `/${absolute}` : absolute;
 }
 
+const DocumentViewUrl = `/@id/${DocumentViewId.replace("\0", "__x00__")}`;
+
+interface DocumentView {
+  render(): Promise<string>;
+}
+
 function isServerEnvironment(environment: { name: string }): boolean {
   return environment.name === "client" || environment.name === HtmlEnv;
 }
@@ -87,8 +95,39 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
   let primary: ResolvedSsgOptions | ResolvedSsrOptions | undefined;
   let documentFile = "";
   let htmlInput = "";
-  let appDocument: AppDocument | undefined;
-  const currentDocument = (): AppDocument => (appDocument ??= loadDocument(documentFile));
+  let devServer: ViteDevServer | undefined;
+  let logger: Logger | undefined;
+  let appDocument: Promise<AppDocument> | undefined;
+  let documentInputs: ReadonlySet<string> | undefined;
+  let documentViewRef: string | undefined;
+  let documentViewFile: string | undefined;
+  const currentDocument = (): Promise<AppDocument> => {
+    if (appDocument !== undefined) return appDocument;
+    if (!isServe) throw new Error("[reze] the document is read before the HTML build analyzed it");
+    const loading = loadDevDocument().then((document) => {
+      documentInputs = document.files === undefined ? undefined : new Set([documentFile, ...document.files]);
+      return document;
+    });
+    appDocument = loading;
+    loading.catch(() => {
+      if (appDocument === loading) appDocument = undefined;
+    });
+    return loading;
+  };
+
+  async function loadDevDocument(): Promise<AppDocument> {
+    const environment = devServer?.environments[HtmlEnv];
+    if (environment === undefined || !isRunnableDevEnvironment(environment)) {
+      throw new Error(`[reze] ${HtmlEnv} environment is not runnable in dev`);
+    }
+    const resolveImport: ImportResolver = async (specifier, importer) =>
+      (await environment.pluginContainer.resolveId(specifier, importer))?.id;
+    const analysis = await analyzeDocument(documentFile, resolveImport);
+    if (analysis.status === "static") return analysis.document;
+    logger?.info(analysis.reasons);
+    const view = (await environment.runner.import(DocumentViewUrl)) as DocumentView;
+    return renderedDocument(await view.render(), primary!.document);
+  }
   let redirectRef: string | undefined;
   const state: CapturedState = { outputs: [], templateHtml: "", templateFile: "", redirectFile: "", htmlChunks: [] };
   const assets: ClientAssetInputs = { files: new Map(), inlined: new Map(), publicFiles: new Map() };
@@ -101,21 +140,22 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
       if (id === ClientRequest) return ClientId;
       if (!isServe && id === htmlInput && this.environment.name === "client") return id;
       if (isServe && id === ServerFactsSpecifier && importer === ServerEntryId) return DevFactsId;
-      if (GeneratedIds.includes(id) || id === SsgViewId) return id;
+      if (GeneratedIds.includes(id) || id === SsgViewId || id === DocumentViewId) return id;
       return undefined;
     },
-    load(id) {
+    async load(id) {
       if (primary === undefined) return undefined;
-      if (!isServe && id === htmlInput && this.environment.name === "client") return currentDocument().html;
-      if (id === ClientId) return clientEntrySource(currentDocument().rootId);
+      if (!isServe && id === htmlInput && this.environment.name === "client") return (await currentDocument()).html;
+      if (id === ClientId) return clientEntrySource((await currentDocument()).rootId);
       if (id === IslandsId) return { code: islandsSource(islandEntries()), moduleSideEffects: "no-treeshake" };
       if (id === ServerEntryId) {
         return this.environment.name === HtmlEnv ? serverEntrySource() : undefined;
       }
       if (id === SsgViewId) return viewSource();
+      if (id === DocumentViewId) return documentViewSource(documentFile, primary.timeoutMs);
       if (id === SsgRedirectId) return redirectModuleSource();
       if (id === DevFactsId) {
-        return devFactsSource({ base, rootId: currentDocument().rootId, timeoutMs: (ssrOptions ?? primary).timeoutMs });
+        return devFactsSource({ base, rootId: (await currentDocument()).rootId, timeoutMs: (ssrOptions ?? primary).timeoutMs });
       }
       return undefined;
     },
@@ -174,6 +214,10 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
         sharedPlugins: true,
         async buildApp(builder) {
           await builder.build(builder.environments[HtmlEnv]!);
+          if (primary !== undefined && documentViewFile !== undefined) {
+            const rendered = await renderBuiltDocument(root, state.htmlChunks, documentViewFile, primary.timeoutMs);
+            appDocument = Promise.resolve(renderedDocument(rendered, primary.document));
+          }
           await builder.build(builder.environments.client!);
           if (primary === undefined || state.outputs.length === 0 || state.htmlChunks.length === 0 || state.templateHtml === "") {
             throw new Error("[reze] SSG build did not produce both the executable HTML graph and client template");
@@ -183,10 +227,10 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
             base,
             clientOutDir: outDir,
             publicDir,
-            captured: state,
+            captured: { ...state, htmlChunks: state.htmlChunks.filter((chunk) => chunk.fileName !== documentViewFile) },
             assets,
             moduleFiles: shared.moduleFiles,
-            rootId: currentDocument().rootId,
+            rootId: (await currentDocument()).rootId,
             ssg: ssgOptions,
             ssr: ssrOptions,
           });
@@ -199,6 +243,7 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
     },
     configResolved(config) {
       root = config.root;
+      logger = config.logger;
       base = config.base;
       outDir = resolve(root, config.build.outDir);
       publicDir = config.publicDir;
@@ -230,9 +275,11 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
       }
       documentFile = toPosixAbsolute(root, primary.document);
       appDocument = undefined;
-      if (!isServe) currentDocument();
+      documentViewRef = undefined;
+      documentViewFile = undefined;
     },
     configureServer(server) {
+      devServer = server;
       if (primary === undefined) return;
       server.middlewares.use(
         createDevDocumentMiddleware(server, {
@@ -242,16 +289,26 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
         }),
       );
     },
-    buildStart() {
-      if (this.environment.name === "client" && !isServe) {
+    async buildStart() {
+      if (isServe) return;
+      if (this.environment.name === "client") {
         redirectRef = this.emitFile({ type: "chunk", id: SsgRedirectId, name: "reze-ssg-redirect" });
+      }
+      if (this.environment.name === HtmlEnv) {
+        const analysis = await analyzeDocument(documentFile, async (specifier, importer) => (await this.resolve(specifier, importer))?.id);
+        if (analysis.status === "static") {
+          appDocument = Promise.resolve(analysis.document);
+        } else {
+          logger?.info(analysis.reasons);
+          documentViewRef = this.emitFile({ type: "chunk", id: DocumentViewId, name: "reze-document" });
+        }
       }
     },
     transformIndexHtml: {
       order: "pre",
-      handler(html) {
+      async handler(html) {
         if (primary === undefined) return html;
-        validateTemplate(html, primary.document, currentDocument().rootId, ClientRequest);
+        validateTemplate(html, primary.document, (await currentDocument()).rootId, ClientRequest);
         return html;
       },
     },
@@ -277,10 +334,18 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
         if (envName === "client" && redirectRef !== undefined) {
           state.redirectFile = this.getFileName(redirectRef);
         }
+        if (envName === HtmlEnv && documentViewRef !== undefined) {
+          documentViewFile = this.getFileName(documentViewRef);
+          const view = bundle[documentViewFile];
+          const documentOnly = new Set(view?.type === "chunk" ? view.moduleIds : []);
+          for (const [moduleId, file] of shared.moduleFiles) {
+            if (documentOnly.has(file)) shared.moduleFiles.delete(moduleId);
+          }
+        }
       },
     },
     hotUpdate({ file, server }) {
-      if (file === documentFile) {
+      if (appDocument !== undefined && (documentInputs === undefined || documentInputs.has(file))) {
         appDocument = undefined;
         const graph = this.environment.moduleGraph;
         for (const id of [ClientId, DevFactsId]) {

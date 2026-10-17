@@ -1,3 +1,5 @@
+import { DocumentRootMarker } from "./template";
+
 export const ClientRequest = "/@reze/client.js";
 export const ClientId = "\0reze:client.js";
 export const IslandsId = "\0reze:islands.js";
@@ -6,6 +8,7 @@ export const ServerFactsSpecifier = "reze-client.js";
 export const DevFactsId = "\0reze:dev-facts.js";
 export const SsgViewId = "\0reze:ssg-view.tsx";
 export const SsgRedirectId = "\0reze:ssg-redirect.js";
+export const DocumentViewId = "\0reze:document-view.tsx";
 export const HtmlEnv = "reze_html";
 export const GeneratedIds: readonly string[] = [ClientId, IslandsId, ServerEntryId, SsgRedirectId, DevFactsId];
 
@@ -15,6 +18,26 @@ export { routes };
 export function ssgView(props) {
   const Router = props.router;
   return <Router />;
+}
+`;
+}
+
+export function documentViewSource(documentFile: string, timeoutMs: number): string {
+  return `import { renderDocument } from "reze-js/internal/html";
+import Document from ${JSON.stringify(documentFile)};
+export function render() {
+  return renderDocument(() => Document({ children: ${JSON.stringify(DocumentRootMarker)} }), ${timeoutMs});
+}
+`;
+}
+
+export function documentWorkerSource(viewFile: string): string {
+  return `import { parentPort } from "node:worker_threads";
+import { render } from ${JSON.stringify(viewFile)};
+try {
+  parentPort.postMessage({ ok: true, result: await render() });
+} catch (error) {
+  parentPort.postMessage({ ok: false, error: { message: error instanceof Error ? error.message : String(error), stack: error?.stack } });
 }
 `;
 }

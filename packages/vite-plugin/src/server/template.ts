@@ -144,6 +144,70 @@ export function prepareTemplate(source: string, rootId: string): PreparedTemplat
   return { parts: splitSentinels(serialize(document)), headDefaults };
 }
 
+export const DocumentRootMarker = "reze-document-root-c4f1";
+
+const HtmlNamespace = "http://www.w3.org/1999/xhtml";
+const UnfitRootTags = new Set([
+  "body",
+  "script",
+  "style",
+  "title",
+  "textarea",
+  "template",
+  "noscript",
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+
+function isInside(node: HtmlElement, tagName: string): boolean {
+  for (let parent = node.parentNode; parent !== null; parent = "parentNode" in parent ? parent.parentNode : null) {
+    if ("tagName" in parent && parent.tagName === tagName) return true;
+  }
+  return false;
+}
+
+export function rootRenderedDocument(rendered: string, file: string): { html: string; rootId: string } {
+  const fail = (detail: string): Error => new Error(`[reze] the document ${file} ${detail}`);
+  const document = parse(rendered);
+  const holders = [...elements(document)].filter((node) =>
+    node.childNodes.some((child) => child.nodeName === "#text" && "value" in child && child.value.includes(DocumentRootMarker)),
+  );
+  const markers = rendered.split(DocumentRootMarker).length - 1;
+  if (markers === 0) throw fail("never renders its `children`; place them in the element the app renders into");
+  if (markers > 1) throw fail("renders its `children` more than once");
+  const root = holders[0];
+  if (root === undefined) throw fail("renders its `children` outside an element");
+  const isAlone = root.childNodes.every(
+    (child) =>
+      child.nodeName === "#comment" ||
+      (child.nodeName === "#text" && "value" in child && (child.value.trim() === "" || child.value.trim() === DocumentRootMarker)),
+  );
+  if (!isAlone) throw fail("renders its `children` next to other content; give them an element of their own");
+  if (!isInside(root, "body")) throw fail("renders its `children` outside `<body>`");
+  if (root.namespaceURI !== HtmlNamespace || UnfitRootTags.has(root.tagName)) {
+    throw fail("renders its `children` directly in a `<body>`, raw-text, template or SVG element; wrap them in an element such as `<div>`");
+  }
+  for (const child of [...root.childNodes]) defaultTreeAdapter.detachNode(child);
+  const rootId = attribute(root, "id") ?? "app";
+  setAttribute(root, "id", rootId);
+  if ([...elements(document)].filter((node) => attribute(node, "id") === rootId).length > 1) {
+    throw fail("gives another element the root element's `id`");
+  }
+  const hasDoctype = document.childNodes.some((node) => node.nodeName === "#documentType");
+  return { html: (hasDoctype ? "" : "<!doctype html>") + serialize(document), rootId };
+}
+
 export function withBootstrap(html: string, bootstrapSrc: string): string {
   const document = parse(html);
   const top = document.childNodes.find((node) => "tagName" in node) as HtmlElement | undefined;

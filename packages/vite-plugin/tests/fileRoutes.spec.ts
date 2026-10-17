@@ -52,15 +52,68 @@ test("route-specific extensions override the scan in a custom directory", async 
   expect(paragraph(readFileSync(join(outDir, "index.html"), "utf8"))).toBe("home");
 }, 30_000);
 
-test("the document replaces index.html and refuses a dynamic shell", async () => {
+test("the document replaces index.html", async () => {
   writeFileSync(join(root, "index.html"), "<!doctype html>");
   await expectBuildFails(reze({ fileRoutes: { types: false }, ssg: true }), root, join(root, "dist"), /never reads index\.html/);
-  rmSync(join(root, "index.html"));
+}, 30_000);
+
+function head(html: string): string {
+  return html.slice(html.indexOf("<head>"), html.indexOf("</head>"));
+}
+
+test("the document inlines imported components and renders the rest by running it once", async () => {
+  writeFileSync(
+    join(root, "src", "preload.tsx"),
+    'export const Font = "/inter.woff2";\nexport function Preload(props) { return <link rel="preload" as="font" href={props.href} crossorigin="" />; }',
+  );
   writeFileSync(
     join(root, "src", "document.tsx"),
-    'export default (props) => <html><head><title>{new Date().toString()}</title></head><body><div id="app">{props.children}</div></body></html>;',
+    'import { Font, Preload } from "./preload";\nexport default (props) => <html lang="en"><head><title>Acme</title><Preload href={Font} /></head><body><main id="app">{props.children}</main></body></html>;',
   );
-  await expectBuildFails(reze({ fileRoutes: { types: false }, ssg: true }), root, join(root, "dist"), /DOCUMENT_DYNAMIC/);
+  const outDir = join(root, "dist");
+  await buildSsgFixture({ fixtureDir: root, outDir, plugins: reze({ fileRoutes: { types: false }, ssg: true }) });
+  const page = readFileSync(join(outDir, "index.html"), "utf8");
+  expect(head(page)).toContain('<link rel="preload" as="font" href="/inter.woff2" crossorigin="">');
+  expect(paragraph(page)).toBe("home");
+
+  writeFileSync(
+    join(root, "src", "document.tsx"),
+    'import { Preload } from "./preload";\nconst built = new Date(0).toISOString();\nexport default (props) => <html lang="en"><head><title>{built}</title><Preload href={"/" + "inter.woff2"} /></head><body><main id="app">{props.children}</main></body></html>;',
+  );
+  await buildSsgFixture({ fixtureDir: root, outDir, plugins: reze({ fileRoutes: { types: false }, ssg: true }) });
+  const rendered = readFileSync(join(outDir, "index.html"), "utf8");
+  expect(head(rendered)).toContain(">1970-01-01T00:00:00.000Z</title>");
+  expect(head(rendered)).toContain('href="/inter.woff2"');
+  expect(paragraph(rendered)).toBe("home");
+  expect(listBuiltFiles(outDir).filter((file) => file.includes("reze-document"))).toEqual([]);
+}, 60_000);
+
+test("the dev server renders a document it cannot compile and rerenders it on change", async () => {
+  const document = join(root, "src", "document.tsx");
+  const source = (title: string) =>
+    `const title = [${JSON.stringify(title)}].join("");\nexport default (props) => <html><head><title>{title}</title></head><body><div id="app">{props.children}</div></body></html>;`;
+  writeFileSync(document, source("first"));
+  const server = await createServer({
+    configFile: false,
+    root,
+    logLevel: "silent",
+    plugins: await reze({ fileRoutes: { types: false }, ssg: true }),
+    server: { host: "127.0.0.1", port: 0 },
+  });
+  try {
+    await server.listen();
+    const url = server.resolvedUrls!.local[0]!;
+    const page = await (await fetch(url, { headers: { accept: "text/html" } })).text();
+    expect(head(page)).toContain(">first</title>");
+    expect(paragraph(page)).toBe("home");
+    writeFileSync(document, source("second"));
+    server.watcher.emit("change", document);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const next = await (await fetch(url, { headers: { accept: "text/html" } })).text();
+    expect(head(next)).toContain(">second</title>");
+  } finally {
+    await server.close();
+  }
 }, 30_000);
 
 test("the dev server fills a new empty route file with a template and leaves written files alone", async () => {
