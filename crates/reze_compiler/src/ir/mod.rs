@@ -1,3 +1,4 @@
+mod constants;
 pub mod layout;
 pub mod schedule;
 pub mod sites;
@@ -21,6 +22,8 @@ use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 use schedule::{EffectGroup, MemberKind, SchedMember, Schedule, ValueMode};
 use sites::{SiteId, SiteRegistry};
 use view::*;
+
+use constants::{StringConstants, Unresolved};
 
 pub struct ModuleIr {
     pub views: Vec<View>,
@@ -51,6 +54,7 @@ pub fn build_module_ir<'x>(
     let islands = IslandPlan::scan(program, scoping);
     let mut builder = Builder {
         static_handlers: static_handler_symbols(program, scoping),
+        constants: StringConstants::scan(program, scoping),
         source,
         scoping,
         facts,
@@ -93,6 +97,7 @@ struct Builder<'x> {
     path: Vec<String>,
     has_views: bool,
     static_handlers: HashSet<SymbolId>,
+    constants: StringConstants,
 }
 impl Builder<'_> {
     fn report(&mut self, mut report: Report) {
@@ -3046,7 +3051,7 @@ impl Builder<'_> {
 
     fn head_key(&mut self, tag: &JSXElement<'_>, name: &str) -> Option<Option<String>> {
         let mut values: HashMap<String, String> = HashMap::new();
-        let mut dynamic: HashMap<String, Span> = HashMap::new();
+        let mut dynamic: HashMap<String, (Span, Unresolved)> = HashMap::new();
         let mut is_valid = true;
         for item in &tag.opening_element.attributes {
             let JSXAttributeItem::Attribute(a) = item else {
@@ -3080,12 +3085,12 @@ impl Builder<'_> {
             if !matches!(attr.as_str(), "src" | "rel" | "href" | "name" | "property" | "http-equiv") {
                 continue;
             }
-            match head_string(a) {
-                Some(value) => {
+            match self.head_string(a) {
+                Ok(value) => {
                     values.insert(attr, value);
                 }
-                None => {
-                    dynamic.insert(attr, a.span);
+                Err(reason) => {
+                    dynamic.insert(attr, (a.span, reason));
                 }
             }
         }
@@ -3093,11 +3098,11 @@ impl Builder<'_> {
             if let Some(value) = values.get(attr) {
                 return Some(value.clone());
             }
-            if let Some(span) = dynamic.get(attr) {
+            if let Some((span, reason)) = dynamic.get(attr) {
                 builder.head_attr(
                     name,
                     *span,
-                    format!("needs `{attr}` as a string literal so the tag keeps one identity"),
+                    unresolved_detail(attr, "so the tag keeps one identity", reason),
                 );
             }
             None
@@ -3187,6 +3192,19 @@ impl Builder<'_> {
         is_valid.then_some(key)
     }
 
+    fn head_string(&self, a: &JSXAttribute<'_>) -> Result<String, Unresolved> {
+        match a.value.as_ref() {
+            Some(JSXAttributeValue::StringLiteral(s)) => {
+                Ok(decode_entities(s.value.as_str()).into_owned())
+            }
+            Some(JSXAttributeValue::ExpressionContainer(c)) => match c.expression.as_expression() {
+                Some(e) => self.constants.resolve(self.scoping, e),
+                None => Err(Unresolved::Expression),
+            },
+            _ => Err(Unresolved::Expression),
+        }
+    }
+
     fn head_static_type(&mut self, tag: &JSXElement<'_>, name: &str, is_valid: &mut bool) {
         let mut typed: Option<String> = None;
         for item in &tag.opening_element.attributes {
@@ -3194,13 +3212,13 @@ impl Builder<'_> {
             if attr_name(a) != "type" {
                 continue;
             }
-            match head_string(a) {
-                Some(value) => typed = Some(value),
-                None => {
+            match self.head_string(a) {
+                Ok(value) => typed = Some(value),
+                Err(reason) => {
                     self.head_attr(
                         name,
                         a.span,
-                        String::from("needs `type` as a string literal when `src` is absent"),
+                        unresolved_detail("type", "when `src` is absent", &reason),
                     );
                     *is_valid = false;
                     return;
@@ -3229,19 +3247,17 @@ fn is_head_event(name: &str) -> bool {
         && name.as_bytes()[2].is_ascii_alphabetic()
 }
 
-fn head_string(a: &JSXAttribute<'_>) -> Option<String> {
-    match a.value.as_ref()? {
-        JSXAttributeValue::StringLiteral(s) => Some(decode_entities(s.value.as_str()).into_owned()),
-        JSXAttributeValue::ExpressionContainer(c) => match c.expression.as_expression()? {
-            Expression::StringLiteral(s) => Some(String::from(s.value.as_str())),
-            Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
-                .quasis
-                .first()
-                .and_then(|quasi| quasi.value.cooked.as_ref())
-                .map(|text| text.to_string()),
-            _ => None,
-        },
-        JSXAttributeValue::Element(_) | JSXAttributeValue::Fragment(_) => None,
+fn unresolved_detail(attr: &str, purpose: &str, reason: &Unresolved) -> String {
+    match reason {
+        Unresolved::Expression => {
+            format!("needs `{attr}` as a string literal or a `const` holding one {purpose}")
+        }
+        Unresolved::Imported(binding) => format!(
+            "needs `{attr}` known at compile time {purpose}, but `{binding}` is imported and imported bindings are not resolved: declare it as a `const` in this module"
+        ),
+        Unresolved::NotConstant(binding) => format!(
+            "needs `{attr}` known at compile time {purpose}, but `{binding}` is not a `const` holding a string"
+        ),
     }
 }
 

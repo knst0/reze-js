@@ -181,12 +181,12 @@ catalog! {
         severity: Error,
         title: "Invalid `<Head>` tag",
         message: "`<{tag}>` in `<Head>` {detail}.",
-        explanation: "A keyed `<Head>` tag replaces the tag of the same key from `document.tsx` or an outer component while it is mounted, so its key must be static. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `link rel=\"canonical\"` by its `rel` and any other `link` by `rel` and `href`, and `script` by `src`; those attributes must be string literals. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta`, `link` and `base` take no children, and `script`, `style` and `title` take only text. `data.tag` is the tag and `data.detail` what is wrong.",
-        repair: "Write the identity attributes as string literals, or move the tag out of `<Head>`.",
+        explanation: "A keyed `<Head>` tag replaces the tag of the same key from `document.tsx` or an outer component while it is mounted, so its key must be static. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `link rel=\"canonical\"` by its `rel` and any other `link` by `rel` and `href`, and `script` by `src`; those attributes must be known at compile time: a string literal, or a `const` declared earlier in the same module whose value is a string literal or a template of such constants. Imported bindings are not resolved. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta`, `link` and `base` take no children, and `script`, `style` and `title` take only text. `data.tag` is the tag and `data.detail` what is wrong.",
+        repair: "Write the identity attributes as string literals or `const` strings declared in this module, or move the tag out of `<Head>`.",
         fix: None,
         example: Pair {
             bad: "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src={url} /></Head>;\n",
-            good: "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/sdk.js\" /></Head>;\n",
+            good: "import { Head } from \"reze-js\";\n\nconst url = \"/sdk.js\";\n\nexport const view = <Head><script src={url} /></Head>;\n",
         },
     }
     DocumentShape {

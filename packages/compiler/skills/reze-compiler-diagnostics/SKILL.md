@@ -238,9 +238,9 @@ export const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Swi
 
 Automatic fix: no
 
-A keyed `<Head>` tag replaces the tag of the same key from `document.tsx` or an outer component while it is mounted, so its key must be static. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `link rel="canonical"` by its `rel` and any other `link` by `rel` and `href`, and `script` by `src`; those attributes must be string literals. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta`, `link` and `base` take no children, and `script`, `style` and `title` take only text. `data.tag` is the tag and `data.detail` what is wrong.
+A keyed `<Head>` tag replaces the tag of the same key from `document.tsx` or an outer component while it is mounted, so its key must be static. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `link rel="canonical"` by its `rel` and any other `link` by `rel` and `href`, and `script` by `src`; those attributes must be known at compile time: a string literal, or a `const` declared earlier in the same module whose value is a string literal or a template of such constants. Imported bindings are not resolved. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta`, `link` and `base` take no children, and `script`, `style` and `title` take only text. `data.tag` is the tag and `data.detail` what is wrong.
 
-**Repair:** Write the identity attributes as string literals, or move the tag out of `<Head>`.
+**Repair:** Write the identity attributes as string literals or `const` strings declared in this module, or move the tag out of `<Head>`.
 
 Before:
 
@@ -255,7 +255,9 @@ After:
 ```tsx
 import { Head } from "reze-js";
 
-export const view = <Head><script src="/sdk.js" /></Head>;
+const url = "/sdk.js";
+
+export const view = <Head><script src={url} /></Head>;
 ```
 
 ## DOCUMENT_SHAPE
