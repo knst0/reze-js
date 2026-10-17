@@ -220,6 +220,31 @@ With `preload` enabled, which is the default, the router starts loading a route 
 
 Set `preload: false` in `createRouter` to turn warming off. Clicks still route the page.
 
+### Share context with child routes
+
+A layout's `beforeLoad` returns values for every route below it. The router runs `beforeLoad` from the root to the leaf before each level's `preload`, and merges each returned object into the `context` that the level's own `preload` and `redirect` and all deeper routes receive. It runs wherever `preload` runs: in the browser for a client-only app, and on the server with `ssr` or `ssg`:
+
+```tsx file=src/routes/account.tsx
+import type { PreloadArgs } from "@rezejs/router";
+import type { JSX } from "reze-js";
+
+declare module "@rezejs/router" {
+  interface RouterContext {
+    locale: string;
+  }
+}
+
+export const route = {
+  beforeLoad: ({ location }: PreloadArgs) => ({ locale: String(location.query.lang ?? "en") }),
+};
+
+export default function Account(props: { children: JSX.Element }) {
+  return <section>{props.children}</section>;
+}
+```
+
+A route under `src/routes/account/` reads it as `context.locale` in `preload` or `redirect`.
+
 ### Pass request context to routes
 
 For SSR and SSG, export `createContext` from the server entry. Reze calls it for every request or generated page and passes the result to route `preload` and `redirect` callbacks as `context`:

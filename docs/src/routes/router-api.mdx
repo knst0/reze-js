@@ -35,16 +35,16 @@ export const Router = createRouter({
 
 ### `RouterConfig` options
 
-| Option         | Type                         | Default                                                   | Purpose                                                                                        |
-| -------------- | ---------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `routes`       | `readonly RouteDefinition[]` | Required                                                  | The route table. See [route definitions](#route-definition-fields).                            |
-| `paths`        | `PathsTree`                  | None                                                      | The `paths` builders. The router returns them as `paths` when you pass them.                   |
-| `history`      | `RouterHistory`              | `createBrowserHistory()`                                  | Where the router reads and writes the location.                                                |
-| `links`        | `boolean`                    | `true` for browser and hash histories, `false` for memory | Routes same-origin anchor clicks that match a route through the router instead of the browser. |
-| `preload`      | `boolean`                    | `true`                                                    | Runs route `preload` functions when a matching link is hovered, focused, or touched.           |
-| `context`      | `C`                          | `undefined`                                               | Value passed to route `preload` and `redirect` callbacks.                                      |
+| Option    | Type                         | Default                                                   | Purpose                                                                                        |
+| --------- | ---------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `routes`  | `readonly RouteDefinition[]` | Required                                                  | The route table. See [route definitions](#route-definition-fields).                            |
+| `paths`   | `PathsTree`                  | None                                                      | The `paths` builders. The router returns them as `paths` when you pass them.                   |
+| `history` | `RouterHistory`              | `createBrowserHistory()`                                  | Where the router reads and writes the location.                                                |
+| `links`   | `boolean`                    | `true` for browser and hash histories, `false` for memory | Routes same-origin anchor clicks that match a route through the router instead of the browser. |
+| `preload` | `boolean`                    | `true`                                                    | Runs route `preload` functions when a matching link is hovered, focused, or touched.           |
+| `context` | `C`                          | `undefined`                                               | Base value of the `context` that route `beforeLoad`, `preload` and `redirect` callbacks get.   |
 
-`RouterContext` is the default type of route callback `context` and is open to module augmentation. Supply its value through `RouterConfig.context` or the server context factory—augmenting the type does not create the value at runtime.
+`RouterContext` is the default type of route callback `context` and is open to module augmentation. Supply its value through `RouterConfig.context`, the server context factory, or a layout's `beforeLoad`. Augmenting the type does not create the value at runtime.
 
 ### The `RouterInstance` members
 
@@ -104,17 +104,18 @@ A route table is an array of `RouteDefinition` values passed to `routes`. Build 
 
 ### Route definition fields
 
-| Field       | Type                                                                 | Purpose                                                                                                                                                          |
-| ----------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`      | `string`                                                             | The route pattern, relative to the parent route. Segments are static text, `:param`, `:param?`, or `*splat`.                                                     |
-| `component` | `RouteComponent`                                                     | Renders the route. The router passes `params`, `location`, `data`, and `children`.                                                                               |
-| `children`  | `readonly RouteDefinition[]`                                         | Nested routes. The matched child renders through the parent's `children` prop.                                                                                   |
-| `load`      | `() => Promise<RouteModule>`                                         | Loads the route module on demand. When it resolves, its `default` and `route` override `component`, `preload`, `redirect`, and `info`.                           |
-| `id`        | `string`                                                             | Stable identity for server route matches and static generation. The plugin sets it for file routes. Otherwise the router assigns an index chain such as `"2/0"`. |
-| `name`      | `string`                                                             | The key of this route in the `paths` builder tree. Siblings that share a key throw when the router is created.                                                   |
-| `preload`   | `(args: PreloadArgs) => unknown`                                     | Starts the route's data. See [preload and redirects](#preload-and-redirects).                                                                                    |
-| `redirect`  | `RouteRedirect \| ((args) => Awaitable<RouteRedirect \| undefined>)` | Sends the navigation somewhere else. Its behavior is covered under Preload and redirects.                                                                        |
-| `info`      | `Readonly<Record<string, unknown>>`                                  | Free-form data attached to the route. `useCurrentMatches` returns it for each match.                                                                             |
+| Field        | Type                                                                 | Purpose                                                                                                                                                          |
+| ------------ | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`       | `string`                                                             | The route pattern, relative to the parent route. Segments are static text, `:param`, `:param?`, or `*splat`.                                                     |
+| `component`  | `RouteComponent`                                                     | Renders the route. The router passes `params`, `location`, `data`, and `children`.                                                                               |
+| `children`   | `readonly RouteDefinition[]`                                         | Nested routes. The matched child renders through the parent's `children` prop.                                                                                   |
+| `load`       | `() => Promise<RouteModule>`                                         | Loads the route module on demand. When it resolves, its `default` and `route` override `component`, `beforeLoad`, `preload`, `redirect`, and `info`.             |
+| `id`         | `string`                                                             | Stable identity for server route matches and static generation. The plugin sets it for file routes. Otherwise the router assigns an index chain such as `"2/0"`. |
+| `name`       | `string`                                                             | The key of this route in the `paths` builder tree. Siblings that share a key throw when the router is created.                                                   |
+| `beforeLoad` | `(args: PreloadArgs) => Awaitable<Partial<RouterContext> \| void>`   | Extends `context` for this route and its descendants. See [preload and redirects](#preload-and-redirects).                                                       |
+| `preload`    | `(args: PreloadArgs) => unknown`                                     | Starts the route's data. See [preload and redirects](#preload-and-redirects).                                                                                    |
+| `redirect`   | `RouteRedirect \| ((args) => Awaitable<RouteRedirect \| undefined>)` | Sends the navigation somewhere else. Its behavior is covered under Preload and redirects.                                                                        |
+| `info`       | `Readonly<Record<string, unknown>>`                                  | Free-form data attached to the route. `useCurrentMatches` returns it for each match.                                                                             |
 
 The following table defines a layout route with a nested child:
 
@@ -145,8 +146,9 @@ export const routes = defineRoutes([
 
 ### Preload and redirects
 
-These two fields run in a fixed order when a navigation enters a route. Page metadata is not a route field: a route component sets it with [`<Head>`](/routing#set-page-metadata).
+These three fields run in a fixed order when a navigation enters a route. Page metadata is not a route field: a route component sets it with [`<Head>`](/routing#set-page-metadata).
 
+- `beforeLoad` runs first, level by level from the root to the leaf. It receives the `context` built so far, and a returned object is merged over it for the route's own `preload` and `redirect` and for every route below it. Link warming runs it too, before the warmed `preload`.
 - `preload` starts the route's data. The router calls it with intent `"preload"` when a matching link is hovered, focused, or touched, and with intent `"navigate"` when the route is entered. Return a promise to start a fetch; a navigation waits for it and delivers the settled value as `data`, and never the promise itself.
 - `redirect` sends the navigation to another path. A literal object short-circuits the navigation before any `preload` runs. A function receives the settled `data`, and the first defined result from the root to the leaf wins. Hovering a link never runs `redirect`.
 
@@ -418,7 +420,7 @@ The plugin writes the declaration to `src/routes.gen.d.ts` by default. You do no
 
 ### Route module types
 
-A route module in `src/routes/` can type its `route` export and its component props from its own pattern. `RouteConfigFor` checks the `preload`, `redirect`, and `info` fields against the leaf pattern, and `RoutePropsFor` gives the component typed `params` and `data`.
+A route module in `src/routes/` can type its `route` export and its component props from its own pattern. `RouteConfigFor` checks the `beforeLoad`, `preload`, `redirect`, and `info` fields against the leaf pattern, and `RoutePropsFor` gives the component typed `params` and `data`.
 
 ```tsx file=src/routes/blog/[id].tsx
 import type { RouteConfigFor, RoutePropsFor } from "@rezejs/router";
@@ -487,7 +489,7 @@ These exports are types only. They describe values you receive from the hooks, t
 | `PreloadIntent`                 | `"initial"`, `"navigate"`, or `"preload"`.                                                              |
 | `Register`                      | The interface the generated declaration augments.                                                       |
 | `RouteComponent<P, D>`          | A component that receives `RouteProps<P, D>` and returns a `JSX.Element`.                               |
-| `RouteConfig<D, C>`             | The `preload`, `redirect`, and `info` fields of a route.                                                |
+| `RouteConfig<D, C>`             | The `beforeLoad`, `preload`, `redirect`, and `info` fields of a route.                                  |
 | `RouteConfigFor<P, D, C>`       | `RouteConfig` with the params of leaf pattern `P` and context `C`.                                      |
 | `RouteDefinition<C>`            | `RouteConfig` plus `path`, `id`, `name`, `component`, `load`, and `children`.                           |
 | `RouteMatch`                    | `{ path, params, data, info }`, the entries `useCurrentMatches` returns.                                |
@@ -499,7 +501,7 @@ These exports are types only. They describe values you receive from the hooks, t
 | `RouteProps<P, D>`              | `{ params, location, data, children }`, the props a route component receives.                           |
 | `RoutePropsFor<P>`              | `RouteProps` with the params and data of leaf pattern `P`.                                              |
 | `RouteRedirect`                 | `{ to, replace? }`, the value a `redirect` resolves to.                                                 |
-| `RouteResolvedArgs<P, D, C>`    | `PreloadArgs` plus the settled `data`, the argument of a `redirect` function.                          |
+| `RouteResolvedArgs<P, D, C>`    | `PreloadArgs` plus the settled `data`, the argument of a `redirect` function.                           |
 | `SearchInit`                    | A record of search values, where an array value appends one entry per item.                             |
 | `RouterServerContextArgs`       | `{ request?, pathname, search, mode }`; available to the server entry's `createContext` factory.        |
 | `RouterServerContextFactory<C>` | Factory that returns router context for an SSR request or an SSG page.                                  |

@@ -166,6 +166,33 @@ test("prepareServerRoute passes its context into data", async () => {
   expect(withContext.matches[0]?.data).toBe("ssr-42");
 });
 
+test("prepareServerRoute cascades beforeLoad context from layouts into descendant preloads and redirects", async () => {
+  const seen: unknown[] = [];
+  const cascadeRoutes: RouteDefinition<any>[] = [
+    {
+      path: "/",
+      beforeLoad: async () => ({ user: "ada", role: "guest" }),
+      component: Home,
+      children: [
+        {
+          path: "/admin",
+          beforeLoad: ({ context }) => ({ role: context.user === "ada" ? "admin" : "guest" }),
+          preload: ({ context }) => `${context.user}:${context.role}`,
+          redirect: ({ context }) => {
+            seen.push(context);
+            return undefined;
+          },
+          component: Home,
+        },
+      ],
+    },
+  ];
+  const prepared = await prepareServerRoute(cascadeRoutes, "/admin");
+  if (prepared.status !== "render") throw new Error("expected render");
+  expect(prepared.matches[1]?.data).toBe("ada:admin");
+  expect(seen).toEqual([{ user: "ada", role: "admin" }]);
+});
+
 test("prepareServerRoute short-circuits literal redirects before preloads, follows callback redirects with settled data, and reports not-found", async () => {
   const preload = vi.fn(() => "data");
   const literalRoutes: RouteDefinition[] = [

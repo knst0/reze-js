@@ -3,16 +3,7 @@ import { signal } from "reze-js";
 
 import type { HistoryEntry, RouterHistory } from "./history";
 import { decode, matchBranches, pathKey, type Branch, type BranchMatch, type CompiledRoute } from "./match";
-import type {
-  Awaitable,
-  BeforeLeaveEvent,
-  Location,
-  NavigateOptions,
-  Params,
-  PreloadIntent,
-  RouteRedirect,
-  RouterContext,
-} from "./types";
+import type { Awaitable, BeforeLeaveEvent, Location, NavigateOptions, Params, PreloadIntent, RouteRedirect, RouterContext } from "./types";
 
 export interface ActiveMatch {
   readonly route: CompiledRoute;
@@ -234,6 +225,7 @@ export function ensureLoaded(route: CompiledRoute): Promise<void> {
       (module) => {
         const config = module.route;
         route.component = module.default ?? route.def.component;
+        route.beforeLoad = config?.beforeLoad ?? route.def.beforeLoad;
         route.preload = config?.preload ?? route.def.preload;
         route.redirect = config?.redirect ?? route.def.redirect;
         route.info = config?.info ?? route.def.info;
@@ -384,76 +376,101 @@ function settleMatch(
       return { kind: "redirect", to: redirect.to, replace: redirect.replace ?? true };
     }
   }
-  return settleRoute(state, generation, routes, match.params, match.path, location, intent, 0, []);
+  const run: Settling = {
+    state,
+    generation,
+    routes,
+    params: match.params,
+    path: match.path,
+    location,
+    intent,
+    context: state.context,
+    matches: [],
+  };
+  return settleRoute(run, 0);
 }
 
-function settleRoute(
-  state: RouterState,
-  generation: number,
-  routes: readonly CompiledRoute[],
-  params: Params,
-  path: string,
-  location: Location,
-  intent: PreloadIntent,
-  index: number,
-  matches: ActiveMatch[],
-): SettleOutcome | Promise<SettleOutcome> {
-  if (index >= routes.length) return { kind: "render", matches };
-  const stopped = checkpoint(state, generation);
+interface Settling {
+  readonly state: RouterState;
+  readonly generation: number;
+  readonly routes: readonly CompiledRoute[];
+  readonly params: Params;
+  readonly path: string;
+  readonly location: Location;
+  readonly intent: PreloadIntent;
+  context: RouterContext;
+  readonly matches: ActiveMatch[];
+}
+
+function settleRoute(run: Settling, index: number): SettleOutcome | Promise<SettleOutcome> {
+  if (index >= run.routes.length) return { kind: "render", matches: run.matches };
+  const stopped = checkpoint(run.state, run.generation);
   if (stopped !== undefined) return stopped;
-  const route = routes[index]!;
+  const route = run.routes[index]!;
   if (!route.isLoaded) {
-    matches.push({ route, path, params, data: undefined, hasData: false, error: route.loadError, info: route.info });
-    return settleRoute(state, generation, routes, params, path, location, intent, index + 1, matches);
+    run.matches.push({
+      route,
+      path: run.path,
+      params: run.params,
+      data: undefined,
+      hasData: false,
+      error: route.loadError,
+      info: route.info,
+    });
+    return settleRoute(run, index + 1);
   }
-  if (route.preload === undefined) {
-    return settleData(state, generation, routes, params, path, location, intent, index, matches, undefined, false, undefined);
+  if (route.beforeLoad === undefined) return settlePreload(run, index);
+  let extension: unknown;
+  try {
+    extension = untrack(() => route.beforeLoad!({ params: run.params, location: run.location, intent: run.intent, context: run.context }));
+  } catch (thrown) {
+    return settleData(run, index, undefined, false, thrown);
   }
+  if (!isThenable(extension)) return extendContext(run, index, extension);
+  return Promise.resolve(extension).then(
+    (value) => checkpoint(run.state, run.generation) ?? extendContext(run, index, value),
+    (thrown) => checkpoint(run.state, run.generation) ?? settleData(run, index, undefined, false, thrown),
+  );
+}
+
+function extendContext(run: Settling, index: number, extension: unknown): SettleOutcome | Promise<SettleOutcome> {
+  if (typeof extension === "object" && extension !== null) run.context = { ...run.context, ...extension };
+  return settlePreload(run, index);
+}
+
+function settlePreload(run: Settling, index: number): SettleOutcome | Promise<SettleOutcome> {
+  const route = run.routes[index]!;
+  if (route.preload === undefined) return settleData(run, index, undefined, false, undefined);
   let produced: unknown;
   try {
-    produced = untrack(() => route.preload!({ params, location, intent, context: state.context }));
+    produced = untrack(() => route.preload!({ params: run.params, location: run.location, intent: run.intent, context: run.context }));
   } catch (thrown) {
-    return settleData(state, generation, routes, params, path, location, intent, index, matches, undefined, false, thrown);
+    return settleData(run, index, undefined, false, thrown);
   }
-  if (isThenable(produced)) {
-    return Promise.resolve(produced).then(
-      (value) => {
-        const early = checkpoint(state, generation);
-        if (early !== undefined) return early;
-        return settleData(state, generation, routes, params, path, location, intent, index, matches, value, true, undefined);
-      },
-      (thrown) => {
-        const early = checkpoint(state, generation);
-        if (early !== undefined) return early;
-        return settleData(state, generation, routes, params, path, location, intent, index, matches, undefined, false, thrown);
-      },
-    );
-  }
-  return settleData(state, generation, routes, params, path, location, intent, index, matches, produced, true, undefined);
+  if (!isThenable(produced)) return settleData(run, index, produced, true, undefined);
+  return Promise.resolve(produced).then(
+    (value) => checkpoint(run.state, run.generation) ?? settleData(run, index, value, true, undefined),
+    (thrown) => checkpoint(run.state, run.generation) ?? settleData(run, index, undefined, false, thrown),
+  );
 }
 
-function settleData(
-  state: RouterState,
-  generation: number,
-  routes: readonly CompiledRoute[],
-  params: Params,
-  path: string,
-  location: Location,
-  intent: PreloadIntent,
-  index: number,
-  matches: ActiveMatch[],
-  data: unknown,
-  hasData: boolean,
-  error: unknown,
-): SettleOutcome | Promise<SettleOutcome> {
-  const route = routes[index]!;
+function settleData(run: Settling, index: number, data: unknown, hasData: boolean, error: unknown): SettleOutcome | Promise<SettleOutcome> {
+  const route = run.routes[index]!;
   const push = (failure: unknown): SettleOutcome | Promise<SettleOutcome> => {
-    matches.push({ route, path, params, data, hasData: failure === undefined ? hasData : false, error: failure, info: route.info });
-    return settleRoute(state, generation, routes, params, path, location, intent, index + 1, matches);
+    run.matches.push({
+      route,
+      path: run.path,
+      params: run.params,
+      data,
+      hasData: failure === undefined ? hasData : false,
+      error: failure,
+      info: route.info,
+    });
+    return settleRoute(run, index + 1);
   };
   const redirect = route.redirect;
   if (error !== undefined || redirect === undefined || typeof redirect !== "function") return push(error);
-  const args = { params, location, intent, data, context: state.context };
+  const args = { params: run.params, location: run.location, intent: run.intent, data, context: run.context };
   let decided: Awaitable<RouteRedirect | undefined>;
   try {
     decided = untrack(() => redirect(args));
@@ -463,16 +480,12 @@ function settleData(
   if (isThenable(decided)) {
     return Promise.resolve(decided).then(
       (value) => {
-        const early = checkpoint(state, generation);
+        const early = checkpoint(run.state, run.generation);
         if (early !== undefined) return early;
         if (value === undefined || value === null) return push(error);
         return { kind: "redirect", to: value.to, replace: value.replace ?? true };
       },
-      (thrown) => {
-        const early = checkpoint(state, generation);
-        if (early !== undefined) return early;
-        return push(thrown);
-      },
+      (thrown) => checkpoint(run.state, run.generation) ?? push(thrown),
     );
   }
   if (decided === undefined || decided === null) return push(error);

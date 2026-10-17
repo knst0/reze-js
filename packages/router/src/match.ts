@@ -1,12 +1,4 @@
-import type {
-  Awaitable,
-  Params,
-  RouteComponent,
-  RouteDefinition,
-  PreloadArgs,
-  RouteRedirect,
-  RouteResolvedArgs,
-} from "./types";
+import type { Awaitable, Params, RouteComponent, RouteDefinition, PreloadArgs, RouteRedirect, RouteResolvedArgs } from "./types";
 
 const Static = 0;
 const Param = 1;
@@ -26,6 +18,7 @@ export interface CompiledRoute {
   /** The joined pattern from the root (`/blog/:id`); `Router.match` reports one per level. */
   readonly pattern: string;
   component: RouteComponent<any, any> | undefined;
+  beforeLoad: ((args: PreloadArgs<any>) => unknown) | undefined;
   preload: ((args: PreloadArgs<any>) => unknown) | undefined;
   redirect: (RouteRedirect | ((args: RouteResolvedArgs<any, any>) => Awaitable<RouteRedirect | undefined>)) | undefined;
   info: Readonly<Record<string, unknown>> | undefined;
@@ -124,6 +117,7 @@ function compileRoute(def: RouteDefinition, pattern: string, id: string): Compil
     id,
     pattern,
     component: def.component,
+    beforeLoad: def.beforeLoad,
     preload: def.preload,
     redirect: def.redirect,
     info: def.info,

@@ -14,8 +14,9 @@ export function defineRoutes<const R extends readonly RouteDefinition<any>[]>(ro
   return routes;
 }
 
-type RouteInput<S extends string, T, C> = Omit<RouteDefinition<C>, "path" | "preload" | "redirect" | "component"> & {
+type RouteInput<S extends string, T, C> = Omit<RouteDefinition<C>, "path" | "beforeLoad" | "preload" | "redirect" | "component"> & {
   path: S;
+  beforeLoad?: (args: PreloadArgs<RouteParams<S>, C>) => Awaitable<Partial<C> | undefined | void>;
   preload?: (args: PreloadArgs<RouteParams<S>, C>) => T;
   redirect?: RouteRedirect | ((args: RouteResolvedArgs<RouteParams<S>, T, C>) => Awaitable<RouteRedirect | undefined>);
   component?: RouteComponent<RouteParams<S>, Awaited<T>>;

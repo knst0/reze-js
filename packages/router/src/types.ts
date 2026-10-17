@@ -51,6 +51,11 @@ export interface RouteRedirect {
 
 export interface RouteConfig<D = unknown, C = RouterContext> {
   /**
+   * Runs root-to-leaf before the route's `preload`, on the server and in the browser alike; a returned object is
+   * merged over the context this route's `preload` and `redirect` and every descendant route receive.
+   */
+  beforeLoad?: (args: PreloadArgs<any, C>) => Awaitable<Partial<C> | undefined | void>;
+  /**
    * Starts the route's data; the return value is the component's `data`. Runs with intent `"preload"` when a link to the
    * route is hovered, focused or touched, and again with `"navigate"` when it is entered, so cache fetches that should not repeat.
    * May return a promise-like; navigations await it and deliver the settled value, never the promise.
@@ -172,6 +177,7 @@ export type RoutePropsFor<P extends RoutePattern> = RouteProps<ParamsFor<P>, Dat
  * without data.
  */
 export interface RouteConfigFor<P extends RoutePattern, D = unknown, C = RouterContext> {
+  beforeLoad?: (args: PreloadArgs<ParamsFor<P>, C>) => Awaitable<Partial<C> | undefined | void>;
   preload?: (args: PreloadArgs<ParamsFor<P>, C>) => D;
   redirect?: RouteRedirect | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<RouteRedirect | undefined>);
   info?: Readonly<Record<string, unknown>>;
