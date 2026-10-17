@@ -407,7 +407,7 @@ function assignSpreadProp(el: HtmlElement, name: string, value: unknown, prev: u
     setBoolAttribute(el, name.slice(5), value, site);
     return;
   }
-  if (!isSvg && Object.hasOwn(Properties, name)) {
+  if (name === "innerHTML" || (!isSvg && Object.hasOwn(Properties, name))) {
     setProperty(el, name, value, site);
     return;
   }

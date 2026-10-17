@@ -91,3 +91,11 @@ fn html_compiles_views_rooted_at_html_as_documents() {
         assert_eq!(errors[0].code, Code::ParserRelocation);
     }
 }
+
+#[test]
+fn html_writes_svg_inner_html_attributes_as_markup() {
+    let source = "export function Icon(p) {\n  return <svg><g innerHTML={p.a} /></svg>;\n}";
+    let out = code(source, "src/Icon.tsx", "src/Icon.tsx", CompileTarget::Html);
+    assert!(out.contains("hSetInnerHTML("), "{out}");
+    assert!(!out.contains("\"innerHTML\""), "{out}");
+}

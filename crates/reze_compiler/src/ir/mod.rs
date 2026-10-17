@@ -1364,7 +1364,7 @@ impl Builder<'_> {
         {
             return AttrKind::AttrNs(ns, name.to_string());
         }
-        if namespace == Namespace::Html && crate::html::is_property(name) {
+        if name == "innerHTML" || namespace == Namespace::Html && crate::html::is_property(name) {
             return match name {
                 "value" if tag == "textarea" || tag == "select" => {
                     AttrKind::LateProp(name.to_string())
@@ -1735,7 +1735,7 @@ fn close_spread(parts: &mut [SpreadPart], is_svg: bool) -> bool {
         } else if key.starts_with("bool:") {
             key.drain(..5);
             AttrTarget::Bool(key)
-        } else if !is_svg && crate::html::is_property(&key) {
+        } else if key == "innerHTML" || !is_svg && crate::html::is_property(&key) {
             AttrTarget::Prop(key)
         } else {
             AttrTarget::Attr(key)
