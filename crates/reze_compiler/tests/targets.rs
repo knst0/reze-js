@@ -77,3 +77,17 @@ fn html_keeps_module_state_per_request_without_layout_or_module_markers() {
     assert!(!out.contains("layout"), "{out}");
     assert!(!out.contains("markModule"), "{out}");
 }
+
+#[test]
+fn html_compiles_views_rooted_at_html_as_documents() {
+    let source = "export default (props) => <html><head><title>{props.title}</title></head><body><main>{props.children}</main></body></html>;";
+    let out = code(source, "src/document.tsx", "src/document.tsx", CompileTarget::Html);
+    assert!(out.contains("_$hRoot(\"html\", \"\", _site$)"), "{out}");
+
+    for target in [CompileTarget::Client, CompileTarget::Island] {
+        let options =
+            Options { target, module_id: Some("src/document.tsx".into()), ..Options::default() };
+        let errors = compile(source, "src/document.tsx", &options).err().expect("relocates");
+        assert_eq!(errors[0].code, Code::ParserRelocation);
+    }
+}

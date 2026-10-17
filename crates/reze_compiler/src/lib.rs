@@ -219,7 +219,12 @@ fn compile_module(
     );
     for view in &mut module.views {
         if let ir::view::ViewKind::Element(element) = &mut view.kind {
-            ir::layout::normalize(element, view.origin, &mut module.reports);
+            ir::layout::normalize(
+                element,
+                view.origin,
+                options.target == CompileTarget::Html,
+                &mut module.reports,
+            );
         }
     }
     let mut reports = normalized.reports;

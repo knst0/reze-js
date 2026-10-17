@@ -3,7 +3,9 @@ use std::cell::{Ref, RefCell};
 
 use html5ever::tendril::{StrTendril, TendrilSink};
 use html5ever::tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink};
-use html5ever::{Attribute, LocalName, Namespace, ParseOpts, QualName, parse_fragment};
+use html5ever::{
+    Attribute, LocalName, Namespace, ParseOpts, QualName, parse_document, parse_fragment,
+};
 use oxc_span::Span;
 
 use crate::diagnostic::{Code, Report};
@@ -192,7 +194,12 @@ fn push_static(
     }
 }
 
-pub fn normalize(view: &mut ElementView, origin: Span, reports: &mut Vec<Report>) {
+pub fn normalize(
+    view: &mut ElementView,
+    origin: Span,
+    renders_documents: bool,
+    reports: &mut Vec<Report>,
+) {
     if view.statics.nodes.is_empty() {
         return;
     }
@@ -212,10 +219,15 @@ pub fn normalize(view: &mut ElementView, origin: Span, reports: &mut Vec<Report>
         return;
     }
     let html = serialize_static(&view.statics);
-    let parsed = parse_template_html(&html, &view.statics.nodes[0]);
+    let as_document = renders_documents && is_document_root(&view.statics.nodes[0]);
+    let parsed = if as_document {
+        parse_document_html(&html)
+    } else {
+        parse_template_html(&html, &view.statics.nodes[0])
+    };
     let failed = {
         let mut matcher = Matcher { tree: &mut view.statics, reports, origin, failed: false };
-        matcher.match_roots(&parsed);
+        matcher.match_roots(&parsed, as_document);
         matcher.failed
     };
     if !failed {
@@ -586,6 +598,23 @@ fn template_wrapper(root: &StaticNode) -> Option<&'static str> {
     }
 }
 
+fn is_document_root(root: &StaticNode) -> bool {
+    root.kind == StaticNodeKind::Element
+        && root.ns == ViewNs::Html
+        && lowercase_tag(&root.tag) == "html"
+}
+
+fn parse_document_html(source: &str) -> Parsed {
+    let sink = LayoutSink {
+        nodes: RefCell::new(vec![PNode {
+            parent: None,
+            children: Vec::new(),
+            kind: PKind::Document,
+        }]),
+    };
+    parse_document(sink, ParseOpts::default()).one(StrTendril::from_slice(source))
+}
+
 fn parse_template_html(source: &str, root: &StaticNode) -> Parsed {
     let sink = LayoutSink {
         nodes: RefCell::new(vec![PNode {
@@ -667,9 +696,12 @@ impl Matcher<'_, '_> {
         }
     }
 
-    fn match_roots(&mut self, parsed: &Parsed) {
-        let fragment = parsed.nodes[0].children[0];
-        let mut roots = &parsed.nodes[fragment].children;
+    fn match_roots(&mut self, parsed: &Parsed, as_document: bool) {
+        let mut roots = if as_document {
+            &parsed.nodes[0].children
+        } else {
+            &parsed.nodes[parsed.nodes[0].children[0]].children
+        };
         if template_wrapper(&self.tree.nodes[0]).is_some() && roots.len() == 1 {
             roots = &parsed.nodes[roots[0]].children;
         }
