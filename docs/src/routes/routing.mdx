@@ -245,24 +245,6 @@ export default function Account(props: { children: JSX.Element }) {
 
 A route under `src/routes/account/` reads it as `context.locale` in `preload` or `redirect`.
 
-### Pass request context to routes
-
-For SSR and SSG, export `createContext` from the server entry. Reze calls it for every request or generated page and passes the result to route `preload` and `redirect` callbacks as `context`:
-
-```tsx file=src/entry-server.tsx
-import type { RouterContext, RouterServerContextFactory } from "@rezejs/router";
-
-declare module "@rezejs/router" {
-  interface RouterContext {
-    locale: string;
-  }
-}
-
-export const createContext: RouterServerContextFactory<RouterContext> = ({ request }) => ({
-  locale: request?.headers.get("accept-language")?.split(",")[0] ?? "en",
-});
-```
-
 ## Set page metadata
 
 Page metadata lives in [`<Head>`](/building-interfaces#head-tags), inside the components that render the page. `src/document.tsx` gives the defaults, and each shell, layout and route component overrides them for its part of the tree:
@@ -507,7 +489,7 @@ A Reze router app deploys in one of three ways. You can render each request on a
 
 ### Prerender pages
 
-Set `ssg` in the Vite plugin options. The `entry` names the module that exports the app. The `paths` option lists the params for each dynamic route:
+Set `ssg` in the Vite plugin options. `ssg: true` takes every default. The plugin prerenders the file routes in `src/routes`, and turns `fileRoutes` on when it is not set. The `paths` option lists the params for each dynamic route:
 
 ```ts file=vite.config.ts
 import reze from "@rezejs/vite-plugin";
@@ -516,9 +498,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [
     reze({
-      fileRoutes: true,
       ssg: {
-        entry: "src/entry-server.tsx",
         paths: {
           "/blog/:id": [{ id: "1" }, { id: "2" }],
         },
@@ -528,17 +508,10 @@ export default defineConfig({
 });
 ```
 
-The plugin reads the route table from the file routes, so the entry exports only the shell:
-
-```tsx file=src/entry-server.tsx
-import { Shell } from "./Shell";
-
-export default Shell;
-```
+There is no entry module. The plugin renders the file routes into the [document](/vite-plugin#the-document), which holds the markup every page shares.
 
 The `ssg` options are:
 
-- `entry` is required. With `fileRoutes` on, it exports only the optional shell as `default` and `createContext`; exporting `routes` from it fails the build. Without `fileRoutes`, it exports named `routes` for a router app, and an entry that exports only a default component renders `/` alone.
 - `document` is the [document module](/vite-plugin#the-document) that each page is written into. It defaults to `src/document.tsx`.
 - `trailingSlash` is `"always"` by default. With `"always"`, `/about` is written to `/about/`. With `"never"`, it stays `/about`. Each page is written to an `index.html` in its folder.
 - `timeoutMs` limits how long the build waits for the route discovery step and for each page to render. It defaults to `30000`.
@@ -549,9 +522,8 @@ Every dynamic route needs an entry in `paths`. Map a route to `[]` to skip it. A
 Prerendering rejects these setups:
 
 - `fileRoutes.history: "hash"`, because hash routes have no server path to render.
+- `fileRoutes: false`, because the pages are the file routes.
 - Library builds, `build.watch` builds, and explicit Vite `build.ssr` builds.
-- `ssg.paths` with a standalone entry that has no `routes` export.
-- A missing `entry` file.
 - A redirect to a path under the base that does not match a prerendered page, or to a path outside the base.
 - A redirect to a URL with a scheme other than `http:` or `https:`. Absolute `http:` and `https:` targets, and protocol-relative `//` targets, are left as they are.
 - A cycle of redirects.
@@ -560,7 +532,7 @@ Prerendering rejects these setups:
 
 With `ssr` or `ssg` set, the browser does not run the route table. A click on a link to another page of the app fetches that page's HTML and replaces the content of the mount element, then updates the address bar and the `<Head>` tags of the new page. Nothing else in the document reloads, so state outside the mount element survives. Everything inside the mount element is new, including the DOM of a layout that appeared on both pages.
 
-- `preload` and `redirect` run on the server for each request, or once for each page at build time. They do not run in the browser. A component receives the result through `props.data`.
+- `beforeLoad`, `preload` and `redirect` run on the server for each request, or once for each page at build time. They do not run in the browser. A component receives the result through `props.data`.
 - Hovering, focusing, or touching a link fetches its page ahead of the click, once for each link within 10 seconds. `useIsRouting()` is `true` while a navigation waits for its page.
 - A response that is not HTML, a failed fetch, or a build ID that differs from the current page's loads the destination as an ordinary navigation.
 - `useLocation`, `useParams`, `useNavigate`, `useSearchParams`, `useIsRouting`, `useBeforeLeave`, and `link` work inside islands. `useCurrentMatches` returns each match's `path` and `params`, and `data` is `undefined` there.

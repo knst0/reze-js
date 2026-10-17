@@ -36,8 +36,6 @@ export type {
   PreloadIntent,
   RouterContext,
   Register,
-  RouterServerContextArgs,
-  RouterServerContextFactory,
   RouteComponent,
   RouteConfig,
   RouteConfigFor,

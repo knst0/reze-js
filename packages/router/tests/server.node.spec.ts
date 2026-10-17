@@ -152,20 +152,6 @@ test("prepareServerRoute settles preloads and distinguishes missing preloads fro
   ]);
 });
 
-test("prepareServerRoute passes its context into data", async () => {
-  const context = { requestId: "ssr-42" };
-  const contextRoutes: RouteDefinition<typeof context>[] = [
-    {
-      path: "/",
-      preload: ({ context }) => context.requestId,
-      component: Home,
-    },
-  ];
-  const withContext = await prepareServerRoute(contextRoutes, "/", { context });
-  if (withContext.status !== "render") throw new Error("expected render");
-  expect(withContext.matches[0]?.data).toBe("ssr-42");
-});
-
 test("prepareServerRoute cascades beforeLoad context from layouts into descendant preloads and redirects", async () => {
   const seen: unknown[] = [];
   const cascadeRoutes: RouteDefinition<any>[] = [

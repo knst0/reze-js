@@ -23,12 +23,12 @@ export interface Options {
   links?: string;
   /** File extensions the transform compiles, replacing `DEFAULT_ROUTE_EXTENSIONS`. Spread it to extend, e.g. `[...DEFAULT_ROUTE_EXTENSIONS, ".mdx"]` when a preprocessor runs before this plugin. File routes default to this list. */
   extensions?: string[];
-  /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. The result is awaitable in `plugins`. */
+  /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. On whenever `ssg` or `ssr` is set. The result is awaitable in `plugins`. */
   fileRoutes?: boolean | FileRoutesOptions;
-  /** Static-site generation: a production build that prerenders each page with the server renderer. Absent by default. */
-  ssg?: SsgOptions;
-  /** Request-time rendering: builds `dist/server/entry.js`, exporting a web `fetch` handler. Absent by default. */
-  ssr?: SsrOptions;
+  /** Static-site generation: a production build that prerenders each file route with the server renderer. Absent by default. */
+  ssg?: true | SsgOptions;
+  /** Request-time rendering of the file routes: builds `dist/server/entry.js`, exporting a web `fetch` handler. Absent by default. */
+  ssr?: true | SsrOptions;
   profile?: {
     /** Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. */
     dir: string;
@@ -371,21 +371,17 @@ export type { FileRoutesOptions } from "./routes";
 export type { SsgOptions, SsrOptions, StaticParams, StaticPathsValue } from "./server/options";
 
 export default function reze(options?: Options & { fileRoutes?: false | undefined; ssg?: undefined; ssr?: undefined }): Plugin<RezeApi>;
-export default function reze(options: Options & { ssg?: SsgOptions; ssr?: SsrOptions; fileRoutes?: false | undefined }): Plugin[];
-export default function reze(
-  options: Options & { ssg?: SsgOptions; ssr?: SsrOptions; fileRoutes: true | FileRoutesOptions },
-): Promise<Plugin[]>;
-export default function reze(options: Options = {}): Plugin<RezeApi> | Plugin[] | Promise<Plugin[]> {
+export default function reze(options: Options & { fileRoutes?: true | FileRoutesOptions }): Promise<Plugin[]>;
+export default function reze(options: Options = {}): Plugin<RezeApi> | Promise<Plugin[]> {
   const shared = createServerShared();
   const plugin = rezePlugin(options, shared);
-  const server =
-    options.ssg === undefined && options.ssr === undefined
-      ? []
-      : createServerPlugin({ ssg: options.ssg, ssr: options.ssr }, shared, options.fileRoutes === true ? {} : options.fileRoutes);
-  if (options.fileRoutes === undefined || options.fileRoutes === false) {
-    return server.length === 0 ? plugin : [plugin, ...server];
+  const isServer = options.ssg !== undefined || options.ssr !== undefined;
+  if (options.fileRoutes === false || (!isServer && options.fileRoutes === undefined)) {
+    if (isServer) throw new Error("[reze] ssg and ssr render the file routes; remove fileRoutes: false");
+    return plugin;
   }
-  const routesOptions = options.fileRoutes === true ? {} : options.fileRoutes;
+  const routesOptions = options.fileRoutes === undefined || options.fileRoutes === true ? {} : options.fileRoutes;
+  const server = isServer ? createServerPlugin({ ssg: options.ssg, ssr: options.ssr }, shared, routesOptions) : [];
   return routesPlugins(plugin, routesOptions, options.extensions).then((plugins) => [...server, ...plugins]);
 }
 

@@ -23,7 +23,7 @@ describe("ssr output layout", () => {
         root: FIXTURE,
         configFile: false,
         logLevel: "silent",
-        plugins: reze({ ssr: { entry: "src/app.tsx" } }),
+        plugins: [reze({ fileRoutes: { types: false }, ssr: true })],
       });
       await builder.buildApp();
       expect(existsSync(join(DIST, "client", "reze-assets.json"))).toBe(true);
@@ -36,9 +36,9 @@ describe("ssr output layout", () => {
   test(
     "refuses a server directory that nests in or contains the client directory",
     async () => {
-      await expectBuildFails(reze({ ssr: { entry: "src/app.tsx" } }), FIXTURE, DIST, /overlaps build\.outDir/);
+      await expectBuildFails(reze({ fileRoutes: { types: false }, ssr: true }), FIXTURE, DIST, /overlaps build\.outDir/);
       await expectBuildFails(
-        reze({ ssr: { entry: "src/app.tsx", outDir: "dist" } }),
+        reze({ fileRoutes: { types: false }, ssr: { outDir: "dist" } }),
         FIXTURE,
         join(DIST, "client"),
         /overlaps build\.outDir/,

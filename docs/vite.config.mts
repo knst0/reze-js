@@ -23,7 +23,7 @@ export default defineConfig({
       }),
       enforce: "pre",
     },
-    reze({ fileRoutes: true, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"], ssg: { entry: "src/app.tsx" } }),
+    reze({ extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"], ssg: true }),
     tailwindcss(),
     llms(),
   ]),

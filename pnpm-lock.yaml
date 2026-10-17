@@ -257,6 +257,9 @@ importers:
 
   examples/islands:
     dependencies:
+      '@rezejs/router':
+        specifier: workspace:*
+        version: link:../../packages/router
       reze-js:
         specifier: workspace:*
         version: link:../../packages/reze-js

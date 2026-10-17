@@ -7,8 +7,7 @@ import type { DefaultTreeAdapterMap } from "parse5";
 import { afterEach, beforeEach, expect, test } from "vite-plus/test";
 
 import { buildClientRegistry } from "../src/server/assets";
-import { resolveAppMode } from "../src/server/export-graph";
-import { resolvePathsCallbacks, resolveSsgOptions } from "../src/server/options";
+import { resolvePathsCallbacks, resolveSsgOptions, resolveSsrOptions } from "../src/server/options";
 import {
   bootstrapScriptSrc,
   buildRedirectPage,
@@ -41,11 +40,14 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("ssg options reject a missing entry and a dead timeout", () => {
-  expect(() => resolveSsgOptions({ entry: "" })).toThrow(/ssg\.entry/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: 0 })).toThrow(/timeoutMs/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", timeoutMs: Number.NaN })).toThrow(/timeoutMs/);
-  expect(() => resolveSsgOptions({ entry: "src/app.tsx", trailingSlash: "sometimes" as "always" })).toThrow(/trailingSlash/);
+test("server options take true for the defaults and reject a leftover entry and a dead timeout", () => {
+  expect(resolveSsgOptions(true)).toEqual(resolveSsgOptions({}));
+  expect(resolveSsrOptions(true)).toEqual({ document: "src/document.tsx", timeoutMs: 30_000, outDir: "dist/server" });
+  expect(() => resolveSsgOptions({ entry: "src/app.tsx" } as never)).toThrow(/ssg\.entry is gone.*document/);
+  expect(() => resolveSsrOptions({ entry: "src/app.tsx" } as never)).toThrow(/ssr\.entry is gone/);
+  expect(() => resolveSsgOptions({ timeoutMs: 0 })).toThrow(/timeoutMs/);
+  expect(() => resolveSsgOptions({ timeoutMs: Number.NaN })).toThrow(/timeoutMs/);
+  expect(() => resolveSsgOptions({ trailingSlash: "sometimes" as "always" })).toThrow(/trailingSlash/);
 });
 
 test("paths callbacks resolve once and validate every param shape", async () => {
@@ -118,52 +120,6 @@ test("redirect pages drop the bootstrap and carry an accessible target", () => {
     ),
   ).toBe(`0;url=${to}`);
   expect(JSON.parse(text(nodes.find((node) => attribute(node, "data-reze-redirect") !== undefined)!))).toEqual({ to, replace: true });
-});
-
-test("the export graph tells router apps from standalone ones, follows export stars and rejects ambiguities", () => {
-  const files = new Map([
-    ["/r/app.tsx", `export { routes } from "./routes";\nexport { default } from "./shell";\n`],
-    ["/r/routes.ts", `export const routes = [];\n`],
-    ["/r/shell.tsx", `export default function Shell() {}\n`],
-    ["/s/app.tsx", `export default function App() {}\n`],
-    ["/e/entry.ts", `export * from "./a";\nexport * from "./b";\n`],
-    ["/e/a.ts", `export const routes = [];\n`],
-    ["/e/b.ts", `export const routes = [];\n`],
-    ["/f/entry.ts", `export * from "./a";\nexport const routes = [];\n`],
-  ]);
-  const specifiers: Record<string, string> = {
-    "./routes": "/r/routes.ts",
-    "./shell": "/r/shell.tsx",
-    "./a": "/e/a.ts",
-    "./b": "/e/b.ts",
-  };
-  const env = {
-    readFile: (id: string) => files.get(id),
-    resolveSpec: (spec: string) => specifiers[spec],
-    virtualExports: (_id: string) => undefined as readonly string[] | undefined,
-  };
-  const manual = { fileRoutes: false };
-  expect(resolveAppMode("/r/app.tsx", env, manual)).toEqual({ kind: "router", hasShell: true, fileRoutes: false });
-  expect(resolveAppMode("/s/app.tsx", env, manual)).toEqual({ kind: "standalone" });
-  expect(() => resolveAppMode("/e/entry.ts", env, manual)).toThrow(/ambiguous/);
-  expect(resolveAppMode("/f/entry.ts", env, manual)).toEqual({ kind: "router", hasShell: false, fileRoutes: false });
-});
-
-test("with file routes the entry holds only the shell and never re-exports the route table", () => {
-  const files = new Map([
-    ["/app.tsx", `export default function Shell() {}\nexport function createContext() {}\n`],
-    ["/bare.tsx", `export function createContext() {}\n`],
-    ["/reexport.tsx", `export { paths, routes } from "virtual:reze-routes";\n`],
-  ]);
-  const env = {
-    readFile: (id: string) => files.get(id),
-    resolveSpec: (spec: string) => spec,
-    virtualExports: (id: string) => (id === "virtual:reze-routes" ? ["routes", "paths"] : undefined),
-  };
-  const fileRoutes = { fileRoutes: true };
-  expect(resolveAppMode("/app.tsx", env, fileRoutes)).toEqual({ kind: "router", hasShell: true, fileRoutes: true });
-  expect(resolveAppMode("/bare.tsx", env, fileRoutes)).toEqual({ kind: "router", hasShell: false, fileRoutes: true });
-  expect(() => resolveAppMode("/reexport.tsx", env, fileRoutes)).toThrow(/remove the routes export/);
 });
 
 test("page urls reject traversal, encoded slashes and reserved segments", () => {

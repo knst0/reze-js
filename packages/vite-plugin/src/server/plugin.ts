@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 
 import { createRunnableDevEnvironment, version as viteVersion } from "vite";
 import type { EnvironmentOptions, Plugin } from "vite";
@@ -33,8 +33,6 @@ import { captureOutput } from "./capture";
 import { createDevDocumentMiddleware } from "./dev";
 import { loadDocument } from "./document";
 import type { AppDocument } from "./document";
-import { resolveAppMode } from "./export-graph";
-import type { AppMode } from "./export-graph";
 import { ClientOutDirDefault, assertDisjointOutDirs, assertSharedServerOptions, resolveSsgOptions, resolveSsrOptions } from "./options";
 import type { ResolvedSsgOptions, ResolvedSsrOptions, SsgOptions, SsrOptions } from "./options";
 import { validateTemplate } from "./template";
@@ -58,16 +56,16 @@ export function createServerShared(): ServerShared {
 }
 
 export interface ServerOptions {
-  ssg?: SsgOptions | undefined;
-  ssr?: SsrOptions | undefined;
+  ssg?: true | SsgOptions | undefined;
+  ssr?: true | SsrOptions | undefined;
 }
 
 function viteMajor(): number {
   return Number(viteVersion.split(".")[0]);
 }
 
-function toPosixAbsolute(root: string, entry: string): string {
-  const absolute = (isAbsolute(entry) ? entry : resolve(root, entry)).replace(/\\/g, "/");
+function toPosixAbsolute(root: string, file: string): string {
+  const absolute = (isAbsolute(file) ? file : resolve(root, file)).replace(/\\/g, "/");
   return /^[A-Za-z]:\//.test(absolute) ? `/${absolute}` : absolute;
 }
 
@@ -75,11 +73,7 @@ function isServerEnvironment(environment: { name: string }): boolean {
   return environment.name === "client" || environment.name === HtmlEnv;
 }
 
-export function createServerPlugin(
-  input: ServerOptions,
-  shared: ServerShared,
-  fileRoutes: false | FileRoutesOptions | undefined,
-): Plugin[] {
+export function createServerPlugin(input: ServerOptions, shared: ServerShared, fileRoutes: FileRoutesOptions): Plugin[] {
   shared.enabled = true;
   const label = input.ssg === undefined ? "ssr" : "ssg";
   let root = "";
@@ -91,8 +85,6 @@ export function createServerPlugin(
   let ssgOptions: ResolvedSsgOptions | undefined;
   let ssrOptions: ResolvedSsrOptions | undefined;
   let primary: ResolvedSsgOptions | ResolvedSsrOptions | undefined;
-  let mode: AppMode | undefined;
-  let entryAbs = "";
   let documentFile = "";
   let htmlInput = "";
   let appDocument: AppDocument | undefined;
@@ -113,14 +105,14 @@ export function createServerPlugin(
       return undefined;
     },
     load(id) {
-      if (primary === undefined || mode === undefined) return undefined;
+      if (primary === undefined) return undefined;
       if (!isServe && id === htmlInput && this.environment.name === "client") return currentDocument().html;
-      if (id === ClientId) return clientEntrySource({ router: mode.kind === "router", rootId: currentDocument().rootId });
+      if (id === ClientId) return clientEntrySource(currentDocument().rootId);
       if (id === IslandsId) return { code: islandsSource(islandEntries()), moduleSideEffects: "no-treeshake" };
       if (id === ServerEntryId) {
-        return this.environment.name === HtmlEnv ? serverEntrySource({ mode, entrySpecifier: entryAbs }) : undefined;
+        return this.environment.name === HtmlEnv ? serverEntrySource() : undefined;
       }
-      if (id === SsgViewId) return viewSource(mode, entryAbs);
+      if (id === SsgViewId) return viewSource();
       if (id === SsgRedirectId) return redirectModuleSource();
       if (id === DevFactsId) {
         return devFactsSource({ base, rootId: currentDocument().rootId, timeoutMs: (ssrOptions ?? primary).timeoutMs });
@@ -140,7 +132,7 @@ export function createServerPlugin(
     applyToEnvironment: isServerEnvironment,
     config(config, env) {
       command = env.command;
-      if (fileRoutes !== false && fileRoutes !== undefined && fileRoutes.history === "hash") {
+      if (fileRoutes.history === "hash") {
         throw new Error(`[reze] ${label} does not support hash routing`);
       }
       if (config.build?.lib !== undefined && config.build.lib !== false) {
@@ -183,13 +175,7 @@ export function createServerPlugin(
         async buildApp(builder) {
           await builder.build(builder.environments[HtmlEnv]!);
           await builder.build(builder.environments.client!);
-          if (
-            mode === undefined ||
-            primary === undefined ||
-            state.outputs.length === 0 ||
-            state.htmlChunks.length === 0 ||
-            state.templateHtml === ""
-          ) {
+          if (primary === undefined || state.outputs.length === 0 || state.htmlChunks.length === 0 || state.templateHtml === "") {
             throw new Error("[reze] SSG build did not produce both the executable HTML graph and client template");
           }
           await runServerBuild({
@@ -197,7 +183,6 @@ export function createServerPlugin(
             base,
             clientOutDir: outDir,
             publicDir,
-            mode,
             captured: state,
             assets,
             moduleFiles: shared.moduleFiles,
@@ -227,10 +212,6 @@ export function createServerPlugin(
       if (ssgOptions !== undefined && ssrOptions !== undefined) assertSharedServerOptions(ssgOptions, ssrOptions);
       primary = ssgOptions ?? ssrOptions;
       if (primary === undefined) throw new Error("[reze] server plugin needs ssg or ssr options");
-      entryAbs = toPosixAbsolute(root, primary.entry);
-      if (!existsSync(entryAbs)) {
-        throw new Error(`[reze] ${label}.entry not found: ${JSON.stringify(primary.entry)}`);
-      }
       if (!isServe) {
         if (config.build.watch !== null && config.build.watch !== undefined) {
           throw new Error(`[reze] ${label} does not support build.watch`);
@@ -250,18 +231,6 @@ export function createServerPlugin(
       documentFile = toPosixAbsolute(root, primary.document);
       appDocument = undefined;
       if (!isServe) currentDocument();
-      mode = resolveAppMode(
-        entryAbs,
-        {
-          readFile: (id) => (existsSync(id) ? readFileSync(id, "utf8") : undefined),
-          resolveSpec: (spec, importer) => resolveImport(spec, importer, root),
-          virtualExports: (id) => (id === "virtual:reze-routes" || id === "\0virtual:reze-routes" ? ["routes", "paths"] : undefined),
-        },
-        { fileRoutes: fileRoutes !== false && fileRoutes !== undefined },
-      );
-      if (mode.kind === "standalone" && ssgOptions !== undefined && Object.keys(ssgOptions.paths).length > 0) {
-        throw new Error("[reze] ssg.paths needs a router app; a standalone entry renders only /");
-      }
     },
     configureServer(server) {
       if (primary === undefined) return;
@@ -338,27 +307,4 @@ function checkBundlerInput(value: unknown, key: string): void {
       throw new Error(`[reze] ssg needs preserved dynamic chunks; remove build.${key}.output.inlineDynamicImports`);
     }
   }
-}
-
-function resolveImport(spec: string, importer: string, root: string): string | undefined {
-  if (spec === "virtual:reze-routes") return "virtual:reze-routes";
-  if (!spec.startsWith("./") && !spec.startsWith("../") && !spec.startsWith("/")) return undefined;
-  const basePath = spec.startsWith("/") ? join(root, spec.slice(1)) : join(importer.slice(0, importer.lastIndexOf("/")), spec);
-  for (const candidate of [
-    basePath,
-    `${basePath}.ts`,
-    `${basePath}.tsx`,
-    `${basePath}.js`,
-    `${basePath}.jsx`,
-    `${basePath}.mts`,
-    `${basePath}.cts`,
-    `${basePath}.mjs`,
-    `${basePath}.cjs`,
-    `${basePath}/index.ts`,
-    `${basePath}/index.tsx`,
-    `${basePath}/index.js`,
-  ]) {
-    if (existsSync(candidate)) return candidate.replace(/\\/g, "/");
-  }
-  return undefined;
 }

@@ -187,9 +187,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [
     reze({
-      fileRoutes: true,
       ssr: {
-        entry: "src/app.tsx",
         document: "src/document.tsx",
         timeoutMs: 30000,
         outDir: "dist/server",
@@ -199,16 +197,15 @@ export default defineConfig({
 });
 ```
 
-The `ssr` options are:
+`ssr: true` takes every default. The pages are the [file routes](#file-routes), so `ssr` turns `fileRoutes` on when it is not set and fails with `fileRoutes: false`. The `ssr` options are:
 
 | Option      | Type     | Default              | Purpose                                                                                                                            |
 | ----------- | -------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `entry`     | `string` | Required             | Module that renders the app. The entry shapes are the same as for [static generation](#entry-shapes).                              |
 | `document`  | `string` | `"src/document.tsx"` | The page around the app. See [The document](#the-document).                                                                        |
 | `timeoutMs` | `number` | `30000`              | Time one request has to finish rendering, in milliseconds. The value must be finite and greater than zero.                         |
 | `outDir`    | `string` | `"dist/server"`      | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers. |
 
-When you set both `ssr` and `ssg`, they must use the same `entry` and `document`. Otherwise the plugin fails with `[reze] ssg and ssr must use the same entry and document`.
+When you set both `ssr` and `ssg`, they must use the same `document`. Otherwise the plugin fails with `[reze] ssg and ssr must use the same document`.
 
 ### The document
 
@@ -299,7 +296,7 @@ Set `ssg` to generate one HTML file per page at build time. The pages come from 
 
 ### Configure static generation
 
-The minimum configuration needs an entry module. The other options have defaults:
+The minimum configuration is `ssg: true`. Every option has a default:
 
 ```ts file=examples/static-site.config.ts
 import reze from "@rezejs/vite-plugin";
@@ -308,9 +305,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [
     reze({
-      fileRoutes: true,
       ssg: {
-        entry: "src/app.tsx",
         document: "src/document.tsx",
         trailingSlash: "always",
         timeoutMs: 30000,
@@ -328,43 +323,14 @@ The `ssg` options are:
 
 | Option          | Type                    | Default              | Purpose                                                                                                                                             |
 | --------------- | ----------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entry`         | `string`                | Required             | Module that renders the app. The path is relative to the Vite `root`. A missing file fails with `[reze] ssg.entry not found: "<entry>"`.            |
 | `document`      | `string`                | `"src/document.tsx"` | The page around the app. See [The document](#the-document).                                                                                         |
 | `trailingSlash` | `"always"` or `"never"` | `"always"`           | URL form of generated pages. `"always"` uses `/todos/1/`, and `"never"` uses `/todos/1`. Output file names do not change.                           |
 | `timeoutMs`     | `number`                | `30000`              | Render deadline for one page, in milliseconds. The value must be finite and greater than zero. See [Failures and timeouts](#failures-and-timeouts). |
 | `paths`         | Object                  | `{}`                 | Parameter values for dynamic routes. See [Map dynamic routes](#map-dynamic-routes).                                                                 |
 
-### Entry shapes
+### Pages
 
-The entry module decides how pages are enumerated. The plugin reads its exports:
-
-- **File-routes app.** With `fileRoutes` on, the plugin reads the route table from `virtual:reze-routes` itself. The entry holds only the optional `default` shell and `createContext`. An entry that still exports `routes` fails with a message to remove that export.
-- **Router app.** Without `fileRoutes`, the entry exports a named `routes` table. The plugin renders every leaf route in the table. A `default` export, when present, is the shell. The shell wraps the matched route on every page.
-- **Standalone app.** The entry exports only a `default` component and `fileRoutes` is off. The plugin renders one page at `/`.
-
-A standalone app with a non-empty `paths` object fails with `[reze] ssg.paths needs a router app; a standalone entry renders only /`. An entry with neither export fails with ``[reze] SSG entry must export a named `routes` table (router app) or a default component (standalone app), or turn on fileRoutes``.
-
-A standalone entry looks like this:
-
-```tsx file=src/app.tsx
-export default function App() {
-  return (
-    <main>
-      <h1>Todos</h1>
-    </main>
-  );
-}
-```
-
-A file-routes entry exports only the shell:
-
-```tsx file=router-app/src/app.tsx
-import type { JSX } from "reze-js";
-
-export default function Shell(props: { children?: JSX.Element }) {
-  return <main>{props.children}</main>;
-}
-```
+The plugin renders the [file routes](#file-routes), one page per leaf route. There is no entry module: a leftover `entry` option fails with a message to remove it. Markup that every page shares and that never changes, such as a stylesheet link or a site header, belongs in [the document](#the-document). Each page is a flat file in `src/routes`, so `src/routes/about.tsx` is `/about` and `paths.about()` links to it. A layout that wraps a group of pages is a [layout route](/routing), such as `src/routes/blog.tsx` around `src/routes/blog/`. Values shared with child routes come from a layout's `beforeLoad`, which [routing](/routing#share-context-with-child-routes) describes.
 
 ### Map dynamic routes
 

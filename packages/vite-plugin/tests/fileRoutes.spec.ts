@@ -12,9 +12,9 @@ let root: string;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "reze-file-routes-"));
-  mkdirSync(join(root, "src"));
+  mkdirSync(join(root, "src", "routes"), { recursive: true });
   symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "dir");
-  writeFileSync(join(root, "src", "app.tsx"), "export const unrelated = 1;\n");
+  writeFileSync(join(root, "src", "routes", "index.tsx"), "export default function Home(){return <p>home</p>}");
 });
 
 afterEach(() => {
@@ -41,7 +41,7 @@ test("route-specific extensions override the scan in a custom directory", async 
   await buildSsgFixture({
     fixtureDir: root,
     outDir,
-    plugins: await reze({ fileRoutes: { dir: "pages", extensions: [".tsx"], types: false }, ssg: { entry: "src/app.tsx" } }),
+    plugins: await reze({ fileRoutes: { dir: "pages", extensions: [".tsx"], types: false }, ssg: true }),
   });
   expect(
     listBuiltFiles(outDir)
@@ -53,11 +53,11 @@ test("route-specific extensions override the scan in a custom directory", async 
 
 test("the document replaces index.html and refuses a dynamic shell", async () => {
   writeFileSync(join(root, "index.html"), "<!doctype html>");
-  await expectBuildFails(reze({ ssg: { entry: "src/app.tsx" } }), root, join(root, "dist"), /never reads index\.html/);
+  await expectBuildFails(reze({ fileRoutes: { types: false }, ssg: true }), root, join(root, "dist"), /never reads index\.html/);
   rmSync(join(root, "index.html"));
   writeFileSync(
     join(root, "src", "document.tsx"),
     'export default (props) => <html><head><title>{new Date().toString()}</title></head><body><div id="app">{props.children}</div></body></html>;',
   );
-  await expectBuildFails(reze({ ssg: { entry: "src/app.tsx" } }), root, join(root, "dist"), /DOCUMENT_DYNAMIC/);
+  await expectBuildFails(reze({ fileRoutes: { types: false }, ssg: true }), root, join(root, "dist"), /DOCUMENT_DYNAMIC/);
 }, 30_000);

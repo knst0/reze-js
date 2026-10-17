@@ -22,9 +22,9 @@ beforeEach(() => {
     JSON.stringify({ name: "@fixture/label", type: "module", exports: { ".": { reze: "./reze.js" } } }),
   );
   writeFileSync(join(modules, "@fixture", "label", "reze.js"), 'export const label = "from-reze";\n');
-  mkdirSync(join(root, "src"));
+  mkdirSync(join(root, "src", "routes"), { recursive: true });
   writeFileSync(
-    join(root, "src", "app.tsx"),
+    join(root, "src", "routes", "index.tsx"),
     'import { label } from "@fixture/label";\nexport default function App() { return <p>{label}</p>; }\n',
   );
 });
@@ -35,7 +35,7 @@ afterEach(() => {
 
 test("both environments add the reze conditions on top of vite's defaults", async () => {
   const config = await resolveConfig(
-    { root, configFile: false, logLevel: "silent", plugins: reze({ ssg: { entry: "src/app.tsx" } }) },
+    { root, configFile: false, logLevel: "silent", plugins: [reze({ fileRoutes: { types: false }, ssg: true })] },
     "build",
   );
   expect(config.environments.client!.resolve.conditions).toEqual(["reze", ...defaultClientConditions]);
@@ -44,6 +44,6 @@ test("both environments add the reze conditions on top of vite's defaults", asyn
 
 test("a package that exports only the reze condition renders on the server without extra config", async () => {
   const outDir = join(root, "dist");
-  await buildSsgFixture({ fixtureDir: root, outDir, plugins: reze({ ssg: { entry: "src/app.tsx" } }) });
+  await buildSsgFixture({ fixtureDir: root, outDir, plugins: reze({ fileRoutes: { types: false }, ssg: true }) });
   expect(readFileSync(join(outDir, "index.html"), "utf8")).toContain("from-reze");
 }, 30_000);

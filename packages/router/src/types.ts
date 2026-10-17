@@ -35,15 +35,6 @@ export type RouteComponent<P extends Params = Params, D = unknown> = (props: Rou
 
 export type Awaitable<T> = T | PromiseLike<T>;
 
-export interface RouterServerContextArgs {
-  readonly request?: Request;
-  readonly pathname: string;
-  readonly search: string;
-  readonly mode: "ssr" | "ssg";
-}
-
-export type RouterServerContextFactory<C> = (args: RouterServerContextArgs) => Awaitable<C>;
-
 export interface RouteRedirect {
   to: string;
   replace?: boolean;

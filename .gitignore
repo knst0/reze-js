@@ -11,3 +11,4 @@ dist
 /.omp
 
 .vitest/
+examples/islands/src/routes.gen.d.ts

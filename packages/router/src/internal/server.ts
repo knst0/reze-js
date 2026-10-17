@@ -64,11 +64,9 @@ export interface SsgNotFoundResult {
 
 export type SsgPreparedRoute = SsgRenderResult | SsgRedirectResult | SsgNotFoundResult;
 
-export interface SsgPrepareOptions<C = unknown> {
+export interface SsgPrepareOptions {
   /** Served base the router paths exclude; default `""`. */
   readonly base?: string;
-  /** Values made available to matched route callbacks. */
-  readonly context?: C;
 }
 
 function dynamicsOf(pattern: string): SsgParamSpec[] {
@@ -349,11 +347,11 @@ export function uninstallServerLinkTarget(): void {
 export function prepareServerRoute<C = unknown>(
   routes: readonly RouteDefinition<C>[],
   path: string,
-  opts?: SsgPrepareOptions<C>,
+  opts?: SsgPrepareOptions,
 ): Promise<SsgPreparedRoute> {
   const branches = compileRoutes(routes);
   const history = createCaptureHistory(path, opts?.base ?? "");
-  const state = initRouterState({ history, branches, env: "html", context: opts?.context });
+  const state = initRouterState({ history, branches, env: "html" });
   installServerLinkTarget();
   return settleEntry(state, history.get(), "initial").then((outcome) => {
     if (outcome.kind === "redirect") return { status: "redirect", to: outcome.to, replace: outcome.replace };
@@ -444,7 +442,7 @@ export function resolveSsgRedirectChain<C = unknown>(
   routes: readonly RouteDefinition<C>[],
   startPath: string,
   maxDepth = 10,
-  opts?: SsgPrepareOptions<C>,
+  opts?: SsgPrepareOptions,
 ): Promise<SsgPreparedRoute | { readonly status: "external"; readonly to: string }> {
   const visited: string[] = [];
   let path = startPath;

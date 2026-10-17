@@ -1,7 +1,6 @@
 import { ClientId } from "./adapter";
 import type { BundleChunk, BundleOutput, ClientAssetInputs } from "./assets";
 import { buildClientRegistry } from "./assets";
-import type { AppMode } from "./export-graph";
 import { clientBuildId, createServerFacts, writeAssetManifest } from "./facts";
 import type { ResolvedSsgOptions } from "./options";
 import type { ResolvedSsrOptions } from "./options";
@@ -22,7 +21,6 @@ export interface ServerBuildInput {
   base: string;
   clientOutDir: string;
   publicDir: string;
-  mode: AppMode;
   captured: CapturedState;
   assets: ClientAssetInputs;
   moduleFiles: ReadonlyMap<string, string>;
@@ -62,7 +60,6 @@ export async function runServerBuild(input: ServerBuildInput): Promise<void> {
       base: input.base,
       outDir: input.clientOutDir,
       publicDir: input.publicDir,
-      mode: input.mode,
       options: ssg,
       htmlChunks: captured.htmlChunks,
       facts,

@@ -5,7 +5,6 @@ export type StaticParams = Readonly<Record<string, string | readonly string[] | 
 export type StaticPathsValue = readonly StaticParams[] | (() => readonly StaticParams[] | PromiseLike<readonly StaticParams[]>);
 
 export interface SsgOptions {
-  entry: string;
   document?: string;
   trailingSlash?: "always" | "never";
   timeoutMs?: number;
@@ -13,7 +12,6 @@ export interface SsgOptions {
 }
 
 export interface ResolvedSsgOptions {
-  entry: string;
   document: string;
   trailingSlash: "always" | "never";
   timeoutMs: number;
@@ -21,14 +19,12 @@ export interface ResolvedSsgOptions {
 }
 
 export interface SsrOptions {
-  entry: string;
   document?: string;
   timeoutMs?: number;
   outDir?: string;
 }
 
 export interface ResolvedSsrOptions {
-  entry: string;
   document: string;
   timeoutMs: number;
   outDir: string;
@@ -39,9 +35,14 @@ const OutDirDefault = "dist/server";
 const DocumentDefault = "src/document.tsx";
 export const ClientOutDirDefault = "dist/client";
 
-function checkEntry(prefix: string, entry: unknown): void {
-  if (typeof entry !== "string" || entry.length === 0) {
-    throw new Error(`[reze] ${prefix}.entry is required: a project-relative module exporting the application`);
+function checkObject(prefix: string, input: unknown): void {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new Error(`[reze] ${prefix} must be true or an options object, got ${JSON.stringify(input)}`);
+  }
+  if ("entry" in input) {
+    throw new Error(
+      `[reze] ${prefix}.entry is gone: the app is the file routes in src/routes and shared markup is in the document; remove ${prefix}.entry and the entry module`,
+    );
   }
 }
 
@@ -51,8 +52,9 @@ function checkTimeout(prefix: string, timeoutMs: unknown): void {
   }
 }
 
-export function resolveSsgOptions(input: SsgOptions): ResolvedSsgOptions {
-  checkEntry("ssg", input.entry);
+export function resolveSsgOptions(option: true | SsgOptions): ResolvedSsgOptions {
+  const input = option === true ? {} : option;
+  checkObject("ssg", input);
   const trailingSlash = input.trailingSlash ?? "always";
   if (trailingSlash !== "always" && trailingSlash !== "never") {
     throw new Error(`[reze] ssg.trailingSlash must be "always" or "never", got ${JSON.stringify(trailingSlash)}`);
@@ -63,7 +65,6 @@ export function resolveSsgOptions(input: SsgOptions): ResolvedSsgOptions {
     throw new Error("[reze] ssg.paths must map route patterns to param lists or listing callbacks");
   }
   return {
-    entry: input.entry,
     document: input.document ?? DocumentDefault,
     trailingSlash,
     timeoutMs,
@@ -71,12 +72,12 @@ export function resolveSsgOptions(input: SsgOptions): ResolvedSsgOptions {
   };
 }
 
-export function resolveSsrOptions(input: SsrOptions): ResolvedSsrOptions {
-  checkEntry("ssr", input.entry);
+export function resolveSsrOptions(option: true | SsrOptions): ResolvedSsrOptions {
+  const input = option === true ? {} : option;
+  checkObject("ssr", input);
   const timeoutMs = input.timeoutMs ?? TimeoutDefault;
   checkTimeout("ssr", timeoutMs);
   return {
-    entry: input.entry,
     document: input.document ?? DocumentDefault,
     timeoutMs,
     outDir: input.outDir ?? OutDirDefault,
@@ -84,8 +85,8 @@ export function resolveSsrOptions(input: SsrOptions): ResolvedSsrOptions {
 }
 
 export function assertSharedServerOptions(ssg: ResolvedSsgOptions, ssr: ResolvedSsrOptions): void {
-  if (ssg.entry !== ssr.entry || ssg.document !== ssr.document) {
-    throw new Error("[reze] ssg and ssr must use the same entry and document");
+  if (ssg.document !== ssr.document) {
+    throw new Error("[reze] ssg and ssr must use the same document");
   }
 }
 

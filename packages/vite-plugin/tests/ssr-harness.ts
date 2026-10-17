@@ -45,7 +45,7 @@ export async function buildSsrFixture(options: SsrFixtureOptions): Promise<SsrBu
   await buildSsgFixture({
     fixtureDir: options.fixtureDir,
     outDir: options.outDir,
-    plugins: [...reze({ ssr: { entry: "src/app.tsx", outDir: serverDir } }), ...(options.plugins ?? [])],
+    plugins: [...(await reze({ fileRoutes: { types: false }, ssr: { outDir: serverDir } })), ...(options.plugins ?? [])],
   });
   const server = (await import(pathToFileURL(join(serverDir, "entry.js")).href)) as {
     handler: SsrBuild["handler"];
@@ -103,7 +103,7 @@ export async function startDevServer(fixtureDir: string, plugins: Plugin[] = [])
     root: fixtureDir,
     configFile: false,
     logLevel: "silent",
-    plugins: [...reze({ ssr: { entry: "src/app.tsx" } }), ...plugins],
+    plugins: [...(await reze({ fileRoutes: { types: false }, ssr: true })), ...plugins],
     server: { host: "127.0.0.1", port: 0 },
   });
   await server.listen();

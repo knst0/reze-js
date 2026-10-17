@@ -122,7 +122,7 @@ beforeAll(async () => {
       await buildSsgFixture({
         fixtureDir: fixture("standalone-basics"),
         outDir: dist("basics"),
-        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+        plugins: reze({ fileRoutes: { types: false }, ssg: true }),
       })
     ).distDir,
   );
@@ -141,7 +141,7 @@ beforeAll(async () => {
       await buildSsgFixture({
         fixtureDir: fixture("flow-keys"),
         outDir: dist("flows"),
-        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+        plugins: reze({ fileRoutes: { types: false }, ssg: true }),
       })
     ).distDir,
   );
@@ -150,7 +150,7 @@ beforeAll(async () => {
       await buildSsgFixture({
         fixtureDir: fixture("namespaces"),
         outDir: dist("namespaces"),
-        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+        plugins: reze({ fileRoutes: { types: false }, ssg: true }),
       })
     ).distDir,
   );
@@ -159,13 +159,11 @@ beforeAll(async () => {
       await buildSsgFixture({
         fixtureDir: fixture("portals-islands"),
         outDir: dist("portals"),
-        plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+        plugins: reze({ fileRoutes: { types: false }, ssg: true }),
       })
     ).distDir,
   );
-  const routerPlugins = reze({
-    ssg: { entry: "src/app.tsx", paths: ROUTER_PATHS },
-  });
+  const routerPlugins = reze({ fileRoutes: { types: false }, ssg: { paths: ROUTER_PATHS } });
   pages.router = await serve(
     (await buildSsgFixture({ fixtureDir: fixture("router-full"), outDir: dist("router"), plugins: routerPlugins })).distDir,
   );
@@ -173,7 +171,7 @@ beforeAll(async () => {
     await buildSsgFixture({
       fixtureDir: fixture("router-full"),
       outDir: dist("router-never"),
-      plugins: reze({ ssg: { entry: "src/app.tsx", paths: ROUTER_PATHS, trailingSlash: "never" } }),
+      plugins: reze({ fileRoutes: { types: false }, ssg: { paths: ROUTER_PATHS, trailingSlash: "never" } }),
     })
   ).distDir;
   pages.tinyDocs = (
@@ -181,7 +179,7 @@ beforeAll(async () => {
       fixtureDir: fixture("base-tiny"),
       outDir: dist("tiny-docs"),
       base: "/docs/",
-      plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+      plugins: reze({ fileRoutes: { types: false }, ssg: true }),
     })
   ).distDir;
   pages.tinyRelative = (
@@ -189,7 +187,7 @@ beforeAll(async () => {
       fixtureDir: fixture("base-tiny"),
       outDir: dist("tiny-relative"),
       base: "./",
-      plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+      plugins: reze({ fileRoutes: { types: false }, ssg: true }),
     })
   ).distDir;
   pages.tinyRelativeNever = (
@@ -197,7 +195,7 @@ beforeAll(async () => {
       fixtureDir: fixture("base-tiny"),
       outDir: dist("tiny-relative-never"),
       base: "./",
-      plugins: reze({ ssg: { entry: "src/app.tsx", trailingSlash: "never" } }),
+      plugins: reze({ fileRoutes: { types: false }, ssg: { trailingSlash: "never" } }),
     })
   ).distDir;
   pages.tinyExternal = (
@@ -205,7 +203,7 @@ beforeAll(async () => {
       fixtureDir: fixture("base-tiny"),
       outDir: dist("tiny-external"),
       base: "https://cdn.example.test/assets/",
-      plugins: reze({ ssg: { entry: "src/app.tsx" } }),
+      plugins: reze({ fileRoutes: { types: false }, ssg: true }),
     })
   ).distDir;
   const mdxPlugin: Plugin = {
@@ -227,7 +225,7 @@ beforeAll(async () => {
           ...(await reze({
             fileRoutes: { types: false },
             extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"],
-            ssg: { entry: "src/app.tsx" },
+            ssg: true,
           })),
         ],
       })
@@ -335,8 +333,8 @@ describe("preboot html, metadata, assets and lazy execution", () => {
 
     const one = await fetchHtml(pages.router, "/context/one/");
     const two = await fetchHtml(pages.router, "/context/two/");
-    const oneId = /ssg:(\d+):/.exec(one.html)?.[1];
-    const twoId = /ssg:(\d+):/.exec(two.html)?.[1];
+    const oneId = /context:(\d+):/.exec(one.html)?.[1];
+    const twoId = /context:(\d+):/.exec(two.html)?.[1];
     expect(one.html).toContain(":/context/one/:one");
     expect(two.html).toContain(":/context/two/:two");
     expect(oneId).not.toBeUndefined();
@@ -353,12 +351,12 @@ describe("preboot html, metadata, assets and lazy execution", () => {
   test("lazy route code and info stay on their own page, and route info never enters an island descriptor", async () => {
     const { html } = await fetchHtml(pages.router, "/");
     const manifest = readManifest(dist("router"));
-    const lazyChunk = Object.values(manifest).find((chunk) => chunk.src?.includes("LazyPage"));
+    const lazyChunk = Object.values(manifest).find((chunk) => chunk.src?.endsWith("(shell)/lazy.tsx"));
     expect(lazyChunk?.file).not.toBeUndefined();
     expect(html).not.toContain(lazyChunk!.file);
     expect(html).not.toContain("lazy loaded");
     expect(modulePreloads(html).some((href) => href.includes(lazyChunk!.file))).toBe(false);
-    const ghostChunk = Object.values(manifest).find((chunk) => chunk.src?.includes("GhostPage"));
+    const ghostChunk = Object.values(manifest).find((chunk) => chunk.src?.endsWith("(shell)/ghost/[id].tsx"));
     expect(html).not.toContain("ghost");
     expect(
       ghostChunk === undefined || !modulePreloads(html).some((href) => ghostChunk.file !== undefined && href.includes(ghostChunk.file)),
@@ -723,7 +721,7 @@ describe("routing, enumeration, base and redirects", () => {
       try {
         await waitFor(lazy.page, `document.querySelector("#to-lazy") !== null`);
         const manifest = readManifest(dist("router"));
-        const lazyFile = Object.values(manifest).find((chunk) => chunk.src?.includes("LazyPage"))?.file;
+        const lazyFile = Object.values(manifest).find((chunk) => chunk.src?.endsWith("(shell)/lazy.tsx"))?.file;
         await lazy.page.click("#to-lazy");
         await waitFor(lazy.page, `document.querySelector("#lazy-title") !== null`);
         if (lazyFile !== undefined) expect(lazy.requests.some((url) => url.endsWith(lazyFile))).toBe(false);
@@ -738,33 +736,38 @@ describe("routing, enumeration, base and redirects", () => {
 
 describe("worker isolation, cleanup and timeouts", () => {
   test("enumeration, base, asset, nesting and timeout failures are build errors, and a hung page leaves other builds usable", async () => {
-    await expectBuildFails(reze({ ssg: { entry: "src/app.tsx" } }), fixture("redirect-loop"), dist("neg-loop"), /loop|redirect|cycle/i);
     await expectBuildFails(
-      reze({ ssg: { entry: "src/app.tsx" } }),
+      reze({ fileRoutes: { types: false }, ssg: true }),
+      fixture("redirect-loop"),
+      dist("neg-loop"),
+      /loop|redirect|cycle/i,
+    );
+    await expectBuildFails(
+      reze({ fileRoutes: { types: false }, ssg: true }),
       fixture("redirect-missing"),
       dist("neg-missing"),
       /nowhere|redirect|target/i,
     );
     await expectBuildFails(
-      reze({ ssg: { entry: "src/app.tsx", paths: { "/x/:id": [{ id: "a" }] } } }),
+      reze({ fileRoutes: { types: false }, ssg: { paths: { "/x/:id": [{ id: "a" }] } } }),
       fixture("paths-duplicate"),
       dist("neg-dup"),
       /duplicate|collide/i,
     );
     await expectBuildFails(
-      reze({ ssg: { entry: "src/app.tsx", paths: { "/blog/:id": [{ id: "../evil" }] } } }),
+      reze({ fileRoutes: { types: false }, ssg: { paths: { "/blog/:id": [{ id: "../evil" }] } } }),
       fixture("paths-unsafe"),
       dist("neg-unsafe"),
       /traverse|\.\.|unsafe|slash/i,
     );
     await expectBuildFails(
-      reze({ ssg: { entry: "src/app.tsx" } }),
+      reze({ fileRoutes: { types: false }, ssg: true }),
       fixture("foster-bad"),
       dist("foster-bad"),
       /table|foster|parent|serial/i,
     );
     await expectBuildFails(
-      reze({ ssg: { entry: "src/app.tsx", timeoutMs: 500 } }),
+      reze({ fileRoutes: { types: false }, ssg: { timeoutMs: 500 } }),
       fixture("timeout-hang"),
       dist("neg-timeout"),
       /slow|timeout|deadline/i,
@@ -779,7 +782,10 @@ test("disabled public files do not collide with the application's HTML template"
   const built = await buildSsgFixture({
     fixtureDir: fixture("standalone-basics"),
     outDir: dist("public-disabled"),
-    plugins: [{ name: "public-disabled", config: () => ({ publicDir: false }) }, ...(await reze({ ssg: { entry: "src/app.tsx" } }))],
+    plugins: [
+      { name: "public-disabled", config: () => ({ publicDir: false }) },
+      ...(await reze({ fileRoutes: { types: false }, ssg: true })),
+    ],
   });
   expect(text(elements(readBuiltFile(built.distDir, "index.html"), "p", { id: "settled" })[0])).toBe("3:6:v3");
 });
@@ -796,7 +802,7 @@ describe("development serves the streamed document", () => {
           configFile: false,
           root: fixture(name),
           cacheDir: join(OUT, `dev-${name}-${engine}`),
-          plugins: [reze({ ssg: { entry: "src/app.tsx" } })],
+          plugins: [reze({ fileRoutes: { types: false }, ssg: true })],
           server: { host: "127.0.0.1", port: 0 },
           logLevel: "silent",
         });
