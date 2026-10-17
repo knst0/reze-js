@@ -199,11 +199,12 @@ export default defineConfig({
 
 `ssr: true` takes every default. The pages are the [file routes](#file-routes), so `ssr` turns `fileRoutes` on when it is not set and fails with `fileRoutes: false`. The `ssr` options are:
 
-| Option      | Type     | Default              | Purpose                                                                                                                            |
-| ----------- | -------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `document`  | `string` | `"src/document.tsx"` | The page around the app. See [The document](#the-document).                                                                        |
-| `timeoutMs` | `number` | `30000`              | Time one request has to finish rendering, in milliseconds. The value must be finite and greater than zero.                         |
-| `outDir`    | `string` | `"dist/server"`      | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers. |
+| Option       | Type                            | Default              | Purpose                                                                                                                                                                                                                                      |
+| ------------ | ------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `document`   | `string`                        | `"src/document.tsx"` | The page around the app. See [The document](#the-document).                                                                                                                                                                                  |
+| `timeoutMs`  | `number`                        | `30000`              | Time one request has to finish rendering, in milliseconds. The value must be finite and greater than zero.                                                                                                                                   |
+| `outDir`     | `string`                        | `"dist/server"`      | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers.                                                                                                           |
+| `devContext` | `(request: Request) => unknown` | None                 | Base router `context` for each request that the `vite` dev server renders. Pass the function your server uses for `handler`, so dev and production see the same values. See [Pass request values to routes](#pass-request-values-to-routes). |
 
 When you set both `ssr` and `ssg`, they must use the same `document`. Otherwise the plugin fails with `[reze] ssg and ssr must use the same document`.
 
@@ -261,6 +262,27 @@ await serve(handler, { port: 3000 });
 ```
 
 `serve(handler, options)` resolves to `{ port, hostname, close() }`. `port` defaults to `3000`; pass `0` to get an ephemeral port and read the bound one from the result. On Node.js, `createNodeListener(handler)` from `reze-js/server` returns a request listener for an existing `http` server or a Connect middleware. Its request's `signal` aborts when the client disconnects, and the render stops. Serve the client output on the same origin, for example with your host's static file support in front of the handler.
+
+### Pass request values to routes
+
+`handler(request, { context })` takes an optional second argument. Its `context` is the base router `context` for that request: each layout's `beforeLoad` extends it, and every `preload` and `redirect` reads it. Use it for values that come from the request or the host, such as a session from a cookie or a platform binding. The next sample is a fragment, because `dist/server/entry.js` exists only after a build:
+
+```ts fragment
+import { serve } from "reze-js/server";
+
+import { handler } from "../dist/server/entry.js";
+import { requestContext } from "../src/request-context";
+
+await serve((request) => handler(request, { context: requestContext(request) }), { port: 3000 });
+```
+
+The dev server does not run this script, so pass the same function as `ssr.devContext`:
+
+```ts fragment
+reze({ ssr: { devContext: requestContext } });
+```
+
+Static pages have no request, so `ssg` renders them with no base `context`.
 
 ### Streaming
 

@@ -18,16 +18,20 @@ export interface ResolvedSsgOptions {
   paths: Readonly<Record<string, StaticPathsValue>>;
 }
 
+export type DevContext = (request: Request) => unknown;
+
 export interface SsrOptions {
   document?: string;
   timeoutMs?: number;
   outDir?: string;
+  devContext?: DevContext;
 }
 
 export interface ResolvedSsrOptions {
   document: string;
   timeoutMs: number;
   outDir: string;
+  devContext: DevContext | undefined;
 }
 
 const TimeoutDefault = 30_000;
@@ -75,12 +79,16 @@ export function resolveSsgOptions(option: true | SsgOptions): ResolvedSsgOptions
 export function resolveSsrOptions(option: true | SsrOptions): ResolvedSsrOptions {
   const input = option === true ? {} : option;
   checkObject("ssr", input);
+  if (input.devContext !== undefined && typeof input.devContext !== "function") {
+    throw new Error("[reze] ssr.devContext must be a function of the request that returns the base router context");
+  }
   const timeoutMs = input.timeoutMs ?? TimeoutDefault;
   checkTimeout("ssr", timeoutMs);
   return {
     document: input.document ?? DocumentDefault,
     timeoutMs,
     outDir: input.outDir ?? OutDirDefault,
+    devContext: input.devContext,
   };
 }
 

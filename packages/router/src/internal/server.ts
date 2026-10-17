@@ -67,6 +67,8 @@ export type SsgPreparedRoute = SsgRenderResult | SsgRedirectResult | SsgNotFound
 export interface SsgPrepareOptions {
   /** Served base the router paths exclude; default `""`. */
   readonly base?: string;
+  /** Base `context` that route `beforeLoad` callbacks extend; default `undefined`. */
+  readonly context?: unknown;
 }
 
 function dynamicsOf(pattern: string): SsgParamSpec[] {
@@ -351,7 +353,7 @@ export function prepareServerRoute<C = unknown>(
 ): Promise<SsgPreparedRoute> {
   const branches = compileRoutes(routes);
   const history = createCaptureHistory(path, opts?.base ?? "");
-  const state = initRouterState({ history, branches, env: "html" });
+  const state = initRouterState({ history, branches, env: "html", context: opts?.context });
   installServerLinkTarget();
   return settleEntry(state, history.get(), "initial").then((outcome) => {
     if (outcome.kind === "redirect") return { status: "redirect", to: outcome.to, replace: outcome.replace };

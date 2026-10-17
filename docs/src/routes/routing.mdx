@@ -243,7 +243,7 @@ export default function Account(props: { children: JSX.Element }) {
 }
 ```
 
-A route under `src/routes/account/` reads it as `context.locale` in `preload` or `redirect`.
+A route under `src/routes/account/` reads it as `context.locale` in `preload` or `redirect`. With `ssr`, the context starts from the value the server passes to the handler, as [Pass request values to routes](/vite-plugin#pass-request-values-to-routes) shows. Read cookies and headers there, since `beforeLoad` sees only the URL.
 
 A production build leaves the `beforeLoad` code out of the bundle when no file in the project mentions `beforeLoad`. If a dependency then defines a `beforeLoad`, the build stops with a message to declare that route config in the app's own sources.
 

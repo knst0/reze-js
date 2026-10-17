@@ -146,7 +146,7 @@ function redirectResult(appPath, redirect) {
     replace: redirect.replace,
   };
 }
-async function respond(pathname, search, mode, signal, overrides) {
+async function respond(pathname, search, mode, signal, options) {
   const appPath = stripBase(pathname);
   if (appPath === undefined) return { status: "not-found" };
   const depth = pageDepth(pathname);
@@ -160,14 +160,14 @@ async function respond(pathname, search, mode, signal, overrides) {
   let handedOff = false;
   try {
     const view = await session.load(loadView);
-    const prepared = await session.load(() => routerServer.prepareServerRoute(view.routes, appPath + search, { base: basePath }));
+    const prepared = await session.load(() => routerServer.prepareServerRoute(view.routes, appPath + search, { base: basePath, context: options?.context }));
     if (prepared.status === "redirect") return redirectResult(appPath, prepared);
     if (prepared.status === "not-found") return { status: "not-found" };
     const build = () => view.ssgView({ router: prepared.component });
     const route = routeState(appPath, search, prepared.matches);
-    const template = overrides?.template ?? rebaseTemplate(facts.template, depth);
-    const clientModules = overrides?.clientModules ?? clientModulesAt(depth);
-    const headDefaults = overrides?.headDefaults ?? rebaseHeadDefaults(facts.headDefaults, depth);
+    const template = options?.template ?? rebaseTemplate(facts.template, depth);
+    const clientModules = options?.clientModules ?? clientModulesAt(depth);
+    const headDefaults = options?.headDefaults ?? rebaseHeadDefaults(facts.headDefaults, depth);
     handedOff = true;
     const body = await renderStream({ build, session, template, head: pageHead(route), headDefaults, clientModules, mode, signal });
     const redirect = routerServer.takeServerRedirect(prepared.handle);
@@ -190,20 +190,20 @@ function errorDocument(template, head) {
     strip(template.rootEndToBodyEnd) + template.bodyEndToEnd;
   return new Response(html, { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
 }
-export async function handler(request, overrides) {
+export async function handler(request, options) {
   const url = new URL(request.url);
   try {
-    const result = await respond(url.pathname, url.search, "stream", request.signal, overrides);
+    const result = await respond(url.pathname, url.search, "stream", request.signal, options);
     if (result.status === "not-found") return text(404, "Not Found");
     if (result.status === "redirect") return new Response(null, { status: 302, headers: { location: result.to } });
     return new Response(result.body, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
   } catch (error) {
     console.error(error);
     const depth = pageDepth(url.pathname);
-    const template = overrides?.template ?? rebaseTemplate(facts.template, depth);
-    const headDefaults = overrides?.headDefaults ?? rebaseHeadDefaults(facts.headDefaults, depth);
+    const template = options?.template ?? rebaseTemplate(facts.template, depth);
+    const headDefaults = options?.headDefaults ?? rebaseHeadDefaults(facts.headDefaults, depth);
     const head = headDefaults.map((entry) => entry.html).join("") + pageHead(undefined);
-    return errorDocument(template, head + (overrides?.errorHead(error) ?? ""));
+    return errorDocument(template, head + (options?.errorHead(error) ?? ""));
   }
 }
 export async function prerender(input) {

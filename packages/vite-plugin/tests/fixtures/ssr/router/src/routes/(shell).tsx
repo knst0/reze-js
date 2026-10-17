@@ -2,7 +2,9 @@ import type { PreloadArgs } from "@rezejs/router";
 import type { JSX } from "reze-js";
 
 export const route = {
-  beforeLoad: ({ location }: PreloadArgs) => ({ requestId: String(location.query.scope ?? "missing") }),
+  beforeLoad: ({ location, context }: PreloadArgs<{}, { tenant?: string } | undefined>) => ({
+    requestId: `${context?.tenant ?? "none"}:${String(location.query.scope ?? "missing")}`,
+  }),
 };
 
 export default function Shell(props: { children: JSX.Element }) {

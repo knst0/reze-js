@@ -45,6 +45,7 @@ test("server options take true for the defaults and reject a leftover entry and 
   expect(resolveSsrOptions(true)).toEqual({ document: "src/document.tsx", timeoutMs: 30_000, outDir: "dist/server" });
   expect(() => resolveSsgOptions({ entry: "src/app.tsx" } as never)).toThrow(/ssg\.entry is gone.*document/);
   expect(() => resolveSsrOptions({ entry: "src/app.tsx" } as never)).toThrow(/ssr\.entry is gone/);
+  expect(() => resolveSsrOptions({ devContext: "src/context.ts" } as never)).toThrow(/ssr\.devContext must be a function/);
   expect(() => resolveSsgOptions({ timeoutMs: 0 })).toThrow(/timeoutMs/);
   expect(() => resolveSsgOptions({ timeoutMs: Number.NaN })).toThrow(/timeoutMs/);
   expect(() => resolveSsgOptions({ trailingSlash: "sometimes" as "always" })).toThrow(/trailingSlash/);

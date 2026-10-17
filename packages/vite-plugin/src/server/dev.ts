@@ -7,12 +7,14 @@ import type { Connect, EnvironmentModuleGraph, EnvironmentModuleNode, ViteDevSer
 
 import { HtmlEnv, ServerEntryId } from "./adapter";
 import type { AppDocument } from "./document";
+import type { DevContext } from "./options";
 import type { HeadDefault, PreparedTemplate, TemplateParts } from "./template";
 import { buildErrorPage, prepareTemplate } from "./template";
 
 export interface DevDocumentOptions {
   document: () => AppDocument;
   moduleFiles: ReadonlyMap<string, string>;
+  context: DevContext | undefined;
 }
 
 interface DevServerEntry {
@@ -20,6 +22,7 @@ interface DevServerEntry {
 }
 
 interface DevOverrides {
+  context: unknown;
   template: TemplateParts;
   headDefaults: HeadDefault[];
   clientModules: ClientModules;
@@ -62,6 +65,7 @@ async function renderDocument(server: ViteDevServer, options: DevDocumentOptions
     }
     const entry = (await environment.runner.import(ServerEntryUrl)) as DevServerEntry;
     return await entry.handler(request, {
+      context: await options.context?.(request),
       template: prepared.parts,
       headDefaults: prepared.headDefaults,
       clientModules: devClientModules(server, options.moduleFiles),

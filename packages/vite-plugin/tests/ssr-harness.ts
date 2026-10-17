@@ -7,7 +7,7 @@ import { serve } from "reze-js/server";
 import { createServer as createDevServer } from "vite";
 import type { Plugin } from "vite";
 
-import reze from "../src/index";
+import reze, { type SsrOptions } from "../src/index";
 import { buildSsgFixture } from "./ssg-harness";
 
 export interface SsrRegistryEntry {
@@ -25,7 +25,7 @@ export interface SsrRegistry {
 
 export interface SsrBuild {
   clientDir: string;
-  handler: (request: Request) => Promise<Response>;
+  handler: (request: Request, options?: { context?: unknown }) => Promise<Response>;
   registry: SsrRegistry;
 }
 
@@ -98,12 +98,12 @@ export async function serveSsrApp(select: () => SsrBuild): Promise<SsrOrigin> {
   return { origin: `http://127.0.0.1:${server.port}`, close: () => server.close() };
 }
 
-export async function startDevServer(fixtureDir: string, plugins: Plugin[] = []): Promise<SsrOrigin> {
+export async function startDevServer(fixtureDir: string, plugins: Plugin[] = [], ssr: SsrOptions = {}): Promise<SsrOrigin> {
   const server = await createDevServer({
     root: fixtureDir,
     configFile: false,
     logLevel: "silent",
-    plugins: [...(await reze({ fileRoutes: { types: false }, ssr: true })), ...plugins],
+    plugins: [...(await reze({ fileRoutes: { types: false }, ssr })), ...plugins],
     server: { host: "127.0.0.1", port: 0 },
   });
   await server.listen();

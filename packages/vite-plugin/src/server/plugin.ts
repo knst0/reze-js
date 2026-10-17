@@ -238,6 +238,7 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
         createDevDocumentMiddleware(server, {
           document: currentDocument,
           moduleFiles: shared.moduleFiles,
+          context: ssrOptions?.devContext,
         }),
       );
     },

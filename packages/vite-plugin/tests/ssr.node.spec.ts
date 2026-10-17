@@ -54,7 +54,9 @@ beforeAll(async () => {
   islandsOrigin = await serveSsrApp(() => islands);
   routerOrigin = await serveSsrApp(() => routerActive);
   devOrigin = await startDevServer(fixture("streaming"));
-  devRouterOrigin = await startDevServer(fixture("router"), [defineGlobals({ __RZ_TEST_VERSION__: "dev" })]);
+  devRouterOrigin = await startDevServer(fixture("router"), [defineGlobals({ __RZ_TEST_VERSION__: "dev" })], {
+    devContext: (request) => ({ tenant: request.headers.get("x-tenant") ?? undefined }),
+  });
   origins.push(streamingOrigin, islandsOrigin, routerOrigin, devOrigin, devRouterOrigin);
   for (const engine of ENGINES) browsers.set(engine, await launchEngine(engine));
 }, 900_000);
@@ -78,8 +80,8 @@ test(
       routerA.handler(new Request("http://127.0.0.1/context?scope=request-one")).then((response) => response.text()),
       routerA.handler(new Request("http://127.0.0.1/context?scope=request-two")).then((response) => response.text()),
     ]);
-    expect(first).toMatch(/id="?request-scope"?>request-one</);
-    expect(second).toMatch(/id="?request-scope"?>request-two</);
+    expect(first).toMatch(/id="?request-scope"?>none:request-one</);
+    expect(second).toMatch(/id="?request-scope"?>none:request-two</);
 
     const [slow, fast] = await Promise.all([
       moduleState.handler(new Request("http://127.0.0.1/?d=200")).then((response) => response.text()),
@@ -87,6 +89,17 @@ test(
     ]);
     expect(slow).toMatch(/<p id="?hits"?>1<\/p>/);
     expect(fast).toMatch(/<p id="?hits"?>1<\/p>/);
+  },
+  TIMEOUT,
+);
+
+test(
+  "the handler's context is the base that layout beforeLoad extends, and devContext supplies it in dev",
+  async () => {
+    const built = await routerA.handler(new Request("http://127.0.0.1/context?scope=built"), { context: { tenant: "acme" } });
+    expect(await built.text()).toMatch(/id="?request-scope"?>acme:built</);
+    const dev = await fetch(`${devRouterOrigin.origin}/context?scope=dev`, { headers: { accept: "text/html", "x-tenant": "globex" } });
+    expect(await dev.text()).toMatch(/id="?request-scope"?>globex:dev</);
   },
   TIMEOUT,
 );
