@@ -154,6 +154,7 @@ The `fileRoutes` options are:
 | `links`      | `boolean`               | `true`                                                  | Passes native `<a href>` elements to `@rezejs/router`, which marks the active link. Set `false` to keep your own `links` module.                      |
 | `history`    | `"browser"` or `"hash"` | `"browser"`                                             | `"browser"` builds hrefs from the Vite `base`. `"hash"` prefixes hrefs with `#`. Static generation rejects hash routing.                              |
 | `extensions` | `string[]`              | Top-level `extensions`, or `.ts`, `.tsx`, `.js`, `.jsx` | Extensions that count as route files. When the top-level `extensions` option is set, this default is the top-level list.                              |
+| `template`   | `boolean`               | `true`                                                  | Fills a new empty `.tsx` or `.jsx` route file with a starter component during `vite` dev. See [Dev server updates](#dev-server-updates).              |
 
 Route files whose names start with `_` or `.` are ignored, along with `.d.ts`, `.test.`, and `.spec.` files.
 
@@ -171,6 +172,8 @@ The router reports conflicting files at build time. Two files for the same route
 ### Dev server updates
 
 During `vite` dev, the plugin watches `dir`. Adding or removing a file or directory regenerates the route module and the types file. When the route module changes, the plugin invalidates it and sends a full reload to the browser. Regeneration errors go to the Vite logger as errors.
+
+A new empty `.tsx` or `.jsx` route file gets a starter component. A page renders its pathname and types its props with `RoutePropsFor` and the route pattern. A file with a directory of the same name is a layout and renders `children`. The plugin leaves files with content, private `_` files, and other extensions as they are. Set `fileRoutes.template` to `false` to turn this off.
 
 ## Server rendering
 
