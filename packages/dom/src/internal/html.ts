@@ -6,4 +6,5 @@ export { HtmlSession, type HeadTagState, type HtmlSessionOptions } from "../html
 export { setAttribute as setRecordAttribute } from "../html/properties";
 export type { HtmlElement, HtmlRange } from "../html/tree";
 export { hDefineComponent, hStaticComponent, type ClientModules } from "../server/island";
+export { renderDocument } from "../server/document";
 export { renderStream, type HeadDefault, type RenderStreamOptions, type TemplateParts } from "../server/stream";
