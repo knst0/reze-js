@@ -207,7 +207,7 @@ catalog! {
         severity: Info,
         title: "Document renders at build time",
         message: "The document holds {detail}, which is not static, so it renders by running its code instead of compiling to HTML.",
-        explanation: "The compiler turns a static document into HTML without running it: literals, template literals without substitutions, literal `const`s, the `children` slot, and components whose props are static, from the document module, other source files, or packages that export their source under the `reze` condition. When anything else is in the page, the document module runs once on the server at build time and when the dev server renders its first page, and its output becomes the page. Both produce the same page. `data.detail` names the first part that is not static.",
+        explanation: "The compiler turns a static document into HTML without running it: literals, template literals without substitutions, literal `const`s, the bundler's `define` values, the `children` slot, and components whose props are static, from the document module, other source files, or packages that export their source under the `reze` condition. When anything else is in the page, the document module runs once on the server at build time and when the dev server renders its first page, and its output becomes the page. Both produce the same page. `data.detail` names the first part that is not static.",
         repair: "No action is needed. To compile the document without running it, make that part static.",
         fix: None,
         example: Pair {

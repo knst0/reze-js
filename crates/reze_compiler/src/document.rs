@@ -5,9 +5,10 @@ use oxc_ast::ast::{
     ArrowFunctionBody, ArrowFunctionExpression, BindingPattern, Declaration,
     ExportDefaultDeclaration, ExportDefaultDeclarationKind, Expression, FormalParameters, Function,
     ImportDeclarationSpecifier, ImportOrExportKind, JSXAttribute, JSXAttributeItem,
-    JSXAttributeName, JSXAttributeValue, JSXChild, JSXElement, JSXElementName, Program,
-    PropertyKey, Statement, VariableDeclarationKind,
+    JSXAttributeName, JSXAttributeValue, JSXChild, JSXElement, JSXElementName, ObjectPropertyKind,
+    Program, PropertyKey, PropertyKind, Statement, VariableDeclarationKind,
 };
+use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType, Span};
 
 use crate::diagnostic::{self, Code, Diagnostic, Report};
@@ -46,6 +47,7 @@ pub struct ImportRequest {
 pub struct DocumentModules {
     resolutions: HashMap<ImportRequest, Option<String>>,
     sources: HashMap<String, String>,
+    defines: Vec<(String, String)>,
 }
 
 impl DocumentModules {
@@ -56,6 +58,12 @@ impl DocumentModules {
 
     pub fn add_source(&mut self, file: String, source: String) {
         self.sources.insert(file, source);
+    }
+
+    /// Records that the bundler replaces every unbound reference to the dotted `key` with
+    /// `code`, as Vite's `define` does.
+    pub fn define(&mut self, key: String, code: String) {
+        self.defines.push((key, code));
     }
 
     fn lookup(&self, importer: &str, specifier: &str) -> Lookup<'_> {
@@ -97,7 +105,7 @@ pub fn compile_document(
             Statement::ExportDefaultDeclaration(declaration) if export.is_none() => {
                 export = Some(declaration.as_ref());
             }
-            statement if is_static_statement(statement) => {}
+            statement if renderer.is_static_statement(statement) => {}
             statement => renderer.dynamic(statement.span(), "a runtime statement"),
         }
     }
@@ -106,37 +114,6 @@ pub fn compile_document(
         None => renderer.shape(Span::empty(0), "has no default export"),
     }
     renderer.finish()
-}
-
-fn is_static_statement(statement: &Statement<'_>) -> bool {
-    match statement {
-        Statement::ImportDeclaration(import) => {
-            import.import_kind == ImportOrExportKind::Type
-                || import.specifiers.as_ref().is_some_and(|specifiers| !specifiers.is_empty())
-        }
-        Statement::ExportNamedDeclaration(_) => true,
-        Statement::ExportDeclaration(export) => is_static_declaration(&export.declaration),
-        statement => statement.as_declaration().is_some_and(is_static_declaration),
-    }
-}
-
-fn is_static_declaration(declaration: &Declaration<'_>) -> bool {
-    match declaration {
-        Declaration::FunctionDeclaration(_) => true,
-        Declaration::VariableDeclaration(variables) => {
-            variables.kind == VariableDeclarationKind::Const
-                && variables.declarations.iter().all(|declarator| {
-                    declarator.init.as_ref().is_some_and(|init| {
-                        matches!(
-                            unparenthesized(init),
-                            Expression::ArrowFunctionExpression(_)
-                                | Expression::FunctionExpression(_)
-                        ) || static_value(init).is_some()
-                    })
-                })
-        }
-        declaration => declaration.is_typescript_syntax(),
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -411,6 +388,14 @@ enum Params<'a> {
 }
 
 impl<'a> Params<'a> {
+    fn binds(&self, name: &str) -> bool {
+        match self {
+            Params::Absent => false,
+            Params::Object(props) => *props == name,
+            Params::Fields(fields) => fields.iter().any(|field| field.local == name),
+        }
+    }
+
     fn prop(&self, expression: &'a Expression<'a>) -> Option<(&'a str, Option<StaticValue>)> {
         match (unparenthesized(expression), self) {
             (Expression::StaticMemberExpression(member), Params::Object(props))
@@ -478,13 +463,31 @@ struct Renderer<'a> {
     scopes: Vec<Scope<'a>>,
     scope: usize,
     root_span: Span,
+    defines: Vec<Define<'a>>,
+}
+
+struct Define<'a> {
+    path: Vec<&'a str>,
+    value: Option<&'a Expression<'a>>,
 }
 
 impl<'a> Renderer<'a> {
     fn new(allocator: &'a Allocator, input: &'a DocumentModules) -> Self {
+        let defines = input
+            .defines
+            .iter()
+            .map(|(key, code)| Define {
+                path: key.split('.').collect(),
+                value: Parser::new(allocator, code, SourceType::mjs())
+                    .parse_expression()
+                    .ok()
+                    .map(|value| &*allocator.alloc(value)),
+            })
+            .collect();
         Renderer {
             allocator,
             input,
+            defines,
             modules: Vec::new(),
             module_by_file: HashMap::new(),
             requests: Vec::new(),
@@ -499,6 +502,87 @@ impl<'a> Renderer<'a> {
             scope: 0,
             root_span: Span::empty(0),
         }
+    }
+
+    fn is_static_statement(&self, statement: &'a Statement<'a>) -> bool {
+        match statement {
+            Statement::ImportDeclaration(import) => {
+                import.import_kind == ImportOrExportKind::Type
+                    || import.specifiers.as_ref().is_some_and(|specifiers| !specifiers.is_empty())
+            }
+            Statement::ExportNamedDeclaration(_) => true,
+            Statement::ExportDeclaration(export) => self.is_static_declaration(&export.declaration),
+            statement => statement
+                .as_declaration()
+                .is_some_and(|declaration| self.is_static_declaration(declaration)),
+        }
+    }
+
+    fn is_static_declaration(&self, declaration: &'a Declaration<'a>) -> bool {
+        match declaration {
+            Declaration::FunctionDeclaration(_) => true,
+            Declaration::VariableDeclaration(variables) => {
+                variables.kind == VariableDeclarationKind::Const
+                    && variables.declarations.iter().all(|declarator| {
+                        declarator.init.as_ref().is_some_and(|init| {
+                            matches!(
+                                unparenthesized(init),
+                                Expression::ArrowFunctionExpression(_)
+                                    | Expression::FunctionExpression(_)
+                            ) || self.constant(0, init).is_some()
+                        })
+                    })
+            }
+            declaration => declaration.is_typescript_syntax(),
+        }
+    }
+
+    fn constant(&self, module: usize, expression: &'a Expression<'a>) -> Option<StaticValue> {
+        static_value(expression).or_else(|| self.defined(module, &Params::Absent, expression))
+    }
+
+    /// The value of `expression` when it reads a define through names `module` and `params`
+    /// leave unbound.
+    fn defined(
+        &self,
+        module: usize,
+        params: &Params<'a>,
+        expression: &'a Expression<'a>,
+    ) -> Option<StaticValue> {
+        let mut path = Vec::new();
+        let mut node = unparenthesized(expression);
+        loop {
+            match node {
+                Expression::StaticMemberExpression(member) => {
+                    path.push(member.property.name.as_str());
+                    node = unparenthesized(&member.object);
+                }
+                Expression::Identifier(identifier) => {
+                    let name = identifier.name.as_str();
+                    if self.modules[module].locals.contains_key(name) || params.binds(name) {
+                        return None;
+                    }
+                    path.push(name);
+                    break;
+                }
+                Expression::ImportMeta(_) => {
+                    path.extend(["meta", "import"]);
+                    break;
+                }
+                _ => return None,
+            }
+        }
+        path.reverse();
+        let define = self
+            .defines
+            .iter()
+            .filter(|define| path.starts_with(&define.path))
+            .max_by_key(|define| define.path.len())?;
+        let mut value = define.value?;
+        for key in &path[define.path.len()..] {
+            value = own_property(value, key)?;
+        }
+        static_value(value)
     }
 
     fn current_module(&self) -> usize {
@@ -570,7 +654,7 @@ impl<'a> Renderer<'a> {
             Local::Component(callable) => {
                 Binding::Component(self.component(module, name, callable))
             }
-            Local::Const(init) => static_value(init).map_or_else(
+            Local::Const(init) => self.constant(module, init).map_or_else(
                 || Binding::Opaque(format!("`{name}`, which is not a literal constant")),
                 Binding::Value,
             ),
@@ -607,7 +691,7 @@ impl<'a> Renderer<'a> {
             Some(Export::Anonymous(callable)) => {
                 Binding::Component(self.component(module, name, callable))
             }
-            Some(Export::Value(expression)) => static_value(expression).map_or_else(
+            Some(Export::Value(expression)) => self.constant(module, expression).map_or_else(
                 || Binding::Opaque(format!("`{name}`, which is not a literal constant")),
                 Binding::Value,
             ),
@@ -949,15 +1033,19 @@ impl<'a> Renderer<'a> {
     fn resolve(&mut self, expression: &'a Expression<'a>, scope: usize) -> Option<Value<'a>> {
         let Scope { component, call, caller } = self.scopes[scope];
         let Some((key, default)) = self.components[component].params.prop(expression) else {
-            let Expression::Identifier(identifier) = unparenthesized(expression) else {
-                return None;
-            };
             let module = self.components[component].module;
-            return match self.binding(module, identifier.name.as_str(), 0) {
-                Binding::Value(value) => Some(Value::Static(value)),
-                Binding::Pending => Some(Value::Absent),
-                Binding::Component(_) | Binding::Missing | Binding::Opaque(_) => None,
-            };
+            if let Expression::Identifier(identifier) = unparenthesized(expression)
+                && self.modules[module].locals.contains_key(identifier.name.as_str())
+            {
+                return match self.binding(module, identifier.name.as_str(), 0) {
+                    Binding::Value(value) => Some(Value::Static(value)),
+                    Binding::Pending => Some(Value::Absent),
+                    Binding::Component(_) | Binding::Missing | Binding::Opaque(_) => None,
+                };
+            }
+            return self
+                .defined(module, &self.components[component].params, expression)
+                .map(Value::Static);
         };
         let Some(call) = call else { return (key == "children").then_some(Value::Slot) };
         if key == "children" && call.children.iter().any(is_meaningful) {
@@ -1233,6 +1321,20 @@ fn static_value(expression: &Expression<'_>) -> Option<StaticValue> {
             .map(|cooked| StaticValue::Text(cooked.to_string())),
         _ => None,
     }
+}
+
+fn own_property<'a>(object: &'a Expression<'a>, key: &str) -> Option<&'a Expression<'a>> {
+    let Expression::ObjectExpression(object) = unparenthesized(object) else { return None };
+    let mut found = None;
+    for property in &object.properties {
+        let ObjectPropertyKind::ObjectProperty(property) = property else { return None };
+        if property.computed || property.key.static_name().is_none_or(|name| name != key) {
+            continue;
+        }
+        found = (property.kind == PropertyKind::Init && !property.method && key != "__proto__")
+            .then_some(&property.value);
+    }
+    found
 }
 
 fn unparenthesized<'b, 'a>(mut expression: &'b Expression<'a>) -> &'b Expression<'a> {

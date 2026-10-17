@@ -172,6 +172,8 @@ pub struct DocumentInput {
     pub imports: Vec<DocumentImport>,
     /// Source text of each resolved file.
     pub sources: HashMap<String, String>,
+    /// Vite `define` entries: each dotted key with the code that replaces it.
+    pub defines: Option<HashMap<String, String>>,
 }
 
 #[napi(object)]
@@ -300,6 +302,9 @@ pub fn compile_document(
         }
         for (file, source) in input.sources {
             modules.add_source(file, source);
+        }
+        for (key, code) in input.defines.into_iter().flatten() {
+            modules.define(key, code);
         }
     }
     let empty = DocumentResult {

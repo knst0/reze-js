@@ -122,7 +122,7 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
     }
     const resolveImport: ImportResolver = async (specifier, importer) =>
       (await environment.pluginContainer.resolveId(specifier, importer))?.id;
-    const analysis = await analyzeDocument(documentFile, resolveImport);
+    const analysis = await analyzeDocument(documentFile, resolveImport, environment.config.define);
     if (analysis.status === "static") return analysis.document;
     logger?.info(analysis.reasons);
     const view = (await environment.runner.import(DocumentViewUrl)) as DocumentView;
@@ -295,7 +295,11 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
         redirectRef = this.emitFile({ type: "chunk", id: SsgRedirectId, name: "reze-ssg-redirect" });
       }
       if (this.environment.name === HtmlEnv) {
-        const analysis = await analyzeDocument(documentFile, async (specifier, importer) => (await this.resolve(specifier, importer))?.id);
+        const analysis = await analyzeDocument(
+          documentFile,
+          async (specifier, importer) => (await this.resolve(specifier, importer))?.id,
+          this.environment.config.define,
+        );
         if (analysis.status === "static") {
           appDocument = Promise.resolve(analysis.document);
         } else {

@@ -41,12 +41,22 @@ function readableSource(resolved: string | undefined): string | undefined {
   return SourceFile.test(file) && !file.endsWith(".d.ts") && existsSync(file) ? file : undefined;
 }
 
-export async function analyzeDocument(file: string, resolveImport: ImportResolver): Promise<DocumentAnalysis> {
+function defineCode(value: unknown): string {
+  if (value === undefined) return "undefined";
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+export async function analyzeDocument(
+  file: string,
+  resolveImport: ImportResolver,
+  define: Record<string, unknown> | undefined,
+): Promise<DocumentAnalysis> {
   const source = existsSync(file) ? readFileSync(file, "utf8") : DefaultDocumentSource;
   const imports: DocumentImport[] = [];
   const sources: Record<string, string> = {};
+  const defines = Object.fromEntries(Object.entries(define ?? {}).map(([key, value]) => [key, defineCode(value)]));
   for (;;) {
-    const result = compileDocument(source, file, { imports, sources });
+    const result = compileDocument(source, file, { imports, sources, defines });
     if (result.requests.length > 0) {
       const resolved = await Promise.all(
         result.requests.map(async (request) => readableSource(await resolveImport(request.specifier, request.importer))),

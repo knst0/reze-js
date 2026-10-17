@@ -1,9 +1,16 @@
 use reze_compiler::{Code, Diagnostic, DocumentModules, DocumentOutcome, compile_document};
 
-fn compile(source: &str, modules: &[(&str, &str)]) -> Result<DocumentOutcome, Vec<Diagnostic>> {
+fn compile(
+    source: &str,
+    modules: &[(&str, &str)],
+    defines: &[(&str, &str)],
+) -> Result<DocumentOutcome, Vec<Diagnostic>> {
     let mut input = DocumentModules::default();
     for (file, module) in modules {
         input.add_source(file.to_string(), module.to_string());
+    }
+    for (key, code) in defines {
+        input.define(key.to_string(), code.to_string());
     }
     loop {
         match compile_document(source, "document.tsx", &input) {
@@ -22,7 +29,15 @@ fn compile(source: &str, modules: &[(&str, &str)]) -> Result<DocumentOutcome, Ve
 }
 
 fn render_with(source: &str, modules: &[(&str, &str)]) -> (String, String) {
-    match compile(source, modules) {
+    render_defined(source, modules, &[])
+}
+
+fn render_defined(
+    source: &str,
+    modules: &[(&str, &str)],
+    defines: &[(&str, &str)],
+) -> (String, String) {
+    match compile(source, modules, defines) {
         Ok(DocumentOutcome::Html(document)) => (document.html, document.root_id),
         Ok(DocumentOutcome::Render(reasons)) => panic!("expected a static page, got {reasons:#?}"),
         Ok(DocumentOutcome::Resolve(_)) => unreachable!(),
@@ -35,7 +50,7 @@ fn render(source: &str) -> (String, String) {
 }
 
 fn errors(source: &str) -> Vec<Diagnostic> {
-    match compile(source, &[]) {
+    match compile(source, &[], &[]) {
         Err(errors) => errors,
         Ok(DocumentOutcome::Html(document)) => {
             panic!("expected errors, rendered {}", document.html)
@@ -53,7 +68,15 @@ fn details(source: &str, code: Code) -> Vec<String> {
 }
 
 fn reasons_with(source: &str, modules: &[(&str, &str)]) -> Vec<(String, String)> {
-    match compile(source, modules) {
+    reasons_defined(source, modules, &[])
+}
+
+fn reasons_defined(
+    source: &str,
+    modules: &[(&str, &str)],
+    defines: &[(&str, &str)],
+) -> Vec<(String, String)> {
+    match compile(source, modules, defines) {
         Ok(DocumentOutcome::Render(reasons)) => reasons
             .iter()
             .map(|d| (d.file.clone(), d.data.get("detail").expect("detail").clone()))
@@ -276,6 +299,7 @@ fn renders_components_it_cannot_inline_by_running_them() {
             "<Label title={navigator.language} />",
         ),
         &[],
+        &[],
     ) {
         Ok(DocumentOutcome::Render(reasons)) => reasons
             .iter()
@@ -336,4 +360,80 @@ fn inlines_imported_components_and_constants() {
         ),
         [("./preload".to_string(), "an attribute expression".to_string())]
     );
+}
+
+const DEFINES: &[(&str, &str)] = &[
+    ("__META__", r##"{ "siteName": "Reze", "theme": { "color": "#1d1e20" } }"##),
+    ("__META__.theme.color", "\"#000\""),
+    ("import.meta.env.LANG", r#""ru""#),
+    ("__DEV__", "false"),
+    ("__BROKEN__", "{"),
+];
+
+#[test]
+fn inlines_defines_the_bundler_replaces() {
+    let (html, _) = render_defined(
+        r#"import { title } from "./meta";
+import { __DEV__ } from "./flags";
+
+const name = __META__.siteName;
+
+export default function Document(props) {
+  return (
+    <html lang={import.meta.env.LANG}>
+      <head>
+        <title>{name} – {title}</title>
+        <meta name="theme-color" content={__META__.theme.color} />
+      </head>
+      <body hidden={__DEV__}><div>{props.children}</div></body>
+    </html>
+  );
+}
+"#,
+        &[
+            ("./meta", "export const title = (__META__).siteName;\n"),
+            ("./flags", "export const __DEV__ = true;\n"),
+        ],
+        DEFINES,
+    );
+    assert_eq!(
+        html,
+        "<!doctype html><html lang=ru><head><title>Reze – Reze</title><meta name=theme-color content=#000></head><body hidden><div id=app></div></body></html>"
+    );
+}
+
+#[test]
+fn runs_defines_it_cannot_read_or_that_a_binding_shadows() {
+    let reasons: Vec<String> = reasons_defined(
+        r#"export default function Document({ __META__, children }) {
+  return (
+    <html>
+      <head>
+        <title>{__META__.siteName}</title>
+        <meta name="b" content={__BROKEN__} />
+      </head>
+      <body><div>{children}</div></body>
+    </html>
+  );
+}
+"#,
+        &[],
+        DEFINES,
+    )
+    .into_iter()
+    .map(|(_, detail)| detail)
+    .collect();
+    assert_eq!(
+        reasons,
+["an expression", "an attribute expression"]
+    );
+    let reasons: Vec<String> = reasons_defined(
+        "export default function Document(props) {\n  return <html><head><title>{__META__.missing}</title><meta content={__META__.theme} /></head><body><div>{props.children}</div></body></html>;\n}\n",
+        &[],
+        DEFINES,
+    )
+    .into_iter()
+    .map(|(_, detail)| detail)
+    .collect();
+    assert_eq!(reasons, ["an expression", "an attribute expression"]);
 }

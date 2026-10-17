@@ -99,6 +99,8 @@ export interface DocumentInput {
   imports: Array<DocumentImport>
   /** Source text of each resolved file. */
   sources: Record<string, string>
+  /** Vite `define` entries: each dotted key with the code that replaces it. */
+  defines?: Record<string, string>
 }
 
 export interface DocumentRequest {
