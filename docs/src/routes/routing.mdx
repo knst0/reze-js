@@ -245,6 +245,8 @@ export default function Account(props: { children: JSX.Element }) {
 
 A route under `src/routes/account/` reads it as `context.locale` in `preload` or `redirect`.
 
+A production build leaves the `beforeLoad` code out of the bundle when no file in the project mentions `beforeLoad`. If a dependency then defines a `beforeLoad`, the build stops with a message to declare that route config in the app's own sources.
+
 ## Set page metadata
 
 Page metadata lives in [`<Head>`](/building-interfaces#head-tags), inside the components that render the page. `src/document.tsx` gives the defaults, and each shell, layout and route component overrides them for its part of the tree:

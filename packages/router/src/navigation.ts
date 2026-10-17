@@ -2,7 +2,7 @@ import { flush, untrack, type ContextKey, type Getter, type Owner } from "@rezej
 import { signal } from "reze-js";
 
 import type { HistoryEntry, RouterHistory } from "./history";
-import { decode, matchBranches, pathKey, type Branch, type BranchMatch, type CompiledRoute } from "./match";
+import { decode, matchBranches, pathKey, usesBeforeLoad, type Branch, type BranchMatch, type CompiledRoute } from "./match";
 import type { Awaitable, BeforeLeaveEvent, Location, NavigateOptions, Params, PreloadIntent, RouteRedirect, RouterContext } from "./types";
 
 export interface ActiveMatch {
@@ -225,7 +225,7 @@ export function ensureLoaded(route: CompiledRoute): Promise<void> {
       (module) => {
         const config = module.route;
         route.component = module.default ?? route.def.component;
-        route.beforeLoad = config?.beforeLoad ?? route.def.beforeLoad;
+        if (usesBeforeLoad) route.beforeLoad = config?.beforeLoad ?? route.def.beforeLoad;
         route.preload = config?.preload ?? route.def.preload;
         route.redirect = config?.redirect ?? route.def.redirect;
         route.info = config?.info ?? route.def.info;
@@ -419,7 +419,7 @@ function settleRoute(run: Settling, index: number): SettleOutcome | Promise<Sett
     });
     return settleRoute(run, index + 1);
   }
-  if (route.beforeLoad === undefined) return settlePreload(run, index);
+  if (!usesBeforeLoad || route.beforeLoad === undefined) return settlePreload(run, index);
   let extension: unknown;
   try {
     extension = untrack(() => route.beforeLoad!({ params: run.params, location: run.location, intent: run.intent, context: run.context }));

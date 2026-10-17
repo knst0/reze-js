@@ -1,5 +1,9 @@
 import type { Awaitable, Params, RouteComponent, RouteDefinition, PreloadArgs, RouteRedirect, RouteResolvedArgs } from "./types";
 
+declare const __REZE_BEFORE_LOAD__: boolean | undefined;
+
+export const usesBeforeLoad = typeof __REZE_BEFORE_LOAD__ !== "boolean" || __REZE_BEFORE_LOAD__;
+
 const Static = 0;
 const Param = 1;
 const Optional = 2;
@@ -117,7 +121,7 @@ function compileRoute(def: RouteDefinition, pattern: string, id: string): Compil
     id,
     pattern,
     component: def.component,
-    beforeLoad: def.beforeLoad,
+    beforeLoad: usesBeforeLoad ? def.beforeLoad : undefined,
     preload: def.preload,
     redirect: def.redirect,
     info: def.info,

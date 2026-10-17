@@ -1,3 +1,4 @@
+import { usesBeforeLoad } from "./match";
 import { isThenable, loadBranch, matchPathname, navigate, parseLocation, pathnameOf, resolveHref, type RouterState } from "./navigation";
 
 const SvgNamespace = "http://www.w3.org/2000/svg";
@@ -33,11 +34,13 @@ async function preloadPath(state: RouterState, path: string): Promise<boolean> {
     let context = state.context;
     for (const route of match.branch.routes) {
       const args = { params: match.params, location, intent: "preload" as const, context };
-      try {
-        const extension = await route.beforeLoad?.(args);
-        if (typeof extension === "object" && extension !== null) context = { ...context, ...extension };
-      } catch {
-        continue;
+      if (usesBeforeLoad) {
+        try {
+          const extension = await route.beforeLoad?.(args);
+          if (typeof extension === "object" && extension !== null) context = { ...context, ...extension };
+        } catch {
+          continue;
+        }
       }
       if (route.preload === undefined) continue;
       try {

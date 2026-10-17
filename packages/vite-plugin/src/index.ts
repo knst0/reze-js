@@ -6,6 +6,7 @@ import { compile } from "@rezejs/compiler";
 import { defaultClientConditions, defaultServerConditions } from "vite";
 import type { DevEnvironment, Environment, EnvironmentModuleNode, Plugin } from "vite";
 
+import { BeforeLoadFlag, mentionsBeforeLoad, sourcesMentionBeforeLoad } from "./before-load";
 import { ModuleFactsStore, staticImportSpecifiers, type Resolver } from "./facts";
 import { profileHash } from "./hash";
 import { canonicalModuleId } from "./module-identity";
@@ -202,6 +203,7 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
   let hot = false;
   let links = options.links;
   let root = "";
+  let beforeLoadSources: string | undefined;
   const profileDir = options.profile?.dir;
   const profileHashes = new Map<string, string>();
   const runtimeEntries = new Set<string>();
@@ -235,6 +237,12 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
     appendFileSync(jsonl, diagnostics.map((d) => JSON.stringify(d) + "\n").join(""));
   }
 
+  function isBeyondSources(file: string): boolean {
+    if (file.startsWith("\0")) return false;
+    if (file.startsWith(beforeLoadSources + "/") && !file.includes("/node_modules/")) return false;
+    return moduleFacts.packageName(file) !== "@rezejs/router";
+  }
+
   function emitsSourceMap(config: Environment["config"]): boolean {
     if (!isServe) return Boolean(config.build.sourcemap);
     const sourcemap = config.dev.sourcemap;
@@ -248,6 +256,13 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
       claimLinks(module) {
         links = module;
       },
+    },
+    config(config, env) {
+      if (env.command !== "build") return;
+      const projectRoot = resolve(config.root ?? process.cwd());
+      if (sourcesMentionBeforeLoad(projectRoot, resolve(projectRoot, config.build?.outDir ?? "dist"), filter.include)) return;
+      beforeLoadSources = projectRoot;
+      return { define: { [BeforeLoadFlag]: "false" } };
     },
     applyToEnvironment: (environment) => environment.name === "client" || environment.name === HtmlEnv,
     configEnvironment(name, envConfig) {
@@ -278,6 +293,11 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
     },
     async transform(code, id) {
       const file = id.replace(QueryOrHash, "");
+      if (beforeLoadSources !== undefined && isBeyondSources(file) && mentionsBeforeLoad(code)) {
+        this.error(
+          `[reze] ${file} uses beforeLoad, but no source under ${beforeLoadSources} mentions it, so the build compiled the beforeLoad cascade out; declare the beforeLoad route config in a module under ${beforeLoadSources}`,
+        );
+      }
       if (id !== SsgViewId && (!filter.include.test(id) || (filter.exclude.test(id) && !moduleFacts.declaresReze(file)))) return null;
       if (runtimeEntries.has(file) || GeneratedIds.includes(id)) return;
       if (id.startsWith("\0vite/") || id.startsWith("\0rolldown/")) return;
