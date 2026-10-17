@@ -260,7 +260,7 @@ export const view = <Head><script src="/sdk.js" /></Head>;
 
 ## DOCUMENT_SHAPE
 
-**Document is not a static `<html>` page** · severity `error`
+**Document is not an `<html>` page** · severity `error`
 
 > The document {detail}.
 
@@ -268,17 +268,15 @@ export const view = <Head><script src="/sdk.js" /></Head>;
 
 Automatic fix: no
 
-A document module default-exports a function that returns one `<html>` element holding a `<head>` and then a `<body>`. The compiler renders it to HTML once, at build time, so the function only returns that element and the module holds nothing else but type imports and type declarations. Raw-text elements such as `<script>` and `<style>` take only text, and void elements take no children. `data.detail` is what is wrong.
+A document module default-exports a function that returns one `<html>` element holding a `<head>` and then a `<body>`. Raw-text elements such as `<script>` and `<style>` take only text, void elements take no children, and a component cannot render itself. These hold however the document renders. `data.detail` is what is wrong.
 
-**Repair:** Default-export `function Document(props) { return <html><head>…</head><body>…</body></html>; }` and move every other statement out of the module.
+**Repair:** Default-export `function Document(props) { return <html><head>…</head><body>…</body></html>; }`.
 
 Before:
 
 ```tsx
-export const lang = "en";
-
 export default function Document(props) {
-  return <html><head /><body><div>{props.children}</div></body></html>;
+  return <div>{props.children}</div>;
 }
 ```
 
@@ -292,25 +290,23 @@ export default function Document(props) {
 
 ## DOCUMENT_DYNAMIC
 
-**Dynamic value in the document** · severity `error`
+**Document renders at build time** · severity `info`
 
-> The document holds {detail}, which is not static: the document renders once, at build time.
+> The document holds {detail}, which is not static, so it renders by running its code instead of compiling to HTML.
 
 `data` keys: `detail`
 
 Automatic fix: no
 
-Every attribute and child of the document is fixed at build time: string, number and boolean literals, template literals without substitutions, and the `children` slot. Components, spreads and any other expression would need a render per request, which the document never gets. `data.detail` names what was found.
+The compiler turns a static document into HTML without running it: literals, template literals without substitutions, literal `const`s, the `children` slot, and components whose props are static, from the document module, other source files, or packages that export their source under the `reze` condition. When anything else is in the page, the document module runs once on the server at build time and when the dev server renders its first page, and its output becomes the page. Both produce the same page. `data.detail` names the first part that is not static.
 
-**Repair:** Inline the value as a literal. Move per-page content into a route component or `<Head>`, and load scripts and styles through `<script src>` and `<link href>`.
+**Repair:** No action is needed. To compile the document without running it, make that part static.
 
 Before:
 
 ```tsx
-const lang = "en";
-
 export default function Document(props) {
-  return <html lang={lang}><head /><body><div>{props.children}</div></body></html>;
+  return <html lang={navigator.language}><head /><body><div>{props.children}</div></body></html>;
 }
 ```
 

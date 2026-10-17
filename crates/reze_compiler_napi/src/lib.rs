@@ -160,11 +160,38 @@ pub struct AnalyzeResult {
 }
 
 #[napi(object)]
+pub struct DocumentImport {
+    pub importer: String,
+    pub specifier: String,
+    /// The resolved file; absent when the import does not resolve to a source module.
+    pub file: Option<String>,
+}
+
+#[napi(object)]
+pub struct DocumentInput {
+    pub imports: Vec<DocumentImport>,
+    /// Source text of each resolved file.
+    pub sources: HashMap<String, String>,
+}
+
+#[napi(object)]
+pub struct DocumentRequest {
+    pub importer: String,
+    pub specifier: String,
+}
+
+#[napi(object)]
 pub struct DocumentResult {
-    /// The whole page with an empty root element; absent when `diagnostics` holds an `error`.
+    /// The whole page with an empty root element; present only for a static page.
     pub html: Option<String>,
-    /// `id` of the root element; absent when `diagnostics` holds an `error`.
+    /// `id` of the root element; present only for a static page.
     pub root_id: Option<String>,
+    /// The imported files a static page was compiled from.
+    pub files: Vec<String>,
+    /// Imports to resolve into the input before compiling again.
+    pub requests: Vec<DocumentRequest>,
+    /// The module must run to render the page; `info` diagnostics name the parts that are not static.
+    pub render: bool,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -254,18 +281,55 @@ pub fn analyze(source: String, filename: String) -> napi::Result<AnalyzeResult> 
     }
 }
 
-/// Renders the default-exported document component of `source` to static HTML. Errors come back
-/// as diagnostics, and the call never throws on them.
+/// Compiles the default-exported document component of `source` to static HTML, following the
+/// imports resolved in `input`. Errors come back as diagnostics, and the call never throws on them.
 #[napi]
-pub fn compile_document(source: String, filename: String) -> DocumentResult {
-    match reze_compiler::compile_document(&source, &filename) {
-        Ok(document) => DocumentResult {
+pub fn compile_document(
+    source: String,
+    filename: String,
+    input: Option<DocumentInput>,
+) -> DocumentResult {
+    let mut modules = reze_compiler::DocumentModules::default();
+    if let Some(input) = input {
+        for import in input.imports {
+            let request = reze_compiler::ImportRequest {
+                importer: import.importer,
+                specifier: import.specifier,
+            };
+            modules.resolve(request, import.file);
+        }
+        for (file, source) in input.sources {
+            modules.add_source(file, source);
+        }
+    }
+    let empty = DocumentResult {
+        html: None,
+        root_id: None,
+        files: Vec::new(),
+        requests: Vec::new(),
+        render: false,
+        diagnostics: Vec::new(),
+    };
+    match reze_compiler::compile_document(&source, &filename, &modules) {
+        Ok(reze_compiler::DocumentOutcome::Html(document)) => DocumentResult {
             html: Some(document.html),
             root_id: Some(document.root_id),
-            diagnostics: Vec::new(),
+            files: document.files,
+            ..empty
         },
-        Err(errors) => {
-            DocumentResult { html: None, root_id: None, diagnostics: diagnostics(errors) }
+        Ok(reze_compiler::DocumentOutcome::Resolve(requests)) => DocumentResult {
+            requests: requests
+                .into_iter()
+                .map(|request| DocumentRequest {
+                    importer: request.importer,
+                    specifier: request.specifier,
+                })
+                .collect(),
+            ..empty
+        },
+        Ok(reze_compiler::DocumentOutcome::Render(reasons)) => {
+            DocumentResult { render: true, diagnostics: diagnostics(reasons), ..empty }
         }
+        Err(errors) => DocumentResult { diagnostics: diagnostics(errors), ..empty },
     }
 }

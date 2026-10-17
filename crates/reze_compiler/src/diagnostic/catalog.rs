@@ -192,26 +192,26 @@ catalog! {
     DocumentShape {
         name: "DOCUMENT_SHAPE",
         severity: Error,
-        title: "Document is not a static `<html>` page",
+        title: "Document is not an `<html>` page",
         message: "The document {detail}.",
-        explanation: "A document module default-exports a function that returns one `<html>` element holding a `<head>` and then a `<body>`. The compiler renders it to HTML once, at build time, so the function only returns that element and the module holds nothing else but type imports and type declarations. Raw-text elements such as `<script>` and `<style>` take only text, and void elements take no children. `data.detail` is what is wrong.",
-        repair: "Default-export `function Document(props) { return <html><head>…</head><body>…</body></html>; }` and move every other statement out of the module.",
+        explanation: "A document module default-exports a function that returns one `<html>` element holding a `<head>` and then a `<body>`. Raw-text elements such as `<script>` and `<style>` take only text, void elements take no children, and a component cannot render itself. These hold however the document renders. `data.detail` is what is wrong.",
+        repair: "Default-export `function Document(props) { return <html><head>…</head><body>…</body></html>; }`.",
         fix: None,
         example: Pair {
-            bad: "export const lang = \"en\";\n\nexport default function Document(props) {\n  return <html><head /><body><div>{props.children}</div></body></html>;\n}\n",
+            bad: "export default function Document(props) {\n  return <div>{props.children}</div>;\n}\n",
             good: "export default function Document(props) {\n  return <html><head /><body><div>{props.children}</div></body></html>;\n}\n",
         },
     }
     DocumentDynamic {
         name: "DOCUMENT_DYNAMIC",
-        severity: Error,
-        title: "Dynamic value in the document",
-        message: "The document holds {detail}, which is not static: the document renders once, at build time.",
-        explanation: "Every attribute and child of the document is fixed at build time: string, number and boolean literals, template literals without substitutions, and the `children` slot. Components, spreads and any other expression would need a render per request, which the document never gets. `data.detail` names what was found.",
-        repair: "Inline the value as a literal. Move per-page content into a route component or `<Head>`, and load scripts and styles through `<script src>` and `<link href>`.",
+        severity: Info,
+        title: "Document renders at build time",
+        message: "The document holds {detail}, which is not static, so it renders by running its code instead of compiling to HTML.",
+        explanation: "The compiler turns a static document into HTML without running it: literals, template literals without substitutions, literal `const`s, the `children` slot, and components whose props are static, from the document module, other source files, or packages that export their source under the `reze` condition. When anything else is in the page, the document module runs once on the server at build time and when the dev server renders its first page, and its output becomes the page. Both produce the same page. `data.detail` names the first part that is not static.",
+        repair: "No action is needed. To compile the document without running it, make that part static.",
         fix: None,
         example: Pair {
-            bad: "const lang = \"en\";\n\nexport default function Document(props) {\n  return <html lang={lang}><head /><body><div>{props.children}</div></body></html>;\n}\n",
+            bad: "export default function Document(props) {\n  return <html lang={navigator.language}><head /><body><div>{props.children}</div></body></html>;\n}\n",
             good: "export default function Document(props) {\n  return <html lang=\"en\"><head /><body><div>{props.children}</div></body></html>;\n}\n",
         },
     }

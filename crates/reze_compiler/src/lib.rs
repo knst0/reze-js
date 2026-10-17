@@ -25,7 +25,7 @@ pub use diagnostic::{
     render_skill,
 };
 
-pub use document::{Document, compile_document};
+pub use document::{Document, DocumentModules, DocumentOutcome, ImportRequest, compile_document};
 pub use inspect::{BindingKind, Inspection, inspect};
 pub use module_facts::{ExportFacts, FactKind, ModuleFacts, Reads, Written};
 

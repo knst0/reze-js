@@ -29,10 +29,10 @@ export interface AnalyzeResult {
 export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult
 
 /**
- * Renders the default-exported document component of `source` to static HTML. Errors come back
- * as diagnostics, and the call never throws on them.
+ * Compiles the default-exported document component of `source` to static HTML, following the
+ * imports resolved in `input`. Errors come back as diagnostics, and the call never throws on them.
  */
-export declare function compileDocument(source: string, filename: string): DocumentResult
+export declare function compileDocument(source: string, filename: string, input?: DocumentInput | undefined | null): DocumentResult
 
 export interface CompileOptions {
   /** Default: `true`. */
@@ -88,11 +88,35 @@ export interface Diagnostic {
   rendered: string
 }
 
+export interface DocumentImport {
+  importer: string
+  specifier: string
+  /** The resolved file; absent when the import does not resolve to a source module. */
+  file?: string
+}
+
+export interface DocumentInput {
+  imports: Array<DocumentImport>
+  /** Source text of each resolved file. */
+  sources: Record<string, string>
+}
+
+export interface DocumentRequest {
+  importer: string
+  specifier: string
+}
+
 export interface DocumentResult {
-  /** The whole page with an empty root element; absent when `diagnostics` holds an `error`. */
+  /** The whole page with an empty root element; present only for a static page. */
   html?: string
-  /** `id` of the root element; absent when `diagnostics` holds an `error`. */
+  /** `id` of the root element; present only for a static page. */
   rootId?: string
+  /** The imported files a static page was compiled from. */
+  files: Array<string>
+  /** Imports to resolve into the input before compiling again. */
+  requests: Array<DocumentRequest>
+  /** The module must run to render the page; `info` diagnostics name the parts that are not static. */
+  render: boolean
   diagnostics: Array<Diagnostic>
 }
 
