@@ -16,6 +16,7 @@ use crate::frontend::pure::has_await;
 enum Wrapper {
     Function,
     Proxy,
+    CallableProxy,
 }
 
 struct Binding<'a> {
@@ -79,9 +80,10 @@ pub fn apply<'a>(ctx: &mut EmitContext<'a, '_>, program: &mut Program<'a>) {
             Wrapper::Function => {
                 format!("export function {name}(...args) {{ return {state}().{name}(...args); }}")
             }
-            Wrapper::Proxy => {
+            Wrapper::Proxy | Wrapper::CallableProxy => {
                 let proxy = *proxy_helper.get_or_insert_with(|| ctx.helper_name(HTML_SOURCE, "moduleProxy"));
-                format!("export const {name} = {proxy}(() => {state}().{name});")
+                let callable = if matches!(binding.wrapper, Wrapper::CallableProxy) { ", true" } else { "" };
+                format!("export const {name} = {proxy}(() => {state}().{name}{callable});")
             }
         };
         lowered.extend(parse(ctx, &text));
@@ -129,7 +131,8 @@ fn wrapper(ctx: &EmitContext<'_, '_>, init: &Expression<'_>) -> Option<Wrapper> 
     let Expression::CallExpression(call) = init else { return None };
     match ctx.facts.imported(ctx.scoping, &call.callee)? {
         "signal" | "computed" | "action" | "selector" => Some(Wrapper::Function),
-        "store" | "createContext" => Some(Wrapper::Proxy),
+        "store" => Some(Wrapper::Proxy),
+        "createContext" => Some(Wrapper::CallableProxy),
         _ => None,
     }
 }

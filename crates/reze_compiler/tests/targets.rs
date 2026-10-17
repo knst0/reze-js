@@ -79,6 +79,14 @@ fn html_keeps_module_state_per_request_without_layout_or_module_markers() {
 }
 
 #[test]
+fn html_exports_contexts_as_callable_module_proxies() {
+    let source = "import { createContext, store } from \"reze-js\";\nexport const Theme = createContext(\"light\");\nexport const settings = store({ dense: false });";
+    let out = code(source, "src/m.tsx", "src/m.ts", CompileTarget::Html);
+    assert!(out.contains("().Theme, true)"), "{out}");
+    assert!(out.contains("().settings)"), "{out}");
+}
+
+#[test]
 fn html_compiles_views_rooted_at_html_as_documents() {
     let source = "export default (props) => <html><head><title>{props.title}</title></head><body><main>{props.children}</main></body></html>;";
     let out = code(source, "src/document.tsx", "src/document.tsx", CompileTarget::Html);

@@ -89,6 +89,7 @@ test(
     ]);
     expect(slow).toMatch(/<p id="?hits"?>1<\/p>/);
     expect(fast).toMatch(/<p id="?hits"?>1<\/p>/);
+    expect(slow).toMatch(/<p id="?tone"?>loud<\/p>/);
   },
   TIMEOUT,
 );

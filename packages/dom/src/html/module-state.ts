@@ -17,11 +17,12 @@ export function moduleState(moduleId: string, init: () => object): () => object 
   };
 }
 
-export function moduleProxy(target: () => object): object {
+export function moduleProxy(target: () => object, callable?: boolean): object {
   const resolve = target as () => Record<PropertyKey, unknown>;
   return new Proxy(
-    {},
+    callable ? () => {} : {},
     {
+      apply: (_, self, args) => Reflect.apply(resolve() as unknown as (...args: unknown[]) => unknown, self, args),
       get: (_, key) => Reflect.get(resolve(), key),
       set: (_, key, value) => Reflect.set(resolve(), key, value),
       has: (_, key) => Reflect.has(resolve(), key),
