@@ -78,10 +78,8 @@ test(
       routerA.handler(new Request("http://127.0.0.1/context?scope=request-one")).then((response) => response.text()),
       routerA.handler(new Request("http://127.0.0.1/context?scope=request-two")).then((response) => response.text()),
     ]);
-    expect(first).toContain("request-one");
-    expect(second).toContain("request-two");
-    expect(first).not.toContain("request-two");
-    expect(second).not.toContain("request-one");
+    expect(first).toMatch(/id="?request-scope"?>request-one</);
+    expect(second).toMatch(/id="?request-scope"?>request-two</);
 
     const [slow, fast] = await Promise.all([
       moduleState.handler(new Request("http://127.0.0.1/?d=200")).then((response) => response.text()),

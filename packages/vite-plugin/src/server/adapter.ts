@@ -160,7 +160,7 @@ async function respond(pathname, search, mode, signal, overrides) {
   let handedOff = false;
   try {
     const view = await session.load(loadView);
-    const prepared = await session.load(() => routerServer.prepareServerRoute(view.routes, appPath, { base: basePath }));
+    const prepared = await session.load(() => routerServer.prepareServerRoute(view.routes, appPath + search, { base: basePath }));
     if (prepared.status === "redirect") return redirectResult(appPath, prepared);
     if (prepared.status === "not-found") return { status: "not-found" };
     const build = () => view.ssgView({ router: prepared.component });
