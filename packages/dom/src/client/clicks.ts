@@ -15,7 +15,8 @@ export interface ClickPosition {
 export function holdClicks(nodes: readonly Node[]): () => HeldClick | undefined {
   const hosts = nodes.filter((node): node is Element => node.nodeType === 1);
   let held: HeldClick | undefined;
-  const hold = (event: MouseEvent): void => {
+  const hold = (event: Event): void => {
+    if (!(event instanceof MouseEvent)) return;
     held = {
       target: event.target as Element,
       init: {
