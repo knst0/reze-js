@@ -108,10 +108,11 @@ export function createFileRoutesPlugin(fs: FileRoutesApi, options: FileRoutesOpt
           return;
         }
         if (!isChanged) return;
-        const client = server.environments.client;
-        const module = client.moduleGraph.getModuleById(ResolvedId);
-        if (module !== undefined) client.moduleGraph.invalidateModule(module);
-        client.hot.send({ type: "full-reload" });
+        for (const environment of Object.values(server.environments)) {
+          const module = environment.moduleGraph.getModuleById(ResolvedId);
+          if (module !== undefined) environment.moduleGraph.invalidateModule(module);
+          environment.hot.send({ type: "full-reload" });
+        }
       };
       const onChange = (file: string): void => regenerate(file);
       const isTemplated = options.template !== false;

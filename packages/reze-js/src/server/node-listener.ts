@@ -35,13 +35,16 @@ export function createNodeListener(handler: RequestHandler): NodeListener {
 
 function requestUrl(req: IncomingMessage): string {
   const protocol = "encrypted" in req.socket && req.socket.encrypted ? "https" : "http";
-  return `${protocol}://${req.headers.host ?? "localhost"}${req.url ?? "/"}`;
+  // HTTP/2 (Vite dev over https) carries the host in `:authority` instead of `host`.
+  const host = req.headers.host ?? req.headers[":authority"] ?? "localhost";
+  return `${protocol}://${host}${req.url ?? "/"}`;
 }
 
 function nodeHeaders(source: IncomingHttpHeaders): Headers {
   const headers = new Headers();
   for (const [name, value] of Object.entries(source)) {
-    if (value === undefined) continue;
+    // HTTP/2 pseudo-headers (`:method`, `:path`, …) are not valid Fetch header names.
+    if (value === undefined || name.startsWith(":")) continue;
     for (const item of Array.isArray(value) ? value : [value]) headers.append(name, item);
   }
   return headers;
