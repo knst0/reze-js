@@ -234,6 +234,22 @@ fn handlers_use_static_delegation_only_when_provably_local() {
 }
 
 #[test]
+fn refs_to_immutable_bindings_never_assign_them() {
+    let source = "import { elementRef } from \"./refs\";\nfunction Field(props) {\n  return <input ref={props.ref} />;\n}\nexport function C(props) {\n  const merged = mergeRefs(props.ref, elementRef);\n  const handle = (el) => props.seen(el);\n  let slot;\n  return <div ref={merged}><b ref={handle} /><i ref={elementRef} /><u ref={slot} /><Field ref={merged} /><Field ref={handle} /><Field ref={elementRef} /><Field ref={slot} /></div>;\n}";
+    for target in [CompileTarget::Client, CompileTarget::Island] {
+        let options = Options { target, module_id: Some("m".into()), ..Options::default() };
+        let code = output_for(source, &options).code;
+        for binding in ["merged", "handle", "elementRef"] {
+            assert!(!code.contains(&format!(": {binding} = ")), "{binding}\n{code}");
+        }
+        assert!(code.contains("_$use(handle, "), "{code}");
+        assert!(code.contains("typeof merged === \"function\" && _$use(merged, "), "{code}");
+        assert!(code.contains("\"ref\": handle"), "{code}");
+        assert!(code.contains("slot = "), "{code}");
+    }
+}
+
+#[test]
 fn closed_spreads_are_fixed_only_when_every_entry_is() {
     let code = client_body(
         "let a = signal(0); let b = signal(0);",

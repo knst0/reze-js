@@ -1661,7 +1661,7 @@ impl Builder<'_> {
     }
 
     fn ref_target(&self, e: &Expression<'_>) -> RefOp {
-        if is_function(e) {
+        if is_function(e) || self.is_static_handler(e) {
             return RefOp::Callback(ExprRef::of(e));
         }
         match self.assign_target(e) {
@@ -1670,9 +1670,21 @@ impl Builder<'_> {
         }
     }
 
+    fn is_immutable_binding(&self, id: &IdentifierReference<'_>) -> bool {
+        id.reference_id
+            .get()
+            .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+            .is_some_and(|symbol| {
+                let flags = self.scoping.symbol_flags(symbol);
+                flags.is_const_variable() || flags.is_import()
+            })
+    }
+
     fn assign_target(&self, e: &Expression<'_>) -> Option<AssignTarget> {
         Some(match e.without_parentheses() {
-            Expression::Identifier(id) if !self.facts.asyncs.is_read(id) => {
+            Expression::Identifier(id)
+                if !self.facts.asyncs.is_read(id) && !self.is_immutable_binding(id) =>
+            {
                 AssignTarget::Identifier(id.name.as_str().to_string())
             }
             Expression::StaticMemberExpression(m) if !m.optional => AssignTarget::Member {
