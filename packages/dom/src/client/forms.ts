@@ -16,7 +16,7 @@ export interface FormSnapshot {
   readonly focus?: { readonly index: number; readonly tag: string; readonly start: number | null; readonly end: number | null };
 }
 
-function elementsOf(nodes: readonly Node[], selector: string): Element[] {
+export function elementsOf(nodes: readonly Node[], selector: string): Element[] {
   const found: Element[] = [];
   for (const node of nodes) {
     if (node.nodeType !== 1) continue;

@@ -184,6 +184,27 @@ for (const engine of ENGINES) {
       } finally {
         await typed.close();
       }
+
+      const formModule = String(islandDescriptors(html).find((descriptor) => descriptor.e === "Form")?.m);
+      const earlyContext = await browsers.get(engine)!.newContext();
+      const early = await earlyContext.newPage();
+      const formRequested = Promise.withResolvers<void>();
+      const formReleased = Promise.withResolvers<void>();
+      await early.route(`**${formModule}`, async (route) => {
+        formRequested.resolve();
+        await formReleased.promise;
+        await route.continue();
+      });
+      try {
+        await early.goto(`${islandsOrigin.origin}/`, { waitUntil: "domcontentloaded" });
+        await formRequested.promise;
+        await early.click("#probe", { noWaitAfter: true });
+        formReleased.resolve();
+        await waitFor(early, "document.querySelector('#probe')?.textContent === '1'");
+      } finally {
+        formReleased.resolve();
+        await earlyContext.close();
+      }
     },
     TIMEOUT,
   );

@@ -7,6 +7,7 @@ import { insert } from "../insert";
 import { armIsland, type IslandOptions, type IslandTrigger } from "../island";
 import type { JSX } from "../jsx";
 import { FrameDecoder, type WireValue } from "../wire/codec";
+import { clickPosition, elementAt, holdClicks, replayClick, type HeldClick } from "./clicks";
 import { restoreForms, snapshotForms } from "./forms";
 
 export interface IslandDescriptor {
@@ -76,7 +77,8 @@ async function run(
   start: Comment,
   end: Comment,
   options: BootOptions,
-): Promise<() => void> {
+  releaseClicks: () => HeldClick | undefined,
+): Promise<{ dispose: () => void; held: HeldClick | undefined; target: Element | undefined }> {
   const load = options.islands?.[descriptor.n];
   const module = (await (load === undefined ? import(/* @vite-ignore */ descriptor.m) : load())) as Record<
     string,
@@ -98,14 +100,17 @@ async function run(
   const state: IslandState = { prefix: descriptor.i, seeds, occurrences: new Map(), nextId: 0 };
   const old = nodesBetween(start, end).filter((node) => !isSlotNode(props, node));
   const snapshot = snapshotForms(old, start.ownerDocument.activeElement);
+  const held = releaseClicks();
+  const heldAt = held === undefined ? undefined : clickPosition(old, held.target);
   for (const node of old) node.parentNode!.removeChild(node);
   const render = (): unknown => provideContext(IslandContext, state, () => createComponent(component, props));
   const dispose = renderRoot((dispose) => {
     insert(end.parentNode!, options.wrap === undefined ? render() : options.wrap(render), end);
     return dispose;
   });
-  restoreForms(nodesBetween(start, end), snapshot);
-  return dispose;
+  const rendered = nodesBetween(start, end);
+  restoreForms(rendered, snapshot);
+  return { dispose, held, target: heldAt === undefined ? held?.target : elementAt(rendered, heldAt) };
 }
 
 function isSlotNode(props: Record<string, unknown>, node: Node): boolean {
@@ -127,21 +132,30 @@ export function bootIsland(token: string, descriptor: IslandDescriptor, locator:
   let cancelled = false;
   let disarm: (() => void) | undefined;
   let disposeRender: (() => void) | undefined;
+  let releaseClicks: (() => HeldClick | undefined) | undefined;
   const dispose = (): void => {
     cancelled = true;
     booted.delete(start);
     disarm?.();
+    releaseClicks?.();
     disposeRender?.();
   };
   booted.set(start, dispose);
   const boot = (): void => {
-    run(descriptor, locator, start, end, options).then(
-      (disposeBooted) => {
-        if (cancelled) disposeBooted();
-        else disposeRender = disposeBooted;
+    releaseClicks = holdClicks(nodesBetween(start, end));
+    run(descriptor, locator, start, end, options, releaseClicks).then(
+      (island) => {
+        if (cancelled) {
+          island.dispose();
+          return;
+        }
+        disposeRender = island.dispose;
+        replayClick(island.target, island.held);
       },
       (error: unknown) => {
+        const held = releaseClicks!();
         console.error(`[reze] island ${descriptor.e} from ${descriptor.m} failed`, error);
+        if (!cancelled) replayClick(held?.target, held);
       },
     );
   };
