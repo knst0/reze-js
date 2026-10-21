@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use napi::bindgen_prelude::{AsyncTask, Env, Task};
 use napi_derive::napi;
 
 #[napi(object)]
@@ -205,15 +206,7 @@ fn diagnostics(diagnostics: Vec<reze_compiler::Diagnostic>) -> Vec<Diagnostic> {
     diagnostics.into_iter().map(diagnostic).collect()
 }
 
-/// Compiles `source`. `code` is absent when nothing in the file is rewritten, and when
-/// `diagnostics` holds an `error`; compile errors come back as diagnostics without `code`, and the
-/// call never throws on them.
-#[napi]
-pub fn compile(
-    source: String,
-    filename: String,
-    options: Option<CompileOptions>,
-) -> napi::Result<CompileResult> {
+fn compile_options(options: Option<CompileOptions>) -> napi::Result<reze_compiler::Options> {
     let mut opts = reze_compiler::Options::default();
     if let Some(o) = options {
         opts.source_map = o.source_map.unwrap_or(opts.source_map);
@@ -249,7 +242,13 @@ pub fn compile(
             None => HashMap::new(),
         };
     }
-    match reze_compiler::compile_with_facts(&source, &filename, &opts) {
+    Ok(opts)
+}
+
+fn compile_result(
+    compiled: Result<reze_compiler::Compiled, Vec<reze_compiler::Diagnostic>>,
+) -> napi::Result<CompileResult> {
+    match compiled {
         Ok(reze_compiler::Compiled { output, facts }) => {
             let (code, map, diagnostics_out) = match output {
                 Some(out) => (Some(out.code), out.map, out.diagnostics),
@@ -271,16 +270,89 @@ pub fn compile(
     }
 }
 
+/// Compiles `source`. `code` is absent when nothing in the file is rewritten, and when
+/// `diagnostics` holds an `error`; compile errors come back as diagnostics without `code`, and the
+/// call never throws on them.
+#[napi]
+pub fn compile(
+    source: String,
+    filename: String,
+    options: Option<CompileOptions>,
+) -> napi::Result<CompileResult> {
+    let options = compile_options(options)?;
+    compile_result(reze_compiler::compile_with_facts(&source, &filename, &options))
+}
+
+pub struct CompileTask {
+    source: String,
+    filename: String,
+    options: reze_compiler::Options,
+}
+
+impl Task for CompileTask {
+    type Output = Result<reze_compiler::Compiled, Vec<reze_compiler::Diagnostic>>;
+    type JsValue = CompileResult;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        Ok(reze_compiler::compile_with_facts(&self.source, &self.filename, &self.options))
+    }
+
+    fn resolve(&mut self, _: Env, compiled: Self::Output) -> napi::Result<CompileResult> {
+        compile_result(compiled)
+    }
+}
+
+/// `compile` on the libuv thread pool.
+#[napi(ts_return_type = "Promise<CompileResult>")]
+pub fn compile_async(
+    source: String,
+    filename: String,
+    options: Option<CompileOptions>,
+) -> napi::Result<AsyncTask<CompileTask>> {
+    let options = compile_options(options)?;
+    Ok(AsyncTask::new(CompileTask { source, filename, options }))
+}
+
 /// Reactive facts of `source`'s exports, for `compile`'s `facts` of imported modules. `facts` is
 /// absent when the module has errors.
 #[napi]
 pub fn analyze(source: String, filename: String) -> napi::Result<AnalyzeResult> {
-    match reze_compiler::analyze(&source, &filename) {
+    analyze_result(reze_compiler::analyze(&source, &filename))
+}
+
+fn analyze_result(
+    analyzed: Result<reze_compiler::ModuleFacts, Vec<reze_compiler::Diagnostic>>,
+) -> napi::Result<AnalyzeResult> {
+    match analyzed {
         Ok(facts) => {
             Ok(AnalyzeResult { facts: Some(facts_value(&facts)?), diagnostics: Vec::new() })
         }
         Err(errors) => Ok(AnalyzeResult { facts: None, diagnostics: diagnostics(errors) }),
     }
+}
+
+pub struct AnalyzeTask {
+    source: String,
+    filename: String,
+}
+
+impl Task for AnalyzeTask {
+    type Output = Result<reze_compiler::ModuleFacts, Vec<reze_compiler::Diagnostic>>;
+    type JsValue = AnalyzeResult;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        Ok(reze_compiler::analyze(&self.source, &self.filename))
+    }
+
+    fn resolve(&mut self, _: Env, analyzed: Self::Output) -> napi::Result<AnalyzeResult> {
+        analyze_result(analyzed)
+    }
+}
+
+/// `analyze` on the libuv thread pool.
+#[napi(ts_return_type = "Promise<AnalyzeResult>")]
+pub fn analyze_async(source: String, filename: String) -> AsyncTask<AnalyzeTask> {
+    AsyncTask::new(AnalyzeTask { source, filename })
 }
 
 /// FNV-1a64 of `text`'s UTF-8 bytes, lowercase hex: the hash `facts` and `profile` entries carry.

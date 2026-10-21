@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { compile, profileHash } from "@rezejs/compiler";
+import { compileAsync, profileHash } from "@rezejs/compiler";
 import { defaultClientConditions, defaultServerConditions } from "vite";
 import type { DevEnvironment, Environment, EnvironmentModuleNode, Plugin } from "vite";
 
@@ -317,7 +317,7 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
         staticImportSpecifiers(code),
         resolverOf((specifier, importer) => this.resolve(specifier, importer, { skipSelf: true })),
       );
-      const result = compile(code, file, {
+      const result = await compileAsync(code, file, {
         sourceMap: emitsSourceMap(this.environment.config),
         debugNames,
         hot,

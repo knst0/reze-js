@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 
-import { analyze, profileHash } from "@rezejs/compiler";
+import { analyzeAsync, profileHash } from "@rezejs/compiler";
 
 export type Resolver = (specifier: string, importer: string) => Promise<string | undefined>;
 
@@ -38,7 +38,7 @@ interface Package {
 
 interface OwnFacts {
   hash: string;
-  facts: ModuleFacts | undefined;
+  facts: Promise<ModuleFacts | undefined>;
 }
 
 interface SourceSnapshot {
@@ -122,7 +122,7 @@ export class ModuleFactsStore {
   }
 
   recordCompiled(file: string, source: string, facts: ModuleFacts | undefined): void {
-    this.own.set(file, { hash: facts?.hash ?? profileHash(source), facts });
+    this.own.set(file, { hash: facts?.hash ?? profileHash(source), facts: Promise.resolve(facts) });
   }
 
   async factsFor(file: string, specifiers: readonly string[], resolve: Resolver): Promise<Record<string, ModuleFacts>> {
@@ -153,7 +153,7 @@ export class ModuleFactsStore {
     visiting: ReadonlySet<string>,
   ): Promise<ModuleFacts | undefined> {
     if (visiting.has(file)) return undefined;
-    const base = this.baseFacts(file);
+    const base = await this.baseFacts(file);
     const facts = base === undefined ? undefined : await this.flatten(base, file, resolve, used, new Set([...visiting, file]));
     used.set(file, JSON.stringify(facts?.exports ?? null));
     return facts;
@@ -179,7 +179,7 @@ export class ModuleFactsStore {
     return { ...base, exports };
   }
 
-  private baseFacts(file: string): ModuleFacts | undefined {
+  private async baseFacts(file: string): Promise<ModuleFacts | undefined> {
     const owner = this.packageOf(file);
     if (owner === undefined) return /[\\/]node_modules[\\/]/.test(file) ? undefined : this.ownFacts(file);
     if (owner.dir === this.appRoot) return this.ownFacts(file);
@@ -198,13 +198,13 @@ export class ModuleFactsStore {
     return undefined;
   }
 
-  private ownFacts(file: string): ModuleFacts | undefined {
+  private ownFacts(file: string): Promise<ModuleFacts | undefined> | undefined {
     if (!this.isSource(file)) return undefined;
     const source = this.readSource(file);
     if (source === undefined) return undefined;
     const cached = this.own.get(file);
     if (cached !== undefined && cached.hash === source.hash) return cached.facts;
-    const facts = analyze(source.text, file).facts as ModuleFacts | undefined;
+    const facts = analyzeAsync(source.text, file).then((result) => result.facts as ModuleFacts | undefined);
     this.own.set(file, { hash: source.hash, facts });
     return facts;
   }

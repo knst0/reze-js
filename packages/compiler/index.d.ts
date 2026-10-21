@@ -15,6 +15,9 @@ export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-was
  */
 export declare function analyze(source: string, filename: string): AnalyzeResult
 
+/** `analyze` on the libuv thread pool. */
+export declare function analyzeAsync(source: string, filename: string): Promise<AnalyzeResult>
+
 export interface AnalyzeResult {
   /** Absent when `diagnostics` holds an `error`. */
   facts?: any
@@ -27,6 +30,9 @@ export interface AnalyzeResult {
  * call never throws on them.
  */
 export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult
+
+/** `compile` on the libuv thread pool. */
+export declare function compileAsync(source: string, filename: string, options?: CompileOptions | undefined | null): Promise<CompileResult>
 
 /**
  * Compiles the default-exported document component of `source` to static HTML, following the
