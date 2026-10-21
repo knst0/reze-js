@@ -1,7 +1,8 @@
-import { catchError, effectScope, signal, untrack } from "@rezejs/signals";
+import { catchError, computed, effectScope, signal, untrack } from "@rezejs/signals";
 import { renderEffect } from "@rezejs/signals/render";
 
 import type { JSX } from "./jsx";
+import { resolve } from "./resolve";
 
 interface Failure {
   error: unknown;
@@ -28,7 +29,10 @@ export function errored(children: () => JSX.Element, fallback?: (error: unknown,
     if (failure === undefined) {
       let isBuilding = true;
       const dispose = effectScope(() => {
-        next = catchError(children, (error) => {
+        next = catchError(() => {
+          const built = children();
+          return computed(() => resolve(built) as JSX.Element);
+        }, (error) => {
           if (failure === undefined) {
             failure = { error };
             if (!isBuilding) {
