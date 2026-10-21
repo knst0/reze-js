@@ -116,7 +116,7 @@ catalog! {
         severity: Error,
         title: "Control-flow tag used as a value",
         message: "`{name}` is compiled away and has no runtime value, so this reference would throw. Use `{name}` only as a JSX tag.",
-        explanation: "`Show`, `For`, `Repeat`, `Switch`, `Match`, `Portal` and `Head` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
+        explanation: "`Show`, `For`, `Repeat`, `Switch`, `Match`, `Portal`, `Head`, `Loading` and `Errored` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
         repair: "Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and select that with `dynamic(() => …)`.",
         fix: None,
         example: Pair {
@@ -129,7 +129,7 @@ catalog! {
         severity: Error,
         title: "Attribute a control-flow tag does not accept",
         message: "`<{tag}>` does not accept `{attribute}`, so it would be silently dropped. Remove it.",
-        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`, and `<Head>` takes none. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
+        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`, `<Loading fallback>`, `<Errored fallback>`, and `<Head>` takes none. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
         repair: "Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.",
         fix: Some("remove `{attribute}`"),
         example: Pair {
@@ -142,8 +142,8 @@ catalog! {
         severity: Error,
         title: "Control-flow tag without its required attribute",
         message: "`<{tag}>` needs `{attribute}` to decide what to render. Add `{attribute}={…}`.",
-        explanation: "`<Show>` and `<Match>` render by `when`, `<For>` by `each`, `<Repeat>` by `count`. Without it there is nothing to decide on. `data.tag` is the tag and `data.attribute` the missing attribute.",
-        repair: "Add the attribute with the condition (`when`), the list (`each`) or the number of rows (`count`).",
+        explanation: "`<Show>` and `<Match>` render by `when`, `<For>` by `each`, `<Repeat>` by `count`, and `<Errored>` needs `fallback` to show on failure. Without it there is nothing to decide on. `data.tag` is the tag and `data.attribute` the missing attribute.",
+        repair: "Add the attribute with the condition (`when`), the list (`each`), the number of rows (`count`) or the failure view (`fallback={(error, reset) => …}`).",
         fix: None,
         example: Pair {
             bad: "import { Show } from \"reze-js\";\n\nexport const view = <Show fallback={<p>closed</p>}><p>open</p></Show>;\n",
@@ -155,7 +155,7 @@ catalog! {
         severity: Error,
         title: "Control-flow tag with children it cannot render",
         message: "`<{tag}>` expects {expected} as children, so this cannot be compiled.",
-        explanation: "`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only the head elements `<title>`, `<base>`, `<meta>`, `<link>`, `<script>` and `<style>`; a `<noscript>` in the head parses as text while scripts run, so it belongs in `document.tsx`. `data.tag` is the tag and `data.expected` what it takes.",
+        explanation: "`<Show>`, `<Match>`, `<Portal>`, `<Loading>` and `<Errored>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only the head elements `<title>`, `<base>`, `<meta>`, `<link>`, `<script>` and `<style>`; a `<noscript>` in the head parses as text while scripts run, so it belongs in `document.tsx`. `data.tag` is the tag and `data.expected` what it takes.",
         repair: "Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`, and keep only head elements in `<Head>`.",
         fix: None,
         example: Pair {
@@ -563,17 +563,17 @@ catalog! {
             good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  const posts = await fetchPosts(user.id);\n  log(user);\n  return <p>{posts.length}</p>;\n}\n",
         },
     }
-    AsyncViewTarget {
-        name: "ASYNC_VIEW_TARGET",
+    AsyncViewProperty {
+        name: "ASYNC_VIEW_PROPERTY",
         severity: Error,
-        title: "View assigned to a name that is not an async component here",
-        message: "`{name}.{view}` is assigned, but `{name}` is not an async component declared in this block, so the view is never rendered.",
-        explanation: "`pending` and `failure` views attach to an async component declared in the same statement list. Any other assignment would be a plain property write that no runtime reads, and a failing load would then have no handler.",
-        repair: "Declare `{name}` as an `async function` in the same block, or drop the view assignment.",
+        title: "Loading or error view attached as a component property",
+        message: "`{name}.{view}` is not read by anything. Wrap the use site in `<{boundary}>` instead.",
+        explanation: "Loading and error views belong to the place a component is used, not to the component: `<Loading fallback>` shows one fallback until everything below it has loaded once, and `<Errored fallback={(error, reset) => …}>` catches failures below it. A `pending` or `failure` property would be a plain write that no runtime reads. `data.name` is the component and `data.view` the property.",
+        repair: "Delete the assignment and wrap the use site: `<Loading fallback={…}><{name} /></Loading>` for `pending`, `<Errored fallback={(error, reset) => …}><{name} /></Errored>` for `failure`.",
         fix: None,
         example: Pair {
-            bad: "function Card(props) {\n  return <p>{props.id}</p>;\n}\nCard.failure = (error) => <p>{error.message}</p>;\n",
-            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\nCard.failure = (error) => <p>{error.message}</p>;\n",
+            bad: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  return <p>{user.name}</p>;\n}\nCard.failure = (error) => <p>{error.message}</p>;\n",
+            good: "import { Errored } from \"reze-js\";\n\nasync function Card(props) {\n  const user = await fetchUser(props.id);\n  return <p>{user.name}</p>;\n}\nexport const view = <Errored fallback={(error) => <p>{error.message}</p>}><Card id={1} /></Errored>;\n",
         },
     }
     InternalReactivityImport {
@@ -606,13 +606,13 @@ catalog! {
         name: "ASYNC_TRY_AROUND_AWAIT",
         severity: Error,
         title: "`try` around an await in an async component",
-        message: "`{component}` wraps an `await` in `try`, which the compiler cannot lower into the load step. Handle the failure with `failure` or catch the promise in the awaited expression.",
-        explanation: "Each `await` in an async component is a step of one lowering path, which has no place for a `try` around it. A rejected await renders the component's `failure` view. Handle a specific error by inspecting the value in `failure`, or by catching the promise in the load expression. `data.component` is the component.",
-        repair: "Remove the `try`, and declare a `failure` view on the component to show the error.",
+        message: "`{component}` wraps an `await` in `try`, which the compiler cannot lower into the load step. Handle the failure with an `<Errored>` boundary around the use site or catch the promise in the awaited expression.",
+        explanation: "Each `await` in an async component is a step of one lowering path, which has no place for a `try` around it. A rejected await throws to the nearest `<Errored>` boundary. Handle a specific error by inspecting the value in that boundary's `fallback`, or by catching the promise in the load expression. `data.component` is the component.",
+        repair: "Remove the `try`, and wrap the use site in `<Errored fallback={(error, reset) => …}>` to show the error.",
         fix: None,
         example: Pair {
             bad: "export async function Card(props) {\n  const id = props.id;\n  try {\n    const user = await fetchUser(id);\n    return <p>{user.name}</p>;\n  } catch (error) {\n    return <p>Failed</p>;\n  }\n}\n",
-            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\n\nCard.failure = (error, retry) => <button onClick={retry}>Retry</button>;\n",
+            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\n",
         },
     }
     AbortSignalOutsideLoad {

@@ -39,6 +39,8 @@ pub enum Intrinsic {
     Match,
     Portal,
     Head,
+    Loading,
+    Errored,
 }
 
 impl Intrinsic {
@@ -51,6 +53,8 @@ impl Intrinsic {
             Intrinsic::Match => "Match",
             Intrinsic::Portal => "Portal",
             Intrinsic::Head => "Head",
+            Intrinsic::Loading => "Loading",
+            Intrinsic::Errored => "Errored",
         }
     }
 }
@@ -1117,7 +1121,6 @@ pub struct AsyncFacts {
     plans: HashMap<u32, Result<AsyncPlan, Reject>>,
     reads: HashMap<ReferenceId, (u32, usize)>,
     reports: Vec<Report>,
-    resource_starts: Vec<u32>,
 }
 
 impl AsyncFacts {
@@ -1165,10 +1168,6 @@ impl AsyncFacts {
 
     pub fn plan(&self, function_start: u32) -> Option<&Result<AsyncPlan, Reject>> {
         self.plans.get(&function_start)
-    }
-
-    pub fn has_resource_within(&self, span: Span) -> bool {
-        self.resource_starts.iter().any(|&start| span.start <= start && start < span.end)
     }
 
     pub fn is_awaited_value(&self, reference: ReferenceId) -> bool {
@@ -1236,13 +1235,6 @@ impl AsyncCollector<'_, '_> {
 }
 
 impl<'a> Visit<'a> for AsyncCollector<'_, '_> {
-    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
-        if is_await_resource(it) {
-            self.facts.resource_starts.push(it.span.start);
-        }
-        walk::walk_call_expression(self, it);
-    }
-
     fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
         if it.r#async
             && !it.generator
@@ -1447,7 +1439,6 @@ pub enum RuntimeCallKind {
     Resource,
     UniqueId,
     AsyncComponent,
-    AsyncViews,
     Dynamic,
     DynamicElement,
     Island,

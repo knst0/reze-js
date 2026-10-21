@@ -448,28 +448,18 @@ export function hAsyncComponent<V extends unknown[], R>(
   );
 }
 
-function hLoading(site: Site, children: () => HtmlRange, pending: (() => JSX.Element) | undefined): HtmlRange {
+export function hLoading(site: Site, child: () => JSX.Element, fallback?: () => JSX.Element): HtmlRange {
   const session = htmlSession();
   let content: HtmlRange | undefined;
   const range = managedRange(
     "pending",
     site,
-    () => loading(() => (content = children()) as unknown as JSX.Element, pending),
+    () => loading(() => (content = managedRange("content", site, child)) as unknown as JSX.Element, fallback),
     undefined,
     true,
   );
   session.pendingRanges.set(range, () => content === undefined || content.parent === undefined);
   return range;
-}
-
-export function hAsyncViews(
-  site: Site,
-  children: () => HtmlRange,
-  pending?: () => JSX.Element,
-  failure?: (error: unknown, reset: () => void) => JSX.Element,
-): HtmlRange {
-  if (failure === undefined) return pending === undefined ? children() : hLoading(site, children, pending);
-  return hErrored(site, () => hLoading(site, children, pending) as unknown as JSX.Element, failure);
 }
 
 export function hDynamic<P>(site: Site, source: () => ((props: P) => unknown) | null | undefined | false): (props: P) => unknown {

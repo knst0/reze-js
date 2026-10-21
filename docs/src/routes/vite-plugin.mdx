@@ -316,9 +316,9 @@ Static pages have no request, so `ssg` renders them with no base `context`.
 
 ### Streaming
 
-A component that awaits data renders its `pending` view first, and the server streams the finished view when the data arrives. [Async components](/building-interfaces#async-components) describes `pending` and `failure`. A component without a `pending` view makes the document wait, so the first byte arrives after the data does.
+A `<Loading>` boundary renders its fallback first, and the server streams the finished view when the data below it arrives. [Async components](/building-interfaces#async-components) describes `<Loading>` and `<Errored>`. An async component without a `<Loading>` above it makes the document wait, so the first byte arrives after the data does.
 
-The streamed parts need JavaScript to apply. A browser with JavaScript off shows the `pending` views. A page with no waiting parts is complete HTML.
+The streamed parts need JavaScript to apply. A browser with JavaScript off shows the `<Loading>` fallbacks. A page with no waiting parts is complete HTML.
 
 An island is sent to the browser after everything inside it has settled. Until then, its server HTML is on the page and is not interactive.
 

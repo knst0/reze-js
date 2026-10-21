@@ -2,11 +2,11 @@ use oxc_allocator::{ArenaVec, TakeIn};
 use oxc_ast::ast::{Argument, CallExpression, Expression};
 
 use super::{EmitContext, continuation};
+use crate::RUNTIME_MODULE;
 use crate::ast::Ast;
 use crate::frontend::analysis::RuntimeCallKind;
 use crate::frontend::dynamic::DynamicTag;
 use crate::ir::view::Namespace;
-use crate::RUNTIME_MODULE;
 
 pub fn rewrite<'a>(
     ctx: &mut EmitContext<'a, '_>,
@@ -45,13 +45,11 @@ pub fn rewrite<'a>(
             ctx.helper("reze-js/internal/reactivity", "withResourceSite")
         }
         RuntimeCallKind::AsyncComponent
-        | RuntimeCallKind::AsyncViews
         | RuntimeCallKind::Dynamic
         | RuntimeCallKind::DynamicElement
         | RuntimeCallKind::Island => {
             let export = match kind {
                 RuntimeCallKind::AsyncComponent => "hAsyncComponent",
-                RuntimeCallKind::AsyncViews => "hAsyncViews",
                 RuntimeCallKind::Dynamic => "hDynamic",
                 RuntimeCallKind::DynamicElement => "hDynamicElement",
                 RuntimeCallKind::Island => "hIsland",

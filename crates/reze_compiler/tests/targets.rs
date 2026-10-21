@@ -56,7 +56,8 @@ fn html_and_island_register_components_and_hide_the_non_exported_ones() {
 
 #[test]
 fn island_replays_awaits_under_the_continuation_site_key() {
-    let source = "export async function Slow() {\n  const v = await load();\n  return <p>{v}</p>;\n}\nSlow.pending = <p>loading</p>;";
+    let source =
+        "export async function Slow() {\n  const v = await load();\n  return <p>{v}</p>;\n}";
     let out = code(source, "src/Slow.tsx", "src/Slow.tsx", CompileTarget::Island);
     let begin = out
         .split("beginContinuation(\"")
@@ -65,6 +66,36 @@ fn island_replays_awaits_under_the_continuation_site_key() {
     let key = begin.split('"').next().unwrap();
     assert!(seed_key_is_valid(key), "{key}");
     assert!(out.contains("suspendLazy(() => load())"), "{out}");
+}
+
+#[test]
+fn loading_and_errored_lower_to_boundaries_on_every_target() {
+    let source = "import { Errored, Loading } from \"reze-js\";\nimport { Card } from \"./Card\";\nexport function Page() {\n  return <Errored fallback={(error, reset) => <button onClick={reset}>{String(error)}</button>}><Loading fallback={<p>loading</p>}><Card /></Loading></Errored>;\n}";
+    for target in [CompileTarget::Client, CompileTarget::Island] {
+        let out = code(source, "src/Page.tsx", "src/Page.tsx", target);
+        assert!(out.contains("_$errored(() => _$loading(() =>"), "{out}");
+        assert!(out.contains("(error, reset) =>"), "{out}");
+        assert!(!out.contains("Errored") && !out.contains("Loading"), "{out}");
+    }
+    let out = code(source, "src/Page.tsx", "src/Page.tsx", CompileTarget::Html);
+    assert!(out.contains("hErrored("), "{out}");
+    assert!(out.contains("hLoading("), "{out}");
+
+    let source = "import { Errored } from \"reze-js\";\nexport const view = <Errored fallback={<p>failed</p>}><p>ok</p></Errored>;";
+    let out = code(source, "src/view.tsx", "src/view.tsx", CompileTarget::Client);
+    assert!(out.contains("_$errored(() =>"), "{out}");
+
+    let source =
+        "import { Errored } from \"reze-js\";\nexport const view = <Errored><p>ok</p></Errored>;";
+    let Err(errors) = compile(source, "src/view.tsx", &Options::default()) else {
+        panic!("a missing fallback is refused");
+    };
+    assert!(
+        errors
+            .iter()
+            .any(|d| d.code == Code::ControlFlowMissing && d.data["attribute"] == "fallback"),
+        "{errors:?}"
+    );
 }
 
 #[test]

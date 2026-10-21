@@ -1,6 +1,6 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
-import { createContext, useContext } from "reze-js";
+import { createContext, Errored, useContext } from "reze-js";
 import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
@@ -34,8 +34,11 @@ test("reading a default-less context outside a provider fails with ContextNotFou
     await Promise.resolve();
     return <Consumer />;
   }
-  Page.failure = (error: unknown) => <i>{(error as Error).name}</i>;
-  const { el } = mount(() => <Page />);
+  const { el } = mount(() => (
+    <Errored fallback={(error) => <i>{(error as Error).name}</i>}>
+      <Page />
+    </Errored>
+  ));
   await settle();
   expect(el.innerHTML).toBe("<i>ContextNotFoundError</i>");
 });

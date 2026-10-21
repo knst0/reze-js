@@ -1,13 +1,13 @@
 import { computed, signal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
-import { catchError, onCleanup } from "reze-js";
+import { catchError, Errored, onCleanup } from "reze-js";
 import { afterEach, expect, test } from "vite-plus/test";
 
 afterEach(cleanup);
 
 const message = (error: unknown): string => (error as Error).message;
 
-test("a failure view replaces the view when something built inside fails later, and ignores further failures", async () => {
+test("an errored fallback replaces the view when something built inside fails later, and ignores further failures", async () => {
   const cleaned: string[] = [];
   const [broken, setBroken] = signal(0);
   const label = computed(() => {
@@ -29,8 +29,11 @@ test("a failure view replaces the view when something built inside fails later, 
     await Promise.resolve();
     return <Child />;
   }
-  Page.failure = (error: unknown) => <i>{message(error)}</i>;
-  const { el } = mount(() => <Page />);
+  const { el } = mount(() => (
+    <Errored fallback={(error) => <i>{message(error)}</i>}>
+      <Page />
+    </Errored>
+  ));
   await settle();
   expect(el.innerHTML).toBe("<b>ok</b><u>ok</u>");
   setBroken(1);

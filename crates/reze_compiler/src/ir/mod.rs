@@ -2842,6 +2842,8 @@ impl Builder<'_> {
             Intrinsic::Switch => self.flow_switch(el),
             Intrinsic::Portal => self.flow_portal(el),
             Intrinsic::Head => self.flow_head(el),
+            Intrinsic::Loading => self.flow_loading(el),
+            Intrinsic::Errored => self.flow_errored(el),
             Intrinsic::Match => {
                 self.report(Report::new(Code::MatchOutsideSwitch, el.opening_element.span));
                 None
@@ -2994,6 +2996,42 @@ impl Builder<'_> {
         let child = self.case_children(el, intrinsic)?;
         let mount = self.flow_attr_source(&attributes, "mount");
         Some(FlowView::Portal { child, mount })
+    }
+
+    fn flow_loading(&mut self, el: &JSXElement<'_>) -> Option<FlowView> {
+        let intrinsic = Intrinsic::Loading;
+        let attributes = self.flow_attributes(el, intrinsic, &["fallback"]);
+        let child = self.case_children(el, intrinsic)?;
+        let fallback = self.flow_fallback(&attributes);
+        Some(FlowView::Loading { child, fallback })
+    }
+
+    fn flow_errored(&mut self, el: &JSXElement<'_>) -> Option<FlowView> {
+        let intrinsic = Intrinsic::Errored;
+        let attributes = self.flow_attributes(el, intrinsic, &["fallback"]);
+        let fallback = self.error_fallback(&attributes);
+        if fallback.is_none() {
+            self.report(
+                Report::new(Code::ControlFlowMissing, el.opening_element.span)
+                    .arg("tag", intrinsic.name().to_string())
+                    .arg("attribute", "fallback"),
+            );
+        }
+        let child = self.case_children(el, intrinsic)?;
+        Some(FlowView::Errored { child, fallback: fallback? })
+    }
+
+    fn error_fallback<'b, 'x>(
+        &mut self,
+        attributes: &[(String, &'b JSXAttribute<'x>)],
+    ) -> Option<FlowRender> {
+        let (_, a) = attributes.iter().rev().find(|(name, _)| *name == "fallback")?;
+        if let Some(JSXAttributeValue::ExpressionContainer(c)) = &a.value
+            && let Some(e) = c.expression.as_expression().filter(|e| is_function(e))
+        {
+            return Some(FlowRender::Function(ExprRef::of(e)));
+        }
+        self.flow_fallback(attributes)
     }
 
     fn flow_head(&mut self, el: &JSXElement<'_>) -> Option<FlowView> {

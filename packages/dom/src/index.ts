@@ -1,9 +1,9 @@
-export { asyncViews } from "./async-views";
 export { setAttribute, setAttributeNS, setBoolAttribute } from "./attributes";
 export { className, type ClassValue } from "./class-name";
 export { createComponent, render } from "./component";
 export { dynamic, type PropsOf } from "./dynamic";
 export { dynamicElement } from "./dynamic-element";
+export { errored } from "./errored";
 export { element, elementMathML, elementSVG } from "./element";
 export { addEventListener, delegateEvents } from "./events";
 export { head } from "./head";
@@ -11,10 +11,12 @@ export { branch, choose } from "./flow";
 export { hotComponent } from "./hot";
 export { append, insert } from "./insert";
 export {
+  type ErroredProps,
   type ForProps,
   type ForIndexProps,
   type ForKeyedProps,
   type HeadProps,
+  type LoadingProps,
   type MatchProps,
   type PortalProps,
   type ShowProps,
@@ -24,7 +26,7 @@ export {
 export { island, type IslandOptions, type IslandTrigger } from "./island";
 export type { JSX } from "./jsx";
 export { list } from "./list";
-export { asyncComponent } from "./loading";
+export { asyncComponent, loading } from "./loading";
 export { portal } from "./portal";
 export { mergeProps, omitProps, splitProps, type Props, type SplitProps } from "./props";
 export { reconcileArrays } from "./reconcile";

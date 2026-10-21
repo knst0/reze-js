@@ -237,6 +237,8 @@ impl Visitor<'_, '_, '_, '_> {
                     "Switch" => Intrinsic::Switch,
                     "Match" => Intrinsic::Match,
                     "Portal" => Intrinsic::Portal,
+                    "Loading" => Intrinsic::Loading,
+                    "Errored" => Intrinsic::Errored,
                     _ => Intrinsic::Head,
                 };
                 intrinsic_lowered(intrinsic)
@@ -269,6 +271,8 @@ fn intrinsic_lowered(intrinsic: Intrinsic) -> String {
         Intrinsic::Switch | Intrinsic::Match => "choose",
         Intrinsic::Portal => "portal",
         Intrinsic::Head => "head",
+        Intrinsic::Loading => "loading",
+        Intrinsic::Errored => "errored",
     };
     format!("<{}> lowers to `{runtime}(...)`", intrinsic.name())
 }

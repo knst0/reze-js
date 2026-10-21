@@ -285,37 +285,36 @@ fn source_maps_point_at_the_original_source_with_or_without_jsx() {
 }
 
 #[test]
-fn awaits_and_views_on_components_lower_into_the_component() {
+fn awaits_on_components_lower_into_the_component() {
     let options = without_source_map();
     let source = "import { computed } from \"reze-js\";\nexport async function Card(props) {\n  const id = props.id;\n  const user = computed(await fetchUser(id));\n  return <p>{user}</p>;\n}";
     let code = compiled(source, &options);
     assert!(code.contains("resource("), "{code}");
     assert!(code.contains("async () =>"), "{code}");
     assert!(!code.contains("asyncComponent("), "{code}");
-
-    let source = "import { computed } from \"reze-js\";\nasync function Card(props) {\n  const user = computed(await fetchUser(props.id));\n  return <p>{user}</p>;\n}\nCard.pending = <p>loading</p>;";
-    let code = compiled(source, &options);
-    assert!(code.contains("asyncViews("), "{code}");
-    assert!(!code.contains("Card.pending ="), "{code}");
-
-    let source = "export function mount() {\n  async function Card(props) {\n    const id = props.id;\n    const user = await fetchUser(id);\n    return <p>{user}</p>;\n  }\n  Card.failure = (error) => <p>{String(error)}</p>;\n  return Card;\n}";
-    let code = compiled(source, &options);
-    assert!(code.contains("asyncViews("), "{code}");
-    assert!(!code.contains("Card.failure ="), "{code}");
 }
 
 #[test]
-fn view_assignments_are_refused_unless_they_target_an_async_component() {
+fn view_properties_are_refused_with_the_boundary_that_replaces_them() {
     let options = without_source_map();
+    let d = only(
+        "async function Card(props) {\n  const user = await fetchUser(props.id);\n  return <p>{user}</p>;\n}\nCard.pending = <p>loading</p>;\nexport default Card;",
+        &options,
+        Code::AsyncViewProperty,
+    );
+    assert_eq!(d.data["name"], "Card");
+    assert_eq!(d.data["view"], "pending");
+    assert_eq!(d.data["boundary"], "Loading");
+
     let d = only(
         "function Card(props) {\n  return <p>{props.id}</p>;\n}\nCard.failure = (error) => <p>{String(error)}</p>;",
         &options,
-        Code::AsyncViewTarget,
+        Code::AsyncViewProperty,
     );
-    assert_eq!(d.data["name"], "Card");
     assert_eq!(d.data["view"], "failure");
+    assert_eq!(d.data["boundary"], "Errored");
 
     let source = "export function mount(state) {\n  state.pending = true;\n  return state;\n}";
     let reported: Vec<Diagnostic> = diagnostics(source, &options);
-    assert!(reported.iter().all(|d| d.code != Code::AsyncViewTarget), "{reported:?}");
+    assert!(reported.iter().all(|d| d.code != Code::AsyncViewProperty), "{reported:?}");
 }

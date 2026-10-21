@@ -1,5 +1,5 @@
 import { signal as runtimeSignal } from "@rezejs/signals";
-import { For, Match, onCleanup, Show, signal, Switch } from "reze-js";
+import { Errored, For, Loading, Match, onCleanup, Show, signal, Switch } from "reze-js";
 
 interface Row {
   id: string;
@@ -26,7 +26,6 @@ async function Deferred() {
   await Promise.resolve("deferred body");
   return <p id="deferred">deferred settled</p>;
 }
-Deferred.pending = <p>loading deferred…</p>;
 
 async function Fallible(props: { fail: boolean }) {
   const fail = props.fail;
@@ -36,15 +35,6 @@ async function Fallible(props: { fail: boolean }) {
   });
   return <p id="fallible">{text}</p>;
 }
-Fallible.pending = <p>loading fallible…</p>;
-Fallible.failure = (error: unknown, retry: () => void) => (
-  <p>
-    <span id="flow-error">{(error as Error).message}</span>
-    <button id="flow-reset" type="button" onClick={retry}>
-      reset
-    </button>
-  </p>
-);
 
 export default function App() {
   let rows = signal<Row[]>([
@@ -97,8 +87,23 @@ export default function App() {
       <button id="mode-two-btn" type="button" onClick={() => (mode = "two")}>
         two
       </button>
-      <Deferred />
-      <Fallible fail={fail} />
+      <Loading fallback={<p>loading deferred…</p>}>
+        <Deferred />
+      </Loading>
+      <Errored
+        fallback={(error, reset) => (
+          <p>
+            <span id="flow-error">{(error as Error).message}</span>
+            <button id="flow-reset" type="button" onClick={reset}>
+              reset
+            </button>
+          </p>
+        )}
+      >
+        <Loading fallback={<p>loading fallible…</p>}>
+          <Fallible fail={fail} />
+        </Loading>
+      </Errored>
       <button id="fail-btn" type="button" onClick={() => (fail = !fail)}>
         fail
       </button>
