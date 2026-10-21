@@ -4,8 +4,9 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { profileHash } from "@rezejs/compiler";
+
 import { ModuleFactsStore } from "../src/facts";
-import { profileHash } from "../src/hash";
 import { writeManifest } from "../src/manifest";
 
 const LIB_SOURCE = `import { signal } from "reze-js";\nlet n = signal(0);\nexport function read() { return n; }\n`;

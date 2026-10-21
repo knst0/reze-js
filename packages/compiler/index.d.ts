@@ -168,3 +168,6 @@ export interface ProfileFacts {
   hash: string
   components: Array<ProfileComponentFacts>
 }
+
+/** FNV-1a64 of `text`'s UTF-8 bytes, lowercase hex: the hash `facts` and `profile` entries carry. */
+export declare function profileHash(text: string): string

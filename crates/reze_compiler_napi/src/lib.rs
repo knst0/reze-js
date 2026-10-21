@@ -283,6 +283,12 @@ pub fn analyze(source: String, filename: String) -> napi::Result<AnalyzeResult> 
     }
 }
 
+/// FNV-1a64 of `text`'s UTF-8 bytes, lowercase hex: the hash `facts` and `profile` entries carry.
+#[napi]
+pub fn profile_hash(text: String) -> String {
+    reze_compiler::profile_hash(&text)
+}
+
 /// Compiles the default-exported document component of `source` to static HTML, following the
 /// imports resolved in `input`. Errors come back as diagnostics, and the call never throws on them.
 #[napi]

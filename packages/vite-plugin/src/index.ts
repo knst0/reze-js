@@ -2,13 +2,12 @@ import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { compile } from "@rezejs/compiler";
+import { compile, profileHash } from "@rezejs/compiler";
 import { defaultClientConditions, defaultServerConditions } from "vite";
 import type { DevEnvironment, Environment, EnvironmentModuleNode, Plugin } from "vite";
 
 import { BeforeLoadFlag, mentionsBeforeLoad, sourcesMentionBeforeLoad } from "./before-load";
 import { ModuleFactsStore, staticImportSpecifiers, type Resolver } from "./facts";
-import { profileHash } from "./hash";
 import { canonicalModuleId } from "./module-identity";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
 import { DocumentViewId, GeneratedIds, HtmlEnv, SsgViewId } from "./server/adapter";
