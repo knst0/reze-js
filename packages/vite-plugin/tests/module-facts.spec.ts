@@ -2,9 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-
 import { profileHash } from "@rezejs/compiler";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { ModuleFactsStore } from "../src/facts";
 import { writeManifest } from "../src/manifest";

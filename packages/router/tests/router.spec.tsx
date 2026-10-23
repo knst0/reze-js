@@ -669,4 +669,3 @@ test("back/forward restores the scroll position saved for that entry and no othe
   setup(pages, "/", (children) => children, { history: createBrowserHistory() });
   expect(restoredScroll).toHaveBeenLastCalledWith(0, 420);
 });
-

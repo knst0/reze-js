@@ -28,7 +28,7 @@ test("static, namespaced and boolean attributes", () => {
 });
 
 test("innerHTML on SVG elements sets the property, from attributes and spreads alike", () => {
-  const [markup, setMarkup] = signal("<circle r=\"1\" />");
+  const [markup, setMarkup] = signal('<circle r="1" />');
   const { el } = mount(() => (
     <svg>
       <g innerHTML={markup()} />

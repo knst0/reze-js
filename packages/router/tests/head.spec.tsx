@@ -77,7 +77,14 @@ test("layout and leaf Head tags shadow the document head with the deepest winnin
   const navigate = setup(
     [
       { path: "/", component: Home },
-      { path: "/docs", component: Docs, children: [{ path: "/", component: Home }, { path: "/leaf", component: Leaf }] },
+      {
+        path: "/docs",
+        component: Docs,
+        children: [
+          { path: "/", component: Home },
+          { path: "/leaf", component: Leaf },
+        ],
+      },
     ],
     "/",
   );
@@ -88,9 +95,7 @@ test("layout and leaf Head tags shadow the document head with the deepest winnin
   tick();
   expect(document.title).toBe("Leaf");
   expect(document.head.querySelectorAll("title")).toHaveLength(1);
-  expect([...document.head.querySelectorAll('meta[name="description"]')].map((tag) => tag.getAttribute("content"))).toEqual([
-    "docs desc",
-  ]);
+  expect([...document.head.querySelectorAll('meta[name="description"]')].map((tag) => tag.getAttribute("content"))).toEqual(["docs desc"]);
   expect([...document.head.querySelectorAll('link[rel="canonical"]')].map((tag) => tag.getAttribute("href"))).toEqual([
     "https://site.example/docs/leaf",
   ]);

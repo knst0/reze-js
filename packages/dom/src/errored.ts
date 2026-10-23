@@ -29,17 +29,20 @@ export function errored(children: () => JSX.Element, fallback?: (error: unknown,
     if (failure === undefined) {
       let isBuilding = true;
       const dispose = effectScope(() => {
-        next = catchError(() => {
-          const built = children();
-          return computed(() => resolve(built) as JSX.Element);
-        }, (error) => {
-          if (failure === undefined) {
-            failure = { error };
-            if (!isBuilding) {
-              retry();
+        next = catchError(
+          () => {
+            const built = children();
+            return computed(() => resolve(built) as JSX.Element);
+          },
+          (error) => {
+            if (failure === undefined) {
+              failure = { error };
+              if (!isBuilding) {
+                retry();
+              }
             }
-          }
-        });
+          },
+        );
       });
       isBuilding = false;
       if (failure !== undefined) {
