@@ -208,13 +208,13 @@ import { signal as runtimeSignal } from "@rezejs/signals";
 export const post = defineRoute({
   path: "/blog/:id",
   preload: async ({ params }) => ({ id: params.id, title: "Post" }),
-  meta: ({ data }) => ({ title: data.title }),
+  info: { title: "Post" },
   redirect: ({ data }) => data.id === "old" ? { to: "/blog/new", replace: true } : undefined,
   component: ({ data }) => data.title,
 });
 export const data: DataOf<{ route: typeof post }> = { id: "a", title: "Post" };
 export const pending = defineRoutes([defineRoute({ path: "/pending", preload: () => Promise.withResolvers<never>().promise, component: () => "pending" })]);
-export const config: SsgOptions = { selector: "#app", paths: { "/blog/:id": [{ id: "a" }] } };
+export const config: SsgOptions = { document: "src/document.tsx", trailingSlash: "never", paths: { "/blog/:id": [{ id: "a" }] } };
 export const plugins = reze({ ssg: config });
 export const count = runtimeSignal(0);
 export const dsl = signal(0);
