@@ -1,14 +1,12 @@
-import { defaultTreeAdapter, parse, serialize } from "parse5";
+import { defaultTreeAdapter, parse, serialize, serializeOuter } from "parse5";
 import type { DefaultTreeAdapterMap } from "parse5";
 
 type HtmlElement = DefaultTreeAdapterMap["element"];
 type HtmlParent = DefaultTreeAdapterMap["parentNode"];
 
-export interface TemplateHead {
-  title?: string;
-  description?: string;
-  canonical?: string;
-  robots?: string;
+export interface HeadDefault {
+  key: string;
+  html: string;
 }
 
 export interface TemplateParts {
@@ -20,7 +18,7 @@ export interface TemplateParts {
 
 export interface PreparedTemplate {
   parts: TemplateParts;
-  headDefaults: TemplateHead;
+  headDefaults: HeadDefault[];
 }
 
 const HeadSentinel = "<!--rz-head-->";
@@ -57,39 +55,28 @@ function findRoot(document: DefaultTreeAdapterMap["document"], rootId: string): 
   return roots[0]!;
 }
 
-function metadataKind(node: HtmlElement): keyof TemplateHead | undefined {
-  if (node.tagName === "title") return "title";
-  if (node.tagName === "meta") {
-    const name = attribute(node, "name")?.toLowerCase();
-    return name === "description" || name === "robots" ? name : undefined;
+function defaultKey(node: HtmlElement): string | undefined {
+  if (node.tagName === "title" || node.tagName === "base") return node.tagName;
+  if (node.tagName === "link") return attribute(node, "rel")?.toLowerCase() === "canonical" ? "link:canonical" : undefined;
+  if (node.tagName !== "meta") return undefined;
+  for (const name of ["name", "property", "http-equiv"]) {
+    const value = attribute(node, name);
+    if (value !== undefined) return `meta:${name}:${value}`;
   }
-  if (node.tagName === "link" && attribute(node, "rel")?.toLowerCase() === "canonical") return "canonical";
   return undefined;
 }
 
-function metadataValue(node: HtmlElement, kind: keyof TemplateHead): string | undefined {
-  if (kind === "title") {
-    const text = node.childNodes
-      .filter((child) => child.nodeName === "#text")
-      .map((child) => (child as DefaultTreeAdapterMap["textNode"]).value)
-      .join("")
-      .trim();
-    return text === "" ? undefined : text;
-  }
-  return kind === "canonical" ? attribute(node, "href") : attribute(node, "content");
-}
-
-function takeHeadDefaults(head: HtmlElement): TemplateHead {
-  const result: TemplateHead = {};
+function takeHeadDefaults(head: HtmlElement): HeadDefault[] {
+  const defaults: HeadDefault[] = [];
   for (const child of [...head.childNodes]) {
     if (!("tagName" in child)) continue;
-    const kind = metadataKind(child);
-    if (kind === undefined) continue;
-    const value = metadataValue(child, kind);
-    if (value !== undefined) result[kind] ??= value;
+    const key = defaultKey(child);
+    if (key === undefined) continue;
+    setAttribute(child, "data-rz-head", "");
+    defaults.push({ key, html: serializeOuter(child) });
     defaultTreeAdapter.detachNode(child);
   }
-  return result;
+  return defaults;
 }
 
 function splitSentinels(html: string): TemplateParts {
@@ -157,6 +144,83 @@ export function prepareTemplate(source: string, rootId: string): PreparedTemplat
   return { parts: splitSentinels(serialize(document)), headDefaults };
 }
 
+export const DocumentRootMarker = "reze-document-root-c4f1";
+
+const HtmlNamespace = "http://www.w3.org/1999/xhtml";
+const UnfitRootTags = new Set([
+  "body",
+  "script",
+  "style",
+  "title",
+  "textarea",
+  "template",
+  "noscript",
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+
+function isInside(node: HtmlElement, tagName: string): boolean {
+  for (let parent = node.parentNode; parent !== null; parent = "parentNode" in parent ? parent.parentNode : null) {
+    if ("tagName" in parent && parent.tagName === tagName) return true;
+  }
+  return false;
+}
+
+export function rootRenderedDocument(rendered: string, file: string): { html: string; rootId: string } {
+  const fail = (detail: string): Error => new Error(`[reze] the document ${file} ${detail}`);
+  const document = parse(rendered);
+  const holders = [...elements(document)].filter((node) =>
+    node.childNodes.some((child) => child.nodeName === "#text" && "value" in child && child.value.includes(DocumentRootMarker)),
+  );
+  const markers = rendered.split(DocumentRootMarker).length - 1;
+  if (markers === 0) throw fail("never renders its `children`; place them in the element the app renders into");
+  if (markers > 1) throw fail("renders its `children` more than once");
+  const root = holders[0];
+  if (root === undefined) throw fail("renders its `children` outside an element");
+  const isAlone = root.childNodes.every(
+    (child) =>
+      child.nodeName === "#comment" ||
+      (child.nodeName === "#text" && "value" in child && (child.value.trim() === "" || child.value.trim() === DocumentRootMarker)),
+  );
+  if (!isAlone) throw fail("renders its `children` next to other content; give them an element of their own");
+  if (!isInside(root, "body")) throw fail("renders its `children` outside `<body>`");
+  if (root.namespaceURI !== HtmlNamespace || UnfitRootTags.has(root.tagName)) {
+    throw fail("renders its `children` directly in a `<body>`, raw-text, template or SVG element; wrap them in an element such as `<div>`");
+  }
+  for (const child of [...root.childNodes]) defaultTreeAdapter.detachNode(child);
+  const rootId = attribute(root, "id") ?? "app";
+  setAttribute(root, "id", rootId);
+  if ([...elements(document)].filter((node) => attribute(node, "id") === rootId).length > 1) {
+    throw fail("gives another element the root element's `id`");
+  }
+  const hasDoctype = document.childNodes.some((node) => node.nodeName === "#documentType");
+  return { html: (hasDoctype ? "" : "<!doctype html>") + serialize(document), rootId };
+}
+
+export function withBootstrap(html: string, bootstrapSrc: string): string {
+  const document = parse(html);
+  const top = document.childNodes.find((node) => "tagName" in node) as HtmlElement | undefined;
+  const head = top?.childNodes.find((node) => node.nodeName === "head") as HtmlElement | undefined;
+  if (head === undefined) throw new Error("[reze] the document must contain a head");
+  const script = defaultTreeAdapter.createElement("script", head.namespaceURI, [
+    { name: "type", value: "module" },
+    { name: "src", value: bootstrapSrc },
+  ]);
+  defaultTreeAdapter.appendChild(head, script);
+  return serialize(document);
+}
+
 export function rebaseParts(parts: TemplateParts, depth: number): TemplateParts {
   const prefix = depth === 0 ? "./" : "../".repeat(depth);
   const rebase = (html: string) => html.replace(/(\s(?:src|href)=")\.\//g, (_, lead: string) => `${lead}${prefix}`);
@@ -175,6 +239,17 @@ function escapeAttribute(value: string): string {
 const ModuleSrcScript = /<script\b[^>]*\btype="module"[^>]*\bsrc="[^"]*"[^>]*><\/script>/g;
 function withoutBootstrap(html: string): string {
   return html.replace(ModuleSrcScript, "");
+}
+
+export function buildErrorPage(parts: TemplateParts, errorHead: string): string {
+  return [
+    withoutBootstrap(parts.beforeHeadEnd),
+    errorHead,
+    withoutBootstrap(parts.headEndToRoot),
+    "Internal Server Error",
+    withoutBootstrap(parts.rootEndToBodyEnd),
+    parts.bodyEndToEnd,
+  ].join("");
 }
 
 export function buildRedirectPage(options: { parts: TemplateParts; to: string; replace: boolean; redirectSrc: string }): string {

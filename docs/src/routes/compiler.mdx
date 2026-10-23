@@ -296,6 +296,9 @@ Errors:
 | `CONTROL_FLOW_CHILDREN`       | A control-flow tag has children it cannot render.                                                          |
 | `MATCH_OUTSIDE_SWITCH`        | `<Match>` is not a direct child of `<Switch>`.                                                             |
 | `HEAD_ATTR`                   | A `<Head>` tag cannot be placed in the document head.                                                      |
+| `DOCUMENT_SHAPE`              | The document module is not one default export that returns `<html>` with a `<head>` and a `<body>`.        |
+| `DOCUMENT_DYNAMIC`            | The document holds a value the compiler cannot write as static HTML.                                       |
+| `DOCUMENT_ROOT`               | The document has no single element that holds only `children`, or its `id` is not unique.                  |
 | `FLOW_PARAM_CALLED`           | A flow parameter that reads as a signal is called as a function.                                           |
 | `FOR_KEYED_DYNAMIC`           | `<For keyed>` is not `true`, `false`, or a key function written in place.                                  |
 | `SIGNAL_NOT_DECLARED`         | `signal` or `computed` is used outside a variable declaration.                                             |
@@ -315,7 +318,7 @@ Errors:
 | `ISLAND_ORPHAN`               | An island companion attribute appears on a component without `island`.                                     |
 | `MISSING_MODULE_ID`           | An `island` or `html` build has no `moduleId`.                                                             |
 | `ASYNC_COMPONENT_SHAPE`       | An async component has a form the compiler cannot rewrite.                                                 |
-| `ASYNC_VIEW_TARGET`           | A view is assigned to a name that is not an async component declared in the same block.                    |
+| `ASYNC_VIEW_PROPERTY`         | A `pending` or `failure` view is assigned to a component instead of a `<Loading>`/`<Errored>` boundary.    |
 | `INTERNAL_REACTIVITY_IMPORT`  | A reactive primitive is imported from `reze-js/internal/reactivity`.                                       |
 | `ASYNC_PROPS_READ_IN_AWAIT`   | An async component reads its props inside an `await` operand.                                              |
 | `ASYNC_TRY_AROUND_AWAIT`      | An async component wraps an `await` in `try`.                                                              |

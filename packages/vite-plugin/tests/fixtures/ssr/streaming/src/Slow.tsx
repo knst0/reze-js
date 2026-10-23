@@ -11,5 +11,3 @@ export async function Slow() {
     </>
   );
 }
-
-Slow.pending = <p>loading slow</p>;

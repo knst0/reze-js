@@ -16,26 +16,7 @@ import { renderEffect } from "@rezejs/signals/render";
 
 import { setSwap, swapNow } from "./flow";
 import type { JSX } from "./jsx";
-
-/** Resolves a built view eagerly: calls thunks until a non-function remains, flattens arrays resolving each item. */
-function resolve(value: unknown): unknown {
-  while (typeof value === "function") {
-    value = (value as () => unknown)();
-  }
-  if (Array.isArray(value)) {
-    const out: unknown[] = [];
-    for (const item of value) {
-      const resolved = resolve(item);
-      if (Array.isArray(resolved)) {
-        out.push(...resolved);
-      } else {
-        out.push(resolved);
-      }
-    }
-    return out;
-  }
-  return value;
-}
+import { resolve } from "./resolve";
 
 /** Builds `build()` in a boundary and resolves it eagerly, kept watched, so every lazy child exists and reads now. */
 function prepare(build: () => JSX.Element): [() => JSX.Element, Boundary] {

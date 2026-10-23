@@ -1,5 +1,5 @@
 import { cleanup, fire, mount, settle, tick } from "@rezejs/testing-library";
-import { catchError, type JSX } from "reze-js";
+import { catchError, Head, type JSX } from "reze-js";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 
 import {
@@ -330,8 +330,14 @@ test("focus preloads a link's route, retries after a failed load, and swallows p
       {
         path: "/target",
         preload,
-        meta: { title: "Target" },
-        component: (props: RouteProps<Params, string>) => <i>{props.data}</i>,
+        component: (props: RouteProps<Params, string>) => (
+          <i>
+            <Head>
+              <title>Target</title>
+            </Head>
+            {props.data}
+          </i>
+        ),
       },
     ],
     "/",
@@ -664,40 +670,3 @@ test("back/forward restores the scroll position saved for that entry and no othe
   expect(restoredScroll).toHaveBeenLastCalledWith(0, 420);
 });
 
-test("page metadata merges root-to-leaf and restores the template baseline when leaving", () => {
-  document.title = "Template";
-  const Layout = (props: RouteProps) => <section>{props.children}</section>;
-  const { el, navigate } = setup([
-    {
-      path: "/",
-      component: Home,
-      meta: { title: "Home", description: "home desc", canonical: "https://site.example/" },
-    },
-    {
-      path: "/about",
-      component: About,
-      meta: { title: "About" },
-    },
-    {
-      path: "/nested",
-      component: Layout,
-      meta: { description: "layout desc" },
-      children: [{ path: "/leaf", component: About, meta: { title: "Leaf" } }],
-    },
-  ]);
-  tick();
-  expect(document.title).toBe("Home");
-  expect(document.querySelector('meta[name="description"]')?.getAttribute("content")).toBe("home desc");
-  expect(document.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe("https://site.example/");
-  navigate("/nested/leaf");
-  tick();
-  expect(document.title).toBe("Leaf");
-  expect(document.querySelector('meta[name="description"]')?.getAttribute("content")).toBe("layout desc");
-  expect(document.querySelector('link[rel="canonical"]')).toBeNull();
-  navigate("/about");
-  tick();
-  expect(document.title).toBe("About");
-  expect(document.querySelector('meta[name="description"]')).toBeNull();
-  expect(el.textContent).toContain("about");
-  document.title = "";
-});

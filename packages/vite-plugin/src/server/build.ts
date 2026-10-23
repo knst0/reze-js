@@ -1,13 +1,16 @@
-import { ClientId } from "./adapter";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { ClientId, documentWorkerSource } from "./adapter";
 import type { BundleChunk, BundleOutput, ClientAssetInputs } from "./assets";
 import { buildClientRegistry } from "./assets";
-import type { AppMode } from "./export-graph";
 import { clientBuildId, createServerFacts, writeAssetManifest } from "./facts";
 import type { ResolvedSsgOptions } from "./options";
 import type { ResolvedSsrOptions } from "./options";
 import { prerenderSite } from "./ssg";
 import { writeServerBundle } from "./ssr";
 import { bootstrapScriptSrc, countRootIds, prepareTemplate } from "./template";
+import { createTempDir, materializeBundle, removeTempDir, runWorker } from "./workers";
 
 export interface CapturedState {
   outputs: BundleOutput[];
@@ -22,19 +25,18 @@ export interface ServerBuildInput {
   base: string;
   clientOutDir: string;
   publicDir: string;
-  mode: AppMode;
   captured: CapturedState;
   assets: ClientAssetInputs;
   moduleFiles: ReadonlyMap<string, string>;
+  rootId: string;
   ssg: ResolvedSsgOptions | undefined;
   ssr: ResolvedSsrOptions | undefined;
 }
 
 export async function runServerBuild(input: ServerBuildInput): Promise<void> {
-  const { captured, ssg, ssr } = input;
+  const { captured, rootId, ssg, ssr } = input;
   const primary = ssg ?? ssr;
   if (primary === undefined) throw new Error("[reze] server build needs ssg or ssr options");
-  const { rootId } = primary;
   const registry = buildClientRegistry(captured.outputs, input.root, input.assets);
   const bootstrapFile = registry.entryChunk(ClientId).fileName;
   bootstrapScriptSrc(captured.templateHtml, bootstrapFile);
@@ -62,12 +64,28 @@ export async function runServerBuild(input: ServerBuildInput): Promise<void> {
       base: input.base,
       outDir: input.clientOutDir,
       publicDir: input.publicDir,
-      mode: input.mode,
       options: ssg,
       htmlChunks: captured.htmlChunks,
       facts,
       template: prepared.parts,
       redirectFile: captured.redirectFile,
     });
+  }
+}
+
+export async function renderBuiltDocument(
+  root: string,
+  htmlChunks: readonly BundleChunk[],
+  viewFile: string,
+  timeoutMs: number,
+): Promise<string> {
+  const tempDir = createTempDir(root);
+  try {
+    materializeBundle(htmlChunks, tempDir);
+    const workerFile = join(tempDir, "reze-document-worker.mjs");
+    writeFileSync(workerFile, documentWorkerSource(`./${viewFile}`));
+    return await runWorker<string>(workerFile, undefined, timeoutMs);
+  } finally {
+    removeTempDir(tempDir);
   }
 }

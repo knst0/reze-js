@@ -90,5 +90,3 @@ export async function Todos() {
     </section>
   );
 }
-
-Todos.pending = <p class="loading">Loading todos…</p>;

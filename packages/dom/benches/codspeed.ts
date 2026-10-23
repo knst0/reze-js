@@ -1,11 +1,12 @@
 import { withCodSpeed } from "@codspeed/tinybench-plugin";
 import {
   asyncComponent,
-  asyncViews,
   branch,
   choose,
   createComponent,
+  errored,
   list,
+  loading,
   mergeProps,
   reconcileArrays,
   repeat,
@@ -150,7 +151,7 @@ const bench = withCodSpeed(new Bench());
 bench.add("loading: build with pending async children", () => {
   for (let i = 0; i < 12; i++) {
     root((dispose) => {
-      const view = asyncViews(
+      const view = loading(
         () => {
           const first = asyncComponent(
             () => new Promise<[string]>(() => {}),
@@ -249,15 +250,14 @@ bench.add("loading: build with pending async children", () => {
   const RESET_CYCLES = 50;
   let steadyView!: () => unknown;
   const hooks = withGraph(() => {
-    steadyView = asyncViews(
+    steadyView = errored(
       () => "ok",
-      undefined,
       () => "fallback",
     );
     effect(() => void steadyView());
   });
   bench.add(
-    "asyncViews failure: steady reads without errors",
+    "errored: steady reads without errors",
     () => {
       for (let i = 0; i < STEADY_READS; i++) {
         steadyView();
@@ -265,33 +265,32 @@ bench.add("loading: build with pending async children", () => {
     },
     hooks,
   );
-  bench.add("asyncViews failure: throw + fallback + reset", () => {
+  bench.add("errored: throw + fallback + reset", () => {
     for (let i = 0; i < RESET_CYCLES; i++) {
       let fails = true;
       let reset!: () => void;
       root((dispose) => {
-        const view = asyncViews(
+        const view = errored(
           () => {
             if (fails) {
               throw new Error("boom");
             }
             return "recovered";
           },
-          undefined,
           (_error, retry) => {
             reset = retry;
             return "fallback";
           },
         );
         if (view() !== "fallback") {
-          throw new Error("asyncViews shows its failure view after a throw");
+          throw new Error("errored shows its fallback after a throw");
         }
         fails = false;
         reset();
         flush();
         const shown = view();
         if ((typeof shown === "function" ? shown() : shown) !== "recovered") {
-          throw new Error("asyncViews shows children again after retry");
+          throw new Error("errored shows children again after reset");
         }
         dispose();
       });

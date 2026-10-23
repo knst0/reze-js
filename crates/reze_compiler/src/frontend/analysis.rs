@@ -12,7 +12,10 @@ use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 
 use super::keyed;
-use super::pure::{format_integer, has_jsx, is_component_name, is_declared_component};
+use super::pure::{
+    format_integer, has_await, has_jsx, is_component_name, is_declared_component,
+    is_foldable_signal_shape, value_imports,
+};
 use crate::diagnostic::{Code, Report};
 use crate::ir::is_native_name;
 use crate::kind::{Kind, STRING_METHODS};
@@ -36,6 +39,8 @@ pub enum Intrinsic {
     Match,
     Portal,
     Head,
+    Loading,
+    Errored,
 }
 
 impl Intrinsic {
@@ -48,6 +53,8 @@ impl Intrinsic {
             Intrinsic::Match => "Match",
             Intrinsic::Portal => "Portal",
             Intrinsic::Head => "Head",
+            Intrinsic::Loading => "Loading",
+            Intrinsic::Errored => "Errored",
         }
     }
 }
@@ -248,17 +255,7 @@ impl SharedFacts {
 
     fn binary_kind(&self, scoping: &Scoping, binary: &BinaryExpression<'_>) -> Option<Kind> {
         match binary.operator {
-            BinaryOperator::Subtraction
-            | BinaryOperator::Multiplication
-            | BinaryOperator::Division
-            | BinaryOperator::Remainder
-            | BinaryOperator::Exponential
-            | BinaryOperator::BitwiseOR
-            | BinaryOperator::BitwiseAnd
-            | BinaryOperator::BitwiseXOR
-            | BinaryOperator::ShiftLeft
-            | BinaryOperator::ShiftRight
-            | BinaryOperator::ShiftRightZeroFill => Some(Kind::Numeric),
+            operator if is_numeric_operator(operator) => Some(Kind::Numeric),
             BinaryOperator::Addition => {
                 match (self.kind_of(scoping, &binary.left), self.kind_of(scoping, &binary.right)) {
                     (Some(Kind::String), _) | (_, Some(Kind::String)) => Some(Kind::String),
@@ -685,23 +682,12 @@ fn is_event_or_ref(attribute: &JSXAttribute<'_>) -> bool {
 
 fn named_primitives(program: &Program<'_>) -> HashMap<SymbolId, Primitive> {
     let mut named = HashMap::new();
-    for statement in &program.body {
-        let Statement::ImportDeclaration(import) = statement else { continue };
-        if import.import_kind.is_type() {
-            continue;
-        }
-        let Some(home) = crate::exports::module(import.source.value.as_str()) else { continue };
-        for specifier in import.specifiers.iter().flatten() {
-            let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
-                continue;
-            };
-            if specifier.import_kind.is_type() {
-                continue;
-            }
-            let name = specifier.imported.name();
-            if let Some(primitive) = crate::exports::primitive_named(home, name.as_str()) {
-                named.insert(specifier.local.symbol_id(), primitive);
-            }
+    for (source, specifier) in value_imports(program) {
+        let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else { continue };
+        let Some(home) = crate::exports::module(source) else { continue };
+        let name = specifier.imported.name();
+        if let Some(primitive) = crate::exports::primitive_named(home, name.as_str()) {
+            named.insert(specifier.local.symbol_id(), primitive);
         }
     }
     named
@@ -709,38 +695,29 @@ fn named_primitives(program: &Program<'_>) -> HashMap<SymbolId, Primitive> {
 
 fn collect_imports(program: &Program<'_>, facts: &mut SharedFacts) {
     facts.named = named_primitives(program);
-    for statement in &program.body {
-        let Statement::ImportDeclaration(import) = statement else { continue };
-        if import.import_kind.is_type() {
-            continue;
-        }
-        let source = import.source.value.as_str();
+    for (source, specifier) in value_imports(program) {
         let home = crate::exports::module(source);
-        for specifier in import.specifiers.iter().flatten() {
-            match specifier {
-                ImportDeclarationSpecifier::ImportSpecifier(specifier)
-                    if !specifier.import_kind.is_type() =>
-                {
-                    let local = specifier.local.symbol_id();
-                    let name = specifier.imported.name();
-                    if let Some(entry) = home.and_then(|home| crate::exports::lookup(home, name.as_str())) {
-                        facts.reze_imports.insert(local, entry.name);
-                    }
-                    if source == crate::exports::ROUTER && name.as_str() == "useBeforeLeave" {
-                        facts.router_hooks.insert(local);
-                    }
+        match specifier {
+            ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                let local = specifier.local.symbol_id();
+                let name = specifier.imported.name();
+                if let Some(entry) = home.and_then(|home| crate::exports::lookup(home, name.as_str())) {
+                    facts.reze_imports.insert(local, entry.name);
                 }
-                ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
-                    let local = specifier.local.symbol_id();
-                    if let Some(home) = home {
-                        facts.namespaces.insert(local, home);
-                    }
-                    if source == crate::exports::ROUTER {
-                        facts.router_namespaces.insert(local);
-                    }
+                if source == crate::exports::ROUTER && name.as_str() == "useBeforeLeave" {
+                    facts.router_hooks.insert(local);
                 }
-                _ => {}
             }
+            ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
+                let local = specifier.local.symbol_id();
+                if let Some(home) = home {
+                    facts.namespaces.insert(local, home);
+                }
+                if source == crate::exports::ROUTER {
+                    facts.router_namespaces.insert(local);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -794,43 +771,21 @@ pub(crate) fn default_exported_symbols(
     program: &Program<'_>,
     scoping: &Scoping,
 ) -> HashSet<SymbolId> {
-    let mut exported = HashSet::new();
-    let resolved = |local: &IdentifierReference<'_>| {
-        scoping.get_reference(local.reference_id.get()?).symbol_id()
-    };
-    for statement in &program.body {
-        match statement {
-            Statement::ExportNamedDeclaration(export) => {
-                for specifier in &export.specifiers {
-                    if specifier.exported.name().as_str() == "default"
-                        && let ModuleExportName::IdentifierReference(local) = &specifier.local
-                        && let Some(symbol) = resolved(local)
-                    {
-                        exported.insert(symbol);
-                    }
-                }
-            }
-            Statement::ExportDefaultDeclaration(export) => {
-                if let ExportDefaultDeclarationKind::Identifier(local) = &export.declaration
-                    && let Some(symbol) = resolved(local)
-                {
-                    exported.insert(symbol);
-                }
-            }
-            _ => {}
-        }
-    }
-    exported
+    module_exports(program, scoping, true)
 }
 
 pub(crate) fn exported_symbols(program: &Program<'_>, scoping: &Scoping) -> HashSet<SymbolId> {
+    module_exports(program, scoping, false)
+}
+
+fn module_exports(program: &Program<'_>, scoping: &Scoping, only_default: bool) -> HashSet<SymbolId> {
     let mut exported = HashSet::new();
     let resolved = |local: &IdentifierReference<'_>| {
         scoping.get_reference(local.reference_id.get()?).symbol_id()
     };
     for statement in &program.body {
         match statement {
-            Statement::ExportDeclaration(export) => {
+            Statement::ExportDeclaration(export) if !only_default => {
                 if let Declaration::VariableDeclaration(variables) = &export.declaration {
                     for declarator in &variables.declarations {
                         exported.extend(
@@ -841,7 +796,8 @@ pub(crate) fn exported_symbols(program: &Program<'_>, scoping: &Scoping) -> Hash
             }
             Statement::ExportNamedDeclaration(export) => {
                 for specifier in &export.specifiers {
-                    if let ModuleExportName::IdentifierReference(local) = &specifier.local
+                    if (!only_default || specifier.exported.name().as_str() == "default")
+                        && let ModuleExportName::IdentifierReference(local) = &specifier.local
                         && let Some(symbol) = resolved(local)
                     {
                         exported.insert(symbol);
@@ -924,49 +880,11 @@ impl Collector<'_, '_> {
     }
 }
 
-fn is_foldable_signal_shape(
-    declarator: &VariableDeclarator<'_>,
-    call: &CallExpression<'_>,
-) -> bool {
-    let BindingPattern::ArrayPattern(pattern) = &declarator.id else { return false };
-    let is_identifier = |index: usize| {
-        matches!(pattern.elements.get(index), Some(Some(BindingPattern::BindingIdentifier(_))))
-    };
-    pattern.rest.is_none()
-        && (1..=2).contains(&pattern.elements.len())
-        && is_identifier(0)
-        && (pattern.elements.len() == 1 || is_identifier(1))
-        && declarator.type_annotation.is_none()
-        && call.type_arguments.is_none()
-        && (1..=2).contains(&call.arguments.len())
-        && call.arguments.first().and_then(Argument::as_expression).is_some()
-        && call.arguments.get(1).is_none_or(is_plain_options)
-}
-
 fn is_await_resource(call: &CallExpression<'_>) -> bool {
     matches!(
         call.arguments.first().and_then(Argument::as_expression),
         Some(Expression::ArrowFunctionExpression(arrow)) if super::dsl::is_await_arrow(arrow)
     )
-}
-
-fn is_plain_options(argument: &Argument<'_>) -> bool {
-    let Some(Expression::ObjectExpression(object)) = argument.as_expression() else { return false };
-    object.properties.iter().all(|property| match property {
-        ObjectPropertyKind::ObjectProperty(p) => {
-            !p.computed
-                && matches!(
-                    p.value.without_parentheses(),
-                    Expression::BooleanLiteral(_)
-                        | Expression::NumericLiteral(_)
-                        | Expression::StringLiteral(_)
-                        | Expression::NullLiteral(_)
-                        | Expression::ArrowFunctionExpression(_)
-                        | Expression::FunctionExpression(_)
-                )
-        }
-        ObjectPropertyKind::SpreadProperty(_) => false,
-    })
 }
 
 impl<'a> Visit<'a> for Collector<'_, '_> {
@@ -1077,6 +995,10 @@ fn seed_primitive_text(e: &Expression<'_>, scoping: &Scoping) -> Option<String> 
     }
 }
 
+fn is_numeric_operator(operator: BinaryOperator) -> bool {
+    operator.is_bitwise() || (operator.is_arithmetic() && operator != BinaryOperator::Addition)
+}
+
 fn seed_kind(e: &Expression<'_>, scoping: &Scoping) -> Option<Kind> {
     match e.without_parentheses() {
         Expression::NumericLiteral(_) | Expression::BigIntLiteral(_) => Some(Kind::Numeric),
@@ -1088,17 +1010,7 @@ fn seed_kind(e: &Expression<'_>, scoping: &Scoping) -> Option<Kind> {
                 .map(|_| Kind::Numeric)
         }
         Expression::BinaryExpression(binary) => match binary.operator {
-            BinaryOperator::Subtraction
-            | BinaryOperator::Multiplication
-            | BinaryOperator::Division
-            | BinaryOperator::Remainder
-            | BinaryOperator::Exponential
-            | BinaryOperator::BitwiseOR
-            | BinaryOperator::BitwiseAnd
-            | BinaryOperator::BitwiseXOR
-            | BinaryOperator::ShiftLeft
-            | BinaryOperator::ShiftRight
-            | BinaryOperator::ShiftRightZeroFill => Some(Kind::Numeric),
+            operator if is_numeric_operator(operator) => Some(Kind::Numeric),
             BinaryOperator::Addition => {
                 match (seed_kind(&binary.left, scoping), seed_kind(&binary.right, scoping)) {
                     (Some(Kind::String), _) | (_, Some(Kind::String)) => Some(Kind::String),
@@ -1145,29 +1057,6 @@ fn fold_seed(init: &Expression<'_>, scoping: &Scoping) -> Fold {
 pub(crate) struct Reject {
     pub(crate) reason: &'static str,
     pub(crate) span: Span,
-}
-
-#[derive(Default)]
-struct AwaitCheck {
-    found: bool,
-}
-
-impl<'a> Visit<'a> for AwaitCheck {
-    fn visit_await_expression(&mut self, _: &AwaitExpression<'a>) {
-        self.found = true;
-    }
-
-    fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
-        if it.r#await {
-            self.found = true;
-        } else {
-            walk::walk_for_of_statement(self, it);
-        }
-    }
-
-    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
-
-    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
 }
 
 #[derive(Default)]
@@ -1232,7 +1121,6 @@ pub struct AsyncFacts {
     plans: HashMap<u32, Result<AsyncPlan, Reject>>,
     reads: HashMap<ReferenceId, (u32, usize)>,
     reports: Vec<Report>,
-    resource_starts: Vec<u32>,
 }
 
 impl AsyncFacts {
@@ -1280,10 +1168,6 @@ impl AsyncFacts {
 
     pub fn plan(&self, function_start: u32) -> Option<&Result<AsyncPlan, Reject>> {
         self.plans.get(&function_start)
-    }
-
-    pub fn has_resource_within(&self, span: Span) -> bool {
-        self.resource_starts.iter().any(|&start| span.start <= start && start < span.end)
     }
 
     pub fn is_awaited_value(&self, reference: ReferenceId) -> bool {
@@ -1351,13 +1235,6 @@ impl AsyncCollector<'_, '_> {
 }
 
 impl<'a> Visit<'a> for AsyncCollector<'_, '_> {
-    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
-        if is_await_resource(it) {
-            self.facts.resource_starts.push(it.span.start);
-        }
-        walk::walk_call_expression(self, it);
-    }
-
     fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
         if it.r#async
             && !it.generator
@@ -1410,7 +1287,7 @@ fn plan(
     let mut tracked = std::vec::Vec::new();
     for (i, statement) in statements[..=last].iter().enumerate() {
         let reject = |reason| Reject { reason, span: statement.span() };
-        if matches!(statement, Statement::TryStatement(_)) && contains_await(statement) {
+        if matches!(statement, Statement::TryStatement(_)) && has_await(|check| check.visit_statement(statement)) {
             return Some(Err(reject("try-around-await")));
         }
         if has_jsx(|check| check.visit_statement(statement)) {
@@ -1422,7 +1299,7 @@ fn plan(
         if i < first {
             continue;
         }
-        if contains_await(statement) {
+        if has_await(|check| check.visit_statement(statement)) {
             let operand = match await_operand(statement) {
                 Ok(operand) => operand,
                 Err(reject) => return Some(Err(reject)),
@@ -1507,12 +1384,6 @@ impl<'a> Visit<'a> for SymbolRead<'_, '_> {
     }
 }
 
-fn contains_await(statement: &Statement<'_>) -> bool {
-    let mut check = AwaitCheck::default();
-    check.visit_statement(statement);
-    check.found
-}
-
 fn contains_return(statement: &Statement<'_>) -> bool {
     let mut check = ReturnCheck::default();
     check.visit_statement(statement);
@@ -1520,7 +1391,7 @@ fn contains_return(statement: &Statement<'_>) -> bool {
 }
 
 fn await_range(statements: &[Statement<'_>]) -> Option<(usize, usize)> {
-    let mut awaiting = statements.iter().enumerate().filter(|(_, s)| contains_await(s));
+    let mut awaiting = statements.iter().enumerate().filter(|(_, s)| has_await(|check| check.visit_statement(s)));
     let first = awaiting.next()?.0;
     Some((first, awaiting.next_back().map_or(first, |(i, _)| i)))
 }
@@ -1540,15 +1411,10 @@ fn await_operand<'s, 'a>(statement: &'s Statement<'a>) -> Result<&'s Expression<
     let Some(Expression::AwaitExpression(awaited)) = value else {
         return Err(reject("await-position"));
     };
-    let mut check = AwaitCheck::default();
-    if let Some(pattern) = pattern {
-        check.visit_binding_pattern(pattern);
-    }
-    if check.found {
+    if pattern.is_some_and(|pattern| has_await(|check| check.visit_binding_pattern(pattern))) {
         return Err(reject("await-position"));
     }
-    check.visit_expression(&awaited.argument);
-    if check.found {
+    if has_await(|check| check.visit_expression(&awaited.argument)) {
         return Err(reject("nested-await"));
     }
     Ok(&awaited.argument)
@@ -1573,10 +1439,32 @@ pub enum RuntimeCallKind {
     Resource,
     UniqueId,
     AsyncComponent,
-    AsyncViews,
     Dynamic,
     DynamicElement,
     Island,
+}
+
+pub(crate) struct IntrinsicTags {
+    named: HashMap<SymbolId, Primitive>,
+    namespaces: HashMap<SymbolId, &'static str>,
+}
+
+impl IntrinsicTags {
+    pub(crate) fn scan(program: &Program<'_>) -> Self {
+        let namespaces = value_imports(program)
+            .filter_map(|(source, specifier)| match specifier {
+                ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
+                    Some((namespace.local.symbol_id(), crate::exports::module(source)?))
+                }
+                _ => None,
+            })
+            .collect();
+        IntrinsicTags { named: named_primitives(program), namespaces }
+    }
+
+    pub(crate) fn get(&self, scoping: &Scoping, name: &JSXElementName<'_>) -> Option<Intrinsic> {
+        jsx_intrinsic(&self.named, &self.namespaces, scoping, name)
+    }
 }
 
 pub(crate) fn jsx_intrinsic(
@@ -1625,29 +1513,19 @@ fn collect_runtime_calls(
         calls: HashMap::new(),
         dynamic_tags,
     };
-    for statement in &program.body {
-        let Statement::ImportDeclaration(import) = statement else { continue };
-        if import.import_kind.is_type() {
-            continue;
-        }
-        let Some(home) = crate::exports::module(import.source.value.as_str()) else { continue };
-        for specifier in import.specifiers.iter().flatten() {
-            match specifier {
-                ImportDeclarationSpecifier::ImportSpecifier(named) => {
-                    if named.import_kind.is_type() {
-                        continue;
-                    }
-                    let name = named.imported.name();
-                    let Some(kind) = crate::exports::call_named(home, name.as_str()) else {
-                        continue;
-                    };
+    for (source, specifier) in value_imports(program) {
+        let Some(home) = crate::exports::module(source) else { continue };
+        match specifier {
+            ImportDeclarationSpecifier::ImportSpecifier(named) => {
+                let name = named.imported.name();
+                if let Some(kind) = crate::exports::call_named(home, name.as_str()) {
                     collector.factories.insert(named.local.symbol_id(), kind);
                 }
-                ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
-                    collector.namespaces.insert(namespace.local.symbol_id(), home);
-                }
-                ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
             }
+            ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
+                collector.namespaces.insert(namespace.local.symbol_id(), home);
+            }
+            ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
         }
     }
     collector.visit_program(program);

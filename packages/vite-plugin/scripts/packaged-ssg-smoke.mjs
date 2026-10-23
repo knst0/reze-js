@@ -214,7 +214,7 @@ export const post = defineRoute({
 });
 export const data: DataOf<{ route: typeof post }> = { id: "a", title: "Post" };
 export const pending = defineRoutes([defineRoute({ path: "/pending", preload: () => Promise.withResolvers<never>().promise, component: () => "pending" })]);
-export const config: SsgOptions = { entry: "src/app.tsx", selector: "#app", paths: { "/blog/:id": [{ id: "a" }] } };
+export const config: SsgOptions = { selector: "#app", paths: { "/blog/:id": [{ id: "a" }] } };
 export const plugins = reze({ ssg: config });
 export const count = runtimeSignal(0);
 export const dsl = signal(0);
@@ -244,8 +244,8 @@ import mdxFrontmatter from "remark-mdx-frontmatter";`
 }
 export default {
   plugins: [${mdx ? `{ ...mdx({ jsx: true, jsxImportSource: "reze-js", providerImportSource: "/src/mdx", remarkPlugins: [frontmatter, mdxFrontmatter] }), enforce: "pre" },` : ""}
-    reze({ ${mdx ? 'fileRoutes: { types: false }, extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"],' : ""}
-      ssg: ${JSON.stringify({ entry: "src/app.tsx", paths: fixtures[name].paths })} })],
+    reze({ fileRoutes: { types: false }, ${mdx ? 'extensions: [...DEFAULT_ROUTE_EXTENSIONS, ".mdx"],' : ""}
+      ssg: ${JSON.stringify({ paths: fixtures[name].paths })} })],
   build: { target: "esnext", assetsInlineLimit: 0, modulePreload: { polyfill: false } },
 };`,
   );

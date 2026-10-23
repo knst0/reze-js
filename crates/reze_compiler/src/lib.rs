@@ -3,6 +3,7 @@
 mod ast;
 mod codegen;
 mod diagnostic;
+mod document;
 mod exports;
 mod frontend;
 mod html;
@@ -24,6 +25,7 @@ pub use diagnostic::{
     render_skill,
 };
 
+pub use document::{Document, DocumentModules, DocumentOutcome, ImportRequest, compile_document};
 pub use inspect::{BindingKind, Inspection, inspect};
 pub use module_facts::{ExportFacts, FactKind, ModuleFacts, Reads, Written};
 
@@ -217,7 +219,12 @@ fn compile_module(
     );
     for view in &mut module.views {
         if let ir::view::ViewKind::Element(element) = &mut view.kind {
-            ir::layout::normalize(element, view.origin, &mut module.reports);
+            ir::layout::normalize(
+                element,
+                view.origin,
+                options.target == CompileTarget::Html,
+                &mut module.reports,
+            );
         }
     }
     let mut reports = normalized.reports;

@@ -1,4 +1,4 @@
-import { HeadManagedAttribute, attachStream, disposeIslandsIn, type BootOptions } from "@rezejs/dom/internal/client";
+import { attachStream, disposeIslandsIn, type BootOptions } from "@rezejs/dom/internal/client";
 import { getOwner, provideContext, root } from "@rezejs/signals";
 
 import { syncManagedHead } from "../head";
@@ -40,11 +40,6 @@ interface RouteSnapshot {
 const ShellMarker = "<!--rz-shell-->";
 const HoverDelayMs = 20;
 const PrefetchTtlMs = 10_000;
-const HeadSingletons = [
-  `meta[name="description"]:not([${HeadManagedAttribute}])`,
-  `link[rel="canonical"]:not([${HeadManagedAttribute}])`,
-  `meta[name="robots"]:not([${HeadManagedAttribute}])`,
-];
 
 function readRoute(scope: ParentNode): RouteSnapshot {
   const text = scope.querySelector("script[data-rz-route]")?.textContent;
@@ -67,7 +62,6 @@ function stubMatches(route: RouteSnapshot, path: string): ActiveMatch[] {
         data: undefined,
         hasData: false,
         error: undefined,
-        meta: {},
         info: undefined,
       }) as unknown as ActiveMatch,
   );
@@ -103,12 +97,6 @@ function awaitLoaded(link: HTMLLinkElement): Promise<void> {
 }
 
 async function syncHead(incoming: Document): Promise<void> {
-  if (incoming.title !== "") document.title = incoming.title;
-  for (const selector of HeadSingletons) {
-    document.head.querySelector(selector)?.remove();
-    const next = incoming.head.querySelector(selector);
-    if (next !== null) document.head.append(document.adoptNode(next));
-  }
   syncManagedHead(document, incoming);
   const known = new Set([...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map((link) => link.href));
   const pending: Promise<void>[] = [];
@@ -192,7 +180,7 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
       if (finalPath !== undefined && finalPath !== entry.path) history.replace(finalPath, entry.state);
       const route = readRoute(incoming);
       const routed = routedEntry(route, landed);
-      commit(state, routed, parseLocation(routed), stubMatches(route, routed.path), undefined, scrollMode);
+      commit(state, routed, parseLocation(routed), stubMatches(route, routed.path), scrollMode);
       return true;
     };
     let stream: ReturnType<typeof attachStream> | undefined;

@@ -60,6 +60,18 @@ export interface PortalProps {
   children: JSX.Element;
 }
 
+export interface LoadingProps {
+  /** Shown until everything below has loaded once; later reloads keep the content and set `isPending()`. */
+  fallback?: JSX.Element;
+  children: JSX.Element;
+}
+
+export interface ErroredProps {
+  /** Shown when rendering or an effect below throws; `reset` builds the children again. */
+  fallback: JSX.Element | ((error: unknown, reset: () => void) => JSX.Element);
+  children: JSX.Element;
+}
+
 export interface HeadProps {
   /** Only `<meta>`, `<link>` and `<script>` elements; the compiler rejects anything else. */
   children: JSX.Element;

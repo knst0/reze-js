@@ -56,7 +56,8 @@ fn html_and_island_register_components_and_hide_the_non_exported_ones() {
 
 #[test]
 fn island_replays_awaits_under_the_continuation_site_key() {
-    let source = "export async function Slow() {\n  const v = await load();\n  return <p>{v}</p>;\n}\nSlow.pending = <p>loading</p>;";
+    let source =
+        "export async function Slow() {\n  const v = await load();\n  return <p>{v}</p>;\n}";
     let out = code(source, "src/Slow.tsx", "src/Slow.tsx", CompileTarget::Island);
     let begin = out
         .split("beginContinuation(\"")
@@ -68,6 +69,36 @@ fn island_replays_awaits_under_the_continuation_site_key() {
 }
 
 #[test]
+fn loading_and_errored_lower_to_boundaries_on_every_target() {
+    let source = "import { Errored, Loading } from \"reze-js\";\nimport { Card } from \"./Card\";\nexport function Page() {\n  return <Errored fallback={(error, reset) => <button onClick={reset}>{String(error)}</button>}><Loading fallback={<p>loading</p>}><Card /></Loading></Errored>;\n}";
+    for target in [CompileTarget::Client, CompileTarget::Island] {
+        let out = code(source, "src/Page.tsx", "src/Page.tsx", target);
+        assert!(out.contains("_$errored(() => _$loading(() =>"), "{out}");
+        assert!(out.contains("(error, reset) =>"), "{out}");
+        assert!(!out.contains("Errored") && !out.contains("Loading"), "{out}");
+    }
+    let out = code(source, "src/Page.tsx", "src/Page.tsx", CompileTarget::Html);
+    assert!(out.contains("hErrored("), "{out}");
+    assert!(out.contains("hLoading("), "{out}");
+
+    let source = "import { Errored } from \"reze-js\";\nexport const view = <Errored fallback={<p>failed</p>}><p>ok</p></Errored>;";
+    let out = code(source, "src/view.tsx", "src/view.tsx", CompileTarget::Client);
+    assert!(out.contains("_$errored(() =>"), "{out}");
+
+    let source =
+        "import { Errored } from \"reze-js\";\nexport const view = <Errored><p>ok</p></Errored>;";
+    let Err(errors) = compile(source, "src/view.tsx", &Options::default()) else {
+        panic!("a missing fallback is refused");
+    };
+    assert!(
+        errors
+            .iter()
+            .any(|d| d.code == Code::ControlFlowMissing && d.data["attribute"] == "fallback"),
+        "{errors:?}"
+    );
+}
+
+#[test]
 fn html_keeps_module_state_per_request_without_layout_or_module_markers() {
     let source = "import { signal } from \"reze-js\";\nlet hits = signal(0);\nexport function Hits() {\n  hits += 1;\n  return <p>{hits}</p>;\n}";
     let out = code(source, "src/m.tsx", "src/m.ts", CompileTarget::Html);
@@ -76,4 +107,34 @@ fn html_keeps_module_state_per_request_without_layout_or_module_markers() {
     assert!(!out.contains("withModuleScope"), "{out}");
     assert!(!out.contains("layout"), "{out}");
     assert!(!out.contains("markModule"), "{out}");
+}
+
+#[test]
+fn html_exports_contexts_as_callable_module_proxies() {
+    let source = "import { createContext, store } from \"reze-js\";\nexport const Theme = createContext(\"light\");\nexport const settings = store({ dense: false });";
+    let out = code(source, "src/m.tsx", "src/m.ts", CompileTarget::Html);
+    assert!(out.contains("().Theme, true)"), "{out}");
+    assert!(out.contains("().settings)"), "{out}");
+}
+
+#[test]
+fn html_compiles_views_rooted_at_html_as_documents() {
+    let source = "export default (props) => <html><head><title>{props.title}</title></head><body><main>{props.children}</main></body></html>;";
+    let out = code(source, "src/document.tsx", "src/document.tsx", CompileTarget::Html);
+    assert!(out.contains("_$hRoot(\"html\", \"\", _site$)"), "{out}");
+
+    for target in [CompileTarget::Client, CompileTarget::Island] {
+        let options =
+            Options { target, module_id: Some("src/document.tsx".into()), ..Options::default() };
+        let errors = compile(source, "src/document.tsx", &options).err().expect("relocates");
+        assert_eq!(errors[0].code, Code::ParserRelocation);
+    }
+}
+
+#[test]
+fn html_writes_svg_inner_html_attributes_as_markup() {
+    let source = "export function Icon(p) {\n  return <svg><g innerHTML={p.a} /></svg>;\n}";
+    let out = code(source, "src/Icon.tsx", "src/Icon.tsx", CompileTarget::Html);
+    assert!(out.contains("hSetInnerHTML("), "{out}");
+    assert!(!out.contains("\"innerHTML\""), "{out}");
 }

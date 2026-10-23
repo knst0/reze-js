@@ -459,19 +459,26 @@ pub fn write_ref<'a>(
             out
         }
         RefOp::Expr(value) => {
-            let slot = ctx.fresh("_r$");
+            let value = ctx.expr(*value);
+            let mut out = Vec::new();
+            let slot = match &value {
+                Expression::Identifier(id) => ctx.intern(id.name.as_str()),
+                _ => {
+                    let slot = ctx.fresh("_r$");
+                    out.push(ast.declaration(VariableDeclarationKind::Const, slot, Some(value)));
+                    slot
+                }
+            };
             let check = is_function(&ast, ast.ident(slot));
             let use_call = ctx.call(RUNTIME_MODULE, "use", [ast.ident(slot), ast.ident(node_name)]);
-            vec![
-                ast.declaration(VariableDeclarationKind::Const, slot, Some(ctx.expr(*value))),
-                ast.stmt(Expression::new_logical_expression(
-                    SPAN,
-                    check,
-                    LogicalOperator::And,
-                    use_call,
-                    &ast.builder,
-                )),
-            ]
+            out.push(ast.stmt(Expression::new_logical_expression(
+                SPAN,
+                check,
+                LogicalOperator::And,
+                use_call,
+                &ast.builder,
+            )));
+            out
         }
     }
 }

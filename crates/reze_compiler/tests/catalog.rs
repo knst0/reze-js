@@ -4,10 +4,18 @@ use std::path::PathBuf;
 
 use common::apply_fix;
 use reze_compiler::{
-    CATALOG, Code, CompileTarget, Diagnostic, Example, Options, compile, render_skill,
+    CATALOG, Code, CompileTarget, Diagnostic, DocumentModules, DocumentOutcome, Example, Options,
+    compile, compile_document, render_skill,
 };
 
 fn diagnostics_for(source: &str, options: &Options) -> Vec<Diagnostic> {
+    if source.contains("export default function Document") {
+        return match compile_document(source, "document.tsx", &DocumentModules::default()) {
+            Ok(DocumentOutcome::Render(reasons)) => reasons,
+            Ok(_) => Vec::new(),
+            Err(errors) => errors,
+        };
+    }
     match compile(source, "example.tsx", options) {
         Ok(Some(out)) => out.diagnostics,
         Ok(None) => Vec::new(),

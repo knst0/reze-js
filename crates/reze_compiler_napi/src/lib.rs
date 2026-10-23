@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use napi::bindgen_prelude::{AsyncTask, Env, Task};
 use napi_derive::napi;
 
 #[napi(object)]
@@ -159,6 +160,44 @@ pub struct AnalyzeResult {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+#[napi(object)]
+pub struct DocumentImport {
+    pub importer: String,
+    pub specifier: String,
+    /// The resolved file; absent when the import does not resolve to a source module.
+    pub file: Option<String>,
+}
+
+#[napi(object)]
+pub struct DocumentInput {
+    pub imports: Vec<DocumentImport>,
+    /// Source text of each resolved file.
+    pub sources: HashMap<String, String>,
+    /// Vite `define` entries: each dotted key with the code that replaces it.
+    pub defines: Option<HashMap<String, String>>,
+}
+
+#[napi(object)]
+pub struct DocumentRequest {
+    pub importer: String,
+    pub specifier: String,
+}
+
+#[napi(object)]
+pub struct DocumentResult {
+    /// The whole page with an empty root element; present only for a static page.
+    pub html: Option<String>,
+    /// `id` of the root element; present only for a static page.
+    pub root_id: Option<String>,
+    /// The imported files a static page was compiled from.
+    pub files: Vec<String>,
+    /// Imports to resolve into the input before compiling again.
+    pub requests: Vec<DocumentRequest>,
+    /// The module must run to render the page; `info` diagnostics name the parts that are not static.
+    pub render: bool,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 fn facts_value(facts: &reze_compiler::ModuleFacts) -> napi::Result<serde_json::Value> {
     serde_json::to_value(facts).map_err(|error| napi::Error::from_reason(error.to_string()))
 }
@@ -167,15 +206,7 @@ fn diagnostics(diagnostics: Vec<reze_compiler::Diagnostic>) -> Vec<Diagnostic> {
     diagnostics.into_iter().map(diagnostic).collect()
 }
 
-/// Compiles `source`. `code` is absent when nothing in the file is rewritten, and when
-/// `diagnostics` holds an `error`; compile errors come back as diagnostics without `code`, and the
-/// call never throws on them.
-#[napi]
-pub fn compile(
-    source: String,
-    filename: String,
-    options: Option<CompileOptions>,
-) -> napi::Result<CompileResult> {
+fn compile_options(options: Option<CompileOptions>) -> napi::Result<reze_compiler::Options> {
     let mut opts = reze_compiler::Options::default();
     if let Some(o) = options {
         opts.source_map = o.source_map.unwrap_or(opts.source_map);
@@ -211,7 +242,13 @@ pub fn compile(
             None => HashMap::new(),
         };
     }
-    match reze_compiler::compile_with_facts(&source, &filename, &opts) {
+    Ok(opts)
+}
+
+fn compile_result(
+    compiled: Result<reze_compiler::Compiled, Vec<reze_compiler::Diagnostic>>,
+) -> napi::Result<CompileResult> {
+    match compiled {
         Ok(reze_compiler::Compiled { output, facts }) => {
             let (code, map, diagnostics_out) = match output {
                 Some(out) => (Some(out.code), out.map, out.diagnostics),
@@ -233,14 +270,149 @@ pub fn compile(
     }
 }
 
+/// Compiles `source`. `code` is absent when nothing in the file is rewritten, and when
+/// `diagnostics` holds an `error`; compile errors come back as diagnostics without `code`, and the
+/// call never throws on them.
+#[napi]
+pub fn compile(
+    source: String,
+    filename: String,
+    options: Option<CompileOptions>,
+) -> napi::Result<CompileResult> {
+    let options = compile_options(options)?;
+    compile_result(reze_compiler::compile_with_facts(&source, &filename, &options))
+}
+
+pub struct CompileTask {
+    source: String,
+    filename: String,
+    options: reze_compiler::Options,
+}
+
+impl Task for CompileTask {
+    type Output = Result<reze_compiler::Compiled, Vec<reze_compiler::Diagnostic>>;
+    type JsValue = CompileResult;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        Ok(reze_compiler::compile_with_facts(&self.source, &self.filename, &self.options))
+    }
+
+    fn resolve(&mut self, _: Env, compiled: Self::Output) -> napi::Result<CompileResult> {
+        compile_result(compiled)
+    }
+}
+
+/// `compile` on the libuv thread pool.
+#[napi(ts_return_type = "Promise<CompileResult>")]
+pub fn compile_async(
+    source: String,
+    filename: String,
+    options: Option<CompileOptions>,
+) -> napi::Result<AsyncTask<CompileTask>> {
+    let options = compile_options(options)?;
+    Ok(AsyncTask::new(CompileTask { source, filename, options }))
+}
+
 /// Reactive facts of `source`'s exports, for `compile`'s `facts` of imported modules. `facts` is
 /// absent when the module has errors.
 #[napi]
 pub fn analyze(source: String, filename: String) -> napi::Result<AnalyzeResult> {
-    match reze_compiler::analyze(&source, &filename) {
+    analyze_result(reze_compiler::analyze(&source, &filename))
+}
+
+fn analyze_result(
+    analyzed: Result<reze_compiler::ModuleFacts, Vec<reze_compiler::Diagnostic>>,
+) -> napi::Result<AnalyzeResult> {
+    match analyzed {
         Ok(facts) => {
             Ok(AnalyzeResult { facts: Some(facts_value(&facts)?), diagnostics: Vec::new() })
         }
         Err(errors) => Ok(AnalyzeResult { facts: None, diagnostics: diagnostics(errors) }),
+    }
+}
+
+pub struct AnalyzeTask {
+    source: String,
+    filename: String,
+}
+
+impl Task for AnalyzeTask {
+    type Output = Result<reze_compiler::ModuleFacts, Vec<reze_compiler::Diagnostic>>;
+    type JsValue = AnalyzeResult;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        Ok(reze_compiler::analyze(&self.source, &self.filename))
+    }
+
+    fn resolve(&mut self, _: Env, analyzed: Self::Output) -> napi::Result<AnalyzeResult> {
+        analyze_result(analyzed)
+    }
+}
+
+/// `analyze` on the libuv thread pool.
+#[napi(ts_return_type = "Promise<AnalyzeResult>")]
+pub fn analyze_async(source: String, filename: String) -> AsyncTask<AnalyzeTask> {
+    AsyncTask::new(AnalyzeTask { source, filename })
+}
+
+/// FNV-1a64 of `text`'s UTF-8 bytes, lowercase hex: the hash `facts` and `profile` entries carry.
+#[napi]
+pub fn profile_hash(text: String) -> String {
+    reze_compiler::profile_hash(&text)
+}
+
+/// Compiles the default-exported document component of `source` to static HTML, following the
+/// imports resolved in `input`. Errors come back as diagnostics, and the call never throws on them.
+#[napi]
+pub fn compile_document(
+    source: String,
+    filename: String,
+    input: Option<DocumentInput>,
+) -> DocumentResult {
+    let mut modules = reze_compiler::DocumentModules::default();
+    if let Some(input) = input {
+        for import in input.imports {
+            let request = reze_compiler::ImportRequest {
+                importer: import.importer,
+                specifier: import.specifier,
+            };
+            modules.resolve(request, import.file);
+        }
+        for (file, source) in input.sources {
+            modules.add_source(file, source);
+        }
+        for (key, code) in input.defines.into_iter().flatten() {
+            modules.define(key, code);
+        }
+    }
+    let empty = DocumentResult {
+        html: None,
+        root_id: None,
+        files: Vec::new(),
+        requests: Vec::new(),
+        render: false,
+        diagnostics: Vec::new(),
+    };
+    match reze_compiler::compile_document(&source, &filename, &modules) {
+        Ok(reze_compiler::DocumentOutcome::Html(document)) => DocumentResult {
+            html: Some(document.html),
+            root_id: Some(document.root_id),
+            files: document.files,
+            ..empty
+        },
+        Ok(reze_compiler::DocumentOutcome::Resolve(requests)) => DocumentResult {
+            requests: requests
+                .into_iter()
+                .map(|request| DocumentRequest {
+                    importer: request.importer,
+                    specifier: request.specifier,
+                })
+                .collect(),
+            ..empty
+        },
+        Ok(reze_compiler::DocumentOutcome::Render(reasons)) => {
+            DocumentResult { render: true, diagnostics: diagnostics(reasons), ..empty }
+        }
+        Err(errors) => DocumentResult { diagnostics: diagnostics(errors), ..empty },
     }
 }

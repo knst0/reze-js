@@ -451,6 +451,36 @@ fn flow<'a, 'm>(
                 }
             }
         }
+        FlowView::Loading { child, fallback } => {
+            let child = render_flow(ctx, child);
+            let fallback = fallback.as_ref().map(|fallback| render_flow(ctx, fallback));
+            match ctx.options.target {
+                CompileTarget::Client | CompileTarget::Island => {
+                    let mut args = vec![child];
+                    args.extend(fallback);
+                    ctx.call(RUNTIME_MODULE, "loading", args)
+                }
+                CompileTarget::Html => {
+                    let site = ctx.site(view);
+                    let mut args = vec![site, child];
+                    args.extend(fallback);
+                    ctx.call(HTML, "hLoading", args)
+                }
+            }
+        }
+        FlowView::Errored { child, fallback } => {
+            let child = render_flow(ctx, child);
+            let fallback = render_flow(ctx, fallback);
+            match ctx.options.target {
+                CompileTarget::Client | CompileTarget::Island => {
+                    ctx.call(RUNTIME_MODULE, "errored", [child, fallback])
+                }
+                CompileTarget::Html => {
+                    let site = ctx.site(view);
+                    ctx.call(HTML, "hErrored", [site, child, fallback])
+                }
+            }
+        }
         FlowView::Head { tags } => {
             let entries = head_entries(ctx, tags);
             match ctx.options.target {

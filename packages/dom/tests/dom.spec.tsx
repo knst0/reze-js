@@ -27,6 +27,27 @@ test("static, namespaced and boolean attributes", () => {
   expect(svg.firstElementChild!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#icon");
 });
 
+test("innerHTML on SVG elements sets the property, from attributes and spreads alike", () => {
+  const [markup, setMarkup] = signal("<circle r=\"1\" />");
+  const { el } = mount(() => (
+    <svg>
+      <g innerHTML={markup()} />
+      <g {...{ innerHTML: markup() }} />
+    </svg>
+  ));
+  const svg = el.firstElementChild!;
+  for (const g of svg.children) {
+    expect(g.hasAttribute("innerHTML")).toBe(false);
+    expect(g.firstElementChild!.namespaceURI).toBe("http://www.w3.org/2000/svg");
+    expect(g.firstElementChild!.getAttribute("r")).toBe("1");
+  }
+  setMarkup("<rect />");
+  tick();
+  for (const g of svg.children) {
+    expect(g.firstElementChild!.localName).toBe("rect");
+  }
+});
+
 const constantTruthinessRows = [
   [
     "negative zero",

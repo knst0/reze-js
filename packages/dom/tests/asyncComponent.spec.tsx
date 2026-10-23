@@ -1,6 +1,6 @@
 import { signal } from "@rezejs/signals";
 import { cleanup, mount, settle, tick } from "@rezejs/testing-library";
-import { catchError, computed, effect, flush, onCleanup, root, Show } from "reze-js";
+import { catchError, computed, effect, flush, Loading, onCleanup, root, Show } from "reze-js";
 import { asyncComponent } from "reze-js/internal/runtime";
 import { afterEach, expect, test } from "vite-plus/test";
 
@@ -68,13 +68,20 @@ test("a reload keeps what the body created until the component is disposed", asy
 
 type Load = (id: number) => Promise<string>;
 
-async function Name(props: { id: number; load: Load }) {
+async function NameBody(props: { id: number; load: Load }) {
   const id = props.id;
   const load = props.load;
   const name = await load(id);
   return <b>{name}</b>;
 }
-Name.pending = <i>loading</i>;
+
+function Name(props: { id: number; load: Load }) {
+  return (
+    <Loading fallback={<i>loading</i>}>
+      <NameBody {...props} />
+    </Loading>
+  );
+}
 
 async function Item(props: { id: number; load: Load }) {
   const id = props.id;
@@ -88,14 +95,21 @@ async function Stuck() {
   return <i>spin</i>;
 }
 
-async function Patient(props: { load: Load }) {
+async function PatientBody(props: { load: Load }) {
   const load = props.load;
   const name = await load(2);
   return <b>{name}</b>;
 }
-Patient.pending = <Stuck />;
 
-async function Page(props: { load: Load }) {
+function Patient(props: { load: Load }) {
+  return (
+    <Loading fallback={<Stuck />}>
+      <PatientBody {...props} />
+    </Loading>
+  );
+}
+
+async function PageBody(props: { load: Load }) {
   const load = props.load;
   await Promise.resolve();
   return (
@@ -105,9 +119,16 @@ async function Page(props: { load: Load }) {
     </div>
   );
 }
-Page.pending = <i>loading</i>;
 
-async function Gate(props: { on: () => boolean; load: Load }) {
+function Page(props: { load: Load }) {
+  return (
+    <Loading fallback={<i>loading</i>}>
+      <PageBody {...props} />
+    </Loading>
+  );
+}
+
+async function GateBody(props: { on: () => boolean; load: Load }) {
   const on = props.on;
   const load = props.load;
   await Promise.resolve();
@@ -120,9 +141,16 @@ async function Gate(props: { on: () => boolean; load: Load }) {
     </div>
   );
 }
-Gate.pending = <i>loading</i>;
 
-async function Wrapped(props: { load: Load }) {
+function Gate(props: { on: () => boolean; load: Load }) {
+  return (
+    <Loading fallback={<i>loading</i>}>
+      <GateBody {...props} />
+    </Loading>
+  );
+}
+
+async function WrappedBody(props: { load: Load }) {
   const load = props.load;
   await Promise.resolve();
   return (
@@ -131,16 +159,30 @@ async function Wrapped(props: { load: Load }) {
     </Show>
   );
 }
-Wrapped.pending = <i>loading</i>;
 
-async function Badge(props: { load: () => Promise<string> }) {
+function Wrapped(props: { load: Load }) {
+  return (
+    <Loading fallback={<i>loading</i>}>
+      <WrappedBody {...props} />
+    </Loading>
+  );
+}
+
+async function BadgeBody(props: { load: () => Promise<string> }) {
   const load = props.load;
   const name = computed(await load());
   return <b>{name}</b>;
 }
-Badge.pending = <i>loading</i>;
 
-async function Tabs(props: { tab: () => string; load: Load }) {
+function Badge(props: { load: () => Promise<string> }) {
+  return (
+    <Loading fallback={<i>loading</i>}>
+      <BadgeBody {...props} />
+    </Loading>
+  );
+}
+
+async function TabsBody(props: { tab: () => string; load: Load }) {
   const tab = props.tab;
   const load = props.load;
   await Promise.resolve();
@@ -152,7 +194,14 @@ async function Tabs(props: { tab: () => string; load: Load }) {
     </div>
   );
 }
-Tabs.pending = <i>loading</i>;
+
+function Tabs(props: { tab: () => string; load: Load }) {
+  return (
+    <Loading fallback={<i>loading</i>}>
+      <TabsBody {...props} />
+    </Loading>
+  );
+}
 
 test("a component disposed before its first settle releases the pending view that was waiting on it", async () => {
   const [on, setOn] = signal(true);

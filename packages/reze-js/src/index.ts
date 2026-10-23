@@ -1,5 +1,6 @@
 import type {
   ClassValue,
+  ErroredProps,
   ForIndexProps,
   ForKeyedProps,
   ForProps,
@@ -7,6 +8,7 @@ import type {
   IslandOptions,
   IslandTrigger,
   JSX,
+  LoadingProps,
   MatchProps,
   PortalProps,
   Props,
@@ -38,6 +40,7 @@ export type {
   Context,
   ContextKey,
   Equals,
+  ErroredProps,
   ForIndexProps,
   ForKeyedProps,
   ForProps,
@@ -46,6 +49,7 @@ export type {
   IslandOptions,
   IslandTrigger,
   JSX,
+  LoadingProps,
   MatchProps,
   Owner,
   PortalProps,
@@ -167,6 +171,10 @@ export declare function Match<T>(props: MatchProps<T>): JSX.Element;
 export declare function Portal(props: PortalProps): JSX.Element;
 
 export declare function Head(props: HeadProps): JSX.Element;
+
+export declare function Loading(props: LoadingProps): JSX.Element;
+
+export declare function Errored(props: ErroredProps): JSX.Element;
 
 /**
  * A component that renders what `source()` returns: a component, or nothing when falsy. It switches when `source()`

@@ -57,7 +57,7 @@ export function assignProp(node: Element, name: string, value: unknown, prev: un
     setAttribute(node, name.slice(5), value);
   } else if (name.startsWith("bool:")) {
     setBoolAttribute(node, name.slice(5), value);
-  } else if (!isSVG && Object.hasOwn(Properties, name)) {
+  } else if (name === "innerHTML" || (!isSVG && Object.hasOwn(Properties, name))) {
     (node as unknown as Props)[name] = value;
   } else {
     setAttribute(node, name, value);

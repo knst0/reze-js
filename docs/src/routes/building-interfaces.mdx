@@ -482,7 +482,7 @@ An error thrown while building portal children reaches the nearest `catchError`,
 
 ## Head tags
 
-`Head` renders its children into the document head and leaves nothing inline. Children can only be `<meta>`, `<link>` and `<script>` elements; anything else fails to compile:
+`Head` renders its children into the document head and leaves nothing inline. Children can be `<title>`, `<base>`, `<meta>`, `<link>`, `<script>` and `<style>` elements; anything else fails to compile:
 
 ```tsx
 import { Head, signal } from "reze-js";
@@ -492,6 +492,7 @@ export function Gallery() {
   return (
     <section>
       <Head>
+        <title>{caption}</title>
         <script src="https://cdn.example.test/gallery.js" async />
         <link rel="preconnect" href="https://cdn.example.test" />
         <meta property="og:title" content={caption} />
@@ -504,18 +505,20 @@ export function Gallery() {
 }
 ```
 
-Tags need static identity: `src`, `rel`, `href`, `name` and `property` must be string literals. `meta` needs exactly one of `name` and `property`, `link` needs `rel` and `href`, and a `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta` and `link` take no children, and `script` takes only text. Set the document title with [`route.meta`](/routing#set-page-metadata) instead; `<Head>` cannot carry `<title>`.
+Each tag has a key that names it in the head. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `<link rel="canonical">` by its `rel`, any other `link` by `rel` plus `href`, and `script` by `src`. The attributes that form a key must be known at compile time, except the `href` of a canonical link: a string literal, or a `const` declared earlier in the same module whose value is a string literal or a template of such constants, such as `const SDK = "https://cdn.example/sdk.js"` read as `<script src={SDK} />`. Imported bindings are not resolved, so declare the constant in the module that renders the tag. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `title`, `script` and `style` take only text, and the other tags take no children. `<noscript>` is not supported, because a parser moves its children out of the head.
 
-The server renders head tags into the head of SSR and SSG pages, including tags from async components, which arrive with a later patch. Scripts adopt the live tag, so a script shared by two components or with `route.meta` executes once. Links and metas stay live: mounting replaces the previous tag, and disposing removes the tags no live owner claims. Tags from the template stay untouched. Declare each tag once: when `route.meta` and `<Head>` name the same tag, the route version wins.
+A keyed tag replaces the tag with the same key while its component is mounted: the tags of `src/document.tsx` come first, then each shell, layout and route component overrides them, and the deepest one wins. Disposing the component shows the replaced tag again. A script with the same `src` adopts the live tag, so it executes once even when two routes share it. Tags without a key, such as `<style>` or a JSON-LD `<script>`, add to the head and leave with their last owner.
+
+The server applies the same rule to SSR and SSG pages, including tags from async components, which arrive with a later patch. See [page metadata](/routing#set-page-metadata) for routes.
 
 ## Async components
 
-An `async` function component awaits data in its body and renders a view when the awaits finish. Attach a `pending` view for the first load and a `failure` view for a rejected await:
+An `async` function component awaits data in its body and renders a view when the awaits finish. Where it is used, wrap it in `<Loading>` to show a fallback during the first load and in `<Errored>` to show a rejected await:
 
 ```tsx
-import { abortSignal, isPending } from "reze-js";
+import { abortSignal, Errored, isPending, Loading } from "reze-js";
 
-export async function Profile(props: { id: number }) {
+async function Profile(props: { id: number }) {
   const id = props.id;
   const user = await fetch(`/users/${id}`, {
     signal: abortSignal(),
@@ -523,38 +526,43 @@ export async function Profile(props: { id: number }) {
   return <p class={isPending() ? "stale" : ""}>{user.name}</p>;
 }
 
-Profile.pending = <i>loading</i>;
-Profile.failure = (error: unknown, retry: () => void) => <button onClick={retry}>{String(error)}</button>;
+export function Page() {
+  return (
+    <Errored fallback={(error, reset) => <button onClick={reset}>{String(error)}</button>}>
+      <Loading fallback={<i>loading</i>}>
+        <Profile id={1} />
+      </Loading>
+    </Errored>
+  );
+}
 ```
 
-### Pending and failure views
+### Loading and Errored
 
-`pending` renders until the first load settles. During the first load, `isPending()` is `false`. A reload does not show `pending` again. The view runs with `isPending()` set to `true` until the reload settles.
+`<Loading fallback>` renders `fallback` until every async component below it has settled its first load, then shows them all at once. During the first load, `isPending()` is `false`. A reload does not show `fallback` again. The view runs with `isPending()` set to `true` until the reload settles.
 
-A rejected await renders `failure(error, retry)`. Calling `retry` runs the component again from its start. A `try` around an `await` is a compile error, so let the rejection reach `failure`.
+`<Errored fallback>` catches a rejected await, and an error thrown while building or in an effect, anywhere below it. `fallback` is an element, or a function `(error, reset) => …`. Calling `reset` builds the children again, so their loads run from the start. A `try` around an `await` is a compile error, so let the rejection reach `<Errored>`. Errors thrown in event handlers are not caught.
+
+Both boundaries are compiled away like `<Show>`, and both belong at the use site: assigning `pending` or `failure` to a component is a compile error, `ASYNC_VIEW_PROPERTY`.
 
 ### Abort and pending state
 
 Call `isPending()` in the view. Call `abortSignal()` directly in the load, not in the view. A newer run of the load aborts the signal of the run it supersedes, and the current run's signal stays live. The `fetch` in the example uses it to cancel a stale request.
 
-### Pending boundaries
+### Nested boundaries
 
-A component with its own `pending` view shows that view for its own loads, and its parent renders without waiting for it. A component without `pending` shows the nearest ancestor's `pending` view until its own load settles.
+Each async component waits for the nearest `<Loading>` above it. An inner `<Loading>` reveals its part on its own, and the outer one does not wait for it.
 
 ### Split code with dynamic import
 
-`await import()` inside an async component loads a module when the component runs, and the `pending` view shows until the import resolves. The three files below show a split chart. `Chart.pending` is set in the file that defines `Chart`:
+`await import()` inside an async component loads a module when the component runs, and the nearest `<Loading>` shows its fallback until the import resolves. The three files below show a split chart:
 
 ```tsx file=src/Chart.tsx
-import { Skeleton } from "./Skeleton";
-
 export async function Chart(props: { values: number[] }) {
   const values = props.values;
   const { Plot } = await import("./Plot");
   return <Plot values={values} />;
 }
-
-Chart.pending = <Skeleton />;
 ```
 
 ```tsx file=src/Plot.tsx
@@ -563,9 +571,17 @@ export function Plot(props: { values: number[] }) {
 }
 ```
 
-```tsx file=src/Skeleton.tsx
-export function Skeleton() {
-  return <p class="skeleton">loading</p>;
+```tsx file=src/Report.tsx
+import { Loading } from "reze-js";
+
+import { Chart } from "./Chart";
+
+export function Report() {
+  return (
+    <Loading fallback={<p class="skeleton">loading</p>}>
+      <Chart values={[1, 2, 3]} />
+    </Loading>
+  );
 }
 ```
 
@@ -582,7 +598,7 @@ export async function Card(props: { id: number }) {
 }
 ```
 
-- Do not wrap an `await` in `try`. The compiler reports `ASYNC_TRY_AROUND_AWAIT`, and a rejection goes to `failure`:
+- Do not wrap an `await` in `try`. The compiler reports `ASYNC_TRY_AROUND_AWAIT`, and a rejection goes to the nearest `<Errored>`:
 
 ```tsx expect=ASYNC_TRY_AROUND_AWAIT
 export async function Card(props: { id: number }) {
@@ -658,7 +674,7 @@ export function Page() {
 }
 ```
 
-A failed load renders the `failure` view of the async component that contains the island. See [Async components](#async-components).
+A failed load renders the fallback of the nearest `<Errored>` around the island. See [Async components](#async-components).
 
 ### Use the island attribute
 
@@ -692,6 +708,8 @@ The attribute form moves the component's code into its own chunk when the import
 ### Render islands on the server
 
 In server-rendered and statically generated output, an `eager` island renders its component into the HTML and the browser boots it at once. Every other trigger renders only its fallback, inside the `<span data-island>` shell for `visible` and `interaction`, and never renders the component. The server still calls `load` to learn which module the island boots from, and it sends the trigger and the `islandMedia` and `islandRootMargin` values with the island. The browser arms the trigger and loads the component when it fires.
+
+When an island boots, it does not hydrate the server markup. It renders its component again and replaces the markup inside its range, reusing the data the server already loaded. Slot content stays in place. Form fields the user has edited keep their values, and the focused field keeps its focus and cursor. Other DOM state inside the island, such as scroll positions and references to the server elements, does not carry over.
 
 For `<Counter island="visible" islandFallback={<p>loading counter</p>} />`, the HTML contains the `data-island="visible"` span with the paragraph inside, and no markup from `Counter`. To produce this output, see [Server rendering](/vite-plugin#server-rendering) and [Static site generation](/vite-plugin#static-site-generation).
 

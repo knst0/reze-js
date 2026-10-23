@@ -1,4 +1,4 @@
-import type { AppMode } from "./export-graph";
+import { DocumentRootMarker } from "./template";
 
 export const ClientRequest = "/@reze/client.js";
 export const ClientId = "\0reze:client.js";
@@ -8,54 +8,55 @@ export const ServerFactsSpecifier = "reze-client.js";
 export const DevFactsId = "\0reze:dev-facts.js";
 export const SsgViewId = "\0reze:ssg-view.tsx";
 export const SsgRedirectId = "\0reze:ssg-redirect.js";
+export const DocumentViewId = "\0reze:document-view.tsx";
 export const HtmlEnv = "reze_html";
 export const GeneratedIds: readonly string[] = [ClientId, IslandsId, ServerEntryId, SsgRedirectId, DevFactsId];
 
-export function viewSource(mode: AppMode, entrySpecifier: string): string {
-  const entry = JSON.stringify(entrySpecifier);
-  if (mode.kind === "standalone") {
-    return `import App from ${entry};
-export function ssgView() {
-  return <App />;
-}
-`;
-  }
-  const shellImport = mode.hasShell ? `import Shell from ${entry};\n` : "";
-  const shellExport = mode.hasShell
-    ? `export function ssgShell(props) {
-  return <Shell>{props.children}</Shell>;
-}
-`
-    : "";
-  return `import { createBrowserHistory, createRouter } from "@rezejs/router";
-import { routes } from ${entry};
+export function viewSource(): string {
+  return `import { routes } from "virtual:reze-routes";
 export { routes };
-${shellImport}${shellExport}export function ssgView(props = {}) {
-  const Router = props.router ?? createRouter({ routes, history: createBrowserHistory(import.meta.env.BASE_URL) });
-  return ${mode.hasShell ? "<Router root={ssgShell} />" : "<Router />"};
+export function ssgView(props) {
+  const Router = props.router;
+  return <Router />;
 }
 `;
 }
 
-export function serverEntrySource(options: { mode: AppMode; entrySpecifier: string }): string {
-  const entryLiteral = JSON.stringify(options.entrySpecifier);
+export function documentViewSource(documentFile: string, timeoutMs: number): string {
+  return `import { renderDocument } from "reze-js/internal/html";
+import Document from ${JSON.stringify(documentFile)};
+export function render() {
+  return renderDocument(() => Document({ children: ${JSON.stringify(DocumentRootMarker)} }), ${timeoutMs});
+}
+`;
+}
+
+export function documentWorkerSource(viewFile: string): string {
+  return `import { parentPort } from "node:worker_threads";
+import { render } from ${JSON.stringify(viewFile)};
+try {
+  parentPort.postMessage({ ok: true, result: await render() });
+} catch (error) {
+  parentPort.postMessage({ ok: false, error: { message: error instanceof Error ? error.message : String(error), stack: error?.stack } });
+}
+`;
+}
+
+export function serverEntrySource(): string {
   const viewLiteral = JSON.stringify(SsgViewId);
-  const router = options.mode.kind === "router";
   return String.raw`import facts from "${ServerFactsSpecifier}";
-import { HtmlSession, headListKeys, renderStream } from "reze-js/internal/html";
-${router ? 'import * as routerServer from "@rezejs/router/internal/server";' : ""}
-const router = ${router};
+import { HtmlSession, renderStream } from "reze-js/internal/html";
+import * as routerServer from "@rezejs/router/internal/server";
 const externalBase = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(facts.base) || facts.base.startsWith("//");
 const absoluteBase = facts.base.startsWith("/") && !facts.base.startsWith("//");
 const basePath = absoluteBase ? facts.base.replace(/\/$/, "") : "";
-let applicationPromise;
-function loadApplication() {
-  applicationPromise ??= (async () => {
-    if (router) routerServer.installServerLinkTarget();
-    const [app, view] = await Promise.all([import(${entryLiteral}), import(${viewLiteral})]);
-    return { app, view };
+let viewPromise;
+function loadView() {
+  viewPromise ??= (async () => {
+    routerServer.installServerLinkTarget();
+    return import(${viewLiteral});
   })();
-  return applicationPromise;
+  return viewPromise;
 }
 function stripBase(pathname) {
   if (basePath === "") return pathname;
@@ -70,15 +71,22 @@ function joinBase(file, depth) {
   if (absoluteBase) return basePath + "/" + file;
   return (depth === 0 ? "./" : "../".repeat(depth)) + file;
 }
-function rebaseTemplate(parts, depth) {
+function rebaser(depth) {
   const prefix = depth === 0 ? "./" : "../".repeat(depth);
-  const rebase = (text) => text.replace(/(\s(?:src|href)=")\.\//g, "$1" + prefix);
+  return (text) => text.replace(/(\s(?:src|href)=")\.\//g, "$1" + prefix);
+}
+function rebaseTemplate(parts, depth) {
+  const rebase = rebaser(depth);
   return {
     beforeHeadEnd: rebase(parts.beforeHeadEnd),
     headEndToRoot: rebase(parts.headEndToRoot),
     rootEndToBodyEnd: rebase(parts.rootEndToBodyEnd),
     bodyEndToEnd: parts.bodyEndToEnd,
   };
+}
+function rebaseHeadDefaults(defaults, depth) {
+  const rebase = rebaser(depth);
+  return defaults.map((entry) => ({ key: entry.key, html: rebase(entry.html) }));
 }
 function clientModulesAt(depth) {
   const moduleAt = (moduleId) => {
@@ -138,60 +146,8 @@ function escapeHtml(text) {
 function jsonScript(value) {
   return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (char) => "\\u" + char.charCodeAt(0).toString(16).padStart(4, "0"));
 }
-function headAttr(out, name, value) {
-  if (value !== undefined) out.push(" " + name + '="' + escapeHtml(value) + '"');
-}
-function managedScript(script) {
-  const out = ['<script src="' + escapeHtml(script.src) + '"'];
-  if (script.async === true) out.push(" async");
-  if (script.defer === true) out.push(" defer");
-  headAttr(out, "type", script.type);
-  headAttr(out, "crossorigin", script.crossorigin);
-  headAttr(out, "integrity", script.integrity);
-  out.push(" data-rz-head></script>");
-  return out.join("");
-}
-function managedLink(link) {
-  const out = ['<link rel="' + escapeHtml(link.rel) + '" href="' + escapeHtml(link.href) + '"'];
-  headAttr(out, "as", link.as);
-  headAttr(out, "type", link.type);
-  headAttr(out, "media", link.media);
-  headAttr(out, "hreflang", link.hreflang);
-  headAttr(out, "crossorigin", link.crossorigin);
-  out.push(" data-rz-head>");
-  return out.join("");
-}
-function managedMeta(meta) {
-  const out =
-    meta.name === undefined
-      ? ['<meta property="' + escapeHtml(meta.property) + '"']
-      : ['<meta name="' + escapeHtml(meta.name) + '"'];
-  headAttr(out, "content", meta.content);
-  out.push(" data-rz-head>");
-  return out.join("");
-}
-function headHtml(headDefaults, metadata, route) {
-  const tags = [];
-  const title = metadata.title ?? headDefaults.title;
-  const description = metadata.description ?? headDefaults.description;
-  const canonical = metadata.canonical ?? headDefaults.canonical;
-  const robots = metadata.robots ?? headDefaults.robots;
-  const scripts = metadata.scripts ?? [];
-  const links = metadata.links ?? [];
-  const metas = metadata.metas ?? [];
-  const managedNames = new Set();
-  for (const meta of metas) managedNames.add(meta.name === undefined ? "p:" + meta.property : "n:" + meta.name);
-  const managedCanonical = links.some((link) => link.rel === "canonical");
-  if (title !== undefined) tags.push("<title>" + escapeHtml(title) + "</title>");
-  if (description !== undefined && !managedNames.has("n:description")) {
-    tags.push('<meta name="description" content="' + escapeHtml(description) + '">');
-  }
-  if (canonical !== undefined && !managedCanonical) tags.push('<link rel="canonical" href="' + escapeHtml(canonical) + '">');
-  if (robots !== undefined && !managedNames.has("n:robots")) tags.push('<meta name="robots" content="' + escapeHtml(robots) + '">');
-  for (const script of scripts) tags.push(managedScript(script));
-  for (const link of links) tags.push(managedLink(link));
-  for (const meta of metas) tags.push(managedMeta(meta));
-  tags.push('<meta name="reze-build" content="' + escapeHtml(facts.buildId) + '">');
+function pageHead(route) {
+  const tags = ['<meta name="reze-build" content="' + escapeHtml(facts.buildId) + '">'];
   if (route !== undefined) tags.push('<script type="application/json" data-rz-route>' + jsonScript(route) + "</script>");
   return tags.join("\n");
 }
@@ -213,7 +169,7 @@ function redirectResult(appPath, redirect) {
     replace: redirect.replace,
   };
 }
-async function respond(pathname, search, mode, signal, overrides, request) {
+async function respond(pathname, search, mode, signal, options) {
   const appPath = stripBase(pathname);
   if (appPath === undefined) return { status: "not-found" };
   const depth = pageDepth(pathname);
@@ -226,36 +182,18 @@ async function respond(pathname, search, mode, signal, overrides, request) {
   });
   let handedOff = false;
   try {
-    const application = await session.load(loadApplication);
-    let build = () => application.view.ssgView();
-    let metadata = {};
-    let route;
-    let handle;
-    if (router) {
-      const context = application.app.createContext === undefined
-        ? undefined
-        : await application.app.createContext({
-            request,
-            pathname: appPath,
-            search,
-            mode: mode === "stream" ? "ssr" : "ssg",
-          });
-      const prepared = await session.load(() =>
-        routerServer.prepareServerRoute(application.app.routes, appPath, { base: basePath, context }),
-      );
-      if (prepared.status === "redirect") return redirectResult(appPath, prepared);
-      if (prepared.status === "not-found") return { status: "not-found" };
-      build = () => application.view.ssgView({ router: prepared.component });
-      metadata = prepared.metadata;
-      route = routeState(appPath, search, prepared.matches);
-      handle = prepared.handle;
-    }
-    const template = overrides?.template ?? rebaseTemplate(facts.template, depth);
-    const clientModules = overrides?.clientModules ?? clientModulesAt(depth);
-    const head = headHtml(overrides?.headDefaults ?? facts.headDefaults, metadata, route);
+    const view = await session.load(loadView);
+    const prepared = await session.load(() => routerServer.prepareServerRoute(view.routes, appPath + search, { base: basePath, context: options?.context }));
+    if (prepared.status === "redirect") return redirectResult(appPath, prepared);
+    if (prepared.status === "not-found") return { status: "not-found" };
+    const build = () => view.ssgView({ router: prepared.component });
+    const route = routeState(appPath, search, prepared.matches);
+    const template = options?.template ?? rebaseTemplate(facts.template, depth);
+    const clientModules = options?.clientModules ?? clientModulesAt(depth);
+    const headDefaults = options?.headDefaults ?? rebaseHeadDefaults(facts.headDefaults, depth);
     handedOff = true;
-    const body = await renderStream({ build, session, template, head, headKeys: headListKeys(metadata), clientModules, mode, signal });
-    const redirect = handle === undefined ? undefined : routerServer.takeServerRedirect(handle);
+    const body = await renderStream({ build, session, template, head: pageHead(route), headDefaults, clientModules, mode, signal });
+    const redirect = routerServer.takeServerRedirect(prepared.handle);
     if (redirect !== undefined) {
       await body.cancel();
       return redirectResult(appPath, redirect);
@@ -268,20 +206,31 @@ async function respond(pathname, search, mode, signal, overrides, request) {
 function text(status, body) {
   return new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
 }
-export async function handler(request, overrides) {
+const ModuleSrcScript = /<script\b[^>]*\btype="module"[^>]*\bsrc="[^"]*"[^>]*><\/script>/g;
+function errorDocument(template, head) {
+  const strip = (html) => html.replace(ModuleSrcScript, "");
+  const html = strip(template.beforeHeadEnd) + head + strip(template.headEndToRoot) + "Internal Server Error" +
+    strip(template.rootEndToBodyEnd) + template.bodyEndToEnd;
+  return new Response(html, { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
+}
+export async function handler(request, options) {
   const url = new URL(request.url);
   try {
-    const result = await respond(url.pathname, url.search, "stream", request.signal, overrides, request);
+    const result = await respond(url.pathname, url.search, "stream", request.signal, options);
     if (result.status === "not-found") return text(404, "Not Found");
     if (result.status === "redirect") return new Response(null, { status: 302, headers: { location: result.to } });
     return new Response(result.body, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
   } catch (error) {
     console.error(error);
-    return text(500, "Internal Server Error");
+    const depth = pageDepth(url.pathname);
+    const template = options?.template ?? rebaseTemplate(facts.template, depth);
+    const headDefaults = options?.headDefaults ?? rebaseHeadDefaults(facts.headDefaults, depth);
+    const head = headDefaults.map((entry) => entry.html).join("") + pageHead(undefined);
+    return errorDocument(template, head + (options?.errorHead(error) ?? ""));
   }
 }
 export async function prerender(input) {
-  const result = await respond(basePath + input.pathname, "", "buffered", undefined, undefined, undefined);
+  const result = await respond(basePath + input.pathname, "", "buffered", undefined, undefined);
   if (result.status === "redirect") return result;
   if (result.status === "not-found") throw new Error("[reze] SSG route " + input.pathname + " matched no route");
   return { status: "render", html: await new Response(result.body).text() };
@@ -295,12 +244,10 @@ export async function discover(input) {
     streaming: false,
   });
   try {
-    const application = await session.load(loadApplication);
-    if (!router) return { mode: "standalone", urls: ["/"] };
-    if (application.app.routes === undefined) throw new Error("[reze] SSG entry analyzed as router app but exports no routes");
-    const descriptors = routerServer.describeSsgRoutes(application.app.routes);
+    const view = await session.load(loadView);
+    const descriptors = routerServer.describeSsgRoutes(view.routes);
     const urls = routerServer.enumerateSsgUrls(descriptors, input.paths, { trailingSlash: input.trailingSlash });
-    return { mode: "router", urls: urls.map((entry) => entry.url) };
+    return urls.map((entry) => entry.url);
   } finally {
     session.dispose();
   }
@@ -308,16 +255,12 @@ export async function discover(input) {
 `;
 }
 
-export function clientEntrySource(options: { router: boolean; rootId: string }): string {
-  const islands = `import islands from ${JSON.stringify(IslandsId)};\nexport { islands };\n`;
-  if (!options.router) {
-    return `import { attachStream } from "reze-js/internal/client";
-${islands}attachStream(document, document, { islands });
-`;
-  }
+export function clientEntrySource(rootId: string): string {
   return `import { attachStream } from "reze-js/internal/client";
 import { installSwapNavigation } from "@rezejs/router/internal/swap";
-${islands}const swap = installSwapNavigation({ base: import.meta.env.BASE_URL, rootId: ${JSON.stringify(options.rootId)}, islands });
+import islands from ${JSON.stringify(IslandsId)};
+export { islands };
+const swap = installSwapNavigation({ base: import.meta.env.BASE_URL, rootId: ${JSON.stringify(rootId)}, islands });
 attachStream(document, document, { wrap: swap.wrap, islands });
 `;
 }
@@ -334,7 +277,7 @@ export function devFactsSource(options: { base: string; rootId: string; timeoutM
     rootId: options.rootId,
     timeoutMs: options.timeoutMs,
     template: { beforeHeadEnd: "", headEndToRoot: "", rootEndToBodyEnd: "", bodyEndToEnd: "" },
-    headDefaults: {},
+    headDefaults: [],
     assets: {},
     modules: {},
   };
@@ -357,14 +300,14 @@ import * as adapter from ${JSON.stringify(adapterFile)};
 const report = (message) => parentPort.postMessage(message);
 let current;
 try {
-  const discovered = await adapter.discover(workerData.input);
+  const urls = await adapter.discover(workerData.input);
   const pages = [];
-  for (const url of discovered.urls) {
+  for (const url of urls) {
     current = url;
     pages.push({ pathname: url, result: await adapter.prerender({ pathname: url }) });
     report({ ok: true, progress: url });
   }
-  report({ ok: true, result: { mode: discovered.mode, pages } });
+  report({ ok: true, result: pages });
 } catch (error) {
   const detail = error instanceof Error ? error.message : String(error);
   const message = current === undefined ? detail : "[reze] SSG render of " + current + " failed: " + detail;

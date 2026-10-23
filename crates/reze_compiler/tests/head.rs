@@ -51,6 +51,53 @@ fn literal_and_dynamic_identities_are_accepted() {
 }
 
 #[test]
+fn identities_read_from_string_constants_are_folded() {
+    let source = "import { Head } from \"reze-js\";\n\nconst CDN = `https://cdn.example`;\nconst SDK = `${CDN}/sdk.js` as const;\nconst REL = \"preconnect\";\n\nexport function View() {\n  const KIND = \"application/ld+json\";\n  return <Head><script src={SDK} async /><link rel={REL} href={CDN} /><meta name={REL} content=\"x\" /><script type={KIND}>{\"{}\"}</script></Head>;\n}\n";
+    for target in [CompileTarget::Client, CompileTarget::Island, CompileTarget::Html] {
+        let code = code_for(source, target);
+        for key in [
+            "\"script:https://cdn.example/sdk.js\"",
+            "\"link:preconnect\\nhttps://cdn.example\"",
+            "\"meta:name:preconnect\"",
+        ] {
+            assert!(code.contains(key), "{key}: {code}");
+        }
+    }
+}
+
+#[test]
+fn unresolved_identities_explain_why() {
+    let options = without_source_map();
+    let source = "import { Head } from \"reze-js\";\nimport { SDK } from \"./urls\";\n\nlet mutable = \"/a.js\";\nconst computed = location.origin;\nconst LATE = `${LATER}/x.js`;\nconst LATER = \"/cdn\";\n\nexport const view = <Head><script src={SDK} /><script src={mutable} /><script src={computed} /><script src={LATE} /><script src={pick()} /></Head>;\n";
+    let found = details(&errors(source, &options));
+    assert_eq!(found.len(), 5, "{found:?}");
+    assert!(
+        found[0].contains("`SDK` is imported and imported bindings are not resolved"),
+        "{found:?}"
+    );
+    assert!(found[1].contains("`mutable` is not a `const` holding a string"), "{found:?}");
+    assert!(found[2].contains("`computed` is not a `const` holding a string"), "{found:?}");
+    assert!(found[3].contains("`LATE` is not a `const` holding a string"), "{found:?}");
+    assert!(found[4].contains("as a string literal or a `const` holding one"), "{found:?}");
+}
+
+#[test]
+fn every_head_element_compiles_with_its_standard_key() {
+    let source = "import { Head, signal } from \"reze-js\";\n\nlet page = signal(\"a\");\n\nexport const view = <Head><title>{page} | Site</title><base href=\"/app/\" /><meta http-equiv=\"content-security-policy\" content=\"default-src 'self'\" /><link rel=\"canonical\" href={`/p/${page}`} /><style>{\"body{margin:0}\"}</style></Head>;\n";
+    for target in [CompileTarget::Client, CompileTarget::Html] {
+        let code = code_for(source, target);
+        for key in [
+            "\"title\"",
+            "\"base\"",
+            "\"meta:http-equiv:content-security-policy\"",
+            "\"link:canonical\"",
+        ] {
+            assert!(code.contains(key), "{key}: {code}");
+        }
+    }
+}
+
+#[test]
 fn head_children_that_are_misused_are_refused() {
     let options = without_source_map();
     let found =
@@ -71,6 +118,8 @@ fn head_children_that_are_misused_are_refused() {
 
     for child in [
         "<div />",
+        "<template />",
+        "<noscript />",
         "<Widget />",
         "<Show when={open()}><meta name=\"a\" content=\"b\" /></Show>",
         "<Head><meta name=\"a\" content=\"b\" /></Head>",
@@ -83,9 +132,9 @@ fn head_children_that_are_misused_are_refused() {
         let found = errors(&source, &options);
         assert!(has(&found, Code::ControlFlowChildren), "{child}: {found:?}");
     }
-    let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/a.js\"><b>bold</b></script><meta name=\"a\" content=\"b\">text</meta></Head>;\n";
+    let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src=\"/a.js\"><b>bold</b></script><meta name=\"a\" content=\"b\">text</meta><title><b>bold</b></title><style><i /></style></Head>;\n";
     let found = details(&errors(source, &options));
-    assert_eq!(found.len(), 2, "{found:?}");
+    assert_eq!(found.len(), 4, "{found:?}");
 }
 
 #[test]
@@ -101,11 +150,16 @@ fn head_spreads_handlers_islands_identities_and_inline_scripts_are_refused() {
     let source = "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src={url} /><link rel={rel} href=\"/cdn\" /><meta name={name} content=\"x\" /></Head>;\n";
     let found = details(&errors(source, &options));
     assert_eq!(found.len(), 3, "{found:?}");
-    assert!(found.iter().all(|detail| detail.contains("string literal")), "{found:?}");
+    assert!(
+        found.iter().all(|detail| detail.contains("is not a `const` holding a string")),
+        "{found:?}"
+    );
 
     for (tag, count) in [
         ("<meta content=\"x\" />", 1),
         ("<meta name=\"a\" property=\"b\" content=\"x\" />", 1),
+        ("<meta charset=\"utf-8\" />", 1),
+        ("<link rel={rel} href=\"/cdn\" />", 1),
         ("<link rel=\"preconnect\" />", 1),
         ("<link href=\"/cdn\" />", 1),
     ] {

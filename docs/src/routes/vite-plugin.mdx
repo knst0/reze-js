@@ -69,6 +69,8 @@ Give the library two things in `package.json`: a `reze` export condition that po
 }
 ```
 
+The plugin adds the `reze` condition to the client and to the server HTML environment, on top of Vite's default conditions, so a package that exports only `reze` resolves in both without extra config. The HTML environment also gets `reze-html` ahead of it, for packages that ship a separate server build.
+
 The `reze.manifest` path is relative to the package root. The plugin scans the directory that contains each `reze` export target. It collects `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, and `.cjs` files, excluding `.d.ts` files and `node_modules`.
 
 Run the `reze-manifest` command from the library's root. It is installed with `@rezejs/vite-plugin`:
@@ -152,6 +154,7 @@ The `fileRoutes` options are:
 | `links`      | `boolean`               | `true`                                                  | Passes native `<a href>` elements to `@rezejs/router`, which marks the active link. Set `false` to keep your own `links` module.                      |
 | `history`    | `"browser"` or `"hash"` | `"browser"`                                             | `"browser"` builds hrefs from the Vite `base`. `"hash"` prefixes hrefs with `#`. Static generation rejects hash routing.                              |
 | `extensions` | `string[]`              | Top-level `extensions`, or `.ts`, `.tsx`, `.js`, `.jsx` | Extensions that count as route files. When the top-level `extensions` option is set, this default is the top-level list.                              |
+| `template`   | `boolean`               | `true`                                                  | Fills a new empty `.tsx` or `.jsx` route file with a starter component during `vite` dev. See [Dev server updates](#dev-server-updates).              |
 
 Route files whose names start with `_` or `.` are ignored, along with `.d.ts`, `.test.`, and `.spec.` files.
 
@@ -170,6 +173,8 @@ The router reports conflicting files at build time. Two files for the same route
 
 During `vite` dev, the plugin watches `dir`. Adding or removing a file or directory regenerates the route module and the types file. When the route module changes, the plugin invalidates it and sends a full reload to the browser. Regeneration errors go to the Vite logger as errors.
 
+A new empty `.tsx` or `.jsx` route file gets a starter component. A page renders its pathname and types its props with `RoutePropsFor` and the route pattern. A file with a directory of the same name is a layout and renders `children`. The plugin leaves files with content, private `_` files, and other extensions as they are. Set `fileRoutes.template` to `false` to turn this off.
+
 ## Server rendering
 
 Set `ssr` to render pages when a request arrives. The build produces a server entry that exports `handler(request: Request): Promise<Response>`. The handler streams the document: the HTML for everything that is ready arrives first, and each part that was still waiting for data arrives later and replaces its placeholder.
@@ -185,11 +190,8 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [
     reze({
-      fileRoutes: true,
       ssr: {
-        entry: "src/app.tsx",
-        template: "index.html",
-        selector: "#app",
+        document: "src/document.tsx",
         timeoutMs: 30000,
         outDir: "dist/server",
       },
@@ -198,17 +200,75 @@ export default defineConfig({
 });
 ```
 
-The `ssr` options are:
+`ssr: true` takes every default. The pages are the [file routes](#file-routes), so `ssr` turns `fileRoutes` on when it is not set and fails with `fileRoutes: false`. The `ssr` options are:
 
-| Option      | Type     | Default         | Purpose                                                                                                                                                      |
-| ----------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `entry`     | `string` | Required        | Module that renders the app. The entry shapes are the same as for [static generation](#entry-shapes).                                                        |
-| `template`  | `string` | `"index.html"`  | HTML template for every response. It must contain exactly one `<script type="module" src="/@reze/client.js">` and one element whose `id` matches `selector`. |
-| `selector`  | `string` | `"#app"`        | Mount element. The value must be `#` followed by an ASCII identifier.                                                                                        |
-| `timeoutMs` | `number` | `30000`         | Time one request has to finish rendering, in milliseconds. The value must be finite and greater than zero.                                                   |
-| `outDir`    | `string` | `"dist/server"` | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers.                           |
+| Option       | Type                            | Default              | Purpose                                                                                                                                                                                                                                      |
+| ------------ | ------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `document`   | `string`                        | `"src/document.tsx"` | The page around the app. See [The document](#the-document).                                                                                                                                                                                  |
+| `timeoutMs`  | `number`                        | `30000`              | Time one request has to finish rendering, in milliseconds. The value must be finite and greater than zero.                                                                                                                                   |
+| `outDir`     | `string`                        | `"dist/server"`      | Directory that receives the server bundle. It is relative to the Vite `root`. Keep it outside the directory you serve to browsers.                                                                                                           |
+| `devContext` | `(request: Request) => unknown` | None                 | Base router `context` for each request that the `vite` dev server renders. Pass the function your server uses for `handler`, so dev and production see the same values. See [Pass request values to routes](#pass-request-values-to-routes). |
 
-When you set both `ssr` and `ssg`, they must use the same `entry`, `template`, and `selector`. Otherwise the plugin fails with `[reze] ssg and ssr must use the same entry, template and selector`.
+When you set both `ssr` and `ssg`, they must use the same `document`. Otherwise the plugin fails with `[reze] ssg and ssr must use the same document`.
+
+### The document
+
+The document is the HTML page that holds the app. It is a module whose default export returns `<html>` with a `<head>` and a `<body>`, and one element in the body holds `children`:
+
+```tsx file=src/document.tsx
+import type { JSX } from "reze-js";
+
+export default function Document(props: { children: JSX.Element }) {
+  return (
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>My app</title>
+        <link rel="stylesheet" href="/src/styles.css" />
+      </head>
+      <body>
+        <div id="app">{props.children}</div>
+      </body>
+    </html>
+  );
+}
+```
+
+The compiler turns the document into HTML at build time and when the dev server starts. It inlines the components the document uses, wherever they come from: the document module, another source file, or a package that ships its source under the `reze` export condition, such as a library `<Preload>` that adds `<link>` tags. A component's props take the literal values passed where it is used, constants declared with a literal fold in, and `children` takes the markup between its tags, including the document's own `children`:
+
+```tsx file=src/document.tsx
+import type { JSX } from "reze-js";
+
+function Meta(props: { name: string; content: string }) {
+  return <meta name={props.name} content={props.content} />;
+}
+
+function Shell(props: { children: JSX.Element }) {
+  return <main id="app">{props.children}</main>;
+}
+
+export default function Document(props: { children: JSX.Element }) {
+  return (
+    <html lang="en">
+      <head>
+        <Meta name="color-scheme" content="light dark" />
+      </head>
+      <body>
+        <Shell>{props.children}</Shell>
+      </body>
+    </html>
+  );
+}
+```
+
+A document the compiler cannot read statically, such as one with a call, a `let`, or a component from a package without source, still works: the plugin compiles it for the server and runs it once, at build time and at the first dev render, and reports `DOCUMENT_DYNAMIC` as information naming the part that made it run. Either way the page is plain HTML, and the document's code never reaches the browser. A document that does not return `<html>` with a `<head>` and a `<body>` fails with `DOCUMENT_SHAPE`. The element that holds `children` is the mount root. Its `id` names the root, and the compiler gives it `id="app"` when it has none. The plugin adds the client script itself, so the document needs no `<script type="module">`. Without the file, the plugin uses a document like the one above without the title and the stylesheet.
+
+The server plugin renders every page from the document and never reads `index.html`. A project that still has an `index.html` at the root fails with a message that asks you to move its head tags into the document.
+
+The document's `<title>`, `<base>`, canonical link, and `<meta>` tags with a `name`, `property`, or `http-equiv` are defaults. A [`<Head>`](/building-interfaces#head-tags) tag with the same key replaces one on the pages where it renders, and the default comes back on the pages where none does.
+
+When a page fails before its first byte is sent, the response is a `500` page built from the same document without its module scripts, with `Internal Server Error` inside the mount root. During `vite` dev the page also shows the Vite error overlay with the error, and it keeps the dev client, so saving a fix reloads the page.
 
 ### Build output
 
@@ -221,7 +281,7 @@ The client and the server must come from the same build. The server writes a bui
 
 ### Serve the handler
 
-`handler` takes a web `Request`. It answers `302` for a route redirect, `404` with `Not Found` for a path that no route matches, and `500` with `Internal Server Error` when rendering fails before the first byte. `reze-js/server` picks the implementation with export conditions (`bun`, `node`), not with runtime detection in code, so a runtime without a matching condition fails at import. The next sample is a fragment, because `dist/server/entry.js` exists only after a build:
+`handler` takes a web `Request`. It answers `302` for a route redirect, `404` with `Not Found` for a path that no route matches, and `500` with the [document](#the-document) around `Internal Server Error` when rendering fails before the first byte. `reze-js/server` picks the implementation with export conditions (`bun`, `node`), not with runtime detection in code, so a runtime without a matching condition fails at import. The next sample is a fragment, because `dist/server/entry.js` exists only after a build:
 
 ```ts fragment
 import { serve } from "reze-js/server";
@@ -233,11 +293,32 @@ await serve(handler, { port: 3000 });
 
 `serve(handler, options)` resolves to `{ port, hostname, close() }`. `port` defaults to `3000`; pass `0` to get an ephemeral port and read the bound one from the result. On Node.js, `createNodeListener(handler)` from `reze-js/server` returns a request listener for an existing `http` server or a Connect middleware. Its request's `signal` aborts when the client disconnects, and the render stops. Serve the client output on the same origin, for example with your host's static file support in front of the handler.
 
+### Pass request values to routes
+
+`handler(request, { context })` takes an optional second argument. Its `context` is the base router `context` for that request: each layout's `beforeLoad` extends it, and every `preload` and `redirect` reads it. Use it for values that come from the request or the host, such as a session from a cookie or a platform binding. The next sample is a fragment, because `dist/server/entry.js` exists only after a build:
+
+```ts fragment
+import { serve } from "reze-js/server";
+
+import { handler } from "../dist/server/entry.js";
+import { requestContext } from "../src/request-context";
+
+await serve((request) => handler(request, { context: requestContext(request) }), { port: 3000 });
+```
+
+The dev server does not run this script, so pass the same function as `ssr.devContext`:
+
+```ts fragment
+reze({ ssr: { devContext: requestContext } });
+```
+
+Static pages have no request, so `ssg` renders them with no base `context`.
+
 ### Streaming
 
-A component that awaits data renders its `pending` view first, and the server streams the finished view when the data arrives. [Async components](/building-interfaces#async-components) describes `pending` and `failure`. A component without a `pending` view makes the document wait, so the first byte arrives after the data does.
+A `<Loading>` boundary renders its fallback first, and the server streams the finished view when the data below it arrives. [Async components](/building-interfaces#async-components) describes `<Loading>` and `<Errored>`. An async component without a `<Loading>` above it makes the document wait, so the first byte arrives after the data does.
 
-The streamed parts need JavaScript to apply. A browser with JavaScript off shows the `pending` views. A page with no waiting parts is complete HTML.
+The streamed parts need JavaScript to apply. A browser with JavaScript off shows the `<Loading>` fallbacks. A page with no waiting parts is complete HTML.
 
 An island is sent to the browser after everything inside it has settled. Until then, its server HTML is on the page and is not interactive.
 
@@ -267,7 +348,7 @@ Set `ssg` to generate one HTML file per page at build time. The pages come from 
 
 ### Configure static generation
 
-The minimum configuration needs an entry module. The other options have defaults:
+The minimum configuration is `ssg: true`. Every option has a default:
 
 ```ts file=examples/static-site.config.ts
 import reze from "@rezejs/vite-plugin";
@@ -276,11 +357,8 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [
     reze({
-      fileRoutes: true,
       ssg: {
-        entry: "src/app.tsx",
-        template: "index.html",
-        selector: "#app",
+        document: "src/document.tsx",
         trailingSlash: "always",
         timeoutMs: 30000,
         paths: {
@@ -295,48 +373,16 @@ export default defineConfig({
 
 The `ssg` options are:
 
-| Option          | Type                    | Default        | Purpose                                                                                                                                                  |
-| --------------- | ----------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entry`         | `string`                | Required       | Module that renders the app. The path is relative to the Vite `root`. A missing file fails with `[reze] ssg.entry not found: "<entry>"`.                 |
-| `template`      | `string`                | `"index.html"` | HTML template for every page. It must contain exactly one `<script type="module" src="/@reze/client.js">` and one element whose `id` matches `selector`. |
-| `selector`      | `string`                | `"#app"`       | Mount element. The value must be `#` followed by an ASCII identifier. Other values fail with `[reze] ssg.selector must be "#" plus an ASCII identifier`. |
-| `trailingSlash` | `"always"` or `"never"` | `"always"`     | URL form of generated pages. `"always"` uses `/todos/1/`, and `"never"` uses `/todos/1`. Output file names do not change.                                |
-| `timeoutMs`     | `number`                | `30000`        | Render deadline for one page, in milliseconds. The value must be finite and greater than zero. See [Failures and timeouts](#failures-and-timeouts).      |
-| `paths`         | Object                  | `{}`           | Parameter values for dynamic routes. See [Map dynamic routes](#map-dynamic-routes).                                                                      |
+| Option          | Type                    | Default              | Purpose                                                                                                                                             |
+| --------------- | ----------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `document`      | `string`                | `"src/document.tsx"` | The page around the app. See [The document](#the-document).                                                                                         |
+| `trailingSlash` | `"always"` or `"never"` | `"always"`           | URL form of generated pages. `"always"` uses `/todos/1/`, and `"never"` uses `/todos/1`. Output file names do not change.                           |
+| `timeoutMs`     | `number`                | `30000`              | Render deadline for one page, in milliseconds. The value must be finite and greater than zero. See [Failures and timeouts](#failures-and-timeouts). |
+| `paths`         | Object                  | `{}`                 | Parameter values for dynamic routes. See [Map dynamic routes](#map-dynamic-routes).                                                                 |
 
-### Entry shapes
+### Pages
 
-The entry module decides how pages are enumerated. The plugin reads its exports:
-
-- **Router app.** The entry exports a named `routes` table. The plugin renders every leaf route in the table. A `default` export, when present, is the shell. The shell wraps the matched route on every page.
-- **Standalone app.** The entry exports only a `default` component. The plugin renders one page at `/`.
-
-A standalone app with a non-empty `paths` object fails with `[reze] ssg.paths needs a router app; a standalone entry renders only /`. An entry with neither export fails with ``[reze] SSG entry must export a named `routes` table (router app) or a default component (standalone app)``.
-
-A standalone entry looks like this:
-
-```tsx file=src/app.tsx
-export default function App() {
-  return (
-    <main>
-      <h1>Todos</h1>
-    </main>
-  );
-}
-```
-
-A router entry re-exports the generated table and can add a shell as its default export:
-
-```tsx file=router-app/src/app.tsx
-import type { JSX } from "reze-js";
-import { routes } from "virtual:reze-routes";
-
-export { routes };
-
-export default function Shell(props: { children?: JSX.Element }) {
-  return <main>{props.children}</main>;
-}
-```
+The plugin renders the [file routes](#file-routes), one page per leaf route. There is no entry module: a leftover `entry` option fails with a message to remove it. Markup that every page shares and that never changes, such as a stylesheet link or a site header, belongs in [the document](#the-document). Each page is a flat file in `src/routes`, so `src/routes/about.tsx` is `/about` and `paths.about()` links to it. A layout that wraps a group of pages is a [layout route](/routing), such as `src/routes/blog.tsx` around `src/routes/blog/`. Values shared with child routes come from a layout's `beforeLoad`, which [routing](/routing#share-context-with-child-routes) describes.
 
 ### Map dynamic routes
 

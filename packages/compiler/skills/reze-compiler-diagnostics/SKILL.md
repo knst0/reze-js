@@ -88,7 +88,7 @@ export const view = <table><tbody><tr><td>cell</td></tr></tbody></table>;
 
 Automatic fix: no
 
-`Show`, `For`, `Repeat`, `Switch`, `Match`, `Portal` and `Head` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
+`Show`, `For`, `Repeat`, `Switch`, `Match`, `Portal`, `Head`, `Loading` and `Errored` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
 
 **Repair:** Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and select that with `dynamic(() => …)`.
 
@@ -118,7 +118,7 @@ export const view = <Show when={open()}><p>open</p></Show>;
 
 Automatic fix: yes
 
-A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`, and `<Head>` takes none. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
+A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`, `<Loading fallback>`, `<Errored fallback>`, and `<Head>` takes none. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
 
 **Repair:** Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.
 
@@ -148,9 +148,9 @@ export const view = <Show when={open()}><p>open</p></Show>;
 
 Automatic fix: no
 
-`<Show>` and `<Match>` render by `when`, `<For>` by `each`, `<Repeat>` by `count`. Without it there is nothing to decide on. `data.tag` is the tag and `data.attribute` the missing attribute.
+`<Show>` and `<Match>` render by `when`, `<For>` by `each`, `<Repeat>` by `count`, and `<Errored>` needs `fallback` to show on failure. Without it there is nothing to decide on. `data.tag` is the tag and `data.attribute` the missing attribute.
 
-**Repair:** Add the attribute with the condition (`when`), the list (`each`) or the number of rows (`count`).
+**Repair:** Add the attribute with the condition (`when`), the list (`each`), the number of rows (`count`) or the failure view (`fallback={(error, reset) => …}`).
 
 Before:
 
@@ -178,9 +178,9 @@ export const view = <Show when={open()} fallback={<p>closed</p>}><p>open</p></Sh
 
 Automatic fix: no
 
-`<Show>`, `<Match>` and `<Portal>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only `<meta>`, `<link>` and `<script>` elements. `data.tag` is the tag and `data.expected` what it takes.
+`<Show>`, `<Match>`, `<Portal>`, `<Loading>` and `<Errored>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only the head elements `<title>`, `<base>`, `<meta>`, `<link>`, `<script>` and `<style>`; a `<noscript>` in the head parses as text while scripts run, so it belongs in `document.tsx`. `data.tag` is the tag and `data.expected` what it takes.
 
-**Repair:** Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`, and keep only `<meta>`, `<link>` and `<script>` in `<Head>`.
+**Repair:** Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`, and keep only head elements in `<Head>`.
 
 Before:
 
@@ -238,9 +238,9 @@ export const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Swi
 
 Automatic fix: no
 
-`<Head>` tags need static identity: `src`, `rel`, `href`, `name` and `property` must be string literals, `meta` needs exactly one of `name` and `property`, `link` needs `rel` and `href`, and a `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta` and `link` take no children, and `script` takes only text. `data.tag` is the tag and `data.detail` what is wrong.
+A keyed `<Head>` tag replaces the tag of the same key from `document.tsx` or an outer component while it is mounted, so its key must be static. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `link rel="canonical"` by its `rel` and any other `link` by `rel` and `href`, and `script` by `src`; those attributes must be known at compile time: a string literal, or a `const` declared earlier in the same module whose value is a string literal or a template of such constants. Imported bindings are not resolved. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta`, `link` and `base` take no children, and `script`, `style` and `title` take only text. `data.tag` is the tag and `data.detail` what is wrong.
 
-**Repair:** Write the identity attributes as string literals, or move the tag out of `<Head>`.
+**Repair:** Write the identity attributes as string literals or `const` strings declared in this module, or move the tag out of `<Head>`.
 
 Before:
 
@@ -255,7 +255,99 @@ After:
 ```tsx
 import { Head } from "reze-js";
 
-export const view = <Head><script src="/sdk.js" /></Head>;
+const url = "/sdk.js";
+
+export const view = <Head><script src={url} /></Head>;
+```
+
+## DOCUMENT_SHAPE
+
+**Document is not an `<html>` page** · severity `error`
+
+> The document {detail}.
+
+`data` keys: `detail`
+
+Automatic fix: no
+
+A document module default-exports a function that returns one `<html>` element holding a `<head>` and then a `<body>`. Raw-text elements such as `<script>` and `<style>` take only text, void elements take no children, and a component cannot render itself. These hold however the document renders. `data.detail` is what is wrong.
+
+**Repair:** Default-export `function Document(props) { return <html><head>…</head><body>…</body></html>; }`.
+
+Before:
+
+```tsx
+export default function Document(props) {
+  return <div>{props.children}</div>;
+}
+```
+
+After:
+
+```tsx
+export default function Document(props) {
+  return <html><head /><body><div>{props.children}</div></body></html>;
+}
+```
+
+## DOCUMENT_DYNAMIC
+
+**Document renders at build time** · severity `info`
+
+> The document holds {detail}, which is not static, so it renders by running its code instead of compiling to HTML.
+
+`data` keys: `detail`
+
+Automatic fix: no
+
+The compiler turns a static document into HTML without running it: literals, template literals without substitutions, literal `const`s, the bundler's `define` values, the `children` slot, and components whose props are static, from the document module, other source files, or packages that export their source under the `reze` condition. When anything else is in the page, the document module runs once on the server at build time and when the dev server renders its first page, and its output becomes the page. Both produce the same page. `data.detail` names the first part that is not static.
+
+**Repair:** No action is needed. To compile the document without running it, make that part static.
+
+Before:
+
+```tsx
+export default function Document(props) {
+  return <html lang={navigator.language}><head /><body><div>{props.children}</div></body></html>;
+}
+```
+
+After:
+
+```tsx
+export default function Document(props) {
+  return <html lang="en"><head /><body><div>{props.children}</div></body></html>;
+}
+```
+
+## DOCUMENT_ROOT
+
+**Missing or misplaced document root** · severity `error`
+
+> The document {detail}.
+
+`data` keys: `detail`
+
+Automatic fix: no
+
+The app renders into the element that holds the document's `children`: the server streams into it and client navigation replaces its content. That element exists exactly once, holds nothing else, sits inside `<body>`, and is an ordinary element, not `<body>` itself, a raw-text, void, `<template>` or SVG element. Its literal `id` names the root, `app` when it has none, and no other element may reuse that `id`. `data.detail` is what is wrong.
+
+**Repair:** Render `{props.children}` once, alone, in an element inside `<body>`, for example `<body><div id="app">{props.children}</div></body>`.
+
+Before:
+
+```tsx
+export default function Document(props) {
+  return <html><head /><body>{props.children}</body></html>;
+}
+```
+
+After:
+
+```tsx
+export default function Document(props) {
+  return <html><head /><body><div>{props.children}</div></body></html>;
+}
 ```
 
 ## FLOW_PARAM_CALLED
@@ -1045,25 +1137,26 @@ export async function Card(props) {
 }
 ```
 
-## ASYNC_VIEW_TARGET
+## ASYNC_VIEW_PROPERTY
 
-**View assigned to a name that is not an async component here** · severity `error`
+**Loading or error view attached as a component property** · severity `error`
 
-> `{name}.{view}` is assigned, but `{name}` is not an async component declared in this block, so the view is never rendered.
+> `{name}.{view}` is not read by anything. Wrap the use site in `<{boundary}>` instead.
 
-`data` keys: `name`, `view`
+`data` keys: `boundary`, `name`, `view`
 
 Automatic fix: no
 
-`pending` and `failure` views attach to an async component declared in the same statement list. Any other assignment would be a plain property write that no runtime reads, and a failing load would then have no handler.
+Loading and error views belong to the place a component is used, not to the component: `<Loading fallback>` shows one fallback until everything below it has loaded once, and `<Errored fallback={(error, reset) => …}>` catches failures below it. A `pending` or `failure` property would be a plain write that no runtime reads. `data.name` is the component and `data.view` the property.
 
-**Repair:** Declare `{name}` as an `async function` in the same block, or drop the view assignment.
+**Repair:** Delete the assignment and wrap the use site: `<Loading fallback={…}><{name} /></Loading>` for `pending`, `<Errored fallback={(error, reset) => …}><{name} /></Errored>` for `failure`.
 
 Before:
 
 ```tsx
-function Card(props) {
-  return <p>{props.id}</p>;
+export async function Card(props) {
+  const user = await fetchUser(props.id);
+  return <p>{user.name}</p>;
 }
 Card.failure = (error) => <p>{error.message}</p>;
 ```
@@ -1071,12 +1164,13 @@ Card.failure = (error) => <p>{error.message}</p>;
 After:
 
 ```tsx
-export async function Card(props) {
-  const id = props.id;
-  const user = await fetchUser(id);
+import { Errored } from "reze-js";
+
+async function Card(props) {
+  const user = await fetchUser(props.id);
   return <p>{user.name}</p>;
 }
-Card.failure = (error) => <p>{error.message}</p>;
+export const view = <Errored fallback={(error) => <p>{error.message}</p>}><Card id={1} /></Errored>;
 ```
 
 ## INTERNAL_REACTIVITY_IMPORT
@@ -1146,15 +1240,15 @@ export async function Card(props) {
 
 **`try` around an await in an async component** · severity `error`
 
-> `{component}` wraps an `await` in `try`, which the compiler cannot lower into the load step. Handle the failure with `failure` or catch the promise in the awaited expression.
+> `{component}` wraps an `await` in `try`, which the compiler cannot lower into the load step. Handle the failure with an `<Errored>` boundary around the use site or catch the promise in the awaited expression.
 
 `data` keys: `component`
 
 Automatic fix: no
 
-Each `await` in an async component is a step of one lowering path, which has no place for a `try` around it. A rejected await renders the component's `failure` view. Handle a specific error by inspecting the value in `failure`, or by catching the promise in the load expression. `data.component` is the component.
+Each `await` in an async component is a step of one lowering path, which has no place for a `try` around it. A rejected await throws to the nearest `<Errored>` boundary. Handle a specific error by inspecting the value in that boundary's `fallback`, or by catching the promise in the load expression. `data.component` is the component.
 
-**Repair:** Remove the `try`, and declare a `failure` view on the component to show the error.
+**Repair:** Remove the `try`, and wrap the use site in `<Errored fallback={(error, reset) => …}>` to show the error.
 
 Before:
 
@@ -1178,8 +1272,6 @@ export async function Card(props) {
   const user = await fetchUser(id);
   return <p>{user.name}</p>;
 }
-
-Card.failure = (error, retry) => <button onClick={retry}>Retry</button>;
 ```
 
 ## ABORT_SIGNAL_OUTSIDE_LOAD

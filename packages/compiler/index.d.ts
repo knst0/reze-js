@@ -15,6 +15,9 @@ export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-was
  */
 export declare function analyze(source: string, filename: string): AnalyzeResult
 
+/** `analyze` on the libuv thread pool. */
+export declare function analyzeAsync(source: string, filename: string): Promise<AnalyzeResult>
+
 export interface AnalyzeResult {
   /** Absent when `diagnostics` holds an `error`. */
   facts?: any
@@ -27,6 +30,15 @@ export interface AnalyzeResult {
  * call never throws on them.
  */
 export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult
+
+/** `compile` on the libuv thread pool. */
+export declare function compileAsync(source: string, filename: string, options?: CompileOptions | undefined | null): Promise<CompileResult>
+
+/**
+ * Compiles the default-exported document component of `source` to static HTML, following the
+ * imports resolved in `input`. Errors come back as diagnostics, and the call never throws on them.
+ */
+export declare function compileDocument(source: string, filename: string, input?: DocumentInput | undefined | null): DocumentResult
 
 export interface CompileOptions {
   /** Default: `true`. */
@@ -82,6 +94,40 @@ export interface Diagnostic {
   rendered: string
 }
 
+export interface DocumentImport {
+  importer: string
+  specifier: string
+  /** The resolved file; absent when the import does not resolve to a source module. */
+  file?: string
+}
+
+export interface DocumentInput {
+  imports: Array<DocumentImport>
+  /** Source text of each resolved file. */
+  sources: Record<string, string>
+  /** Vite `define` entries: each dotted key with the code that replaces it. */
+  defines?: Record<string, string>
+}
+
+export interface DocumentRequest {
+  importer: string
+  specifier: string
+}
+
+export interface DocumentResult {
+  /** The whole page with an empty root element; present only for a static page. */
+  html?: string
+  /** `id` of the root element; present only for a static page. */
+  rootId?: string
+  /** The imported files a static page was compiled from. */
+  files: Array<string>
+  /** Imports to resolve into the input before compiling again. */
+  requests: Array<DocumentRequest>
+  /** The module must run to render the page; `info` diagnostics name the parts that are not static. */
+  render: boolean
+  diagnostics: Array<Diagnostic>
+}
+
 /** Replaces source bytes `start..end` with `text`. */
 export interface Edit {
   start: number
@@ -128,3 +174,6 @@ export interface ProfileFacts {
   hash: string
   components: Array<ProfileComponentFacts>
 }
+
+/** FNV-1a64 of `text`'s UTF-8 bytes, lowercase hex: the hash `facts` and `profile` entries carry. */
+export declare function profileHash(text: string): string

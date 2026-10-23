@@ -2,14 +2,15 @@ import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { compile } from "@rezejs/compiler";
+import { compileAsync, profileHash } from "@rezejs/compiler";
+import { defaultClientConditions, defaultServerConditions } from "vite";
 import type { DevEnvironment, Environment, EnvironmentModuleNode, Plugin } from "vite";
 
+import { BeforeLoadFlag, mentionsBeforeLoad, sourcesMentionBeforeLoad } from "./before-load";
 import { ModuleFactsStore, staticImportSpecifiers, type Resolver } from "./facts";
-import { profileHash } from "./hash";
 import { canonicalModuleId } from "./module-identity";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
-import { GeneratedIds, HtmlEnv, SsgViewId } from "./server/adapter";
+import { DocumentViewId, GeneratedIds, HtmlEnv, SsgViewId } from "./server/adapter";
 import type { SsgOptions, SsrOptions } from "./server/options";
 import { createServerPlugin, createServerShared } from "./server/plugin";
 import type { ServerShared } from "./server/plugin";
@@ -22,12 +23,12 @@ export interface Options {
   links?: string;
   /** File extensions the transform compiles, replacing `DEFAULT_ROUTE_EXTENSIONS`. Spread it to extend, e.g. `[...DEFAULT_ROUTE_EXTENSIONS, ".mdx"]` when a preprocessor runs before this plugin. File routes default to this list. */
   extensions?: string[];
-  /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. The result is awaitable in `plugins`. */
+  /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. On whenever `ssg` or `ssr` is set. The result is awaitable in `plugins`. */
   fileRoutes?: boolean | FileRoutesOptions;
-  /** Static-site generation: a production build that prerenders each page with the server renderer. Absent by default. */
-  ssg?: SsgOptions;
-  /** Request-time rendering: builds `dist/server/entry.js`, exporting a web `fetch` handler. Absent by default. */
-  ssr?: SsrOptions;
+  /** Static-site generation: a production build that prerenders each file route with the server renderer. Absent by default. */
+  ssg?: true | SsgOptions;
+  /** Request-time rendering of the file routes: builds `dist/server/entry.js`, exporting a web `fetch` handler. Absent by default. */
+  ssr?: true | SsrOptions;
   profile?: {
     /** Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. */
     dir: string;
@@ -201,6 +202,7 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
   let hot = false;
   let links = options.links;
   let root = "";
+  let beforeLoadSources: string | undefined;
   const profileDir = options.profile?.dir;
   const profileHashes = new Map<string, string>();
   const runtimeEntries = new Set<string>();
@@ -234,6 +236,12 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
     appendFileSync(jsonl, diagnostics.map((d) => JSON.stringify(d) + "\n").join(""));
   }
 
+  function isBeyondSources(file: string): boolean {
+    if (file.startsWith("\0")) return false;
+    if (file.startsWith(beforeLoadSources + "/") && !file.includes("/node_modules/")) return false;
+    return moduleFacts.packageName(file) !== "@rezejs/router";
+  }
+
   function emitsSourceMap(config: Environment["config"]): boolean {
     if (!isServe) return Boolean(config.build.sourcemap);
     const sourcemap = config.dev.sourcemap;
@@ -248,9 +256,19 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
         links = module;
       },
     },
+    config(config, env) {
+      if (env.command !== "build") return;
+      const projectRoot = resolve(config.root ?? process.cwd());
+      if (sourcesMentionBeforeLoad(projectRoot, resolve(projectRoot, config.build?.outDir ?? "dist"), filter.include)) return;
+      beforeLoadSources = projectRoot;
+      return { define: { [BeforeLoadFlag]: "false" } };
+    },
     applyToEnvironment: (environment) => environment.name === "client" || environment.name === HtmlEnv,
-    config() {
-      return { resolve: { conditions: ["reze"] } };
+    configEnvironment(name, envConfig) {
+      if (name !== "client" && name !== HtmlEnv) return;
+      const added = name === HtmlEnv ? ["reze-html", "reze"] : ["reze"];
+      const conditions = envConfig.resolve?.conditions ?? (name === HtmlEnv ? defaultServerConditions : defaultClientConditions);
+      envConfig.resolve = { ...envConfig.resolve, conditions: [...added.filter((c) => !conditions.includes(c)), ...conditions] };
     },
     configResolved(config) {
       isServe = config.command === "serve";
@@ -274,7 +292,13 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
     },
     async transform(code, id) {
       const file = id.replace(QueryOrHash, "");
-      if (id !== SsgViewId && (!filter.include.test(id) || (filter.exclude.test(id) && !moduleFacts.declaresReze(file)))) return null;
+      if (beforeLoadSources !== undefined && isBeyondSources(file) && mentionsBeforeLoad(code)) {
+        this.error(
+          `[reze] ${file} uses beforeLoad, but no source under ${beforeLoadSources} mentions it, so the build compiled the beforeLoad cascade out; declare the beforeLoad route config in a module under ${beforeLoadSources}`,
+        );
+      }
+      const isView = id === SsgViewId || id === DocumentViewId;
+      if (!isView && (!filter.include.test(id) || (filter.exclude.test(id) && !moduleFacts.declaresReze(file)))) return null;
       if (runtimeEntries.has(file) || GeneratedIds.includes(id)) return;
       if (id.startsWith("\0vite/") || id.startsWith("\0rolldown/")) return;
       for (const directory of runtimeDirectories) if (file.startsWith(directory)) return;
@@ -286,14 +310,14 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
       if (moduleId !== undefined) {
         if (isServe) shared.registry.update(moduleId, code);
         else shared.registry.register(moduleId, code);
-        if (target === "html" && id !== SsgViewId) shared.moduleFiles.set(moduleId, file);
+        if (target === "html" && !isView) shared.moduleFiles.set(moduleId, file);
       }
       const imported = await moduleFacts.factsFor(
         file,
         staticImportSpecifiers(code),
         resolverOf((specifier, importer) => this.resolve(specifier, importer, { skipSelf: true })),
       );
-      const result = compile(code, file, {
+      const result = await compileAsync(code, file, {
         sourceMap: emitsSourceMap(this.environment.config),
         debugNames,
         hot,
@@ -367,21 +391,17 @@ export type { FileRoutesOptions } from "./routes";
 export type { SsgOptions, SsrOptions, StaticParams, StaticPathsValue } from "./server/options";
 
 export default function reze(options?: Options & { fileRoutes?: false | undefined; ssg?: undefined; ssr?: undefined }): Plugin<RezeApi>;
-export default function reze(options: Options & { ssg?: SsgOptions; ssr?: SsrOptions; fileRoutes?: false | undefined }): Plugin[];
-export default function reze(
-  options: Options & { ssg?: SsgOptions; ssr?: SsrOptions; fileRoutes: true | FileRoutesOptions },
-): Promise<Plugin[]>;
-export default function reze(options: Options = {}): Plugin<RezeApi> | Plugin[] | Promise<Plugin[]> {
+export default function reze(options: Options & { fileRoutes?: true | FileRoutesOptions }): Promise<Plugin[]>;
+export default function reze(options: Options = {}): Plugin<RezeApi> | Promise<Plugin[]> {
   const shared = createServerShared();
   const plugin = rezePlugin(options, shared);
-  const server =
-    options.ssg === undefined && options.ssr === undefined
-      ? []
-      : createServerPlugin({ ssg: options.ssg, ssr: options.ssr }, shared, options.fileRoutes === true ? {} : options.fileRoutes);
-  if (options.fileRoutes === undefined || options.fileRoutes === false) {
-    return server.length === 0 ? plugin : [plugin, ...server];
+  const isServer = options.ssg !== undefined || options.ssr !== undefined;
+  if (options.fileRoutes === false || (!isServer && options.fileRoutes === undefined)) {
+    if (isServer) throw new Error("[reze] ssg and ssr render the file routes; remove fileRoutes: false");
+    return plugin;
   }
-  const routesOptions = options.fileRoutes === true ? {} : options.fileRoutes;
+  const routesOptions = options.fileRoutes === undefined || options.fileRoutes === true ? {} : options.fileRoutes;
+  const server = isServer ? createServerPlugin({ ssg: options.ssg, ssr: options.ssr }, shared, routesOptions) : [];
   return routesPlugins(plugin, routesOptions, options.extensions).then((plugins) => [...server, ...plugins]);
 }
 

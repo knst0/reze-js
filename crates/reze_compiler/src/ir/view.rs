@@ -266,6 +266,16 @@ fn flow_exprs(flow: &FlowView, visit: &mut impl FnMut(ViewReference)) {
                 flow_render_exprs(&tag.child, visit);
             }
         }
+        FlowView::Loading { child, fallback } => {
+            flow_render_exprs(child, visit);
+            if let Some(fallback) = fallback {
+                flow_render_exprs(fallback, visit);
+            }
+        }
+        FlowView::Errored { child, fallback } => {
+            flow_render_exprs(child, visit);
+            flow_render_exprs(fallback, visit);
+        }
     }
 }
 
@@ -481,6 +491,8 @@ pub enum FlowView {
     Repeat { count: FlowSource, map: ExprRef, fallback: Option<FlowRender> },
     Rows { times: u32, map: ExprRef },
     Portal { child: FlowRender, mount: Option<FlowSource> },
+    Loading { child: FlowRender, fallback: Option<FlowRender> },
+    Errored { child: FlowRender, fallback: FlowRender },
     Head { tags: Vec<HeadTag> },
 }
 

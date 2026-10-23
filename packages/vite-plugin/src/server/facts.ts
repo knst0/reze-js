@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { ServerEntryId } from "./adapter";
 import type { BundleChunk, ClientRegistry } from "./assets";
-import type { TemplateHead, TemplateParts } from "./template";
+import type { HeadDefault, TemplateParts } from "./template";
 import { joinBase } from "./urls";
 import { materializeBundle } from "./workers";
 
@@ -20,7 +20,7 @@ export interface ServerFacts {
   rootId: string;
   timeoutMs: number;
   template: TemplateParts;
-  headDefaults: TemplateHead;
+  headDefaults: HeadDefault[];
   assets: Record<string, string>;
   modules: Record<string, ModuleFacts>;
 }
@@ -31,7 +31,7 @@ export interface FactsInput {
   rootId: string;
   timeoutMs: number;
   template: TemplateParts;
-  headDefaults: TemplateHead;
+  headDefaults: HeadDefault[];
   registry: ClientRegistry;
   moduleFiles: ReadonlyMap<string, string>;
 }

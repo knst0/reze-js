@@ -6,7 +6,7 @@ import { renderEffect } from "@rezejs/signals/render";
 import { SVGElements } from "../../../../crates/reze_compiler/src/html-data.json";
 import { errored } from "../errored";
 import { branch, choose } from "../flow";
-import { HeadManagedAttribute, headKeyKind, headLinkKey, headMetaNameKey, headMetaPropertyKey, headScriptKey } from "../head";
+import { HeadManagedAttribute } from "../head";
 import type { JSX } from "../jsx";
 import { list } from "../list";
 import { loading } from "../loading";
@@ -448,28 +448,18 @@ export function hAsyncComponent<V extends unknown[], R>(
   );
 }
 
-function hLoading(site: Site, children: () => HtmlRange, pending: (() => JSX.Element) | undefined): HtmlRange {
+export function hLoading(site: Site, child: () => JSX.Element, fallback?: () => JSX.Element): HtmlRange {
   const session = htmlSession();
   let content: HtmlRange | undefined;
   const range = managedRange(
     "pending",
     site,
-    () => loading(() => (content = children()) as unknown as JSX.Element, pending),
+    () => loading(() => (content = managedRange("content", site, child)) as unknown as JSX.Element, fallback),
     undefined,
     true,
   );
   session.pendingRanges.set(range, () => content === undefined || content.parent === undefined);
   return range;
-}
-
-export function hAsyncViews(
-  site: Site,
-  children: () => HtmlRange,
-  pending?: () => JSX.Element,
-  failure?: (error: unknown, reset: () => void) => JSX.Element,
-): HtmlRange {
-  if (failure === undefined) return pending === undefined ? children() : hLoading(site, children, pending);
-  return hErrored(site, () => hLoading(site, children, pending) as unknown as JSX.Element, failure);
 }
 
 export function hDynamic<P>(site: Site, source: () => ((props: P) => unknown) | null | undefined | false): (props: P) => unknown {
@@ -515,41 +505,13 @@ export function hHead(site: Site, items: [string | undefined, () => unknown][]):
   return managedRange("head", site, () => {
     const session = htmlSession();
     for (const [key, build] of items) {
-      if (key !== undefined) {
-        if (session.headKeys.has(key)) continue;
-        session.headKeys.add(key);
-      }
       const content = managedRange("head-tag", site, build);
       const id = key ?? `u${session.headTokens++}`;
       markHeadTag(content, key === undefined ? id : undefined);
-      session.headTags.push({
-        id,
-        script: key !== undefined && headKeyKind(key) === "script",
-        node: content,
-        instance: instances.get(content)!,
-        emitted: false,
-        html: "",
-      });
+      session.headTags.push({ id, node: content, instance: instances.get(content)! });
     }
     return undefined;
   });
-}
-
-export interface HeadListInput {
-  readonly scripts?: readonly { readonly src: string }[];
-  readonly links?: readonly { readonly rel: string; readonly href: string }[];
-  readonly metas?: readonly ({ readonly name: string } | { readonly property: string })[];
-}
-
-export function headListKeys(input: HeadListInput | undefined): string[] {
-  if (input === undefined) return [];
-  const keys: string[] = [];
-  for (const script of input.scripts ?? []) keys.push(headScriptKey(script.src));
-  for (const link of input.links ?? []) keys.push(headLinkKey(link.rel, link.href));
-  for (const meta of input.metas ?? []) {
-    keys.push("name" in meta ? headMetaNameKey(meta.name) : headMetaPropertyKey(meta.property));
-  }
-  return keys;
 }
 
 function markHeadTag(content: HtmlRange, token: string | undefined): void {

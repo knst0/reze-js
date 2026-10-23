@@ -31,7 +31,7 @@ can decide into the compiler, even when it costs compile time or compiler comple
 ## Working in this repo
 
 - `crates/reze_compiler` is the compiler core; `packages/compiler` its JS facade.
-  `packages/{dom,signals,router,query,vite-plugin,testing-library}` build on it.
+  `packages/{dom,signals,router,vite-plugin,testing-library}` build on it.
 - Loop: `pnpm test:fast`; browser matrix: `pnpm test`; Rust: `pnpm test:rust`.
 - Measure internal performance before and after with `pnpm bench` (CodSpeed history:
   `pnpm bench:codspeed`); don't accept a regression without a repeat A/B run. Fix compile-time
@@ -49,7 +49,5 @@ can decide into the compiler, even when it costs compile time or compiler comple
 ## Process
 
 - Review snapshot updates by hand, never accept blindly.
-- NEVER create, edit, or delete `.changeset/*.md`; NEVER run `pnpm changeset` (add) or
-  `pnpm changeset version`. Read-only `pnpm changeset status` is allowed.
 - One logical change per commit, with the tests and docs it needs. Imperative subject,
   optional scope prefix (`router: …`); body says why. Never commit build output or scratch.

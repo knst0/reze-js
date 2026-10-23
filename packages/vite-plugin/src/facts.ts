@@ -1,9 +1,7 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 
-import { analyze } from "@rezejs/compiler";
-
-import { profileHash } from "./hash";
+import { analyzeAsync, profileHash } from "@rezejs/compiler";
 
 export type Resolver = (specifier: string, importer: string) => Promise<string | undefined>;
 
@@ -40,7 +38,15 @@ interface Package {
 
 interface OwnFacts {
   hash: string;
-  facts: ModuleFacts | undefined;
+  facts: Promise<ModuleFacts | undefined>;
+}
+
+interface SourceSnapshot {
+  mtimeMs: number;
+  ctimeMs: number;
+  size: number;
+  text: string;
+  hash: string;
 }
 
 const StaticImport = /(?:^|[\s;])import\s+(?:type\s+)?(?:[^'"`;]*?\sfrom\s+)?["']([^"'\n]+)["']/gm;
@@ -59,14 +65,17 @@ function readText(file: string): string | undefined {
   }
 }
 
-function readJson(file: string): unknown {
-  const text = readText(file);
-  if (text === undefined) return undefined;
+function parseJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
     return undefined;
   }
+}
+
+function readJson(file: string): unknown {
+  const text = readText(file);
+  return text === undefined ? undefined : parseJson(text);
 }
 
 function isReexport(entry: ExportFacts): entry is ReexportFacts {
@@ -89,6 +98,7 @@ function declaresCondition(value: unknown, condition: string): boolean {
  */
 export class ModuleFactsStore {
   private readonly own = new Map<string, OwnFacts>();
+  private readonly sources = new Map<string, SourceSnapshot>();
   private readonly packageJsons = new Map<string, PackageJson | null>();
   private readonly manifests = new Map<string, { text: string; entries: unknown }>();
   private readonly consumed = new Map<string, Map<string, string>>();
@@ -112,7 +122,7 @@ export class ModuleFactsStore {
   }
 
   recordCompiled(file: string, source: string, facts: ModuleFacts | undefined): void {
-    this.own.set(file, { hash: profileHash(source), facts });
+    this.own.set(file, { hash: facts?.hash ?? profileHash(source), facts: Promise.resolve(facts) });
   }
 
   async factsFor(file: string, specifiers: readonly string[], resolve: Resolver): Promise<Record<string, ModuleFacts>> {
@@ -143,7 +153,7 @@ export class ModuleFactsStore {
     visiting: ReadonlySet<string>,
   ): Promise<ModuleFacts | undefined> {
     if (visiting.has(file)) return undefined;
-    const base = this.baseFacts(file);
+    const base = await this.baseFacts(file);
     const facts = base === undefined ? undefined : await this.flatten(base, file, resolve, used, new Set([...visiting, file]));
     used.set(file, JSON.stringify(facts?.exports ?? null));
     return facts;
@@ -169,14 +179,14 @@ export class ModuleFactsStore {
     return { ...base, exports };
   }
 
-  private baseFacts(file: string): ModuleFacts | undefined {
+  private async baseFacts(file: string): Promise<ModuleFacts | undefined> {
     const owner = this.packageOf(file);
     if (owner === undefined) return /[\\/]node_modules[\\/]/.test(file) ? undefined : this.ownFacts(file);
     if (owner.dir === this.appRoot) return this.ownFacts(file);
-    const source = readText(file);
+    const source = this.readSource(file);
     if (source === undefined) return undefined;
     const entry = this.manifestOf(owner)?.[relative(owner.dir, file).split(sep).join("/")];
-    if (isModuleFacts(entry) && entry.hash === profileHash(source)) return entry;
+    if (isModuleFacts(entry) && entry.hash === source.hash) return entry;
     const name = owner.json.name;
     if (
       name !== undefined &&
@@ -188,16 +198,33 @@ export class ModuleFactsStore {
     return undefined;
   }
 
-  private ownFacts(file: string): ModuleFacts | undefined {
+  private ownFacts(file: string): Promise<ModuleFacts | undefined> | undefined {
     if (!this.isSource(file)) return undefined;
-    const source = readText(file);
+    const source = this.readSource(file);
     if (source === undefined) return undefined;
-    const hash = profileHash(source);
     const cached = this.own.get(file);
-    if (cached !== undefined && cached.hash === hash) return cached.facts;
-    const facts = analyze(source, file).facts as ModuleFacts | undefined;
-    this.own.set(file, { hash, facts });
+    if (cached !== undefined && cached.hash === source.hash) return cached.facts;
+    const facts = analyzeAsync(source.text, file).then((result) => result.facts as ModuleFacts | undefined);
+    this.own.set(file, { hash: source.hash, facts });
     return facts;
+  }
+
+  private readSource(file: string): SourceSnapshot | undefined {
+    const stats = statSync(file, { throwIfNoEntry: false });
+    if (stats === undefined) return undefined;
+    const cached = this.sources.get(file);
+    if (cached !== undefined && cached.mtimeMs === stats.mtimeMs && cached.ctimeMs === stats.ctimeMs && cached.size === stats.size) {
+      return cached;
+    }
+    const text = readText(file);
+    if (text === undefined) return undefined;
+    const snapshot = { mtimeMs: stats.mtimeMs, ctimeMs: stats.ctimeMs, size: stats.size, text, hash: profileHash(text) };
+    this.sources.set(file, snapshot);
+    return snapshot;
+  }
+
+  packageName(file: string): string | undefined {
+    return this.packageOf(file)?.json.name;
   }
 
   private packageOf(file: string): Package | undefined {
@@ -221,12 +248,12 @@ export class ModuleFactsStore {
     const manifest = owner.json.reze?.manifest;
     if (typeof manifest !== "string") return undefined;
     const path = join(owner.dir, manifest);
-    const text = readText(path);
-    if (text === undefined) return undefined;
+    const source = this.readSource(path);
+    if (source === undefined) return undefined;
     const cached = this.manifests.get(path);
-    if (cached !== undefined && cached.text === text) return cached.entries as Record<string, unknown> | undefined;
-    const entries = readJson(path);
-    this.manifests.set(path, { text, entries });
+    if (cached !== undefined && cached.text === source.text) return cached.entries as Record<string, unknown> | undefined;
+    const entries = parseJson(source.text);
+    this.manifests.set(path, { text: source.text, entries });
     return entries as Record<string, unknown> | undefined;
   }
 

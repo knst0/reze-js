@@ -5,17 +5,18 @@ use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, VisitMut, walk_mut};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
-use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
 
 use super::EmitContext;
 use super::html::HTML_SOURCE;
 use crate::ast::Ast;
+use crate::frontend::pure::has_await;
 
 #[derive(Clone, Copy)]
 enum Wrapper {
     Function,
     Proxy,
+    CallableProxy,
 }
 
 struct Binding<'a> {
@@ -79,9 +80,10 @@ pub fn apply<'a>(ctx: &mut EmitContext<'a, '_>, program: &mut Program<'a>) {
             Wrapper::Function => {
                 format!("export function {name}(...args) {{ return {state}().{name}(...args); }}")
             }
-            Wrapper::Proxy => {
+            Wrapper::Proxy | Wrapper::CallableProxy => {
                 let proxy = *proxy_helper.get_or_insert_with(|| ctx.helper_name(HTML_SOURCE, "moduleProxy"));
-                format!("export const {name} = {proxy}(() => {state}().{name});")
+                let callable = if matches!(binding.wrapper, Wrapper::CallableProxy) { ", true" } else { "" };
+                format!("export const {name} = {proxy}(() => {state}().{name}{callable});")
             }
         };
         lowered.extend(parse(ctx, &text));
@@ -129,7 +131,8 @@ fn wrapper(ctx: &EmitContext<'_, '_>, init: &Expression<'_>) -> Option<Wrapper> 
     let Expression::CallExpression(call) = init else { return None };
     match ctx.facts.imported(ctx.scoping, &call.callee)? {
         "signal" | "computed" | "action" | "selector" => Some(Wrapper::Function),
-        "store" | "createContext" => Some(Wrapper::Proxy),
+        "store" => Some(Wrapper::Proxy),
+        "createContext" => Some(Wrapper::CallableProxy),
         _ => None,
     }
 }
@@ -157,21 +160,7 @@ fn collect_bindings<'a>(
 }
 
 fn awaits(expression: &Expression<'_>) -> bool {
-    let mut finder = AwaitFinder(false);
-    finder.visit_expression(expression);
-    finder.0
-}
-
-struct AwaitFinder(bool);
-
-impl<'a> Visit<'a> for AwaitFinder {
-    fn visit_await_expression(&mut self, _: &AwaitExpression<'a>) {
-        self.0 = true;
-    }
-
-    fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}
-
-    fn visit_arrow_function_expression(&mut self, _: &ArrowFunctionExpression<'a>) {}
+    has_await(|check| check.visit_expression(expression))
 }
 
 struct Rewrite<'a, 's> {

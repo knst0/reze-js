@@ -3,6 +3,8 @@ import Copy from "disarto-icons/icons/copy-regular";
 import { signal } from "reze-js";
 import type { JSX } from "reze-js";
 
+import { DocsPage } from "./DocsPage";
+
 type Props = { id?: string; children?: JSX.Element; [key: string]: unknown };
 type MDXComponent = (props: Props) => JSX.Element;
 
@@ -106,6 +108,7 @@ const components: Record<string, MDXComponent> = {
   img: (props) => <img class="max-w-full rounded" {...props} />,
   input: (props) => <input class="mr-2" {...props} />,
   span: (props) => <span {...props} />,
+  wrapper: DocsPage,
 };
 
 export function useMDXComponents(extra: Record<string, MDXComponent> = {}): Record<string, MDXComponent> {
