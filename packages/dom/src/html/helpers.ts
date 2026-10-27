@@ -319,6 +319,7 @@ function warnUnregistered(component: object, site: Site | undefined): void {
 
 function slotRange(session: HtmlSession, site: Site | undefined, read: () => unknown): HtmlRange {
   const { instance, range } = startRange(session, "slot", site, true);
+  instance.island = undefined;
   return session.instances.run(instance, () => fillRange(session, instance, range, site, untrack(read)));
 }
 

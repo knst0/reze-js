@@ -181,6 +181,8 @@ Set `ssr` to render pages when a request arrives. The build produces a server en
 
 The browser runs only the components that need it. The compiler marks a component as an island when it contains a native event handler, a `ref`, an `effect` call, or `useBeforeLeave`. The server sends such a component with its props, and the browser renders it in place of the server HTML. A component with none of these never loads in the browser. [Islands](/building-interfaces#islands) covers the `island` attribute, which lets you choose when a component loads.
 
+The `children` of an island stay the server HTML of the component that passed them, and the islands among them run on their own. They still read the context that the island provides around `children`, on the server and in the browser, so the parts of a widget such as `<Menu.Root><Menu.Trigger /></Menu.Root>` can each be an island. An island inside `children` loads its module at once and renders after the enclosing island has rendered `children`.
+
 ### Configure server rendering
 
 ```ts file=examples/server-rendering.config.ts

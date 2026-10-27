@@ -1,6 +1,6 @@
-import { provideContext } from "@rezejs/signals";
+import { getOwner, provideContext, runWithOwner } from "@rezejs/signals";
 import { IslandContext, type IslandState, type Seed } from "@rezejs/signals/internal/resource";
-import { renderRoot } from "@rezejs/signals/internal/scope";
+import { renderRoot, type ReactiveNode } from "@rezejs/signals/internal/scope";
 
 import { createComponent } from "../component";
 import { insert } from "../insert";
@@ -33,7 +33,14 @@ export interface RangeLocator {
   find(token: string): { start: Comment; end: Comment } | undefined;
 }
 
+interface Slot {
+  readonly start: Comment;
+  readonly end: Comment;
+  readonly opened: PromiseWithResolvers<ReactiveNode | undefined>;
+}
+
 const booted = new Map<Comment, () => void>();
+const slots = new Set<Slot>();
 
 function contains(start: Comment, end: Comment, node: Node): boolean {
   return (
@@ -67,23 +74,50 @@ function nodesBetween(start: Comment, end: Comment): Node[] {
   return nodes;
 }
 
+function enclosingSlot(node: Comment): Promise<ReactiveNode | undefined> | undefined {
+  let found: Slot | undefined;
+  for (const slot of slots) {
+    if (contains(slot.start, slot.end, node) && (found === undefined || contains(found.start, found.end, slot.start))) found = slot;
+  }
+  return found?.opened.promise;
+}
+
+function openSlots(descriptor: IslandDescriptor, locator: RangeLocator): Map<string, Slot> {
+  const opened = new Map<string, Slot>();
+  if (descriptor.l === undefined) return opened;
+  for (const [name, token] of Object.entries(descriptor.l)) {
+    const range = locator.find(token);
+    if (range === undefined) continue;
+    const slot: Slot = { start: range.start, end: range.end, opened: Promise.withResolvers() };
+    slots.add(slot);
+    opened.set(name, slot);
+  }
+  return opened;
+}
+
+function closeSlots(opened: Map<string, Slot>): void {
+  for (const slot of opened.values()) {
+    slots.delete(slot);
+    slot.opened.resolve(undefined);
+  }
+}
+
 function hostBetween(start: Comment, end: Comment): Element | undefined {
   return nodesBetween(start, end).find((node): node is Element => node.nodeType === 1);
 }
 
 async function run(
   descriptor: IslandDescriptor,
-  locator: RangeLocator,
+  opened: Map<string, Slot>,
+  parent: Promise<ReactiveNode | undefined> | undefined,
   start: Comment,
   end: Comment,
   options: BootOptions,
   releaseClicks: () => HeldClick | undefined,
 ): Promise<{ dispose: () => void; held: HeldClick | undefined; target: Element | undefined }> {
   const load = options.islands?.[descriptor.n];
-  const module = (await (load === undefined ? import(/* @vite-ignore */ descriptor.m) : load())) as Record<
-    string,
-    (props: Record<string, unknown>) => JSX.Element
-  >;
+  const [loaded, owner] = await Promise.all([load === undefined ? import(/* @vite-ignore */ descriptor.m) : load(), parent]);
+  const module = loaded as Record<string, (props: Record<string, unknown>) => JSX.Element>;
   const component = module[descriptor.e];
   if (typeof component !== "function") throw new Error(`module ${descriptor.m} does not export ${descriptor.e}`);
   const decoder = new FrameDecoder(descriptor.f);
@@ -91,33 +125,40 @@ async function run(
   const props = { ...(decoder.read(descriptor.p) as Record<string, unknown>) };
   const seeds = new Map<string, Seed>();
   descriptor.k?.forEach((key, index) => seeds.set(key, decoder.read(descriptor.v![index]!) as Seed));
-  if (descriptor.l !== undefined) {
-    for (const [name, token] of Object.entries(descriptor.l)) {
-      const slot = locator.find(token);
-      props[name] = slot === undefined ? [] : nodesBetween(slot.start, slot.end);
+  const slotNodes = new Set<Node>();
+  for (const name of Object.keys(descriptor.l ?? {})) {
+    const slot = opened.get(name);
+    if (slot === undefined) {
+      props[name] = [];
+      continue;
     }
+    const nodes = nodesBetween(slot.start, slot.end);
+    for (const node of nodes) slotNodes.add(node);
+    Object.defineProperty(props, name, {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        slot.opened.resolve(getOwner());
+        return nodes;
+      },
+    });
   }
   const state: IslandState = { prefix: descriptor.i, seeds, occurrences: new Map(), nextId: 0 };
-  const old = nodesBetween(start, end).filter((node) => !isSlotNode(props, node));
+  const old = nodesBetween(start, end).filter((node) => !slotNodes.has(node));
   const snapshot = snapshotForms(old, start.ownerDocument.activeElement);
   const held = releaseClicks();
   const heldAt = held === undefined ? undefined : clickPosition(old, held.target);
   for (const node of old) node.parentNode!.removeChild(node);
   const render = (): unknown => provideContext(IslandContext, state, () => createComponent(component, props));
-  const dispose = renderRoot((dispose) => {
-    insert(end.parentNode!, options.wrap === undefined ? render() : options.wrap(render), end);
-    return dispose;
-  });
+  const dispose = runWithOwner(owner, () =>
+    renderRoot((dispose) => {
+      insert(end.parentNode!, options.wrap === undefined ? render() : options.wrap(render), end);
+      return dispose;
+    }),
+  );
   const rendered = nodesBetween(start, end);
   restoreForms(rendered, snapshot);
   return { dispose, held, target: heldAt === undefined ? held?.target : elementAt(rendered, heldAt) };
-}
-
-function isSlotNode(props: Record<string, unknown>, node: Node): boolean {
-  for (const value of Object.values(props)) {
-    if (Array.isArray(value) && value.includes(node)) return true;
-  }
-  return false;
 }
 
 export function bootIsland(token: string, descriptor: IslandDescriptor, locator: RangeLocator, options: BootOptions = {}): void {
@@ -129,6 +170,8 @@ export function bootIsland(token: string, descriptor: IslandDescriptor, locator:
   const { start, end } = range;
   disposeIslandsBetween(start, end);
   booted.get(start)?.();
+  const parent = enclosingSlot(start);
+  const opened = openSlots(descriptor, locator);
   let cancelled = false;
   let disarm: (() => void) | undefined;
   let disposeRender: (() => void) | undefined;
@@ -136,6 +179,7 @@ export function bootIsland(token: string, descriptor: IslandDescriptor, locator:
   const dispose = (): void => {
     cancelled = true;
     booted.delete(start);
+    closeSlots(opened);
     disarm?.();
     releaseClicks?.();
     disposeRender?.();
@@ -143,7 +187,7 @@ export function bootIsland(token: string, descriptor: IslandDescriptor, locator:
   booted.set(start, dispose);
   const boot = (): void => {
     releaseClicks = holdClicks(nodesBetween(start, end));
-    run(descriptor, locator, start, end, options, releaseClicks).then(
+    run(descriptor, opened, parent, start, end, options, releaseClicks).then(
       (island) => {
         if (cancelled) {
           island.dispose();
@@ -153,6 +197,7 @@ export function bootIsland(token: string, descriptor: IslandDescriptor, locator:
         replayClick(island.target, island.held);
       },
       (error: unknown) => {
+        closeSlots(opened);
         const held = releaseClicks!();
         console.error(`[reze] island ${descriptor.e} from ${descriptor.m} failed`, error);
         if (!cancelled) replayClick(held?.target, held);

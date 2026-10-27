@@ -20,11 +20,13 @@ const origins: SsrOrigin[] = [];
 let moduleState: SsrBuild;
 let streaming: SsrBuild;
 let islands: SsrBuild;
+let context: SsrBuild;
 let routerA: SsrBuild;
 let routerB: SsrBuild;
 let routerActive: SsrBuild;
 let streamingOrigin: SsrOrigin;
 let islandsOrigin: SsrOrigin;
+let contextOrigin: SsrOrigin;
 let routerOrigin: SsrOrigin;
 let devOrigin: SsrOrigin;
 let devRouterOrigin: SsrOrigin;
@@ -34,10 +36,11 @@ function fixture(name: string): string {
 }
 
 beforeAll(async () => {
-  [moduleState, streaming, islands, routerA, routerB] = await Promise.all([
+  [moduleState, streaming, islands, context, routerA, routerB] = await Promise.all([
     buildSsrFixture({ fixtureDir: fixture("module-state"), outDir: join(OUT, "module-state") }),
     buildSsrFixture({ fixtureDir: fixture("streaming"), outDir: join(OUT, "streaming") }),
     buildSsrFixture({ fixtureDir: fixture("islands"), outDir: join(OUT, "islands") }),
+    buildSsrFixture({ fixtureDir: fixture("context"), outDir: join(OUT, "context") }),
     buildSsrFixture({
       fixtureDir: fixture("router"),
       outDir: join(OUT, "router-a"),
@@ -52,12 +55,13 @@ beforeAll(async () => {
   routerActive = routerA;
   streamingOrigin = await serveSsrApp(() => streaming);
   islandsOrigin = await serveSsrApp(() => islands);
+  contextOrigin = await serveSsrApp(() => context);
   routerOrigin = await serveSsrApp(() => routerActive);
   devOrigin = await startDevServer(fixture("streaming"));
   devRouterOrigin = await startDevServer(fixture("router"), [defineGlobals({ __RZ_TEST_VERSION__: "dev" })], {
     devContext: (request) => ({ tenant: request.headers.get("x-tenant") ?? undefined }),
   });
-  origins.push(streamingOrigin, islandsOrigin, routerOrigin, devOrigin, devRouterOrigin);
+  origins.push(streamingOrigin, islandsOrigin, contextOrigin, routerOrigin, devOrigin, devRouterOrigin);
   for (const engine of ENGINES) browsers.set(engine, await launchEngine(engine));
 }, 900_000);
 
@@ -204,6 +208,28 @@ for (const engine of ENGINES) {
       } finally {
         formReleased.resolve();
         await earlyContext.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: islands in the children of an island read the context its body provides`,
+    async () => {
+      const response = await context.handler(new Request("http://127.0.0.1/"));
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toMatch(/<button id="?trigger"? type="?button"?>closed<\/button>/);
+      expect(islandDescriptors(html).map((descriptor) => descriptor.e)).toEqual(["Root", "Trigger", "Content"]);
+
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${contextOrigin.origin}/`);
+      try {
+        await clickUntil(page, "#trigger", "document.querySelector('#trigger')?.textContent === 'open'");
+        await waitFor(page, "document.querySelector('#content')?.textContent === 'shown'");
+        expect(await page.evaluate("document.querySelectorAll('#trigger, #content').length")).toBe(2);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
       }
     },
     TIMEOUT,

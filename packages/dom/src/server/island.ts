@@ -112,12 +112,24 @@ export function createIslandRoot(
   }
   const { encoder, wire } = encodeProps(session, plain, `island:${ref.exportName}`);
   const slots: Record<string, HtmlRange> = {};
-  for (const key of slotKeys) {
-    const content = view[key];
-    const slot = makeSlot!(key === "children" ? () => props[key] : () => content);
+  const openSlot = (key: string, build: () => unknown): HtmlRange => {
+    const slot = makeSlot!(build);
     slot.marked = true;
     slots[key] = slot;
-    view[key] = slot;
+    return slot;
+  };
+  for (const key of slotKeys) {
+    if (key === "children") {
+      let slot: HtmlRange | undefined;
+      Object.defineProperty(view, key, {
+        configurable: true,
+        enumerable: true,
+        get: () => (slot ??= openSlot(key, () => props[key])),
+      });
+    } else {
+      const content = view[key];
+      view[key] = openSlot(key, () => content);
+    }
   }
   const root: IslandRoot = {
     prefix: session.islandPrefix(),
