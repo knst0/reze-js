@@ -31,7 +31,7 @@ export interface ClientRegistry {
   staticClosure(seedChunks: readonly string[]): { js: string[]; css: string[] };
 }
 export interface ClientAssetInputs {
-  files: Map<string, { id: string; postfix: string }>;
+  files: Map<string, { id: string; file: string; postfix: string }>;
   inlined: Map<string, string>;
   publicFiles: Map<string, string>;
 }

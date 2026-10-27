@@ -105,10 +105,10 @@ function assetsAt(depth) {
     Object.entries(facts.assets).map(([id, file]) => [id, file.startsWith("data:") ? file : joinBase(file, depth)]),
   );
 }
-const AssetMarker = "\0reze-asset:";
+const AssetMarker = "\uE000reze-asset:";
 function holdBackLength(text) {
   const start = text.lastIndexOf(AssetMarker);
-  if (start !== -1 && text.indexOf("\0", start + AssetMarker.length) === -1) return text.length - start;
+  if (start !== -1 && text.indexOf("\uE000", start + AssetMarker.length) === -1) return text.length - start;
   for (let length = Math.min(AssetMarker.length - 1, text.length); length > 0; length--) {
     if (AssetMarker.startsWith(text.slice(text.length - length))) return length;
   }
@@ -117,7 +117,7 @@ function holdBackLength(text) {
 function substituteAssets(body, assets) {
   if (Object.keys(assets).length === 0) return body;
   const replaceAll = (text) =>
-    text.replace(/\0reze-asset:([^\0]*)\0/g, (_, id) => {
+    text.replace(/\uE000reze-asset:([^\uE000]*)\uE000/g, (_, id) => {
       if (!Object.hasOwn(assets, id)) throw new Error("[reze] unknown asset " + id);
       return assets[id];
     });

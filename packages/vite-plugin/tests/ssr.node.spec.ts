@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -214,13 +214,16 @@ for (const engine of ENGINES) {
   );
 
   test(
-    `${engine}: islands in the children of an island read the context its body provides`,
+    `${engine}: islands in the children of an island read the context its body provides, and the document links its own assets`,
     async () => {
       const response = await context.handler(new Request("http://127.0.0.1/"));
       expect(response.status).toBe(200);
       const html = await response.text();
       expect(html).toMatch(/<button id="?trigger"? type="?button"?>closed<\/button>/);
       expect(islandDescriptors(html).map((descriptor) => descriptor.e)).toEqual(["Root", "Trigger", "Content"]);
+      const mark = /<link rel="?preload"? as="?image"? type="?image\/svg\+xml"? href="?([^"\s>]+)"?/.exec(html)?.[1];
+      expect(mark).toMatch(/^\/assets\/mark-[^/]+\.svg$/);
+      expect(existsSync(join(context.clientDir, mark!))).toBe(true);
 
       const { page, errors, close } = await openPage(browsers.get(engine)!, `${contextOrigin.origin}/`);
       try {

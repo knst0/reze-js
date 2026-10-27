@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, isAbsolute, resolve } from "node:path";
 
 import { createRunnableDevEnvironment, isRunnableDevEnvironment, version as viteVersion } from "vite";
 import type { EnvironmentOptions, Logger, Plugin, ViteDevServer } from "vite";
@@ -27,7 +27,7 @@ import {
   serverEntrySource,
   viewSource,
 } from "./adapter";
-import { createAssetPlugins } from "./asset-plugin";
+import { createAssetPlugins, documentAssetFiles } from "./asset-plugin";
 import type { ClientAssetInputs } from "./assets";
 import type { CapturedState } from "./build";
 import { renderBuiltDocument, runServerBuild } from "./build";
@@ -306,6 +306,12 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
           logger?.info(analysis.reasons);
           documentViewRef = this.emitFile({ type: "chunk", id: DocumentViewId, name: "reze-document" });
         }
+      }
+    },
+    async buildEnd(error) {
+      if (isServe || error !== undefined || this.environment.name !== "client") return;
+      for (const file of documentAssetFiles((await currentDocument()).html, assets)) {
+        this.emitFile({ type: "asset", name: basename(file), originalFileName: file, source: readFileSync(file) });
       }
     },
     transformIndexHtml: {
