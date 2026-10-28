@@ -38,13 +38,13 @@ fn html_and_island_register_components_and_hide_the_non_exported_ones() {
     let source = "import { signal } from \"reze-js\";\nexport function Counter() {\n  let n = signal(0);\n  return <button onClick={() => { n += 1; }}>{n}</button>;\n}";
     let out = code(source, "src/Counter.tsx", "src/Counter.tsx", CompileTarget::Html);
     assert!(
-        out.contains("hDefineComponent(Counter, \"src/Counter.tsx\", \"Counter\", 1)"),
+        out.contains("hDefineComponent(Counter, \"src/Counter.tsx\", \"Counter\", 1, 1)"),
         "{out}"
     );
 
     let source = "export function Static() {\n  return <p>hi</p>;\n}";
     let out = code(source, "src/Static.tsx", "src/Static.tsx", CompileTarget::Html);
-    assert!(out.contains("hDefineComponent(Static, \"src/Static.tsx\", \"Static\", 0)"), "{out}");
+    assert!(out.contains("hDefineComponent(Static, \"src/Static.tsx\", \"Static\", 0, 1)"), "{out}");
 
     let source =
         "function Local() {\n  return <i />;\n}\nexport function Shown() {\n  return <Local />;\n}";
@@ -137,4 +137,14 @@ fn html_writes_svg_inner_html_attributes_as_markup() {
     let out = code(source, "src/Icon.tsx", "src/Icon.tsx", CompileTarget::Html);
     assert!(out.contains("hSetInnerHTML("), "{out}");
     assert!(!out.contains("\"innerHTML\""), "{out}");
+}
+
+#[test]
+fn async_and_structural_components_are_not_adoptable() {
+    let source = "export async function Seeded() { const text = await load(); return <p>{text}</p>; }";
+    let out = code(source, "src/Seeded.tsx", "src/Seeded.tsx", CompileTarget::Html);
+    assert!(out.contains("hDefineComponent(Seeded, \"src/Seeded.tsx\", \"Seeded\", 0, 0)"), "{out}");
+    let source = "import { Show } from \"reze-js\"; export function A(props: { ok: boolean }) { return <div><Show when={props.ok}><b>yes</b></Show></div>; }";
+    let out = code(source, "src/A.tsx", "src/A.tsx", CompileTarget::Html);
+    assert!(out.contains("hDefineComponent(A, \"src/A.tsx\", \"A\", 0, 0)"), "{out}");
 }

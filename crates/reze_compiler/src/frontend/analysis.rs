@@ -1170,6 +1170,7 @@ impl AsyncFacts {
         self.plans.get(&function_start)
     }
 
+
     pub fn is_awaited_value(&self, reference: ReferenceId) -> bool {
         self.reads.contains_key(&reference)
     }

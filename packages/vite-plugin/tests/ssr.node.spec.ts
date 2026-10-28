@@ -185,7 +185,8 @@ for (const engine of ENGINES) {
         },
       });
       try {
-        await waitFor(typed.page, "window.__before != null && document.querySelector('#name') !== window.__before");
+        await waitFor(typed.page, "window.__before != null && document.querySelector('#name')?.value === 'typed text'");
+        expect(await typed.page.evaluate("document.querySelector('#name') === window.__before")).toBe(true);
         expect(await typed.page.inputValue("#name")).toBe("typed text");
         expect(await typed.page.evaluate("document.activeElement?.id")).toBe("name");
         expect(typed.errors).toEqual([]);
@@ -253,6 +254,31 @@ for (const engine of ENGINES) {
         const staticModule = streaming.registry.modules["src/Static.tsx"];
         expect(staticModule).toBeDefined();
         expect(requests.some((url) => url.endsWith(staticModule!.url))).toBe(false);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: an island reuses the server DOM and keeps its node identity`,
+    async () => {
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${islandsOrigin.origin}/`, {
+        beforeHydration: async (open) => {
+          await open.waitForFunction("document.querySelector('form') !== null");
+          await open.evaluate(() => {
+            const form = document.querySelector("form")!;
+            (form as unknown as Record<string, unknown>).__marker = "kept";
+            (window as unknown as Record<string, unknown>).__form = form;
+          });
+        },
+      });
+      try {
+        await clickUntil(page, "#probe", "document.querySelector('#probe')?.textContent === '1'");
+        expect(await page.evaluate("document.querySelector('form') === window.__form")).toBe(true);
+        expect(await page.evaluate("document.querySelector('form').__marker")).toBe("kept");
         expect(errors).toEqual([]);
       } finally {
         await close();

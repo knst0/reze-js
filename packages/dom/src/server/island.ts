@@ -7,6 +7,7 @@ export interface ComponentRef {
   readonly moduleId: string;
   readonly exportName: string;
   readonly clientWork: boolean;
+  readonly adoptable: boolean;
 }
 
 export interface ComponentEntry {
@@ -30,6 +31,7 @@ export interface IslandRoot {
   readonly slots: Record<string, HtmlRange>;
   readonly trigger: string | undefined;
   readonly options: unknown;
+  readonly adoptable: boolean;
   readonly seeds: Map<string, Seed>;
   readonly occurrences: Map<string, number>;
   nextId: number;
@@ -45,8 +47,14 @@ export interface ClientModules {
 const refs = new WeakMap<object, ComponentRef>();
 export const builtinComponents = new WeakSet<object>();
 
-export function hDefineComponent(component: (props: never) => unknown, moduleId: string, exportName: string, clientWork: 0 | 1): void {
-  refs.set(component, { moduleId, exportName, clientWork: clientWork === 1 });
+export function hDefineComponent(
+  component: (props: never) => unknown,
+  moduleId: string,
+  exportName: string,
+  clientWork: 0 | 1,
+  adoptable: 0 | 1,
+): void {
+  refs.set(component, { moduleId, exportName, clientWork: clientWork === 1, adoptable: adoptable === 1 });
 }
 
 export function componentRefOf(component: object): ComponentRef | undefined {
@@ -141,6 +149,7 @@ export function createIslandRoot(
     slots,
     trigger: options?.trigger,
     options: options?.options,
+    adoptable: ref.adoptable && slotKeys.length === 0,
     seeds: new Map(),
     occurrences: new Map(),
     nextId: 0,
@@ -196,6 +205,7 @@ export function escalateIsland(session: HtmlSession, start: Instance | undefined
       slots: {},
       trigger: undefined,
       options: undefined,
+      adoptable: ref.adoptable,
       seeds: new Map(),
       occurrences: new Map(),
       nextId: 0,
@@ -244,6 +254,7 @@ export function islandDescriptor(session: HtmlSession, root: IslandRoot, modules
     ...(Object.keys(slots).length === 0 ? {} : { l: slots }),
     ...(keys.length === 0 ? {} : { k: keys, v: values }),
     ...(root.trigger === undefined ? {} : { t: root.trigger, o: root.options ?? null }),
+    ...(root.adoptable ? { a: 1 } : {}),
   };
   return `<script type="application/json" data-rz-island="${session.tokenOf(root.range)}">${encodePayloadJson(descriptor)}</script>\n`;
 }

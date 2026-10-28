@@ -6,6 +6,7 @@ import { createComponent } from "../component";
 import { insert } from "../insert";
 import { armIsland, type IslandOptions, type IslandTrigger } from "../island";
 import type { JSX } from "../jsx";
+import { AdoptionError, beginAdoption, endAdoption } from "../template";
 import { FrameDecoder, type WireValue } from "../wire/codec";
 import { clickPosition, elementAt, holdClicks, replayClick, type HeldClick } from "./clicks";
 import { restoreForms, snapshotForms } from "./forms";
@@ -22,6 +23,7 @@ export interface IslandDescriptor {
   readonly v?: readonly WireValue[];
   readonly t?: IslandTrigger;
   readonly o?: IslandOptions | null;
+  readonly a?: number;
 }
 
 export interface BootOptions {
@@ -66,6 +68,18 @@ export function disposeIslandsIn(root: Node): void {
       dispose();
     }
   }
+}
+
+function stripStreamMarkers(start: Comment, end: Comment): void {
+  const document = start.ownerDocument!;
+  const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_COMMENT);
+  const doomed: Comment[] = [];
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    const comment = node as Comment;
+    if (comment === start || comment === end || !contains(start, end, comment)) continue;
+    if (comment.data.startsWith("rz:") || comment.data.startsWith("/rz:")) doomed.push(comment);
+  }
+  for (const comment of doomed) comment.parentNode?.removeChild(comment);
 }
 
 function nodesBetween(start: Comment, end: Comment): Node[] {
@@ -144,12 +158,37 @@ async function run(
     });
   }
   const state: IslandState = { prefix: descriptor.i, seeds, occurrences: new Map(), nextId: 0 };
+  const render = (): unknown => provideContext(IslandContext, state, () => createComponent(component, props));
+  const held = releaseClicks();
+  if (descriptor.a === 1 && slotNodes.size === 0) {
+    stripStreamMarkers(start, end);
+    const roots = nodesBetween(start, end);
+    if (roots.length > 0) {
+      const adoption = beginAdoption(roots);
+      let dispose: (() => void) | undefined;
+      try {
+        dispose = runWithOwner(owner, () =>
+          renderRoot((stop) => {
+            dispose = stop;
+            return options.wrap === undefined ? render() : options.wrap(render);
+          }),
+        );
+        if (adoption.index !== roots.length) {
+          throw new AdoptionError(`the server sent ${roots.length} roots and the component claimed ${adoption.index}`);
+        }
+        endAdoption();
+        return { dispose: dispose!, held, target: held?.target };
+      } catch (error) {
+        endAdoption();
+        dispose?.();
+        if (!(error instanceof AdoptionError)) throw error;
+      }
+    }
+  }
   const old = nodesBetween(start, end).filter((node) => !slotNodes.has(node));
   const snapshot = snapshotForms(old, start.ownerDocument.activeElement);
-  const held = releaseClicks();
   const heldAt = held === undefined ? undefined : clickPosition(old, held.target);
   for (const node of old) node.parentNode!.removeChild(node);
-  const render = (): unknown => provideContext(IslandContext, state, () => createComponent(component, props));
   const dispose = runWithOwner(owner, () =>
     renderRoot((dispose) => {
       insert(end.parentNode!, options.wrap === undefined ? render() : options.wrap(render), end);
