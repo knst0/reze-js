@@ -7,6 +7,11 @@ export interface StreamHandle {
   dispose(): void;
 }
 
+export interface AttachOptions extends BootOptions {
+  /** Tokens a swap already resolved: parts of a kept layout or a persisted element it replaced with the live node. */
+  readonly skipToken?: (token: string) => boolean;
+}
+
 const Units = `template[data-rz-patch],template[${HeadManagedAttribute}],script[data-rz-island],script[data-rz-end]`;
 
 function createLocator(target: Document): RangeLocator {
@@ -35,7 +40,7 @@ function createLocator(target: Document): RangeLocator {
   };
 }
 
-export function attachStream(source: Document, target: Document, options: BootOptions = {}): StreamHandle {
+export function attachStream(source: Document, target: Document, options: AttachOptions = {}): StreamHandle {
   const locator = createLocator(target);
   const processed = new WeakSet<Element>();
   const done = Promise.withResolvers<void>();
@@ -47,6 +52,10 @@ export function attachStream(source: Document, target: Document, options: BootOp
       unit.remove();
     } else if (unit instanceof HTMLTemplateElement) {
       const token = unit.getAttribute("data-rz-patch")!;
+      if (options.skipToken?.(token) === true) {
+        unit.remove();
+        return;
+      }
       const range = locator.find(token);
       if (range === undefined) {
         console.error(`[reze] stream patch for unknown range ${token}`);
@@ -60,7 +69,7 @@ export function attachStream(source: Document, target: Document, options: BootOp
       unit.remove();
     } else if (unit.hasAttribute("data-rz-island")) {
       const token = unit.getAttribute("data-rz-island")!;
-      bootIsland(token, JSON.parse(unit.textContent!) as IslandDescriptor, locator, options);
+      if (options.skipToken?.(token) !== true) bootIsland(token, JSON.parse(unit.textContent!) as IslandDescriptor, locator, options);
     } else {
       finished = true;
       observer.disconnect();

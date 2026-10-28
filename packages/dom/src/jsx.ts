@@ -893,6 +893,8 @@ export namespace JSX {
     id?: FunctionMaybe<string | RemoveAttribute>;
     nonce?: FunctionMaybe<string | RemoveAttribute>;
     part?: FunctionMaybe<string | RemoveAttribute>;
+    /** Keeps the element across a server navigation even when its route level is replaced; the next page's element with the same key receives it. */
+    persist?: FunctionMaybe<string | RemoveAttribute>;
     slot?: FunctionMaybe<string | RemoveAttribute>;
     style?: FunctionMaybe<CSSProperties | string | RemoveAttribute | null>;
     tabindex?: FunctionMaybe<number | string | RemoveAttribute>;

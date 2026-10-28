@@ -40,6 +40,7 @@ export class HtmlSession implements ExecutionObserver, DirtySink {
   headTokens = 0;
   readonly islands = new Set<IslandRoot>();
   readonly pendingRanges = new Map<HtmlRange, () => boolean>();
+  readonly layouts: HtmlRange[] = [];
   readonly dirtyRanges = new Set<HtmlRange>();
   readonly streaming: boolean;
   mount: HtmlRange | undefined;

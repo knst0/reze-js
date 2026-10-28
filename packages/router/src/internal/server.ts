@@ -1,7 +1,8 @@
 import type { JSX } from "@rezejs/dom";
-import { hStaticComponent, setRecordAttribute, type HtmlElement } from "@rezejs/dom/internal/html";
+import { hLayout, hStaticComponent, setRecordAttribute, type HtmlElement } from "@rezejs/dom/internal/html";
 
 import { routerBase, type HistoryEntry, type RouterHistory } from "../history";
+import { layoutKey } from "../layout";
 import { compileRoutes, joinRoutePaths, matchPath, routeEntryId } from "../match";
 import { commit, initRouterState, pathnameOf, settleEntry, type RouterState } from "../navigation";
 import { createSettledRouter } from "../router";
@@ -364,7 +365,22 @@ export function prepareServerRoute<C = unknown>(
     commit(state, entry, location, outcome.matches, "none");
     return {
       status: "render",
-      component: hStaticComponent(createSettledRouter(state)),
+      component: hStaticComponent(
+        createSettledRouter(state, (depth, match, view) =>
+          hLayout(
+            undefined,
+            layoutKey(
+              depth,
+              match.route.id,
+              match.params,
+              match.hasData,
+              depth === state.matches().length - 1,
+              state.location().search,
+            ),
+            () => view,
+          ) as unknown as JSX.Element,
+        ),
+      ),
       matches: outcome.matches.map((match) => ({
         id: match.route.id,
         params: match.params,

@@ -13,6 +13,7 @@ import {
   persistPositions,
   RouterStateContext,
   start,
+  type ActiveMatch,
   type RouterState,
 } from "./navigation";
 import type { OutputMatch, PathsTree, RouteDefinition, RouterContext } from "./types";
@@ -43,6 +44,12 @@ export interface RouterInstance<C = RouterContext> {
 function renderLevel(state: RouterState, depth: number): JSX.Element {
   const match = state.matches()[depth]!;
   if (match.error !== undefined) throw match.error;
+  const wrap = state.wrapLevel;
+  const view = renderView(state, depth, match);
+  return wrap === undefined ? view : wrap(depth, match, view);
+}
+
+function renderView(state: RouterState, depth: number, match: ActiveMatch): JSX.Element {
   const Comp = match.route.component;
   if (Comp === undefined) return outlet(state, depth + 1);
   let children: JSX.Element;
@@ -83,9 +90,11 @@ function outlet(state: RouterState, depth: number): () => JSX.Element {
  */
 export function createSettledRouter(
   state: RouterState,
+  wrapLevel?: (depth: number, match: ActiveMatch, view: JSX.Element) => JSX.Element,
 ): (props: { root?: (props: { children: JSX.Element }) => JSX.Element }) => JSX.Element {
   return function SettledRouter(props: { root?: (props: { children: JSX.Element }) => JSX.Element }): JSX.Element {
     const root = props.root;
+    state.wrapLevel = wrapLevel;
     return provideContext(RouterStateContext, state, () => {
       state.owner = getOwner();
       if (root === undefined) return outlet(state, 0);

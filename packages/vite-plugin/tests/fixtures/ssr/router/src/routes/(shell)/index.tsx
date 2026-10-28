@@ -11,6 +11,9 @@ export default function Home() {
       <button id="counter" type="button" onClick={() => (n += 1)}>
         {n}
       </button>
+      <div id="widget" persist="widget">
+        home widget
+      </div>
     </article>
   );
 }

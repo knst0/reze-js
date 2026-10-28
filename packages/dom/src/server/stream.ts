@@ -232,6 +232,14 @@ export async function renderStream(options: RenderStreamOptions): Promise<Readab
       if (mode === "stream" ? session.isShellReady() : !session.hasPendingWork()) break;
       await session.waitForWork();
     }
+    for (const [pending, isPending] of session.pendingRanges) {
+      if (!isPending()) continue;
+      let owner: HtmlRange | undefined;
+      for (const layout of session.layouts) {
+        if (isWithin(pending, layout) && (owner === undefined || isWithin(layout, owner))) owner = layout;
+      }
+      if (owner !== undefined) owner.wire = `${owner.wire}:p`;
+    }
     const content = writer.shell();
     const portals = writer.portals();
     const resources = writer.resources();

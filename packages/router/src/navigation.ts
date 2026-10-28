@@ -1,3 +1,4 @@
+import type { JSX } from "@rezejs/dom";
 import { flush, untrack, type ContextKey, type Getter, type Owner } from "@rezejs/signals";
 import { signal } from "reze-js";
 
@@ -45,6 +46,8 @@ export interface RouterState {
   redirectCaptured: { to: string; replace: boolean } | undefined;
   /** Hover-warming depth: while nonzero, preloads run but navigations are ignored and redirects never run. */
   warming: number;
+  /** Server rendering only: wraps one route level in a keyed marker range the swap compares across documents. */
+  wrapLevel: ((depth: number, match: ActiveMatch, view: JSX.Element) => JSX.Element) | undefined;
   owner: Owner | undefined;
   /** The committed entry, whose view and scroll position are on screen. */
   entry: HistoryEntry | undefined;
@@ -99,6 +102,7 @@ export function initRouterState(init: RouterStateInit): RouterState {
     swap: init.swap,
     redirectCaptured: undefined,
     warming: 0,
+    wrapLevel: undefined,
     owner: undefined,
     entry: undefined,
     target: undefined,

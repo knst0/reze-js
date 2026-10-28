@@ -258,6 +258,42 @@ for (const engine of ENGINES) {
   );
 
   test(
+    `${engine}: navigation keeps the layout, persists marked regions, and uses a view transition`,
+    async () => {
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);
+      try {
+        await page.evaluate(() => {
+          const scope = window as unknown as Record<string, unknown>;
+          scope.__layout = document.querySelector("nav");
+          (document.querySelector("#layout-details") as HTMLDetailsElement).open = false;
+          (document.querySelector("#widget") as unknown as Record<string, unknown>).__marker = "kept";
+          scope.__transitions = 0;
+          const start = document.startViewTransition?.bind(document);
+          if (start !== undefined) {
+            document.startViewTransition = ((callback: () => Promise<void> | void) => {
+              scope.__transitions = (scope.__transitions as number) + 1;
+              return start(callback);
+            }) as typeof document.startViewTransition;
+          }
+        });
+        await page.click("#nav-about");
+        await waitFor(page, "location.pathname === '/about' && document.querySelector('#about') !== null");
+        expect(await page.evaluate("document.querySelector('nav') === window.__layout")).toBe(true);
+        expect(await page.evaluate("document.querySelector('#layout-details').open")).toBe(false);
+        expect(await page.evaluate("document.querySelector('[persist=widget]').__marker")).toBe("kept");
+        expect(await page.evaluate("document.querySelector('[persist=widget]').textContent")).toContain("home widget");
+        expect(await page.evaluate("window.__transitions")).toBe(
+          await page.evaluate("typeof document.startViewTransition === 'function' ? 1 : 0"),
+        );
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
     `${engine}: swap navigation keeps the page, and a build mismatch turns the next swap into a full load`,
     async () => {
       const swap = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);

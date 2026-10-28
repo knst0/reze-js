@@ -131,6 +131,22 @@ function managedRange(role: string, site: Site, build: () => unknown, place?: (r
   return session.instances.run(instance, () => fillRange(session, instance, range, site, untrack(build), place));
 }
 
+/**
+ * A route level: a marked range carrying a fixed key instead of a session token, so a swap can compare the
+ * levels of two documents and keep the unchanged ones. Nested levels are the layout's children.
+ */
+export function hLayout(site: Site | undefined, key: string, build: () => unknown): HtmlRange {
+  const session = htmlSession();
+  const instance = session.instances.reserve("l", site);
+  session.instances.own(instance);
+  const range = createRange(instance.id, { site });
+  range.marked = true;
+  range.wire = key;
+  session.layouts.push(range);
+  instances.set(range, instance);
+  return session.instances.run(instance, () => fillRange(session, instance, range, site, untrack(build)));
+}
+
 export function hMount(build: () => unknown): HtmlRange {
   const session = htmlSession();
   return session.instances.run(session.instances.root, () =>

@@ -21,6 +21,10 @@ export default function Shell(props: { children: JSX.Element }) {
           news
         </a>
       </nav>
+      <details id="layout-details" open>
+        <summary>layout state</summary>
+        <p>kept across pages</p>
+      </details>
       <main>{props.children}</main>
       <footer id="version">{__RZ_TEST_VERSION__}</footer>
     </>

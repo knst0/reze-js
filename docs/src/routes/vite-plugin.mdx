@@ -322,6 +322,20 @@ reze({ ssr: { devContext: requestContext } });
 
 Static pages have no request, so `ssg` renders them with no base `context`.
 
+### Keep layout state across navigation
+
+A navigation fetches the next page and replaces only the route levels whose server output changes. Each level is rendered inside a marker carrying the route id, its params, its data and its pending async work. A layout whose marker is unchanged keeps its DOM: sidebar scroll, an open menu, a playing video, focus and the state of islands inside it stay as they are. A layout whose `preload` returns data, or whose content is still waiting for an async component, changes and is replaced.
+
+An element marked with `persist` survives even when its level is replaced. The current page's element with that key moves into the place where the next page renders an element with the same key:
+
+```tsx
+<video persist="promo" src="/promo.mp4" />
+```
+
+The persisted element keeps its scroll, playback, form values and island state, and its old content stays. Use it for media players, drafts and other regions whose state matters more than their server output.
+
+On a browser with the [View Transitions API](https://developer.mozilla.org/docs/Web/API/View_Transitions_API), the swap runs inside `document.startViewTransition`, so changed levels cross-fade instead of flashing. Browsers without the API, and users who prefer reduced motion, get the plain swap.
+
 ### Streaming
 
 A `<Loading>` boundary renders its fallback first, and the server streams the finished view when the data below it arrives. [Async components](/building-interfaces#async-components) describes `<Loading>` and `<Errored>`. An async component without a `<Loading>` above it makes the document wait, so the first byte arrives after the data does.

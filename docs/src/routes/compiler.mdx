@@ -317,6 +317,7 @@ Errors:
 | `ISLAND_ON_ELEMENT`           | `island` is set on a native element.                                                                       |
 | `ISLAND_ORPHAN`               | An island companion attribute appears on a component without `island`.                                     |
 | `MISSING_MODULE_ID`           | An `island` or `html` build has no `moduleId`.                                                             |
+| `MODULE_STATE_SHARED`         | A component or route callback writes a module-level `let`, which every request shares.                     |
 | `ASYNC_COMPONENT_SHAPE`       | An async component has a form the compiler cannot rewrite.                                                 |
 | `ASYNC_VIEW_PROPERTY`         | A `pending` or `failure` view is assigned to a component instead of a `<Loading>`/`<Errored>` boundary.    |
 | `INTERNAL_REACTIVITY_IMPORT`  | A reactive primitive is imported from `reze-js/internal/reactivity`.                                       |
