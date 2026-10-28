@@ -65,9 +65,7 @@ export function serverAction<I, R>(
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify(schema.parse(input)),
       });
-      const payload = (await response.json().catch(() => undefined)) as
-        | { ok?: boolean; result?: Awaited<R>; error?: string }
-        | undefined;
+      const payload = (await response.json().catch(() => undefined)) as { ok?: boolean; result?: Awaited<R>; error?: string } | undefined;
       if (!response.ok || payload?.ok !== true) {
         throw new Error(payload?.error ?? `[reze] server action ${id} failed with ${response.status}`);
       }

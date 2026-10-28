@@ -357,7 +357,7 @@ for (const engine of ENGINES) {
       const html = await shell.text();
       expect(html).toContain("data-rz-resume");
       expect(html).toContain(">shell<");
-      expect(html).toContain('id=slow');
+      expect(html).toContain("id=slow");
       expect(html).not.toContain("settled-");
       expect(html).not.toContain("data-rz-end");
 
@@ -371,14 +371,10 @@ for (const engine of ENGINES) {
       expect(patches).not.toContain("<!--rz-shell-->");
       const first = /settled-(\d+)/.exec(patches)?.[1];
       expect(first).toBeDefined();
-      const again = await (
-        await fetch(`${pprOrigin.origin}/`, { headers: { accept: "text/html", "x-reze-resume": "1" } })
-      ).text();
+      const again = await (await fetch(`${pprOrigin.origin}/`, { headers: { accept: "text/html", "x-reze-resume": "1" } })).text();
       expect(/settled-(\d+)/.exec(again)?.[1]).toBe(first);
       expect(ppr.revalidateTag("slow")).toBeGreaterThan(0);
-      const after = await (
-        await fetch(`${pprOrigin.origin}/`, { headers: { accept: "text/html", "x-reze-resume": "1" } })
-      ).text();
+      const after = await (await fetch(`${pprOrigin.origin}/`, { headers: { accept: "text/html", "x-reze-resume": "1" } })).text();
       expect(/settled-(\d+)/.exec(after)?.[1]).not.toBe(first);
 
       const { page, errors, close } = await openPage(browsers.get(engine)!, `${pprOrigin.origin}/index.html`);
@@ -395,9 +391,7 @@ for (const engine of ENGINES) {
   test(
     `${engine}: server actions validate input, answer typed RPC and accept a plain form post`,
     async () => {
-      const page = await (
-        await fetch(`${actionsOrigin.origin}/`, { headers: { accept: "text/html" } })
-      ).text();
+      const page = await (await fetch(`${actionsOrigin.origin}/`, { headers: { accept: "text/html" } })).text();
       const id = /<p id=action-id>([^<]+)<\/p>/.exec(page)?.[1];
       expect(id).toBeDefined();
       const endpoint = `/_reze/action/${encodeURIComponent(id!)}`;
@@ -426,9 +420,7 @@ for (const engine of ENGINES) {
       expect(formPost.headers.get("location")).toBe("/");
       expect(await (await fetch(`${actionsOrigin.origin}/`)).text()).toContain("saved:form");
 
-      const dev = await (
-        await fetch(`${devActionsOrigin.origin}/`, { headers: { accept: "text/html" } })
-      ).text();
+      const dev = await (await fetch(`${devActionsOrigin.origin}/`, { headers: { accept: "text/html" } })).text();
       const devId = /<p id=action-id>([^<]+)<\/p>/.exec(dev)?.[1];
       expect(devId).toBeDefined();
       const devRpc = await fetch(`${devActionsOrigin.origin}/_reze/action/${encodeURIComponent(devId!)}`, {

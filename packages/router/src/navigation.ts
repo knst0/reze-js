@@ -4,7 +4,17 @@ import { signal } from "reze-js";
 
 import type { HistoryEntry, RouterHistory } from "./history";
 import { decode, matchBranches, pathKey, usesBeforeLoad, type Branch, type BranchMatch, type CompiledRoute } from "./match";
-import type { Awaitable, BeforeLeaveEvent, Location, NavigateOptions, Params, PreloadIntent, RouteRedirect, RouteRender, RouterContext } from "./types";
+import type {
+  Awaitable,
+  BeforeLeaveEvent,
+  Location,
+  NavigateOptions,
+  Params,
+  PreloadIntent,
+  RouteRedirect,
+  RouteRender,
+  RouterContext,
+} from "./types";
 
 export interface ActiveMatch {
   readonly route: CompiledRoute;

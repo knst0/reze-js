@@ -408,11 +408,11 @@ A route module can pick how its page is produced:
 export const route = { render: "client" };
 ```
 
-| `render`   | With `ssg`                                      | With `ssr`                                                                                                             |
-| ---------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `"static"` | A file at build time. This is the default.      | Rendered per request, because no file exists; add `ssg` to prerender it.                                                |
-| `"server"` | Rejected: the build has no server to render it. | Rendered per request.                                                                                                  |
-| `"client"` | A shell file with the layout chain.             | A shell with the layout chain, then the route subtree renders in the browser.                                          |
+| `render`   | With `ssg`                                      | With `ssr`                                                                    |
+| ---------- | ----------------------------------------------- | ----------------------------------------------------------------------------- |
+| `"static"` | A file at build time. This is the default.      | Rendered per request, because no file exists; add `ssg` to prerender it.      |
+| `"server"` | Rejected: the build has no server to render it. | Rendered per request.                                                         |
+| `"client"` | A shell file with the layout chain.             | A shell with the layout chain, then the route subtree renders in the browser. |
 
 `"client"` is the SPA corner of a mixed app. The server renders every layout above the route, with their data and head tags, and stops at the route. The browser mounts a client router at that boundary: the route and everything below it render in the browser, and links inside it stay client-side. A link that leaves the subtree loads the full document, so the server takes over again. Use it for screens that need browser-only APIs or that must not wait for a server render, while the marketing pages around them stay static.
 
@@ -492,10 +492,10 @@ The parts before the first boundary must not depend on the request. Layout data 
 ```tsx
 import { cache } from "reze-js";
 
-const loadProfile = cache(
-  async (id: string) => fetch(`https://api.example.test/users/${id}`).then((response) => response.json()),
-  { ttl: 30_000, tags: (id) => [`user:${id}`] },
-);
+const loadProfile = cache(async (id: string) => fetch(`https://api.example.test/users/${id}`).then((response) => response.json()), {
+  ttl: 30_000,
+  tags: (id) => [`user:${id}`],
+});
 ```
 
 A second render with the same arguments reuses the promise, including a render that runs concurrently. `ttl` is milliseconds; `Infinity` keeps the entry until it is revalidated. `tags` is a list or a function of the arguments. Arguments that JSON cannot represent call the loader without caching. A rejected load is dropped, so the next call retries. In the browser the loader runs directly, because the client router owns its own requests.
@@ -507,13 +507,16 @@ import { serve } from "reze-js/server";
 
 import { handler, revalidateTag } from "../dist/server/entry.js";
 
-await serve(async (request) => {
-  if (new URL(request.url).pathname === "/internal/revalidate") {
-    revalidateTag("user:42");
-    return new Response(null, { status: 204 });
-  }
-  return handler(request);
-}, { port: 3000 });
+await serve(
+  async (request) => {
+    if (new URL(request.url).pathname === "/internal/revalidate") {
+      revalidateTag("user:42");
+      return new Response(null, { status: 204 });
+    }
+    return handler(request);
+  },
+  { port: 3000 },
+);
 ```
 
 The cache lives in the server process and is shared by every request, like any other server cache. Include the tenant or user id in the arguments of anything that differs per visitor.

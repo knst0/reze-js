@@ -1,7 +1,7 @@
 import { expect, test } from "vite-plus/test";
 
-import { handleServerAction, serverAction } from "../src/server-action";
 import * as s from "../../reze-js/src/schema";
+import { handleServerAction, serverAction } from "../src/server-action";
 
 const schema = s.object({ title: s.string(), count: s.optional(s.number()) });
 

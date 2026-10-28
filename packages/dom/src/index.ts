@@ -1,12 +1,6 @@
 export { setAttribute, setAttributeNS, setBoolAttribute } from "./attributes";
 export { cache, revalidateTag, type CacheOptions } from "./cache";
-export {
-  handleServerAction,
-  serverAction,
-  type InputSchema,
-  type ServerAction,
-  type ServerActionContext,
-} from "./server-action";
+export { handleServerAction, serverAction, type InputSchema, type ServerAction, type ServerActionContext } from "./server-action";
 export { className, type ClassValue } from "./class-name";
 export { createComponent, render } from "./component";
 export { dynamic, type PropsOf } from "./dynamic";

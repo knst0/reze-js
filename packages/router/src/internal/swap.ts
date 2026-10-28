@@ -120,9 +120,7 @@ function tokenOf(comment: Comment): string {
 }
 
 function tokenComments(scope: Document): Comment[] {
-  return commentsIn(scope.documentElement).filter(
-    (comment) => comment.data.startsWith("rz:") || comment.data.startsWith("/rz:"),
-  );
+  return commentsIn(scope.documentElement).filter((comment) => comment.data.startsWith("rz:") || comment.data.startsWith("/rz:"));
 }
 
 /** Route levels in document order, outermost first; each carries the key its marker range was rendered with. */
@@ -137,9 +135,7 @@ function layoutRanges(scope: Document): LayoutRange[] {
       open.push({ key: token, start: comment });
     }
   }
-  return out.sort((left, right) =>
-    (left.start.compareDocumentPosition(right.start) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1,
-  );
+  return out.sort((left, right) => ((left.start.compareDocumentPosition(right.start) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1));
 }
 
 function elementsIn(scope: Document, start: Node, end: Node): Element[] {
@@ -285,7 +281,8 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
       let replaceAt = -1;
       if (liveLevels.length > 0 && incomingLevels.length > 0) {
         let shared = 0;
-        while (shared < liveLevels.length && shared < incomingLevels.length && liveLevels[shared]!.key === incomingLevels[shared]!.key) shared++;
+        while (shared < liveLevels.length && shared < incomingLevels.length && liveLevels[shared]!.key === incomingLevels[shared]!.key)
+          shared++;
         const isSamePage = shared === liveLevels.length && shared === incomingLevels.length;
         if (!isSamePage) replaceAt = shared < liveLevels.length ? shared : liveLevels.length - 1;
       }
@@ -333,7 +330,10 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
         replacePortals(incoming, false);
       }
       if (replaceAt !== -1) {
-        restorePersisted(isFull || target === undefined ? [...liveRoot.querySelectorAll("[persist]")] : elementsIn(document, target.start, target.end), persisted);
+        restorePersisted(
+          isFull || target === undefined ? [...liveRoot.querySelectorAll("[persist]")] : elementsIn(document, target.start, target.end),
+          persisted,
+        );
       }
       syncRouteScript(incoming);
       const final = new URL(response.url);

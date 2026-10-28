@@ -83,16 +83,20 @@ test("enumerateSsgUrls lists static leaves once, expands dynamics per leaf, and 
     { path: "/", component: Home },
     { path: "/blog/:id", component: Home },
   ]);
-  expect(() => enumerateSsgUrls(blogDescriptors, { "/missing": [] }, { trailingSlash: "always", mode: "ssg" })).toThrow("unknown route pattern");
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/missing": [] }, { trailingSlash: "always", mode: "ssg" })).toThrow(
+    "unknown route pattern",
+  );
   expect(() => enumerateSsgUrls(blogDescriptors, { "/": [] }, { trailingSlash: "always", mode: "ssg" })).toThrow("static route");
-  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "x", extra: "y" }] }, { trailingSlash: "always", mode: "ssg" })).toThrow(
-    "unknown param",
-  );
+  expect(() =>
+    enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "x", extra: "y" }] }, { trailingSlash: "always", mode: "ssg" }),
+  ).toThrow("unknown param");
   expect(() => enumerateSsgUrls(blogDescriptors, {}, { trailingSlash: "always", mode: "ssg" })).toThrow("missing dynamic route");
-  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{}] }, { trailingSlash: "always", mode: "ssg" })).toThrow("missing required param");
-  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "a b" }, { id: "a%20b" }] }, { trailingSlash: "always", mode: "ssg" })).toThrow(
-    "duplicate output",
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{}] }, { trailingSlash: "always", mode: "ssg" })).toThrow(
+    "missing required param",
   );
+  expect(() =>
+    enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "a b" }, { id: "a%20b" }] }, { trailingSlash: "always", mode: "ssg" }),
+  ).toThrow("duplicate output");
 
   const dynamicOnly = describeSsgRoutes([{ path: "/blog/:id", component: Home }]);
   expect(() => enumerateSsgUrls(dynamicOnly, { "/blog/:id": [] }, { trailingSlash: "always", mode: "ssg" })).toThrow("enumerates no pages");

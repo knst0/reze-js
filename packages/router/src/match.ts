@@ -1,4 +1,13 @@
-import type { Awaitable, Params, RouteComponent, RouteDefinition, PreloadArgs, RouteRedirect, RouteResolvedArgs, RouteRender } from "./types";
+import type {
+  Awaitable,
+  Params,
+  RouteComponent,
+  RouteDefinition,
+  PreloadArgs,
+  RouteRedirect,
+  RouteResolvedArgs,
+  RouteRender,
+} from "./types";
 
 declare const __REZE_BEFORE_LOAD__: boolean | undefined;
 
