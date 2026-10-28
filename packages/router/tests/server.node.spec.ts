@@ -11,6 +11,7 @@ import {
   resolveSsgRedirectChain,
   resolveSsgRedirectTarget,
 } from "../src/internal/server";
+import { layoutKey } from "../src/layout";
 
 const Home = () => null;
 
@@ -38,6 +39,12 @@ test("describeSsgRoutes keeps file ids, assigns structural chains, skips layouts
     { path: "/a", component: Home },
   ];
   expect(() => describeSsgRoutes(duplicates)).toThrow('share pattern "/a"');
+});
+
+test("a layout key changes when its preload data changes", () => {
+  expect(layoutKey(0, "shell", {}, true, false, "", { id: 1 })).toBe(layoutKey(0, "shell", {}, true, false, "", { id: 1 }));
+  expect(layoutKey(0, "shell", {}, true, false, "", { id: 1 })).not.toBe(layoutKey(0, "shell", {}, true, false, "", { id: 2 }));
+  expect(layoutKey(0, "shell", {}, false, false, "")).toBe(layoutKey(0, "shell", {}, false, false, ""));
 });
 
 test("route render modes decide which leaves become files", () => {

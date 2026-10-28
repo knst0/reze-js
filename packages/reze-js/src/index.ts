@@ -1,3 +1,4 @@
+import type { ServerAction, ServerActionContext } from "@rezejs/dom";
 import type {
   ClassValue,
   ErroredProps,
@@ -31,6 +32,8 @@ import type {
   Setter,
   SignalOptions,
 } from "@rezejs/signals";
+
+import type { Schema } from "./schema";
 
 export type {
   Action,
@@ -66,9 +69,6 @@ export type {
 
 export { cache, render, revalidateTag, type CacheOptions } from "@rezejs/dom";
 export type { Infer, Schema } from "./schema";
-import type { ServerAction, ServerActionContext } from "@rezejs/dom";
-
-import type { Schema } from "./schema";
 
 /**
  * Compiler syntax for a reactive variable: `let count = signal(0)`. The compiler turns reads

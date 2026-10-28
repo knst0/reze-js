@@ -404,6 +404,7 @@ export function prepareServerRoute<C = unknown>(
                 match.hasData,
                 depth === (state.stopDepth ?? state.matches().length - 1),
                 state.location().search,
+                match.data,
               ),
               () => view,
             ) as unknown as JSX.Element,
