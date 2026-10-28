@@ -94,7 +94,7 @@ function stylesheetHrefs(html: string): string[] {
   return elements(html, "link", { rel: "stylesheet" }).map((node) => attr(node, "href")!);
 }
 
-async function clickUntil(page: Page, selector: string, predicate: string, tries = 150): Promise<void> {
+async function clickUntil(page: Page, selector: string, predicate: string, tries = 300): Promise<void> {
   for (let attempt = 0; attempt < tries; attempt++) {
     await page.click(selector);
     if (await page.evaluate(predicate)) return;
