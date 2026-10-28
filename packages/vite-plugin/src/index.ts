@@ -1,16 +1,19 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { IncomingMessage } from "node:http";
 import { dirname, join, resolve } from "node:path";
 
 import { compileAsync, profileHash } from "@rezejs/compiler";
-import { defaultClientConditions, defaultServerConditions } from "vite";
-import type { DevEnvironment, Environment, EnvironmentModuleNode, Plugin } from "vite";
+import { defaultClientConditions, defaultServerConditions, normalizePath, version as viteVersion } from "vite";
+import type { DevEnvironment, Environment, EnvironmentModuleNode, Plugin, UserConfig, ViteDevServer } from "vite";
 
 import { BeforeLoadFlag, mentionsBeforeLoad, sourcesMentionBeforeLoad } from "./before-load";
 import { ModuleFactsStore, staticImportSpecifiers, type Resolver } from "./facts";
 import { canonicalModuleId } from "./module-identity";
 import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
 import { DocumentViewId, GeneratedIds, HtmlEnv, SsgViewId } from "./server/adapter";
+import { analyzeDocument } from "./server/document";
+import type { ImportResolver } from "./server/document";
 import type { SsgOptions, SsrOptions } from "./server/options";
 import { createServerPlugin, createServerShared } from "./server/plugin";
 import type { ServerShared } from "./server/plugin";
@@ -193,6 +196,34 @@ function resolverOf(resolveById: ResolveById): Resolver {
   };
 }
 
+function viteMajor(): number {
+  return Number(viteVersion.split(".")[0]);
+}
+
+function bundlerInput(config: UserConfig): unknown {
+  const build = config.build ?? {};
+  const options = (build[viteMajor() >= 8 ? "rolldownOptions" : "rollupOptions"] ?? {}) as { input?: unknown };
+  return options.input;
+}
+
+function setSpaInput(config: UserConfig, htmlId: string): void {
+  const key = viteMajor() >= 8 ? "rolldownOptions" : "rollupOptions";
+  const build = config.build ?? {};
+  if (build.lib !== undefined && build.lib !== false) {
+    throw new Error("[reze] a client-only app renders its page from src/document.tsx; library mode has no page");
+  }
+  config.build = { ...build, [key]: { ...build[key], input: htmlId } } as UserConfig["build"];
+}
+
+function isSpaDocumentRequest(req: IncomingMessage): boolean {
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+  if (!(req.headers.accept ?? "").includes("text/html")) return false;
+  const pathname = (req.url ?? "/").split("?")[0] ?? "/";
+  if (pathname === "/index.html") return true;
+  if (pathname.startsWith("/@") || pathname.startsWith("/__reze/") || pathname.startsWith("/node_modules/")) return false;
+  return !/\.[^/]+$/.test(pathname);
+}
+
 function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
   const jsonl = options.diagnostics?.jsonl;
   const seenCodes = new Set<string>();
@@ -209,6 +240,30 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
   const runtimeDirectories = new Set<string>();
   const filter = transformFilter(options.extensions);
   const moduleFacts = new ModuleFactsStore(options.analyze ?? [], (file) => filter.include.test(file));
+  const isClientOnly = options.ssg === undefined && options.ssr === undefined;
+  let spaHtmlId: string | undefined;
+  let spaDocumentFile: string | undefined;
+  let spaDocumentFiles: ReadonlySet<string> | undefined;
+  let spaHtml: Promise<string> | undefined;
+  let spaDefine: Record<string, unknown> | undefined;
+
+  async function spaDocumentHtml(resolveImport: ImportResolver): Promise<string> {
+    if (spaHtml !== undefined) return spaHtml;
+    const loading = analyzeDocument(spaDocumentFile!, resolveImport, spaDefine, null).then((analysis) => {
+      if (analysis.status === "render") {
+        throw new Error(
+          `[reze] a client-only app needs a static src/document.tsx, but the document runs at render time: ${analysis.reasons}`,
+        );
+      }
+      spaDocumentFiles = new Set(analysis.document.files ?? []);
+      return analysis.document.html;
+    });
+    spaHtml = loading;
+    loading.catch(() => {
+      if (spaHtml === loading) spaHtml = undefined;
+    });
+    return loading;
+  }
 
   async function invalidateStaleImporters(environment: DevEnvironment, file: string, timestamp: number): Promise<EnvironmentModuleNode[]> {
     const resolve = resolverOf((specifier, importer) => environment.pluginContainer.resolveId(specifier, importer));
@@ -248,6 +303,28 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
     return sourcemap === true || (typeof sourcemap === "object" && sourcemap.js !== false);
   }
 
+  function installSpaDocument(server: ViteDevServer): void {
+    server.middlewares.use((req, res, next) => {
+      if (!isSpaDocumentRequest(req)) {
+        next();
+        return;
+      }
+      const resolveImport: ImportResolver = async (specifier, importer) =>
+        (await server.environments.client.pluginContainer.resolveId(specifier, importer))?.id;
+      spaDocumentHtml(resolveImport).then(
+        async (html) => {
+          server.watcher.add(spaDocumentFile!);
+          for (const file of spaDocumentFiles ?? []) server.watcher.add(file);
+          const page = await server.transformIndexHtml(req.url ?? "/", html, req.originalUrl);
+          res.statusCode = 200;
+          res.setHeader("content-type", "text/html; charset=utf-8");
+          res.end(req.method === "HEAD" ? undefined : page);
+        },
+        (error) => next(error),
+      );
+    });
+  }
+
   return {
     name: "reze-js",
     enforce: "pre",
@@ -257,6 +334,20 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
       },
     },
     config(config, env) {
+      if (isClientOnly && bundlerInput(config) === undefined) {
+        const projectRoot = resolve(config.root ?? process.cwd());
+        const documentFile = join(projectRoot, "src", "document.tsx");
+        if (existsSync(documentFile)) {
+          if (existsSync(join(projectRoot, "index.html"))) {
+            throw new Error(
+              "[reze] a client-only app renders its page from src/document.tsx and never reads index.html; move its tags into the document and delete index.html",
+            );
+          }
+          spaDocumentFile = normalizePath(documentFile);
+          spaHtmlId = normalizePath(join(projectRoot, "index.html"));
+          if (env.command === "build") setSpaInput(config, spaHtmlId);
+        }
+      }
       if (env.command !== "build") return;
       const projectRoot = resolve(config.root ?? process.cwd());
       if (sourcesMentionBeforeLoad(projectRoot, resolve(projectRoot, config.build?.outDir ?? "dist"), filter.include)) return;
@@ -275,11 +366,13 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
       debugNames = !config.isProduction;
       hot = isServe && config.server.hmr !== false;
       root = config.root ?? "";
+      spaDefine = config.define as Record<string, unknown> | undefined;
       shared.root = root;
       shared.isServe = isServe;
       moduleFacts.configure({ root, warn: isServe ? (message) => config.logger.warn(message) : undefined });
     },
     async resolveId(id, importer, options) {
+      if (spaHtmlId !== undefined && normalizePath(id) === spaHtmlId) return spaHtmlId;
       if (!RuntimeEntry.test(id)) return;
       const resolved = await this.resolve(id, importer, { ...options, skipSelf: true });
       if (resolved) {
@@ -289,6 +382,13 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
         if (dist !== -1) runtimeDirectories.add(file.slice(0, dist + 6));
       }
       return resolved;
+    },
+    async load(id) {
+      if (spaHtmlId === undefined || normalizePath(id) !== spaHtmlId) return undefined;
+      return spaDocumentHtml(async (specifier, importer) => (await this.resolve(specifier, importer, { skipSelf: true }))?.id);
+    },
+    buildStart() {
+      if (isClientOnly) spaHtml = undefined;
     },
     async transform(code, id) {
       const file = id.replace(QueryOrHash, "");
@@ -357,11 +457,17 @@ function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
       if (this.environment.mode === "dev") await invalidateStaleImporters(this.environment, file, Date.now());
     },
     async hotUpdate(context) {
+      if (spaDocumentFile !== undefined && (context.file === spaDocumentFile || spaDocumentFiles?.has(context.file))) {
+        spaHtml = undefined;
+        context.server.ws.send({ type: "full-reload" });
+        return [];
+      }
       const importers = await invalidateStaleImporters(this.environment, context.file, context.timestamp);
       if (importers.length === 0) return;
       return [...new Set([...context.modules, ...importers])];
     },
     configureServer(server) {
+      if (spaHtmlId !== undefined && spaDocumentFile !== undefined) installSpaDocument(server);
       if (profileDir === undefined) return;
       const dir = resolve(root, profileDir);
       server.middlewares.use("/__reze/profile", (req, res, next) => {
