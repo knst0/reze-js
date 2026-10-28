@@ -1,5 +1,13 @@
 # @rezejs/compiler
 
+## 0.3.0
+
+### Minor Changes
+
+- 5aab4af: Let islands adopt the server DOM when the compiler proves the view is a static element tree with value bindings only. The island claims the existing roots instead of rendering a second copy and swapping it in, so scroll positions, focus, form values and playing media inside it survive the load and the nodes keep their identity. Components, control flow, async components, dynamic tags, `innerHTML`/`textContent` bindings and islands with rendered children keep the replacing path; the browser validates every claimed root and falls back if the server markup does not match.
+- 981d711: Reject module state written during a request render. The compiler reports `MODULE_STATE_SHARED` as an error on the html target when a component or a route `preload`, `beforeLoad`, `redirect`, `loader`, or `action` writes a module-level `let` or `var`, because that module is loaded once per process and every request shares the value. Values declared with `signal`, `store`, `selector`, `createContext`, `effect`, or `provideContext` keep their per-request copies, and writes inside event handlers stay legal.
+- e08592c: Add server actions. `server(schema, run)` with a schema from `reze-js/schema` becomes a typed POST endpoint: `.call(input)` posts JSON and resolves to the handler's result, and `.endpoint` works as a `<form method="post">` action without JavaScript, redirecting to `_return` or back with `_action_error`. The compiler rejects a `server` call without an input schema, because every action is a public endpoint; the handler still authorizes the caller. The server entry exposes the endpoint in both the production handler and the dev server.
+
 ## 0.2.0
 
 ### Minor Changes

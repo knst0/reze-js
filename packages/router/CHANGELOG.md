@@ -1,5 +1,24 @@
 # @rezejs/router
 
+## 0.3.0
+
+### Minor Changes
+
+- 0e0d10d: Keep unchanged route levels across navigation. The server marks every layout and page with a key that carries its id, params, data and pending async work; a swap replaces only from the first level whose key changes, so sidebar scroll, open menus, playing video and island state in a layout survive. An element with `persist="key"` moves from the current page into the matching element of the next one even when its level is replaced. The swap runs inside `document.startViewTransition` when the browser provides it and the user does not prefer reduced motion.
+- b8a0cea: Choose how a route renders. `export const route = { render: "static" | "server" | "client" }` moves the choice from the build to the route: with `ssg`, `static` leaves become files and `server` leaves are rejected unless `ssr` is built too; `client` renders every layout above the route on the server and mounts a client router for the route subtree, so a static marketing section and a browser-rendered account area live in one application.
+
+### Patch Changes
+
+- Updated dependencies [67b1717]
+- Updated dependencies [5aab4af]
+- Updated dependencies [126debb]
+- Updated dependencies [0e0d10d]
+- Updated dependencies [2727fa4]
+- Updated dependencies [b8a0cea]
+- Updated dependencies [e08592c]
+  - @rezejs/dom@0.3.0
+  - reze-js@0.2.0
+
 ## 0.2.0
 
 ### Minor Changes

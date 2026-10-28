@@ -1,5 +1,30 @@
 # @rezejs/vite-plugin
 
+## 0.3.0
+
+### Minor Changes
+
+- 5aab4af: Let islands adopt the server DOM when the compiler proves the view is a static element tree with value bindings only. The island claims the existing roots instead of rendering a second copy and swapping it in, so scroll positions, focus, form values and playing media inside it survive the load and the nodes keep their identity. Components, control flow, async components, dynamic tags, `innerHTML`/`textContent` bindings and islands with rendered children keep the replacing path; the browser validates every claimed root and falls back if the server markup does not match.
+- 0e0d10d: Keep unchanged route levels across navigation. The server marks every layout and page with a key that carries its id, params, data and pending async work; a swap replaces only from the first level whose key changes, so sidebar scroll, open menus, playing video and island state in a layout survive. An element with `persist="key"` moves from the current page into the matching element of the next one even when its level is replaced. The swap runs inside `document.startViewTransition` when the browser provides it and the user does not prefer reduced motion.
+- 981d711: Reject module state written during a request render. The compiler reports `MODULE_STATE_SHARED` as an error on the html target when a component or a route `preload`, `beforeLoad`, `redirect`, `loader`, or `action` writes a module-level `let` or `var`, because that module is loaded once per process and every request shares the value. Values declared with `signal`, `store`, `selector`, `createContext`, `effect`, or `provideContext` keep their per-request copies, and writes inside event handlers stay legal.
+- 2727fa4: Prerender up to the first async boundary and stream the rest. `ssg: { ppr: true }` writes a shell with the layouts and fallbacks plus a resume script; the browser fetches the settled parts from the same route with `x-reze-resume: 1`, and the handler streams only the patches below the boundary. `cache(load, { ttl, tags })` keys async data by its JSON arguments on the server, and the server entry exports `revalidateTag(tag)` to drop every entry with that tag.
+- b8a0cea: Choose how a route renders. `export const route = { render: "static" | "server" | "client" }` moves the choice from the build to the route: with `ssg`, `static` leaves become files and `server` leaves are rejected unless `ssr` is built too; `client` renders every layout above the route on the server and mounts a client router for the route subtree, so a static marketing section and a browser-rendered account area live in one application.
+- e08592c: Add server actions. `server(schema, run)` with a schema from `reze-js/schema` becomes a typed POST endpoint: `.call(input)` posts JSON and resolves to the handler's result, and `.endpoint` works as a `<form method="post">` action without JavaScript, redirecting to `_return` or back with `_action_error`. The compiler rejects a `server` call without an input schema, because every action is a public endpoint; the handler still authorizes the caller. The server entry exposes the endpoint in both the production handler and the dev server.
+- 4ff4ef8: Render client-only pages from `src/document.tsx` instead of `index.html`. Without `ssg` or `ssr`, the plugin compiles the document into the HTML entry, serves it from the dev server for every path that accepts `text/html`, and reloads the page when the document or a component it inlines changes. The document must be static, because the plugin compiles it into the entry instead of running it on a server. A leftover `index.html` next to the document fails the build with a message to move its tags into the document. A project with an explicit bundler input or without `src/document.tsx` keeps Vite's `index.html`.
+
+### Patch Changes
+
+- 67b1717: Assets that `src/document.tsx` imports, such as a font preloaded with `?url`, resolve to their client URL in server-rendered and generated pages. The asset placeholder no longer uses a NUL character, which the HTML parser replaced, and the client build emits an asset that only the document imports.
+- Updated dependencies [5aab4af]
+- Updated dependencies [0e0d10d]
+- Updated dependencies [981d711]
+- Updated dependencies [2727fa4]
+- Updated dependencies [b8a0cea]
+- Updated dependencies [e08592c]
+  - @rezejs/compiler@0.3.0
+  - @rezejs/router@0.3.0
+  - reze-js@0.2.0
+
 ## 0.2.0
 
 ### Minor Changes
