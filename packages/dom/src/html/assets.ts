@@ -1,5 +1,5 @@
-export const AssetMarker = "\0reze-asset:";
+export const AssetMarker = "\uE000reze-asset:";
 
 export function htmlAsset(id: string): string {
-  return `${AssetMarker}${id}\0`;
+  return `${AssetMarker}${id}\uE000`;
 }

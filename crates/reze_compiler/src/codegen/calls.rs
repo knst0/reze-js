@@ -20,6 +20,22 @@ pub fn rewrite<'a>(
     if kind == RuntimeCallKind::AsyncComponent {
         continuation::prepare(ctx, call);
     }
+    if kind == RuntimeCallKind::Server {
+        let ast = Ast::new(ctx.allocator);
+        let id = format!(
+            "{}#{}",
+            ctx.options.module_id.as_deref().unwrap_or_default(),
+            call.span.start
+        );
+        let arguments = call.arguments.take_in(&ctx.allocator);
+        let mut next = ArenaVec::with_capacity_in(arguments.len() + 1, &ast.builder);
+        next.push(Argument::from(ast.string(&id)));
+        next.extend(arguments);
+        call.callee = ctx.helper(RUNTIME_MODULE, "serverAction");
+        call.arguments = next;
+        ctx.changed = true;
+        return;
+    }
     if ctx.options.target.runs_in_browser() {
         return;
     }
@@ -30,6 +46,7 @@ pub fn rewrite<'a>(
     next.push(Argument::from(site));
     let callee = match kind {
         RuntimeCallKind::Resource => unreachable!("resource calls return before the managed path"),
+        RuntimeCallKind::Server => unreachable!("server actions return before the managed path"),
         RuntimeCallKind::UniqueId => {
             let receiver = match call.callee.without_parentheses() {
                 Expression::StaticMemberExpression(member) => match &member.object {
@@ -53,7 +70,7 @@ pub fn rewrite<'a>(
                 RuntimeCallKind::Dynamic => "hDynamic",
                 RuntimeCallKind::DynamicElement => "hDynamicElement",
                 RuntimeCallKind::Island => "hIsland",
-                RuntimeCallKind::Resource | RuntimeCallKind::UniqueId => {
+                RuntimeCallKind::Resource | RuntimeCallKind::UniqueId | RuntimeCallKind::Server => {
                     unreachable!("handled before the runtime helper lookup")
                 }
             };

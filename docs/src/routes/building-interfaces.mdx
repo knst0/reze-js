@@ -676,6 +676,12 @@ export function Page() {
 
 A failed load renders the fallback of the nearest `<Errored>` around the island. See [Async components](#async-components).
 
+### Adopt the server DOM
+
+When the compiler proves that an island's view is a static element tree with value bindings, the island claims the DOM the server rendered instead of building a second copy and replacing it. The nodes keep their identity: scroll positions inside the island, focus, form values, a playing video and CSS transitions survive the load, and there is no layout shift. Event handlers and bindings attach to the same nodes, so the island is interactive with the markup it already has.
+
+The proof rejects any island whose view contains a component, a `<Show>`, `<For>`, `<Repeat>`, `<Switch>`, `<Portal>`, `<Head>`, an async component, a dynamic tag, or an `innerHTML`/`textContent` binding, and any island that receives rendered `children`. Such an island renders again and replaces its markup, exactly as before. The descriptor sent to the browser carries the decision, and the browser checks the claimed roots against the server nodes; a mismatch falls back to the replacing path, so a refused shape is never half-adopted.
+
 ### Use the island attribute
 
 On a component tag, `island` makes the component an island, and the companion attributes configure it:

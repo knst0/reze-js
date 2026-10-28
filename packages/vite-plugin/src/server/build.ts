@@ -69,6 +69,7 @@ export async function runServerBuild(input: ServerBuildInput): Promise<void> {
       facts,
       template: prepared.parts,
       redirectFile: captured.redirectFile,
+      hybrid: ssr !== undefined,
     });
   }
 }

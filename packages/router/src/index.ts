@@ -47,6 +47,7 @@ export type {
   RoutePattern,
   RouteProps,
   RoutePropsFor,
+  RouteRender,
   RouteRedirect,
   RouteResolvedArgs,
   SearchInit,

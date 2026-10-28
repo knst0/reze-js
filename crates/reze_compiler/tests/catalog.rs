@@ -24,11 +24,16 @@ fn diagnostics_for(source: &str, options: &Options) -> Vec<Diagnostic> {
 }
 
 /// Options that trigger `code` for its catalog example. Every code is source-gated under the
-/// default options except `MISSING_MODULE_ID`, which is option-gated: its example only reports
-/// with an `island`/`html` target and no `moduleId`.
+/// default options except `MISSING_MODULE_ID`, whose example needs an `island`/`html` target and
+/// no `moduleId`, and `MODULE_STATE_SHARED`, which only applies to the html target.
 fn example_options(code: Code) -> Options {
     match code {
         Code::MissingModuleId => Options { target: CompileTarget::Island, ..Options::default() },
+        Code::ModuleStateShared => Options {
+            target: CompileTarget::Html,
+            module_id: Some("example.tsx".into()),
+            ..Options::default()
+        },
         _ => Options::default(),
     }
 }

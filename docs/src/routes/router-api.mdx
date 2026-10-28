@@ -109,7 +109,8 @@ A route table is an array of `RouteDefinition` values passed to `routes`. Build 
 | `path`       | `string`                                                             | The route pattern, relative to the parent route. Segments are static text, `:param`, `:param?`, or `*splat`.                                                     |
 | `component`  | `RouteComponent`                                                     | Renders the route. The router passes `params`, `location`, `data`, and `children`.                                                                               |
 | `children`   | `readonly RouteDefinition[]`                                         | Nested routes. The matched child renders through the parent's `children` prop.                                                                                   |
-| `load`       | `() => Promise<RouteModule>`                                         | Loads the route module on demand. When it resolves, its `default` and `route` override `component`, `beforeLoad`, `preload`, `redirect`, and `info`.             |
+| `load`       | `() => Promise<RouteModule>`                                         | Loads the route module on demand. When it resolves, its `default` and `route` override `component`, `beforeLoad`, `preload`, `redirect`, `info`, and `render`.   |
+| `render`     | `"static" \| "server" \| "client"`                                   | How the page is produced. See [choose a render mode per route](/vite-plugin#choose-a-render-mode-per-route).                                                     |
 | `id`         | `string`                                                             | Stable identity for server route matches and static generation. The plugin sets it for file routes. Otherwise the router assigns an index chain such as `"2/0"`. |
 | `name`       | `string`                                                             | The key of this route in the `paths` builder tree. Siblings that share a key throw when the router is created.                                                   |
 | `beforeLoad` | `(args: PreloadArgs) => Awaitable<Partial<RouterContext> \| void>`   | Extends `context` for this route and its descendants. See [preload and redirects](#preload-and-redirects).                                                       |
@@ -420,7 +421,7 @@ The plugin writes the declaration to `src/routes.gen.d.ts` by default. You do no
 
 ### Route module types
 
-A route module in `src/routes/` can type its `route` export and its component props from its own pattern. `RouteConfigFor` checks the `beforeLoad`, `preload`, `redirect`, and `info` fields against the leaf pattern, and `RoutePropsFor` gives the component typed `params` and `data`.
+A route module in `src/routes/` can type its `route` export and its component props from its own pattern. `RouteConfigFor` checks the `render`, `beforeLoad`, `preload`, `redirect`, and `info` fields against the leaf pattern, and `RoutePropsFor` gives the component typed `params` and `data`.
 
 ```tsx file=src/routes/blog/[id].tsx
 import type { RouteConfigFor, RoutePropsFor } from "@rezejs/router";
@@ -489,7 +490,7 @@ These exports are types only. They describe values you receive from the hooks, t
 | `PreloadIntent`               | `"initial"`, `"navigate"`, or `"preload"`.                                                              |
 | `Register`                    | The interface the generated declaration augments.                                                       |
 | `RouteComponent<P, D>`        | A component that receives `RouteProps<P, D>` and returns a `JSX.Element`.                               |
-| `RouteConfig<D, C>`           | The `beforeLoad`, `preload`, `redirect`, and `info` fields of a route.                                  |
+| `RouteConfig<D, C>`           | The `beforeLoad`, `preload`, `redirect`, `info`, and `render` fields of a route.                        |
 | `RouteConfigFor<P, D, C>`     | `RouteConfig` with the params of leaf pattern `P` and context `C`.                                      |
 | `RouteDefinition<C>`          | `RouteConfig` plus `path`, `id`, `name`, `component`, `load`, and `children`.                           |
 | `RouteMatch`                  | `{ path, params, data, info }`, the entries `useCurrentMatches` returns.                                |

@@ -131,6 +131,35 @@ function managedRange(role: string, site: Site, build: () => unknown, place?: (r
   return session.instances.run(instance, () => fillRange(session, instance, range, site, untrack(build), place));
 }
 
+/**
+ * A route level: a marked range carrying a fixed key instead of a session token, so a swap can compare the
+ * levels of two documents and keep the unchanged ones. Nested levels are the layout's children.
+ */
+export function hLayout(site: Site | undefined, key: string, build: () => unknown): HtmlRange {
+  const session = htmlSession();
+  const instance = session.instances.reserve("l", site);
+  session.instances.own(instance);
+  const range = createRange(instance.id, { site });
+  range.marked = true;
+  range.wire = key;
+  session.layouts.push(range);
+  instances.set(range, instance);
+  return session.instances.run(instance, () => fillRange(session, instance, range, site, untrack(build)));
+}
+
+/** The empty host a `render: "client"` route mounts into; the client router renders the subtree under it. */
+export function hClientBoundary(site: Site | undefined, depth: number, routeId: string): HtmlElement {
+  const session = htmlSession();
+  const instance = session.instances.reserve("x", site);
+  session.instances.own(instance);
+  const node = createElement("div", "", { site });
+  setAttribute(node, "data-rz-client", String(depth), site);
+  setAttribute(node, "data-rz-client-route", routeId, site);
+  setAttribute(node, "style", "display:contents", site);
+  instances.set(node, instance);
+  return node;
+}
+
 export function hMount(build: () => unknown): HtmlRange {
   const session = htmlSession();
   return session.instances.run(session.instances.root, () =>
@@ -319,6 +348,7 @@ function warnUnregistered(component: object, site: Site | undefined): void {
 
 function slotRange(session: HtmlSession, site: Site | undefined, read: () => unknown): HtmlRange {
   const { instance, range } = startRange(session, "slot", site, true);
+  instance.island = undefined;
   return session.instances.run(instance, () => fillRange(session, instance, range, site, untrack(read)));
 }
 

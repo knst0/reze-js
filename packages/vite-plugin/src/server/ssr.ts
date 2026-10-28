@@ -8,5 +8,5 @@ import type { ServerFacts } from "./facts";
 export function writeServerBundle(outDir: string, htmlChunks: readonly BundleChunk[], facts: ServerFacts): void {
   rmSync(outDir, { recursive: true, force: true });
   const entry = materializeServerBundle(htmlChunks, outDir, facts);
-  writeFileSync(join(outDir, "entry.js"), `export { discover, handler, prerender } from "./${entry}";\n`);
+  writeFileSync(join(outDir, "entry.js"), `export { discover, handler, prerender, revalidateTag } from "./${entry}";\n`);
 }

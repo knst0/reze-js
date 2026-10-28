@@ -1,4 +1,13 @@
-import type { Awaitable, Params, RouteComponent, RouteDefinition, PreloadArgs, RouteRedirect, RouteResolvedArgs } from "./types";
+import type {
+  Awaitable,
+  Params,
+  RouteComponent,
+  RouteDefinition,
+  PreloadArgs,
+  RouteRedirect,
+  RouteResolvedArgs,
+  RouteRender,
+} from "./types";
 
 declare const __REZE_BEFORE_LOAD__: boolean | undefined;
 
@@ -26,6 +35,7 @@ export interface CompiledRoute {
   preload: ((args: PreloadArgs<any>) => unknown) | undefined;
   redirect: (RouteRedirect | ((args: RouteResolvedArgs<any, any>) => Awaitable<RouteRedirect | undefined>)) | undefined;
   info: Readonly<Record<string, unknown>> | undefined;
+  render: RouteRender | undefined;
   loading: Promise<void> | undefined;
   loadError: unknown;
   isLoaded: boolean;
@@ -125,6 +135,7 @@ function compileRoute(def: RouteDefinition, pattern: string, id: string): Compil
     preload: def.preload,
     redirect: def.redirect,
     info: def.info,
+    render: def.render,
     loading: undefined,
     loadError: undefined,
     isLoaded: def.load === undefined,

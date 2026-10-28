@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,25 +19,35 @@ const origins: SsrOrigin[] = [];
 
 let moduleState: SsrBuild;
 let streaming: SsrBuild;
+let ppr: SsrBuild;
+let actions: SsrBuild;
 let islands: SsrBuild;
+let context: SsrBuild;
 let routerA: SsrBuild;
 let routerB: SsrBuild;
 let routerActive: SsrBuild;
 let streamingOrigin: SsrOrigin;
+let pprOrigin: SsrOrigin;
+let actionsOrigin: SsrOrigin;
 let islandsOrigin: SsrOrigin;
+let contextOrigin: SsrOrigin;
 let routerOrigin: SsrOrigin;
 let devOrigin: SsrOrigin;
 let devRouterOrigin: SsrOrigin;
+let devActionsOrigin: SsrOrigin;
 
 function fixture(name: string): string {
   return join(FIXTURES, name);
 }
 
 beforeAll(async () => {
-  [moduleState, streaming, islands, routerA, routerB] = await Promise.all([
+  [moduleState, streaming, ppr, actions, islands, context, routerA, routerB] = await Promise.all([
     buildSsrFixture({ fixtureDir: fixture("module-state"), outDir: join(OUT, "module-state") }),
     buildSsrFixture({ fixtureDir: fixture("streaming"), outDir: join(OUT, "streaming") }),
+    buildSsrFixture({ fixtureDir: fixture("ppr"), outDir: join(OUT, "ppr"), ssg: { ppr: true } }),
+    buildSsrFixture({ fixtureDir: fixture("actions"), outDir: join(OUT, "actions") }),
     buildSsrFixture({ fixtureDir: fixture("islands"), outDir: join(OUT, "islands") }),
+    buildSsrFixture({ fixtureDir: fixture("context"), outDir: join(OUT, "context") }),
     buildSsrFixture({
       fixtureDir: fixture("router"),
       outDir: join(OUT, "router-a"),
@@ -51,13 +61,27 @@ beforeAll(async () => {
   ]);
   routerActive = routerA;
   streamingOrigin = await serveSsrApp(() => streaming);
+  pprOrigin = await serveSsrApp(() => ppr);
+  actionsOrigin = await serveSsrApp(() => actions);
   islandsOrigin = await serveSsrApp(() => islands);
+  contextOrigin = await serveSsrApp(() => context);
   routerOrigin = await serveSsrApp(() => routerActive);
   devOrigin = await startDevServer(fixture("streaming"));
   devRouterOrigin = await startDevServer(fixture("router"), [defineGlobals({ __RZ_TEST_VERSION__: "dev" })], {
     devContext: (request) => ({ tenant: request.headers.get("x-tenant") ?? undefined }),
   });
-  origins.push(streamingOrigin, islandsOrigin, routerOrigin, devOrigin, devRouterOrigin);
+  devActionsOrigin = await startDevServer(fixture("actions"));
+  origins.push(
+    streamingOrigin,
+    pprOrigin,
+    actionsOrigin,
+    islandsOrigin,
+    contextOrigin,
+    routerOrigin,
+    devOrigin,
+    devRouterOrigin,
+    devActionsOrigin,
+  );
   for (const engine of ENGINES) browsers.set(engine, await launchEngine(engine));
 }, 900_000);
 
@@ -177,7 +201,8 @@ for (const engine of ENGINES) {
         },
       });
       try {
-        await waitFor(typed.page, "window.__before != null && document.querySelector('#name') !== window.__before");
+        await waitFor(typed.page, "window.__before != null && document.querySelector('#name')?.value === 'typed text'");
+        expect(await typed.page.evaluate("document.querySelector('#name') === window.__before")).toBe(true);
         expect(await typed.page.inputValue("#name")).toBe("typed text");
         expect(await typed.page.evaluate("document.activeElement?.id")).toBe("name");
         expect(typed.errors).toEqual([]);
@@ -210,6 +235,31 @@ for (const engine of ENGINES) {
   );
 
   test(
+    `${engine}: islands in the children of an island read the context its body provides, and the document links its own assets`,
+    async () => {
+      const response = await context.handler(new Request("http://127.0.0.1/"));
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toMatch(/<button id="?trigger"? type="?button"?>closed<\/button>/);
+      expect(islandDescriptors(html).map((descriptor) => descriptor.e)).toEqual(["Root", "Trigger", "Content"]);
+      const mark = /<link rel="?preload"? as="?image"? type="?image\/svg\+xml"? href="?([^"\s>]+)"?/.exec(html)?.[1];
+      expect(mark).toMatch(/^\/assets\/mark-[^/]+\.svg$/);
+      expect(existsSync(join(context.clientDir, mark!))).toBe(true);
+
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${contextOrigin.origin}/`);
+      try {
+        await clickUntil(page, "#trigger", "document.querySelector('#trigger')?.textContent === 'open'");
+        await waitFor(page, "document.querySelector('#content')?.textContent === 'shown'");
+        expect(await page.evaluate("document.querySelectorAll('#trigger, #content').length")).toBe(2);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
     `${engine}: patches reach the page, islands boot and static modules never load`,
     async () => {
       const { page, errors, requests, close } = await openPage(browsers.get(engine)!, `${streamingOrigin.origin}/`);
@@ -220,6 +270,219 @@ for (const engine of ENGINES) {
         const staticModule = streaming.registry.modules["src/Static.tsx"];
         expect(staticModule).toBeDefined();
         expect(requests.some((url) => url.endsWith(staticModule!.url))).toBe(false);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: an island reuses the server DOM and keeps its node identity`,
+    async () => {
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${islandsOrigin.origin}/`, {
+        beforeHydration: async (open) => {
+          await open.waitForFunction("document.querySelector('form') !== null");
+          await open.evaluate(() => {
+            const form = document.querySelector("form")!;
+            (form as unknown as Record<string, unknown>).__marker = "kept";
+            (window as unknown as Record<string, unknown>).__form = form;
+          });
+        },
+      });
+      try {
+        await clickUntil(page, "#probe", "document.querySelector('#probe')?.textContent === '1'");
+        expect(await page.evaluate("document.querySelector('form') === window.__form")).toBe(true);
+        expect(await page.evaluate("document.querySelector('form').__marker")).toBe("kept");
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: a client route renders the layout on the server and the subtree in the browser`,
+    async () => {
+      const shell = await fetch(`${routerOrigin.origin}/dashboard`, { headers: { accept: "text/html" } });
+      expect(shell.status).toBe(200);
+      const html = await shell.text();
+      expect(html).toContain("data-rz-client=1");
+      expect(html).toContain("id=nav-dashboard");
+      expect(html).not.toContain('id="dashboard"');
+      const dev = await fetch(`${devRouterOrigin.origin}/dashboard`, { headers: { accept: "text/html" } });
+      expect(dev.status).toBe(200);
+      expect(await dev.text()).toContain("data-rz-client=1");
+
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);
+      try {
+        await page.evaluate("window.__shell = document.querySelector('nav')");
+        await page.click("#nav-dashboard");
+        await waitFor(
+          page,
+          "document.querySelector('#dashboard')?.textContent.includes('browser') === true && document.querySelector('#dashboard-home') !== null",
+        );
+        expect(await page.evaluate("document.querySelector('nav') === window.__shell")).toBe(true);
+        await page.evaluate("window.__marker = 'kept'");
+        await page.click("#dashboard-settings");
+        await waitFor(page, "location.pathname === '/dashboard/settings' && document.querySelector('#settings') !== null");
+        expect(await page.evaluate("window.__marker")).toBe("kept");
+        expect(await page.evaluate("document.querySelector('nav') === window.__shell")).toBe(true);
+        await page.click("#nav-about");
+        await waitFor(page, "location.pathname === '/about' && document.querySelector('#about') !== null");
+        expect(await page.evaluate("window.__marker")).toBe("kept");
+        expect(await page.evaluate("document.querySelector('nav') === window.__shell")).toBe(true);
+
+        await page.goto(`${routerOrigin.origin}/dashboard`);
+        await waitFor(page, "document.querySelector('#dashboard-home') !== null");
+        await page.evaluate("window.__marker = 'kept'");
+        await page.click("#dashboard-about");
+        await waitFor(page, "location.pathname === '/about' && document.querySelector('#about') !== null");
+        expect(await page.evaluate("window.__marker")).toBeUndefined();
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: a prerendered shell streams the parts below its first async boundary`,
+    async () => {
+      const shell = await fetch(`${pprOrigin.origin}/index.html`);
+      expect(shell.status).toBe(200);
+      const html = await shell.text();
+      expect(html).toContain("data-rz-resume");
+      expect(html).toContain(">shell<");
+      expect(html).toContain("id=slow");
+      expect(html).not.toContain("settled-");
+      expect(html).not.toContain("data-rz-end");
+
+      const resumed = await fetch(`${pprOrigin.origin}/`, {
+        headers: { accept: "text/html", "x-reze-resume": "1" },
+      });
+      expect(resumed.status).toBe(200);
+      expect(resumed.headers.get("x-reze-resume")).toBe("1");
+      const patches = await resumed.text();
+      expect(patches).toContain("settled-");
+      expect(patches).not.toContain("<!--rz-shell-->");
+      const first = /settled-(\d+)/.exec(patches)?.[1];
+      expect(first).toBeDefined();
+      const again = await (await fetch(`${pprOrigin.origin}/`, { headers: { accept: "text/html", "x-reze-resume": "1" } })).text();
+      expect(/settled-(\d+)/.exec(again)?.[1]).toBe(first);
+      expect(ppr.revalidateTag("slow")).toBeGreaterThan(0);
+      const after = await (await fetch(`${pprOrigin.origin}/`, { headers: { accept: "text/html", "x-reze-resume": "1" } })).text();
+      expect(/settled-(\d+)/.exec(after)?.[1]).not.toBe(first);
+
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${pprOrigin.origin}/index.html`);
+      try {
+        await waitFor(page, "document.querySelector('#slow')?.textContent?.startsWith('settled-') === true");
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: server actions validate input, answer typed RPC and accept a plain form post`,
+    async () => {
+      const page = await (await fetch(`${actionsOrigin.origin}/`, { headers: { accept: "text/html" } })).text();
+      const id = /<p id=action-id>([^<]+)<\/p>/.exec(page)?.[1];
+      expect(id).toBeDefined();
+      const endpoint = `/_reze/action/${encodeURIComponent(id!)}`;
+      const rpc = await fetch(`${actionsOrigin.origin}${endpoint}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "json" }),
+      });
+      expect(rpc.status).toBe(200);
+      expect(await rpc.json()).toEqual({ ok: true, result: "saved:json" });
+
+      const invalid = await fetch(`${actionsOrigin.origin}${endpoint}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: 1 }),
+      });
+      expect(invalid.status).toBe(422);
+
+      const formPost = await fetch(`${actionsOrigin.origin}${endpoint}`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "title=form&_return=%2F",
+      });
+      expect(formPost.status).toBe(303);
+      expect(formPost.headers.get("location")).toBe("/");
+      expect(await (await fetch(`${actionsOrigin.origin}/`)).text()).toContain("saved:form");
+
+      const dev = await (await fetch(`${devActionsOrigin.origin}/`, { headers: { accept: "text/html" } })).text();
+      const devId = /<p id=action-id>([^<]+)<\/p>/.exec(dev)?.[1];
+      expect(devId).toBeDefined();
+      const devRpc = await fetch(`${devActionsOrigin.origin}/_reze/action/${encodeURIComponent(devId!)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "dev" }),
+      });
+      expect(devRpc.status).toBe(200);
+      expect(await devRpc.json()).toEqual({ ok: true, result: "saved:dev" });
+
+      const { page: browser, errors, close } = await openPage(browsers.get(engine)!, `${actionsOrigin.origin}/`);
+      try {
+        await clickUntil(browser, "#rpc", "document.querySelector('#rpc')?.textContent === 'saved:rpc'");
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+
+      const { page: noJs, close: closeNoJs } = await openPage(browsers.get(engine)!, `${actionsOrigin.origin}/`, {
+        javaScript: false,
+      });
+      try {
+        await noJs.fill("#title", "nojs");
+        await noJs.click("#submit");
+        await noJs.waitForLoadState("load");
+        expect(noJs.url()).toBe(`${actionsOrigin.origin}/`);
+        expect(await noJs.textContent("#last")).toBe("saved:nojs");
+      } finally {
+        await closeNoJs();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: navigation keeps the layout, persists marked regions, and uses a view transition`,
+    async () => {
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);
+      try {
+        await page.evaluate(() => {
+          const scope = window as unknown as Record<string, unknown>;
+          scope.__layout = document.querySelector("nav");
+          (document.querySelector("#layout-details") as HTMLDetailsElement).open = false;
+          (document.querySelector("#widget") as unknown as Record<string, unknown>).__marker = "kept";
+          scope.__transitions = 0;
+          const start = document.startViewTransition?.bind(document);
+          if (start !== undefined) {
+            document.startViewTransition = ((callback: () => Promise<void> | void) => {
+              scope.__transitions = (scope.__transitions as number) + 1;
+              return start(callback);
+            }) as typeof document.startViewTransition;
+          }
+        });
+        await page.click("#nav-about");
+        await waitFor(page, "location.pathname === '/about' && document.querySelector('#about') !== null");
+        expect(await page.evaluate("document.querySelector('nav') === window.__layout")).toBe(true);
+        expect(await page.evaluate("document.querySelector('#layout-details').open")).toBe(false);
+        expect(await page.evaluate("document.querySelector('[persist=widget]').__marker")).toBe("kept");
+        expect(await page.evaluate("document.querySelector('[persist=widget]').textContent")).toContain("home widget");
+        expect(await page.evaluate("window.__transitions")).toBe(
+          await page.evaluate("typeof document.startViewTransition === 'function' ? 1 : 0"),
+        );
         expect(errors).toEqual([]);
       } finally {
         await close();

@@ -12,6 +12,7 @@ mod inspect;
 mod ir;
 mod kind;
 mod module_facts;
+mod server_state;
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::Program;
@@ -208,6 +209,13 @@ fn compile_module(
         &options.facts,
         &mut normalized.facts,
     );
+    if options.target == CompileTarget::Html {
+        normalized.reports.extend(server_state::check(
+            normalized.program,
+            &normalized.scoping,
+            &normalized.facts,
+        ));
+    }
     let mut module = ir::build_module_ir(
         normalized.program,
         &normalized.scoping,

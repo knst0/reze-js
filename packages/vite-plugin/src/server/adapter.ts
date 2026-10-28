@@ -3,6 +3,8 @@ import { DocumentRootMarker } from "./template";
 export const ClientRequest = "/@reze/client.js";
 export const ClientId = "\0reze:client.js";
 export const IslandsId = "\0reze:islands.js";
+export const ClientRootsSpecifier = "virtual:reze-client-roots";
+export const ClientRootsId = "\0reze:client-roots.js";
 export const ServerEntryId = "\0reze:server-entry.js";
 export const ServerFactsSpecifier = "reze-client.js";
 export const DevFactsId = "\0reze:dev-facts.js";
@@ -10,7 +12,7 @@ export const SsgViewId = "\0reze:ssg-view.tsx";
 export const SsgRedirectId = "\0reze:ssg-redirect.js";
 export const DocumentViewId = "\0reze:document-view.tsx";
 export const HtmlEnv = "reze_html";
-export const GeneratedIds: readonly string[] = [ClientId, IslandsId, ServerEntryId, SsgRedirectId, DevFactsId];
+export const GeneratedIds: readonly string[] = [ClientId, IslandsId, ServerEntryId, SsgRedirectId, DevFactsId, ClientRootsId];
 
 export function viewSource(): string {
   return `import { routes } from "virtual:reze-routes";
@@ -46,6 +48,7 @@ export function serverEntrySource(): string {
   const viewLiteral = JSON.stringify(SsgViewId);
   return String.raw`import facts from "${ServerFactsSpecifier}";
 import { HtmlSession, renderStream } from "reze-js/internal/html";
+import { handleServerAction } from "reze-js/internal/runtime";
 import * as routerServer from "@rezejs/router/internal/server";
 const externalBase = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(facts.base) || facts.base.startsWith("//");
 const absoluteBase = facts.base.startsWith("/") && !facts.base.startsWith("//");
@@ -105,10 +108,10 @@ function assetsAt(depth) {
     Object.entries(facts.assets).map(([id, file]) => [id, file.startsWith("data:") ? file : joinBase(file, depth)]),
   );
 }
-const AssetMarker = "\0reze-asset:";
+const AssetMarker = "\uE000reze-asset:";
 function holdBackLength(text) {
   const start = text.lastIndexOf(AssetMarker);
-  if (start !== -1 && text.indexOf("\0", start + AssetMarker.length) === -1) return text.length - start;
+  if (start !== -1 && text.indexOf("\uE000", start + AssetMarker.length) === -1) return text.length - start;
   for (let length = Math.min(AssetMarker.length - 1, text.length); length > 0; length--) {
     if (AssetMarker.startsWith(text.slice(text.length - length))) return length;
   }
@@ -117,7 +120,7 @@ function holdBackLength(text) {
 function substituteAssets(body, assets) {
   if (Object.keys(assets).length === 0) return body;
   const replaceAll = (text) =>
-    text.replace(/\0reze-asset:([^\0]*)\0/g, (_, id) => {
+    text.replace(/\uE000reze-asset:([^\uE000]*)\uE000/g, (_, id) => {
       if (!Object.hasOwn(assets, id)) throw new Error("[reze] unknown asset " + id);
       return assets[id];
     });
@@ -170,6 +173,7 @@ function redirectResult(appPath, redirect) {
   };
 }
 async function respond(pathname, search, mode, signal, options) {
+  let pending = false;
   const appPath = stripBase(pathname);
   if (appPath === undefined) return { status: "not-found" };
   const depth = pageDepth(pathname);
@@ -192,17 +196,31 @@ async function respond(pathname, search, mode, signal, options) {
     const clientModules = options?.clientModules ?? clientModulesAt(depth);
     const headDefaults = options?.headDefaults ?? rebaseHeadDefaults(facts.headDefaults, depth);
     handedOff = true;
-    const body = await renderStream({ build, session, template, head: pageHead(route), headDefaults, clientModules, mode, signal });
+    const body = await renderStream({
+      build,
+      session,
+      template,
+      head: pageHead(route),
+      headDefaults,
+      clientModules,
+      mode,
+      signal,
+      onShell: (value) => {
+        pending = value;
+      },
+    });
     const redirect = routerServer.takeServerRedirect(prepared.handle);
     if (redirect !== undefined) {
       await body.cancel();
       return redirectResult(appPath, redirect);
     }
-    return { status: "render", body: substituteAssets(body, assetsAt(depth)) };
+    return { status: "render", body: substituteAssets(body, assetsAt(depth)), pending };
   } finally {
     if (!handedOff) session.dispose();
   }
 }
+export { revalidateTag } from "reze-js";
+
 function text(status, body) {
   return new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
 }
@@ -214,12 +232,25 @@ function errorDocument(template, head) {
   return new Response(html, { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 export async function handler(request, options) {
+  if (request.method === "POST") {
+    const action = await handleServerAction(request);
+    if (action !== undefined) return action;
+  }
   const url = new URL(request.url);
+  const isResume = request.headers.get("x-reze-resume") === "1";
   try {
-    const result = await respond(url.pathname, url.search, "stream", request.signal, options);
-    if (result.status === "not-found") return text(404, "Not Found");
-    if (result.status === "redirect") return new Response(null, { status: 302, headers: { location: result.to } });
-    return new Response(result.body, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+    const result = await respond(url.pathname, url.search, isResume ? "resume" : "stream", request.signal, options);
+    if (result.status !== "render") {
+      if (isResume) return text(404, "Not Found");
+      if (result.status === "redirect") return new Response(null, { status: 302, headers: { location: result.to } });
+      return text(404, "Not Found");
+    }
+    return new Response(result.body, {
+      status: 200,
+      headers: isResume
+        ? { "content-type": "text/html; charset=utf-8", "x-reze-resume": "1" }
+        : { "content-type": "text/html; charset=utf-8" },
+    });
   } catch (error) {
     console.error(error);
     const depth = pageDepth(url.pathname);
@@ -230,10 +261,15 @@ export async function handler(request, options) {
   }
 }
 export async function prerender(input) {
-  const result = await respond(basePath + input.pathname, "", "buffered", undefined, undefined);
+  const mode = input.ppr === true ? "shell" : "buffered";
+  const result = await respond(basePath + input.pathname, "", mode, undefined, undefined);
   if (result.status === "redirect") return result;
   if (result.status === "not-found") throw new Error("[reze] SSG route " + input.pathname + " matched no route");
-  return { status: "render", html: await new Response(result.body).text() };
+  const html = await new Response(result.body).text();
+  if (mode !== "shell" || result.pending !== true) return { status: "render", html };
+  const marker = '<script type="application/json" data-rz-resume>' + jsonScript({ path: basePath + input.pathname }) + "</script>";
+  const at = html.lastIndexOf("</body>");
+  return { status: "render", html: at < 0 ? html + marker : html.slice(0, at) + marker + html.slice(at) };
 }
 export async function discover(input) {
   const session = new HtmlSession({
@@ -245,8 +281,12 @@ export async function discover(input) {
   });
   try {
     const view = await session.load(loadView);
+    await routerServer.loadRouteModules(view.routes);
     const descriptors = routerServer.describeSsgRoutes(view.routes);
-    const urls = routerServer.enumerateSsgUrls(descriptors, input.paths, { trailingSlash: input.trailingSlash });
+    const urls = routerServer.enumerateSsgUrls(descriptors, input.paths, {
+      trailingSlash: input.trailingSlash,
+      mode: input.mode,
+    });
     return urls.map((entry) => entry.url);
   } finally {
     session.dispose();
@@ -256,12 +296,68 @@ export async function discover(input) {
 }
 
 export function clientEntrySource(rootId: string): string {
-  return `import { attachStream } from "reze-js/internal/client";
+  return `import { attachStream, resumeStream } from "reze-js/internal/client";
 import { installSwapNavigation } from "@rezejs/router/internal/swap";
 import islands from ${JSON.stringify(IslandsId)};
 export { islands };
-const swap = installSwapNavigation({ base: import.meta.env.BASE_URL, rootId: ${JSON.stringify(rootId)}, islands });
-attachStream(document, document, { wrap: swap.wrap, islands });
+let roots;
+const mountClientRoots = () => {
+  if (roots === undefined) {
+    if (document.querySelector("[data-rz-client]") === null) return;
+    roots = import(${JSON.stringify(ClientRootsSpecifier)});
+  }
+  void roots.then((module) => module.mountClientRoots(swap));
+};
+const swap = installSwapNavigation({
+  base: import.meta.env.BASE_URL,
+  rootId: ${JSON.stringify(rootId)},
+  islands,
+  onNavigate: mountClientRoots,
+});
+attachStream(document, document, { wrap: swap.wrap, islands, onApplied: mountClientRoots });
+mountClientRoots();
+const resume = document.querySelector("script[data-rz-resume]");
+if (resume !== null) {
+  let path = location.href;
+  try {
+    const value = JSON.parse(resume.textContent);
+    if (typeof value?.path === "string") path = value.path;
+  } catch {}
+  void resumeStream(path, { wrap: swap.wrap, islands, onApplied: mountClientRoots });
+}
+`;
+}
+
+export function clientRootsSource(): string {
+  return `import { createBrowserHistory, createRouter } from "@rezejs/router";
+import { render } from "reze-js";
+import { routes } from "virtual:reze-routes";
+const base = import.meta.env.BASE_URL;
+let mounted = [];
+export function mountClientRoots(swap) {
+  mounted = mounted.filter((entry) => {
+    if (entry.element.isConnected) return true;
+    entry.dispose();
+    return false;
+  });
+  for (const element of document.querySelectorAll("[data-rz-client]")) {
+    if (element.hasAttribute("data-rz-mounted")) continue;
+    element.setAttribute("data-rz-mounted", "");
+    const depth = Number(element.getAttribute("data-rz-client"));
+    const rootId = element.getAttribute("data-rz-client-route") ?? undefined;
+    const Router = createRouter({
+      routes,
+      history: createBrowserHistory(base),
+      startDepth: depth,
+      rootId,
+      linkRoot: element,
+      onOutside: (path) => window.location.assign(path),
+    });
+    const dispose = render(() => Router({}), element);
+    mounted.push({ element, dispose });
+  }
+  swap.setClientOwned(mounted.length > 0);
+}
 `;
 }
 
@@ -304,7 +400,7 @@ try {
   const pages = [];
   for (const url of urls) {
     current = url;
-    pages.push({ pathname: url, result: await adapter.prerender({ pathname: url }) });
+    pages.push({ pathname: url, result: await adapter.prerender({ pathname: url, ppr: workerData.input.ppr }) });
     report({ ok: true, progress: url });
   }
   report({ ok: true, result: pages });

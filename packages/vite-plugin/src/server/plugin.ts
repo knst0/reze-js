@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, isAbsolute, resolve } from "node:path";
 
 import { createRunnableDevEnvironment, isRunnableDevEnvironment, version as viteVersion } from "vite";
 import type { EnvironmentOptions, Logger, Plugin, ViteDevServer } from "vite";
@@ -10,6 +10,8 @@ import type { FileRoutesOptions } from "../routes";
 import {
   ClientId,
   ClientRequest,
+  ClientRootsId,
+  ClientRootsSpecifier,
   DevFactsId,
   DocumentViewId,
   GeneratedIds,
@@ -20,6 +22,7 @@ import {
   SsgRedirectId,
   SsgViewId,
   clientEntrySource,
+  clientRootsSource,
   devFactsSource,
   documentViewSource,
   islandsSource,
@@ -27,7 +30,7 @@ import {
   serverEntrySource,
   viewSource,
 } from "./adapter";
-import { createAssetPlugins } from "./asset-plugin";
+import { createAssetPlugins, documentAssetFiles } from "./asset-plugin";
 import type { ClientAssetInputs } from "./assets";
 import type { CapturedState } from "./build";
 import { renderBuiltDocument, runServerBuild } from "./build";
@@ -138,6 +141,7 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
     applyToEnvironment: isServerEnvironment,
     resolveId(id, importer) {
       if (id === ClientRequest) return ClientId;
+      if (id === ClientRootsSpecifier) return ClientRootsId;
       if (!isServe && id === htmlInput && this.environment.name === "client") return id;
       if (isServe && id === ServerFactsSpecifier && importer === ServerEntryId) return DevFactsId;
       if (GeneratedIds.includes(id) || id === SsgViewId || id === DocumentViewId) return id;
@@ -148,6 +152,7 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
       if (!isServe && id === htmlInput && this.environment.name === "client") return (await currentDocument()).html;
       if (id === ClientId) return clientEntrySource((await currentDocument()).rootId);
       if (id === IslandsId) return { code: islandsSource(islandEntries()), moduleSideEffects: "no-treeshake" };
+      if (id === ClientRootsId) return clientRootsSource();
       if (id === ServerEntryId) {
         return this.environment.name === HtmlEnv ? serverEntrySource() : undefined;
       }
@@ -255,6 +260,9 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
       ssrOptions = resolvedSsr === undefined ? undefined : { ...resolvedSsr, outDir: resolve(root, resolvedSsr.outDir) };
       if (ssrOptions !== undefined) assertDisjointOutDirs(outDir, ssrOptions.outDir);
       if (ssgOptions !== undefined && ssrOptions !== undefined) assertSharedServerOptions(ssgOptions, ssrOptions);
+      if (ssgOptions?.ppr === true && ssrOptions === undefined) {
+        throw new Error("[reze] ssg.ppr streams the dynamic parts from the server; enable ssr as well");
+      }
       primary = ssgOptions ?? ssrOptions;
       if (primary === undefined) throw new Error("[reze] server plugin needs ssg or ssr options");
       if (!isServe) {
@@ -306,6 +314,12 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
           logger?.info(analysis.reasons);
           documentViewRef = this.emitFile({ type: "chunk", id: DocumentViewId, name: "reze-document" });
         }
+      }
+    },
+    async buildEnd(error) {
+      if (isServe || error !== undefined || this.environment.name !== "client") return;
+      for (const file of documentAssetFiles((await currentDocument()).html, assets)) {
+        this.emitFile({ type: "asset", name: basename(file), originalFileName: file, source: readFileSync(file) });
       }
     },
     transformIndexHtml: {

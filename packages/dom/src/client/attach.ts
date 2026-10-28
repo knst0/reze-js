@@ -7,6 +7,13 @@ export interface StreamHandle {
   dispose(): void;
 }
 
+export interface AttachOptions extends BootOptions {
+  /** Tokens a swap already resolved: parts of a kept layout or a persisted element it replaced with the live node. */
+  readonly skipToken?: (token: string) => boolean;
+  /** Runs after a flush that applied at least one patch, head tag or island descriptor. */
+  readonly onApplied?: () => void;
+}
+
 const Units = `template[data-rz-patch],template[${HeadManagedAttribute}],script[data-rz-island],script[data-rz-end]`;
 
 function createLocator(target: Document): RangeLocator {
@@ -35,18 +42,24 @@ function createLocator(target: Document): RangeLocator {
   };
 }
 
-export function attachStream(source: Document, target: Document, options: BootOptions = {}): StreamHandle {
+export function attachStream(source: Document, target: Document, options: AttachOptions = {}): StreamHandle {
   const locator = createLocator(target);
   const processed = new WeakSet<Element>();
   const done = Promise.withResolvers<void>();
   let finished = false;
 
+  let applied = false;
   const apply = (unit: Element): void => {
+    applied = true;
     if (unit instanceof HTMLTemplateElement && unit.hasAttribute(HeadManagedAttribute)) {
       mergeStreamedHead(target, unit);
       unit.remove();
     } else if (unit instanceof HTMLTemplateElement) {
       const token = unit.getAttribute("data-rz-patch")!;
+      if (options.skipToken?.(token) === true) {
+        unit.remove();
+        return;
+      }
       const range = locator.find(token);
       if (range === undefined) {
         console.error(`[reze] stream patch for unknown range ${token}`);
@@ -60,7 +73,7 @@ export function attachStream(source: Document, target: Document, options: BootOp
       unit.remove();
     } else if (unit.hasAttribute("data-rz-island")) {
       const token = unit.getAttribute("data-rz-island")!;
-      bootIsland(token, JSON.parse(unit.textContent!) as IslandDescriptor, locator, options);
+      if (options.skipToken?.(token) !== true) bootIsland(token, JSON.parse(unit.textContent!) as IslandDescriptor, locator, options);
     } else {
       finished = true;
       observer.disconnect();
@@ -70,12 +83,14 @@ export function attachStream(source: Document, target: Document, options: BootOp
 
   const flush = (isFinal: boolean): void => {
     if (finished) return;
+    applied = false;
     for (const unit of source.querySelectorAll(Units)) {
       if (processed.has(unit) || (!isFinal && unit.nextSibling === null)) continue;
       processed.add(unit);
       apply(unit);
       if (finished) return;
     }
+    if (applied) options.onApplied?.();
     if (isFinal) {
       finished = true;
       observer.disconnect();
@@ -101,4 +116,41 @@ export function attachStream(source: Document, target: Document, options: BootOp
       done.resolve();
     },
   };
+}
+
+/** Fetches the streamed parts a prerendered shell left out and applies them to the live document. */
+export async function resumeStream(url: string, options: AttachOptions = {}): Promise<boolean> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      credentials: "same-origin",
+      headers: { accept: "text/html", "x-reze-resume": "1" },
+    });
+  } catch {
+    return false;
+  }
+  if (!response.ok || response.headers.get("x-reze-resume") !== "1") return false;
+  const incoming = document.implementation.createHTMLDocument("");
+  incoming.open();
+  const handle = attachStream(incoming, document, options);
+  try {
+    if (response.body === null) {
+      incoming.write(await response.text());
+    } else {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        incoming.write(decoder.decode(value, { stream: true }));
+      }
+      incoming.write(decoder.decode());
+    }
+    incoming.close();
+    handle.flush(true);
+    return true;
+  } catch {
+    handle.dispose();
+    return false;
+  }
 }

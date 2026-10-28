@@ -7,6 +7,9 @@ export default function About() {
         <title>About</title>
       </Head>
       about
+      <div id="widget" persist="widget">
+        about widget
+      </div>
     </h1>
   );
 }

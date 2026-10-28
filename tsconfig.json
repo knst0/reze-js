@@ -7,6 +7,7 @@
     "jsxImportSource": "reze-js",
     "paths": {
       "reze-js": ["./packages/reze-js/src/index.ts"],
+      "reze-js/schema": ["./packages/reze-js/src/schema.ts"],
       "reze-js/jsx-runtime": ["./packages/reze-js/src/jsx-runtime.ts"],
       "reze-js/jsx-dev-runtime": ["./packages/reze-js/src/jsx-dev-runtime.ts"],
       "reze-js/internal/reactivity": ["./packages/reze-js/src/internal/reactivity.ts"],
@@ -18,6 +19,8 @@
       "@rezejs/dom": ["./packages/dom/src/index.ts"],
       "@rezejs/dom/jsx-runtime": ["./packages/dom/src/jsx-runtime.ts"],
       "@rezejs/dom/jsx-dev-runtime": ["./packages/dom/src/jsx-dev-runtime.ts"],
+      "@rezejs/dom/internal/client": ["./packages/dom/src/internal/client.ts"],
+      "@rezejs/dom/internal/html": ["./packages/dom/src/internal/html.ts"],
       "@rezejs/router": ["./packages/router/src/index.ts"],
       "@rezejs/router/fs": ["./packages/router/src/fs/index.ts"],
       "@rezejs/signals": ["./packages/signals/src/index.ts"],

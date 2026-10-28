@@ -1,4 +1,4 @@
-import { attachStream, disposeIslandsIn, type BootOptions } from "@rezejs/dom/internal/client";
+import { attachStream, disposeIslandsBetween, disposeIslandsIn, type BootOptions } from "@rezejs/dom/internal/client";
 import { getOwner, provideContext, root } from "@rezejs/signals";
 
 import { syncManagedHead } from "../head";
@@ -23,11 +23,15 @@ export interface SwapOptions {
   readonly base: string;
   readonly rootId: string;
   readonly islands?: BootOptions["islands"];
+  /** Runs after a swap commits, so the caller can mount client route roots that the next page introduced. */
+  readonly onNavigate?: () => void;
 }
 
 export interface SwapRuntime {
   readonly state: RouterState;
   wrap<T>(render: () => T): T;
+  /** While a client route root is mounted, it owns history and link handling for its subtree. */
+  setClientOwned(value: boolean): void;
   dispose(): void;
 }
 
@@ -87,6 +91,108 @@ function replaceBetween(live: Document, incoming: Document, data: string): void 
   for (let node = source.start.nextSibling; node !== null && node !== source.end; node = source.start.nextSibling) {
     target.end.before(live.adoptNode(node));
   }
+}
+
+interface LayoutRange {
+  readonly key: string;
+  readonly start: Comment;
+  readonly end: Comment;
+}
+
+const LayoutPrefix = "l:";
+
+function isBetween(node: Node, start: Node, end: Node): boolean {
+  return (
+    (start.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
+    (end.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING) !== 0
+  );
+}
+
+function commentsIn(scope: Node): Comment[] {
+  const out: Comment[] = [];
+  const walker = scope.ownerDocument!.createTreeWalker(scope, NodeFilter.SHOW_COMMENT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) out.push(node as Comment);
+  return out;
+}
+
+function tokenOf(comment: Comment): string {
+  return comment.data.startsWith("/rz:") ? comment.data.slice(4) : comment.data.slice(3);
+}
+
+function tokenComments(scope: Document): Comment[] {
+  return commentsIn(scope.documentElement).filter((comment) => comment.data.startsWith("rz:") || comment.data.startsWith("/rz:"));
+}
+
+/** Route levels in document order, outermost first; each carries the key its marker range was rendered with. */
+function layoutRanges(scope: Document): LayoutRange[] {
+  const out: LayoutRange[] = [];
+  const open: { key: string; start: Comment }[] = [];
+  for (const comment of tokenComments(scope)) {
+    const token = tokenOf(comment);
+    if (comment.data.startsWith("/rz:")) {
+      if (token.startsWith(LayoutPrefix) && open.at(-1)?.key === token) out.push({ key: token, start: open.pop()!.start, end: comment });
+    } else if (token.startsWith(LayoutPrefix)) {
+      open.push({ key: token, start: comment });
+    }
+  }
+  return out.sort((left, right) => ((left.start.compareDocumentPosition(right.start) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1));
+}
+
+function elementsIn(scope: Document, start: Node, end: Node): Element[] {
+  const out: Element[] = [];
+  const walker = scope.createTreeWalker(scope.documentElement, NodeFilter.SHOW_ELEMENT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (isBetween(node, start, end)) out.push(node as Element);
+  }
+  return out;
+}
+
+/** `[persist]` elements that are not inside another one: nested regions travel with their owner. */
+function persistRegions(elements: readonly Element[]): Element[] {
+  return elements.filter((element) => element.hasAttribute("persist") && element.parentElement?.closest("[persist]") === null);
+}
+
+function detachPersisted(elements: readonly Element[], kept: Map<string, Element>): void {
+  for (const element of persistRegions(elements)) {
+    const key = element.getAttribute("persist")!;
+    if (kept.has(key)) continue;
+    kept.set(key, element);
+    element.remove();
+  }
+}
+
+function restorePersisted(elements: readonly Element[], kept: Map<string, Element>): void {
+  for (const element of persistRegions(elements)) {
+    const key = element.getAttribute("persist")!;
+    const live = kept.get(key);
+    if (live === undefined) continue;
+    kept.delete(key);
+    element.replaceWith(live);
+  }
+}
+
+function rangeText(scope: Document, range: { start: Comment; end: Comment }): string {
+  let out = "";
+  for (let node = range.start.nextSibling; node !== null && node !== range.end; node = node.nextSibling) {
+    out += node.nodeType === 1 ? (node as Element).outerHTML : (node.textContent ?? "");
+  }
+  return out;
+}
+
+function replacePortals(incoming: Document, always: boolean): void {
+  const target = commentRange(document, "rz:p");
+  const source = commentRange(incoming, "rz:p");
+  if (target === undefined || source === undefined) return;
+  if (!always && rangeText(document, target) === rangeText(incoming, source)) return;
+  replaceBetween(document, incoming, "rz:p");
+}
+
+function syncRouteScript(incoming: Document): void {
+  const next = incoming.querySelector("script[data-rz-route]");
+  if (next === null) return;
+  const live = document.querySelector("script[data-rz-route]");
+  if (live === null) document.head.append(document.adoptNode(next));
+  else live.textContent = next.textContent;
 }
 
 function awaitLoaded(link: HTMLLinkElement): Promise<void> {
@@ -161,7 +267,8 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
     const reader = response.body?.getReader();
     let seen = "";
     let isApplied = false;
-    const apply = async (): Promise<boolean> => {
+    let skipped: ReadonlySet<string> | undefined;
+    const applyNow = async (): Promise<boolean> => {
       const build = incoming.querySelector('meta[name="reze-build"]')?.getAttribute("content");
       const incomingRoot = incoming.getElementById(options.rootId);
       const liveRoot = document.getElementById(options.rootId);
@@ -169,19 +276,86 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
         fallback();
         return false;
       }
+      const liveLevels = layoutRanges(document);
+      const incomingLevels = layoutRanges(incoming);
+      let replaceAt = -1;
+      if (liveLevels.length > 0 && incomingLevels.length > 0) {
+        let shared = 0;
+        while (shared < liveLevels.length && shared < incomingLevels.length && liveLevels[shared]!.key === incomingLevels[shared]!.key)
+          shared++;
+        const isSamePage = shared === liveLevels.length && shared === incomingLevels.length;
+        if (!isSamePage) replaceAt = shared < liveLevels.length ? shared : liveLevels.length - 1;
+      }
+      const replaced = replaceAt >= 0 && replaceAt < incomingLevels.length ? incomingLevels[replaceAt] : undefined;
+      const kept = replaceAt < 0 ? incomingLevels : incomingLevels.slice(0, replaceAt);
+      const skip = new Set<string>();
+      if (kept.length > 0) {
+        for (const comment of tokenComments(incoming)) {
+          if (comment.data.startsWith("/rz:")) continue;
+          if (!kept.some((range) => isBetween(comment, range.start, range.end))) continue;
+          if (replaced !== undefined && isBetween(comment, replaced.start, replaced.end)) continue;
+          skip.add(tokenOf(comment));
+        }
+      }
+      if (replaced !== undefined) {
+        for (const element of persistRegions(elementsIn(incoming, replaced.start, replaced.end))) {
+          for (const comment of commentsIn(element)) {
+            if (comment.data.startsWith("rz:") && !comment.data.startsWith("/rz:")) skip.add(tokenOf(comment));
+          }
+        }
+      }
       await syncHead(incoming);
       if (generation !== state.generation) return false;
-      disposeIslandsIn(liveRoot);
-      liveRoot.replaceChildren(...[...incomingRoot.childNodes].map((node) => document.adoptNode(node)));
-      replaceBetween(document, incoming, "rz:p");
+      const persisted = new Map<string, Element>();
+      const isFull = replaced === undefined || replaceAt === 0;
+      const target = isFull || replaceAt < 0 ? undefined : liveLevels[replaceAt];
+      if (replaceAt === -1) {
+        replacePortals(incoming, false);
+      } else if (isFull) {
+        detachPersisted([...liveRoot.querySelectorAll("[persist]")], persisted);
+        disposeIslandsIn(liveRoot);
+        liveRoot.replaceChildren(...[...incomingRoot.childNodes].map((node) => document.adoptNode(node)));
+        replacePortals(incoming, true);
+      } else if (target !== undefined) {
+        detachPersisted(elementsIn(document, target.start, target.end), persisted);
+        disposeIslandsBetween(target.start, target.end);
+        for (let node = target.start.nextSibling; node !== null && node !== target.end; node = target.start.nextSibling) {
+          node.parentNode!.removeChild(node);
+        }
+        for (let node = replaced!.start.nextSibling; node !== null && node !== replaced!.end; node = replaced!.start.nextSibling) {
+          target.end.parentNode!.insertBefore(document.adoptNode(node), target.end);
+        }
+        target.start.data = replaced!.start.data;
+        target.end.data = replaced!.end.data;
+        replacePortals(incoming, false);
+      }
+      if (replaceAt !== -1) {
+        restorePersisted(
+          isFull || target === undefined ? [...liveRoot.querySelectorAll("[persist]")] : elementsIn(document, target.start, target.end),
+          persisted,
+        );
+      }
+      syncRouteScript(incoming);
       const final = new URL(response.url);
       const finalPath = history.resolve(final);
       const landed = finalPath === undefined ? entry : { ...entry, path: finalPath };
       if (finalPath !== undefined && finalPath !== entry.path) history.replace(finalPath, entry.state);
       const route = readRoute(incoming);
       const routed = routedEntry(route, landed);
+      skipped = skip;
       commit(state, routed, parseLocation(routed), stubMatches(route, routed.path), scrollMode);
+      options.onNavigate?.();
       return true;
+    };
+    const apply = async (): Promise<boolean> => {
+      const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (typeof document.startViewTransition !== "function" || reduced) return applyNow();
+      let applied = false;
+      const transition = document.startViewTransition(async () => {
+        applied = await applyNow();
+      });
+      await transition.updateCallbackDone;
+      return applied;
     };
     let stream: ReturnType<typeof attachStream> | undefined;
     const chunks = async function* (): AsyncGenerator<string> {
@@ -202,12 +376,12 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
       if (!seen.includes(ShellMarker)) continue;
       isApplied = true;
       if (!(await apply())) return;
-      stream = attachStream(incoming, document, { wrap, islands: options.islands });
+      stream = attachStream(incoming, document, { wrap, islands: options.islands, skipToken: (token) => skipped?.has(token) === true });
     }
     incoming.close();
     if (!isApplied) {
       if (!(await apply())) return;
-      stream = attachStream(incoming, document, { wrap, islands: options.islands });
+      stream = attachStream(incoming, document, { wrap, islands: options.islands, skipToken: (token) => skipped?.has(token) === true });
     }
     stream!.flush(true);
   }
@@ -224,7 +398,10 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
   });
   loadPositions(state);
 
-  const unlisten = history.listen((entry) => onPop(state, entry));
+  let clientOwned = false;
+  const unlisten = history.listen((entry) => {
+    if (!clientOwned) onPop(state, entry);
+  });
   const previousRestoration = window.history.scrollRestoration;
   window.history.scrollRestoration = "manual";
   const onPageHide = (): void => persistPositions(state);
@@ -233,7 +410,7 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
   const onClick = (event: MouseEvent): void => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const anchor = anchorOf(event);
-    if (anchor === undefined) return;
+    if (anchor === undefined || anchor.closest("[data-rz-client]") !== null) return;
     const path = anchorPath(state, anchor);
     if (path === undefined) return;
     event.preventDefault();
@@ -244,6 +421,7 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
     });
   };
   const prefetch = (anchor: Element): void => {
+    if (anchor.closest("[data-rz-client]") !== null) return;
     const path = anchorPath(state, anchor);
     if (path === undefined) return;
     const url = history.base + path;
@@ -271,6 +449,9 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
   return {
     state,
     wrap,
+    setClientOwned(value) {
+      clientOwned = value;
+    },
     dispose() {
       unlisten();
       window.clearTimeout(timer);

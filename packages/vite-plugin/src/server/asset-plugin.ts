@@ -102,6 +102,17 @@ function assetPostfix(id: string): string {
   return (query ? `?${query}` : "") + fragment;
 }
 
+const DocumentAsset = /\uE000reze-asset:([^\uE000]*)\uE000/g;
+
+export function documentAssetFiles(html: string, inputs: ClientAssetInputs): string[] {
+  const files = new Set<string>();
+  for (const [, key] of html.matchAll(DocumentAsset)) {
+    const source = inputs.files.get(key!);
+    if (source !== undefined && !inputs.publicFiles.has(key!) && !inputs.inlined.has(key!)) files.add(source.file);
+  }
+  return [...files];
+}
+
 export function createAssetPlugins(htmlEnvironment: string, inputs: ClientAssetInputs): Plugin[] {
   let config: ResolvedConfig;
   const isAsset = (id: string): boolean =>
@@ -111,7 +122,7 @@ export function createAssetPlugins(htmlEnvironment: string, inputs: ClientAssetI
     const publicFile = config.publicDir && file.startsWith("/") ? join(config.publicDir, file.slice(1)) : "";
     const resolved = !existsSync(file) && publicFile && existsSync(publicFile) ? publicFile : file;
     const key = canonicalModuleId(resolved + id.slice(file.length), config.root);
-    inputs.files.set(key, { id: canonicalModuleId(resolved, config.root), postfix: assetPostfix(id) });
+    inputs.files.set(key, { id: canonicalModuleId(resolved, config.root), file: resolved, postfix: assetPostfix(id) });
     if (resolved === publicFile)
       inputs.publicFiles.set(key, encodeURI(relative(config.publicDir, resolved).replace(/\\/g, "/")) + assetPostfix(id));
     return key;

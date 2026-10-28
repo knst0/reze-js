@@ -1,46 +1,46 @@
 {
   "schema": 1,
-  "recordedAt": "2026-10-14T06:27:26.437Z",
+  "recordedAt": "2026-10-28T16:30:27.296Z",
   "sizes": {
     "baseline": {
       "raw": 6190,
-      "gzip": 2384,
-      "brotli": 2207
+      "gzip": 2412,
+      "brotli": 2231
     },
     "for": {
-      "raw": 11440,
-      "gzip": 4089,
-      "brotli": 3734
+      "raw": 11184,
+      "gzip": 4098,
+      "brotli": 3761
     },
     "head": {
-      "raw": 8852,
-      "gzip": 3200,
-      "brotli": 2959
+      "raw": 8525,
+      "gzip": 3275,
+      "brotli": 3002
     },
     "island": {
-      "raw": 14909,
-      "gzip": 5384,
-      "brotli": 4893
+      "raw": 14912,
+      "gzip": 5421,
+      "brotli": 4920
     },
     "portal": {
       "raw": 6710,
-      "gzip": 2522,
-      "brotli": 2331
+      "gzip": 2552,
+      "brotli": 2361
     },
     "reactive-text": {
-      "raw": 8762,
-      "gzip": 3255,
-      "brotli": 2973
+      "raw": 8765,
+      "gzip": 3271,
+      "brotli": 2989
     },
     "show": {
-      "raw": 9058,
-      "gzip": 3355,
-      "brotli": 3075
+      "raw": 9061,
+      "gzip": 3390,
+      "brotli": 3112
     },
     "switch": {
-      "raw": 9289,
-      "gzip": 3438,
-      "brotli": 3166
+      "raw": 9292,
+      "gzip": 3475,
+      "brotli": 3202
     }
   }
 }

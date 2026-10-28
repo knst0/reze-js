@@ -116,6 +116,8 @@ export default function BlogLayout(props: RouteProps) {
 
 The pages in `src/routes/blog/` render in place of the layout's `children`.
 
+The server sends a layout with the page it wraps. On navigation between server-rendered pages, a layout that the next page renders the same way keeps its DOM, so its scroll, open menus and island state survive. See [Keep layout state across navigation](/vite-plugin#keep-layout-state-across-navigation).
+
 ## Read params
 
 A dynamic route receives its params through `RouteProps` for the page component, or through `useParams` anywhere below the route. A catch-all's value is stored under the name of the catch-all:

@@ -117,26 +117,31 @@ In Zed, add this to `settings.json`:
 }
 ```
 
-## Create the HTML entry page
+## Create the document
 
-Create `index.html` at the project root. It contains the element that `render` mounts into and the script that loads the entry module:
+Create `src/document.tsx`. It is the HTML page around the app: it holds the element that `render` mounts into and the script that loads the entry module:
 
-```html
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Reze app</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
+```tsx file=src/document.tsx
+import type { JSX } from "reze-js";
+
+export default function Document(props: { children: JSX.Element }) {
+  return (
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>My Reze app</title>
+      </head>
+      <body>
+        <div id="app">{props.children}</div>
+        <script type="module" src="/src/main.tsx"></script>
+      </body>
+    </html>
+  );
+}
 ```
 
-The `id` must match the `id` passed to `getElementById` in `src/main.tsx`. The script path starts at the project root.
+The plugin compiles the document into the HTML entry and never reads `index.html`. A project that still has `index.html` at the root fails with a message that asks you to move its tags into the document. The `id` must match the `id` passed to `getElementById` in `src/main.tsx`, and the script path starts at the project root. [The document](/vite-plugin#the-document) covers the shape and the components it can inline.
 
 ## Write the Counter component
 
@@ -215,18 +220,19 @@ pnpm preview
 
 Match the message you see to a row in the table:
 
-| Message                                                                                                                                         | Cause                                                                                          | Fix                                                                                                  |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `Unexpected JSX expression` during `pnpm build`                                                                                                 | The `reze()` plugin is missing from `plugins`, so Vite parses JSX without the Reze compiler.   | Add `reze()` to `plugins` in `vite.config.ts`.                                                       |
-| `PARSE_ERROR` (reported by the Reze plugin) in a file with a `.ts` extension                                                                    | The file contains JSX but has the `.ts` extension.                                             | Rename the file to `.tsx`.                                                                           |
-| `"signal" is not exported by ... reze-js` (`MISSING_EXPORT`) during the build, or the browser error "does not provide an export named 'signal'" | The plugin did not compile the file. At runtime, `reze-js` exports only `render`.              | Add `reze()` to `plugins` in `vite.config.ts`.                                                       |
-| `SIGNAL_DEFAULT_EXPORT`                                                                                                                         | A file uses `export default` with a `signal`, such as `export default count`.                  | Export the signal by name, as in `export let count = signal(0)`, or export a function that reads it. |
-| `Cannot set properties of null (setting 'textContent')` in the browser console                                                                  | `document.getElementById("app")` returned `null`, so no element in `index.html` has that `id`. | Make the `id` in `index.html` match the `id` in `src/main.tsx`.                                      |
-| Blank page, and a 404 response for the script in the browser network log                                                                        | The `src` in `index.html` does not match a file in the project.                                | Set the script `src` to `/src/main.tsx`, and check that the file exists.                             |
-| `TS2339` for `import.meta.env`, or `TS2882` for a CSS import                                                                                    | The `types` array in `tsconfig.json` does not include `vite/client`.                           | Add `"types": ["vite/client"]`.                                                                      |
-| `TS17004`: Cannot use JSX unless the '--jsx' flag is provided                                                                                   | `jsx` is missing from `tsconfig.json`.                                                         | Add `"jsx": "preserve"`.                                                                             |
-| `TS7026`: JSX element implicitly has type 'any'                                                                                                 | `jsxImportSource` is missing from `tsconfig.json`.                                             | Add `"jsxImportSource": "reze-js"`.                                                                  |
-| "This package is ESM only but it was tried to load by `require`" while Vite loads `vite.config.ts`                                              | `package.json` does not set `"type": "module"`.                                                | Add `"type": "module"` to `package.json`.                                                            |
+| Message                                                                                                                                         | Cause                                                                                                | Fix                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `Unexpected JSX expression` during `pnpm build`                                                                                                 | The `reze()` plugin is missing from `plugins`, so Vite parses JSX without the Reze compiler.         | Add `reze()` to `plugins` in `vite.config.ts`.                                                       |
+| `PARSE_ERROR` (reported by the Reze plugin) in a file with a `.ts` extension                                                                    | The file contains JSX but has the `.ts` extension.                                                   | Rename the file to `.tsx`.                                                                           |
+| `"signal" is not exported by ... reze-js` (`MISSING_EXPORT`) during the build, or the browser error "does not provide an export named 'signal'" | The plugin did not compile the file. At runtime, `reze-js` exports only `render`.                    | Add `reze()` to `plugins` in `vite.config.ts`.                                                       |
+| `SIGNAL_DEFAULT_EXPORT`                                                                                                                         | A file uses `export default` with a `signal`, such as `export default count`.                        | Export the signal by name, as in `export let count = signal(0)`, or export a function that reads it. |
+| `Cannot set properties of null (setting 'textContent')` in the browser console                                                                  | `document.getElementById("app")` returned `null`, so no element in `src/document.tsx` has that `id`. | Make the `id` in `src/document.tsx` match the `id` in `src/main.tsx`.                                |
+| Blank page, and a 404 response for the script in the browser network log                                                                        | The `src` in `src/document.tsx` does not match a file in the project.                                | Set the script `src` to `/src/main.tsx`, and check that the file exists.                             |
+| `[reze] a client-only app renders its page from src/document.tsx and never reads index.html` during `pnpm build`                                | The project still has an `index.html` next to `src/document.tsx`.                                    | Move the tags from `index.html` into `src/document.tsx`, then delete `index.html`.                   |
+| `TS2339` for `import.meta.env`, or `TS2882` for a CSS import                                                                                    | The `types` array in `tsconfig.json` does not include `vite/client`.                                 | Add `"types": ["vite/client"]`.                                                                      |
+| `TS17004`: Cannot use JSX unless the '--jsx' flag is provided                                                                                   | `jsx` is missing from `tsconfig.json`.                                                               | Add `"jsx": "preserve"`.                                                                             |
+| `TS7026`: JSX element implicitly has type 'any'                                                                                                 | `jsxImportSource` is missing from `tsconfig.json`.                                                   | Add `"jsxImportSource": "reze-js"`.                                                                  |
+| "This package is ESM only but it was tried to load by `require`" while Vite loads `vite.config.ts`                                              | `package.json` does not set `"type": "module"`.                                                      | Add `"type": "module"` to `package.json`.                                                            |
 
 ## Related pages
 

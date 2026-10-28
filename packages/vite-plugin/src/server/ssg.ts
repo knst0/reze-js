@@ -26,6 +26,8 @@ export interface SsgBuildInput {
   facts: ServerFacts;
   template: TemplateParts;
   redirectFile: string;
+  /** `ssr` is built too, so routing modes decide which leaves get a file. */
+  hybrid: boolean;
 }
 
 export async function prerenderSite(input: SsgBuildInput): Promise<void> {
@@ -36,7 +38,11 @@ export async function prerenderSite(input: SsgBuildInput): Promise<void> {
     const entry = materializeServerBundle(input.htmlChunks, tempDir, input.facts);
     const workerFile = join(tempDir, "reze-ssg-worker.mjs");
     writeFileSync(workerFile, workerEntrySource(`./${entry}`));
-    const pages = await runWorker<PrerenderedPages>(workerFile, { paths, trailingSlash: options.trailingSlash }, options.timeoutMs);
+    const pages = await runWorker<PrerenderedPages>(
+      workerFile,
+      { paths, trailingSlash: options.trailingSlash, mode: input.hybrid ? "hybrid" : "ssg", ppr: options.ppr },
+      options.timeoutMs,
+    );
     const urls = pages.map((page) => page.pathname);
     checkPublicCollisions(input.publicDir, [...planOutputs(urls).keys()]);
     const redirects = new Map<string, string>();

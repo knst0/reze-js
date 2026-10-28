@@ -3,10 +3,14 @@ import type { JSX } from "reze-js";
 
 import "../styles.css";
 
-let nextContextId = 0;
+function contextId(pathname: string): number {
+  let id = 0;
+  for (const char of pathname) id = (id * 31 + char.charCodeAt(0)) >>> 0;
+  return id;
+}
 
 export const route = {
-  beforeLoad: ({ location }: PreloadArgs) => ({ id: ++nextContextId, pathname: location.pathname }),
+  beforeLoad: ({ location }: PreloadArgs) => ({ id: contextId(location.pathname), pathname: location.pathname }),
 };
 
 export default function Shell(props: { children: JSX.Element }) {

@@ -1,31 +1,31 @@
 {
   "schema": 1,
-  "recordedAt": "2026-10-14T06:28:20.958Z",
+  "recordedAt": "2026-10-28T16:30:27.732Z",
   "sizes": {
     "baseline": {
       "raw": 6190,
-      "gzip": 2384,
-      "brotli": 2207
+      "gzip": 2412,
+      "brotli": 2231
     },
     "links": {
-      "raw": 29222,
-      "gzip": 9964,
-      "brotli": 9031
+      "raw": 24869,
+      "gzip": 8665,
+      "brotli": 7879
     },
     "navigate": {
-      "raw": 30711,
-      "gzip": 10542,
-      "brotli": 9551
+      "raw": 26358,
+      "gzip": 9260,
+      "brotli": 8408
     },
     "params": {
-      "raw": 30300,
-      "gzip": 10368,
-      "brotli": 9418
+      "raw": 25947,
+      "gzip": 9076,
+      "brotli": 8252
     },
     "router": {
-      "raw": 29596,
-      "gzip": 10088,
-      "brotli": 9155
+      "raw": 25243,
+      "gzip": 8791,
+      "brotli": 8007
     }
   }
 }

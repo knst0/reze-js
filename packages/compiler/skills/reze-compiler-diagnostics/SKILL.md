@@ -908,6 +908,75 @@ Example:
 export const view = <div />;
 ```
 
+## MODULE_STATE_SHARED
+
+**Module state written during a request** · severity `error`
+
+> `{name}` is a module-level mutable binding, and a component or route callback writes it. The module is loaded once per process, so every request shares the value and sees writes from other users.
+
+`data` keys: `name`
+
+Automatic fix: no
+
+Server rendering keeps one module instance for every request. The compiler moves module-level `signal`, `computed`, `action`, `selector`, `store`, `createContext`, `effect` and `provideContext` declarations into per-request state, but a plain `let` or `var` stays where it is and is shared. A component body, `preload`, `beforeLoad`, `redirect`, `loader` or `action` that writes such a binding leaks data between requests. `data.name` is the binding.
+
+**Repair:** Declare the value with `signal`, `store`, `selector` or `createContext` so the compiler recreates it per request, or move it into the route `context` from `beforeLoad`. Keep plain module variables for build-time constants only.
+
+Before:
+
+```tsx
+let cart: string[] = [];
+
+export function Cart() {
+  cart = [...cart, "item"];
+  return <ul>{cart}</ul>;
+}
+```
+
+After:
+
+```tsx
+import { signal } from "reze-js";
+
+let cart = signal<string[]>([]);
+
+export function Cart() {
+  cart = [...cart, "item"];
+  return <ul>{cart}</ul>;
+}
+```
+
+## SERVER_INPUT_SCHEMA
+
+**Server function without an input schema** · severity `error`
+
+> A server action is a public POST endpoint, and this call has no input schema, so its body would accept any JSON shape. Pass a schema from `reze-js/schema` as the first argument.
+
+`data` keys: none
+
+Automatic fix: no
+
+The compiler rewrites `server` to a typed RPC endpoint. Every request reaches the handler with whatever body a client sends, so the value must be parsed by a schema before the handler runs. The first argument must be a `reze-js/schema` builder such as `s.object`, or a module-level constant initialized with one.
+
+**Repair:** Write `server(s.object({ … }), async (input) => …)`. The schema validates the body and gives the handler a typed input; authorize the caller inside the handler.
+
+Before:
+
+```tsx
+import { server } from "reze-js";
+
+export const save = server(async (input: { title: string }) => input.title);
+```
+
+After:
+
+```tsx
+import { server } from "reze-js";
+import * as s from "reze-js/schema";
+
+export const save = server(s.object({ title: s.string() }), async (input) => input.title);
+```
+
 ## CHILDREN_PROP_IGNORED
 
 **`children` attribute next to nested children** · severity `warn`

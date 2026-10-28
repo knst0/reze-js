@@ -11,6 +11,7 @@ import {
   resolveSsgRedirectChain,
   resolveSsgRedirectTarget,
 } from "../src/internal/server";
+import { layoutKey } from "../src/layout";
 
 const Home = () => null;
 
@@ -28,16 +29,37 @@ test("describeSsgRoutes keeps file ids, assigns structural chains, skips layouts
     { path: "/about", component: Home },
   ];
   expect(describeSsgRoutes(routes)).toEqual([
-    { id: "blog/[id]", pattern: "/blog/:id", fullPath: "/blog/:id", dynamics: [{ name: "id", kind: "required" }] },
-    { id: "1/0", pattern: "/docs/guide", fullPath: "/docs/guide", dynamics: [] },
-    { id: "1/1", pattern: "/docs/:topic?", fullPath: "/docs/:topic?", dynamics: [{ name: "topic", kind: "optional" }] },
-    { id: "2", pattern: "/about", fullPath: "/about", dynamics: [] },
+    { id: "blog/[id]", pattern: "/blog/:id", fullPath: "/blog/:id", dynamics: [{ name: "id", kind: "required" }], render: undefined },
+    { id: "1/0", pattern: "/docs/guide", fullPath: "/docs/guide", dynamics: [], render: undefined },
+    { id: "1/1", pattern: "/docs/:topic?", fullPath: "/docs/:topic?", dynamics: [{ name: "topic", kind: "optional" }], render: undefined },
+    { id: "2", pattern: "/about", fullPath: "/about", dynamics: [], render: undefined },
   ]);
   const duplicates: RouteDefinition[] = [
     { path: "/a", component: Home },
     { path: "/a", component: Home },
   ];
   expect(() => describeSsgRoutes(duplicates)).toThrow('share pattern "/a"');
+});
+
+test("a layout key changes when its preload data changes", () => {
+  expect(layoutKey(0, "shell", {}, true, false, "", { id: 1 })).toBe(layoutKey(0, "shell", {}, true, false, "", { id: 1 }));
+  expect(layoutKey(0, "shell", {}, true, false, "", { id: 1 })).not.toBe(layoutKey(0, "shell", {}, true, false, "", { id: 2 }));
+  expect(layoutKey(0, "shell", {}, false, false, "")).toBe(layoutKey(0, "shell", {}, false, false, ""));
+});
+
+test("route render modes decide which leaves become files", () => {
+  const routes: RouteDefinition[] = [
+    { path: "/", component: Home },
+    { path: "/account", component: Home, render: "client" },
+    { path: "/api", component: Home, render: "server" },
+  ];
+  const descriptors = describeSsgRoutes(routes);
+  expect(descriptors.map((descriptor) => descriptor.render)).toEqual([undefined, "client", "server"]);
+  const hybrid = enumerateSsgUrls(descriptors, {}, { trailingSlash: "always", mode: "hybrid" });
+  expect(hybrid.map((entry) => entry.url)).toEqual(["/", "/account/"]);
+  expect(() => enumerateSsgUrls(descriptors, {}, { trailingSlash: "always", mode: "ssg" })).toThrow(
+    'route "/api" renders on the server, but this build has no ssr',
+  );
 });
 
 test("enumerateSsgUrls lists static leaves once, expands dynamics per leaf, and rejects invalid entries", () => {
@@ -53,7 +75,7 @@ test("enumerateSsgUrls lists static leaves once, expands dynamics per leaf, and 
       "/blog/:id": [{ id: "one" }, { id: "two" }],
       "/docs/*path": [{ path: ["a", "b"] }],
     },
-    { trailingSlash: "always" },
+    { trailingSlash: "always", mode: "ssg" },
   );
   expect(urls).toEqual([
     { url: "/", file: "index.html", leafId: "0", params: {} },
@@ -61,31 +83,35 @@ test("enumerateSsgUrls lists static leaves once, expands dynamics per leaf, and 
     { url: "/blog/two/", file: "blog/two/index.html", leafId: "1", params: { id: "two" } },
     { url: "/docs/a/b/", file: "docs/a/b/index.html", leafId: "2", params: { path: ["a", "b"] } },
   ]);
-  const never = enumerateSsgUrls(descriptors, { "/blog/:id": [{ id: "one" }], "/docs/*path": [] }, { trailingSlash: "never" });
+  const never = enumerateSsgUrls(descriptors, { "/blog/:id": [{ id: "one" }], "/docs/*path": [] }, { trailingSlash: "never", mode: "ssg" });
   expect(never.map((entry) => entry.url)).toEqual(["/", "/blog/one"]);
 
   const blogDescriptors = describeSsgRoutes([
     { path: "/", component: Home },
     { path: "/blog/:id", component: Home },
   ]);
-  expect(() => enumerateSsgUrls(blogDescriptors, { "/missing": [] }, { trailingSlash: "always" })).toThrow("unknown route pattern");
-  expect(() => enumerateSsgUrls(blogDescriptors, { "/": [] }, { trailingSlash: "always" })).toThrow("static route");
-  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "x", extra: "y" }] }, { trailingSlash: "always" })).toThrow(
-    "unknown param",
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/missing": [] }, { trailingSlash: "always", mode: "ssg" })).toThrow(
+    "unknown route pattern",
   );
-  expect(() => enumerateSsgUrls(blogDescriptors, {}, { trailingSlash: "always" })).toThrow("missing dynamic route");
-  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{}] }, { trailingSlash: "always" })).toThrow("missing required param");
-  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "a b" }, { id: "a%20b" }] }, { trailingSlash: "always" })).toThrow(
-    "duplicate output",
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/": [] }, { trailingSlash: "always", mode: "ssg" })).toThrow("static route");
+  expect(() =>
+    enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "x", extra: "y" }] }, { trailingSlash: "always", mode: "ssg" }),
+  ).toThrow("unknown param");
+  expect(() => enumerateSsgUrls(blogDescriptors, {}, { trailingSlash: "always", mode: "ssg" })).toThrow("missing dynamic route");
+  expect(() => enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{}] }, { trailingSlash: "always", mode: "ssg" })).toThrow(
+    "missing required param",
   );
+  expect(() =>
+    enumerateSsgUrls(blogDescriptors, { "/blog/:id": [{ id: "a b" }, { id: "a%20b" }] }, { trailingSlash: "always", mode: "ssg" }),
+  ).toThrow("duplicate output");
 
   const dynamicOnly = describeSsgRoutes([{ path: "/blog/:id", component: Home }]);
-  expect(() => enumerateSsgUrls(dynamicOnly, { "/blog/:id": [] }, { trailingSlash: "always" })).toThrow("enumerates no pages");
+  expect(() => enumerateSsgUrls(dynamicOnly, { "/blog/:id": [] }, { trailingSlash: "always", mode: "ssg" })).toThrow("enumerates no pages");
   const encodedPair = describeSsgRoutes([
     { path: "/caf%C3%A9", component: Home },
     { path: "/caf\u00e9", component: Home },
   ]);
-  expect(() => enumerateSsgUrls(encodedPair, {}, { trailingSlash: "always" })).toThrow("colliding URLs");
+  expect(() => enumerateSsgUrls(encodedPair, {}, { trailingSlash: "always", mode: "ssg" })).toThrow("colliding URLs");
 });
 
 test("normalizeSsgPath accepts pathnames and rejects everything else; redirect targets resolve relatively and classify schemes", () => {

@@ -50,6 +50,7 @@ export async function analyzeDocument(
   file: string,
   resolveImport: ImportResolver,
   define: Record<string, unknown> | undefined,
+  bootstrapSrc: string | null = ClientRequest,
 ): Promise<DocumentAnalysis> {
   const source = existsSync(file) ? readFileSync(file, "utf8") : DefaultDocumentSource;
   const imports: DocumentImport[] = [];
@@ -71,7 +72,8 @@ export async function analyzeDocument(
     const rendered = result.diagnostics.map((d) => `${d.rendered.trimEnd()}\n  repair guide: ${d.docs}`).join("\n\n");
     if (result.render) return { status: "render", reasons: rendered };
     if (result.html === undefined || result.rootId === undefined) throw new Error(rendered);
-    return { status: "static", document: { html: withBootstrap(result.html, ClientRequest), rootId: result.rootId, files: result.files } };
+    const html = bootstrapSrc === null ? result.html : withBootstrap(result.html, bootstrapSrc);
+    return { status: "static", document: { html, rootId: result.rootId, files: result.files } };
   }
 }
 
