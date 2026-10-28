@@ -140,8 +140,8 @@ export async function readChunks(response: Response): Promise<string[]> {
 export async function clickUntil(page: Page, selector: string, predicate: string, timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    await page.click(selector, { timeout: 500, noWaitAfter: true }).catch(() => undefined);
     if (await page.evaluate(predicate)) return;
+    await page.click(selector, { timeout: 500, noWaitAfter: true }).catch(() => undefined);
     if (Date.now() >= deadline) throw new Error(`[reze] ${predicate} never held after clicking ${selector}`);
     await page.waitForTimeout(100);
   }
