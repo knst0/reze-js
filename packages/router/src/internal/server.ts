@@ -1,13 +1,13 @@
 import type { JSX } from "@rezejs/dom";
-import { hLayout, hStaticComponent, setRecordAttribute, type HtmlElement } from "@rezejs/dom/internal/html";
+import { hClientBoundary, hLayout, hStaticComponent, setRecordAttribute, type HtmlElement } from "@rezejs/dom/internal/html";
 
 import { routerBase, type HistoryEntry, type RouterHistory } from "../history";
 import { layoutKey } from "../layout";
 import { compileRoutes, joinRoutePaths, matchPath, routeEntryId } from "../match";
-import { commit, initRouterState, pathnameOf, settleEntry, type RouterState } from "../navigation";
+import { commit, ensureLoaded, initRouterState, pathnameOf, settleEntry, type RouterState } from "../navigation";
 import { createSettledRouter } from "../router";
 import { installLinkTarget } from "../target";
-import type { Params, RouteDefinition } from "../types";
+import type { Params, RouteDefinition, RouteRender } from "../types";
 
 export type SsgParamKind = "required" | "optional" | "splat";
 
@@ -21,6 +21,8 @@ export interface SsgRouteDescriptor {
   readonly pattern: string;
   readonly fullPath: string;
   readonly dynamics: readonly SsgParamSpec[];
+  /** `undefined` takes the build default: `static` with `ssg`, `server` with only `ssr`. */
+  readonly render: RouteRender | undefined;
 }
 
 export type SsgStaticParams = Readonly<Record<string, string | readonly string[] | undefined>>;
@@ -57,6 +59,8 @@ export interface SsgRenderResult {
     readonly data?: unknown;
   }[];
   readonly handle: SsgRouteHandle;
+  /** Present when the leaf renders in the browser; `depth` is the first match the client router owns. */
+  readonly client?: { readonly depth: number; readonly id: string };
 }
 
 export interface SsgNotFoundResult {
@@ -110,7 +114,7 @@ export function describeSsgRoutes(routes: readonly RouteDefinition[]): SsgRouteD
         throw new Error(`[reze-router] SSG leaves "${owner}" and "${id}" share pattern "${pattern}"`);
       }
       patternOwner.set(pattern, id);
-      out.push({ id, pattern, fullPath: pattern, dynamics: dynamicsOf(pattern) });
+      out.push({ id, pattern, fullPath: pattern, dynamics: dynamicsOf(pattern), render: def.render });
     });
   };
   walk(routes, "", "");
@@ -228,9 +232,17 @@ function outputFile(pathname: string): string {
 export function enumerateSsgUrls(
   descriptors: readonly SsgRouteDescriptor[],
   paths: Readonly<Record<string, readonly SsgStaticParams[]>>,
-  opts: { trailingSlash: "always" | "never" },
+  opts: { trailingSlash: "always" | "never"; mode: "ssg" | "hybrid" },
 ): SsgEnumeratedUrl[] {
   const byPattern = new Map(descriptors.map((descriptor) => [descriptor.pattern, descriptor]));
+  const renderOf = (descriptor: SsgRouteDescriptor): RouteRender => descriptor.render ?? "static";
+  const eligible = descriptors.filter((descriptor) => {
+    if (renderOf(descriptor) !== "server") return true;
+    if (opts.mode === "hybrid") return false;
+    throw new Error(
+      `[reze-router] route ${JSON.stringify(descriptor.pattern)} renders on the server, but this build has no ssr; add ssr or set render: "static"`,
+    );
+  });
   for (const key of Object.keys(paths)) {
     const descriptor = byPattern.get(key);
     if (descriptor === undefined) {
@@ -239,7 +251,7 @@ export function enumerateSsgUrls(
         `[reze-router] ssg.paths has unknown route pattern ${JSON.stringify(key)}; expected one of ${known.map((pattern) => JSON.stringify(pattern)).join(", ") || "none"}`,
       );
     }
-    if (descriptor.dynamics.length === 0) {
+    if (descriptor.dynamics.length === 0 && renderOf(descriptor) !== "server") {
       throw new Error(
         `[reze-router] ssg.paths has an entry for static route ${JSON.stringify(key)}; remove it, static leaves enumerate once`,
       );
@@ -270,7 +282,7 @@ export function enumerateSsgUrls(
     folded.set(key, pathname);
     out.push({ url: canonicalUrl(pathname, opts.trailingSlash), file, leafId, params: values });
   };
-  for (const descriptor of descriptors) {
+  for (const descriptor of eligible) {
     if (descriptor.dynamics.length === 0) {
       push(descriptor.pattern, descriptor.id, {});
       continue;
@@ -347,6 +359,18 @@ export function uninstallServerLinkTarget(): void {
  * `session.run(hMount(...))`. The adapter records `matches` through its own session hook after preparation and before
  * mounting, then mounts, settles, and polls `takeServerRedirect(handle)` for imperative navigation during the view.
  */
+/** Loads every route module so its `route` config, including `render`, is known before enumeration. */
+export async function loadRouteModules(routes: readonly RouteDefinition<any>[]): Promise<void> {
+  const seen = new Set<unknown>();
+  for (const branch of compileRoutes(routes)) {
+    for (const route of branch.routes) {
+      if (seen.has(route)) continue;
+      seen.add(route);
+      if (!route.isLoaded) await ensureLoaded(route);
+    }
+  }
+}
+
 export function prepareServerRoute<C = unknown>(
   routes: readonly RouteDefinition<C>[],
   path: string,
@@ -363,23 +387,33 @@ export function prepareServerRoute<C = unknown>(
     const entry = state.target!;
     const location = state.targetLocation!;
     commit(state, entry, location, outcome.matches, "none");
+    const client = outcome.kind === "client" ? { depth: outcome.depth, id: outcome.id } : undefined;
+    state.stopId = outcome.kind === "client" ? outcome.id : undefined;
+    state.stopParams = outcome.kind === "client" ? outcome.params : undefined;
     return {
       status: "render",
       component: hStaticComponent(
-        createSettledRouter(state, (depth, match, view) =>
-          hLayout(
-            undefined,
-            layoutKey(
-              depth,
-              match.route.id,
-              match.params,
-              match.hasData,
-              depth === state.matches().length - 1,
-              state.location().search,
-            ),
-            () => view,
-          ) as unknown as JSX.Element,
-        ),
+        createSettledRouter(state, {
+          wrapLevel: (depth, match, view) =>
+            hLayout(
+              undefined,
+              layoutKey(
+                depth,
+                match.route.id,
+                match.params,
+                match.hasData,
+                depth === (state.stopDepth ?? state.matches().length - 1),
+                state.location().search,
+              ),
+              () => view,
+            ) as unknown as JSX.Element,
+          ...(client === undefined
+            ? {}
+            : {
+                stopDepth: client.depth,
+                clientView: (depth: number) => hClientBoundary(undefined, depth, client.id) as unknown as JSX.Element,
+              }),
+        }),
       ),
       matches: outcome.matches.map((match) => ({
         id: match.route.id,
@@ -387,6 +421,7 @@ export function prepareServerRoute<C = unknown>(
         ...(match.hasData ? { hasData: true as const, data: match.data } : { hasData: false as const }),
       })),
       handle: { state },
+      ...(client === undefined ? {} : { client }),
     } satisfies SsgRenderResult;
   });
 }

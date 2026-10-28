@@ -3,6 +3,8 @@ import { DocumentRootMarker } from "./template";
 export const ClientRequest = "/@reze/client.js";
 export const ClientId = "\0reze:client.js";
 export const IslandsId = "\0reze:islands.js";
+export const ClientRootsSpecifier = "virtual:reze-client-roots";
+export const ClientRootsId = "\0reze:client-roots.js";
 export const ServerEntryId = "\0reze:server-entry.js";
 export const ServerFactsSpecifier = "reze-client.js";
 export const DevFactsId = "\0reze:dev-facts.js";
@@ -10,7 +12,7 @@ export const SsgViewId = "\0reze:ssg-view.tsx";
 export const SsgRedirectId = "\0reze:ssg-redirect.js";
 export const DocumentViewId = "\0reze:document-view.tsx";
 export const HtmlEnv = "reze_html";
-export const GeneratedIds: readonly string[] = [ClientId, IslandsId, ServerEntryId, SsgRedirectId, DevFactsId];
+export const GeneratedIds: readonly string[] = [ClientId, IslandsId, ServerEntryId, SsgRedirectId, DevFactsId, ClientRootsId];
 
 export function viewSource(): string {
   return `import { routes } from "virtual:reze-routes";
@@ -245,8 +247,12 @@ export async function discover(input) {
   });
   try {
     const view = await session.load(loadView);
+    await routerServer.loadRouteModules(view.routes);
     const descriptors = routerServer.describeSsgRoutes(view.routes);
-    const urls = routerServer.enumerateSsgUrls(descriptors, input.paths, { trailingSlash: input.trailingSlash });
+    const urls = routerServer.enumerateSsgUrls(descriptors, input.paths, {
+      trailingSlash: input.trailingSlash,
+      mode: input.mode,
+    });
     return urls.map((entry) => entry.url);
   } finally {
     session.dispose();
@@ -260,8 +266,55 @@ export function clientEntrySource(rootId: string): string {
 import { installSwapNavigation } from "@rezejs/router/internal/swap";
 import islands from ${JSON.stringify(IslandsId)};
 export { islands };
-const swap = installSwapNavigation({ base: import.meta.env.BASE_URL, rootId: ${JSON.stringify(rootId)}, islands });
-attachStream(document, document, { wrap: swap.wrap, islands });
+let roots;
+const mountClientRoots = () => {
+  if (roots === undefined) {
+    if (document.querySelector("[data-rz-client]") === null) return;
+    roots = import(${JSON.stringify(ClientRootsSpecifier)});
+  }
+  void roots.then((module) => module.mountClientRoots(swap));
+};
+const swap = installSwapNavigation({
+  base: import.meta.env.BASE_URL,
+  rootId: ${JSON.stringify(rootId)},
+  islands,
+  onNavigate: mountClientRoots,
+});
+attachStream(document, document, { wrap: swap.wrap, islands, onApplied: mountClientRoots });
+mountClientRoots();
+`;
+}
+
+export function clientRootsSource(): string {
+  return `import { createBrowserHistory, createRouter } from "@rezejs/router";
+import { render } from "reze-js";
+import { routes } from "virtual:reze-routes";
+const base = import.meta.env.BASE_URL;
+let mounted = [];
+export function mountClientRoots(swap) {
+  mounted = mounted.filter((entry) => {
+    if (entry.element.isConnected) return true;
+    entry.dispose();
+    return false;
+  });
+  for (const element of document.querySelectorAll("[data-rz-client]")) {
+    if (element.hasAttribute("data-rz-mounted")) continue;
+    element.setAttribute("data-rz-mounted", "");
+    const depth = Number(element.getAttribute("data-rz-client"));
+    const rootId = element.getAttribute("data-rz-client-route") ?? undefined;
+    const Router = createRouter({
+      routes,
+      history: createBrowserHistory(base),
+      startDepth: depth,
+      rootId,
+      linkRoot: element,
+      onOutside: (path) => window.location.assign(path),
+    });
+    const dispose = render(() => Router({}), element);
+    mounted.push({ element, dispose });
+  }
+  swap.setClientOwned(mounted.length > 0);
+}
 `;
 }
 

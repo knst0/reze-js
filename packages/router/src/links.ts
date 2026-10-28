@@ -56,12 +56,13 @@ async function preloadPath(state: RouterState, path: string): Promise<boolean> {
   return true;
 }
 
-/** Routes same-origin anchor clicks that match a route through `state` and, with `isPreloading`, preloads hovered links; returns the remover. */
-export function installLinks(state: RouterState, isPreloading: boolean): () => void {
+/** Routes same-origin anchor clicks that match a route through `state` and, with `isPreloading`, preloads hovered links; `root` scopes both to links inside one element. Returns the remover. */
+export function installLinks(state: RouterState, isPreloading: boolean, root?: Element): () => void {
+  const owned = (anchor: Element | undefined): anchor is Element => anchor !== undefined && (root === undefined || root.contains(anchor));
   const onClick = (event: MouseEvent): void => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const anchor = anchorOf(event);
-    if (anchor === undefined) return;
+    if (!owned(anchor)) return;
     const path = anchorPath(state, anchor);
     if (path === undefined || matchPathname(state, pathnameOf(path)) === undefined) return;
     event.preventDefault();
@@ -86,12 +87,12 @@ export function installLinks(state: RouterState, isPreloading: boolean): () => v
   };
   const onIntent = (event: Event): void => {
     const anchor = anchorOf(event);
-    if (anchor !== undefined) preloadAnchor(anchor);
+    if (owned(anchor)) preloadAnchor(anchor);
   };
   const onOver = (event: MouseEvent): void => {
     window.clearTimeout(timer);
     const anchor = anchorOf(event);
-    if (anchor !== undefined) timer = window.setTimeout(preloadAnchor, HoverDelayMs, anchor);
+    if (owned(anchor)) timer = window.setTimeout(preloadAnchor, HoverDelayMs, anchor);
   };
   const onOut = (): void => window.clearTimeout(timer);
   document.addEventListener("mouseover", onOver);

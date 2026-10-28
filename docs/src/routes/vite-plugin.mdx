@@ -366,6 +366,24 @@ Reze ships no service worker and puts nothing in the way of yours. The plugin wr
 
 `buildId` changes whenever the client files change. `files` lists every emitted client file, joined with `base`, so a service worker can precache them. Every document carries `<meta name="reze-build" content="<buildId>">`, and a service worker can compare it with the manifest. Navigations between pages are ordinary `fetch` requests for HTML, so a worker that answers them from a cache or a network fallback works with the swap.
 
+## Choose a render mode per route
+
+A route module can pick how its page is produced:
+
+```tsx
+export const route = { render: "client" };
+```
+
+| `render`   | With `ssg`                                      | With `ssr`                                                                                                             |
+| ---------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `"static"` | A file at build time. This is the default.      | Rendered per request, because no file exists; add `ssg` to prerender it.                                                |
+| `"server"` | Rejected: the build has no server to render it. | Rendered per request.                                                                                                  |
+| `"client"` | A shell file with the layout chain.             | A shell with the layout chain, then the route subtree renders in the browser.                                          |
+
+`"client"` is the SPA corner of a mixed app. The server renders every layout above the route, with their data and head tags, and stops at the route. The browser mounts a client router at that boundary: the route and everything below it render in the browser, and links inside it stay client-side. A link that leaves the subtree loads the full document, so the server takes over again. Use it for screens that need browser-only APIs or that must not wait for a server render, while the marketing pages around them stay static.
+
+When `ssr` and `ssg` are both set, `static` leaves are written at build time and `server` leaves are left to `ssr`; `client` leaves are written as shells. A hybrid build therefore serves its static pages from the CDN and its dynamic ones from the same handler. A route marked `server` in a build without `ssr` fails the build with a message to add `ssr` or set `render: "static"`.
+
 ## Static site generation
 
 Set `ssg` to generate one HTML file per page at build time. The pages come from the same renderer as [server rendering](#server-rendering), run to completion: a generated page contains the final content, and the client bundle loads only the components that are islands.

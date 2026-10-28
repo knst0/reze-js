@@ -10,6 +10,8 @@ export interface StreamHandle {
 export interface AttachOptions extends BootOptions {
   /** Tokens a swap already resolved: parts of a kept layout or a persisted element it replaced with the live node. */
   readonly skipToken?: (token: string) => boolean;
+  /** Runs after a flush that applied at least one patch, head tag or island descriptor. */
+  readonly onApplied?: () => void;
 }
 
 const Units = `template[data-rz-patch],template[${HeadManagedAttribute}],script[data-rz-island],script[data-rz-end]`;
@@ -46,7 +48,9 @@ export function attachStream(source: Document, target: Document, options: Attach
   const done = Promise.withResolvers<void>();
   let finished = false;
 
+  let applied = false;
   const apply = (unit: Element): void => {
+    applied = true;
     if (unit instanceof HTMLTemplateElement && unit.hasAttribute(HeadManagedAttribute)) {
       mergeStreamedHead(target, unit);
       unit.remove();
@@ -79,12 +83,14 @@ export function attachStream(source: Document, target: Document, options: Attach
 
   const flush = (isFinal: boolean): void => {
     if (finished) return;
+    applied = false;
     for (const unit of source.querySelectorAll(Units)) {
       if (processed.has(unit) || (!isFinal && unit.nextSibling === null)) continue;
       processed.add(unit);
       apply(unit);
       if (finished) return;
     }
+    if (applied) options.onApplied?.();
     if (isFinal) {
       finished = true;
       observer.disconnect();

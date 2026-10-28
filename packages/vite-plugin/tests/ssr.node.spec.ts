@@ -258,6 +258,52 @@ for (const engine of ENGINES) {
   );
 
   test(
+    `${engine}: a client route renders the layout on the server and the subtree in the browser`,
+    async () => {
+      const shell = await fetch(`${routerOrigin.origin}/dashboard`, { headers: { accept: "text/html" } });
+      expect(shell.status).toBe(200);
+      const html = await shell.text();
+      expect(html).toContain("data-rz-client=1");
+      expect(html).toContain("id=nav-dashboard");
+      expect(html).not.toContain('id="dashboard"');
+      const dev = await fetch(`${devRouterOrigin.origin}/dashboard`, { headers: { accept: "text/html" } });
+      expect(dev.status).toBe(200);
+      expect(await dev.text()).toContain("data-rz-client=1");
+
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);
+      try {
+        await page.evaluate("window.__shell = document.querySelector('nav')");
+        await page.click("#nav-dashboard");
+        await waitFor(
+          page,
+          "document.querySelector('#dashboard')?.textContent.includes('browser') === true && document.querySelector('#dashboard-home') !== null",
+        );
+        expect(await page.evaluate("document.querySelector('nav') === window.__shell")).toBe(true);
+        await page.evaluate("window.__marker = 'kept'");
+        await page.click("#dashboard-settings");
+        await waitFor(page, "location.pathname === '/dashboard/settings' && document.querySelector('#settings') !== null");
+        expect(await page.evaluate("window.__marker")).toBe("kept");
+        expect(await page.evaluate("document.querySelector('nav') === window.__shell")).toBe(true);
+        await page.click("#nav-about");
+        await waitFor(page, "location.pathname === '/about' && document.querySelector('#about') !== null");
+        expect(await page.evaluate("window.__marker")).toBe("kept");
+        expect(await page.evaluate("document.querySelector('nav') === window.__shell")).toBe(true);
+
+        await page.goto(`${routerOrigin.origin}/dashboard`);
+        await waitFor(page, "document.querySelector('#dashboard-home') !== null");
+        await page.evaluate("window.__marker = 'kept'");
+        await page.click("#dashboard-about");
+        await waitFor(page, "location.pathname === '/about' && document.querySelector('#about') !== null");
+        expect(await page.evaluate("window.__marker")).toBeUndefined();
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
     `${engine}: navigation keeps the layout, persists marked regions, and uses a view transition`,
     async () => {
       const { page, errors, close } = await openPage(browsers.get(engine)!, `${routerOrigin.origin}/`);

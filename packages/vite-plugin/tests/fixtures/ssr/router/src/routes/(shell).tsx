@@ -19,6 +19,9 @@ export default function Shell(props: { children: JSX.Element }) {
         </a>{" "}
         <a id="nav-news" href="/news">
           news
+        </a>{" "}
+        <a id="nav-dashboard" href="/dashboard">
+          dashboard
         </a>
       </nav>
       <details id="layout-details" open>

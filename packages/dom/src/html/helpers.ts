@@ -147,6 +147,19 @@ export function hLayout(site: Site | undefined, key: string, build: () => unknow
   return session.instances.run(instance, () => fillRange(session, instance, range, site, untrack(build)));
 }
 
+/** The empty host a `render: "client"` route mounts into; the client router renders the subtree under it. */
+export function hClientBoundary(site: Site | undefined, depth: number, routeId: string): HtmlElement {
+  const session = htmlSession();
+  const instance = session.instances.reserve("x", site);
+  session.instances.own(instance);
+  const node = createElement("div", "", { site });
+  setAttribute(node, "data-rz-client", String(depth), site);
+  setAttribute(node, "data-rz-client-route", routeId, site);
+  setAttribute(node, "style", "display:contents", site);
+  instances.set(node, instance);
+  return node;
+}
+
 export function hMount(build: () => unknown): HtmlRange {
   const session = htmlSession();
   return session.instances.run(session.instances.root, () =>

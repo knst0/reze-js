@@ -23,11 +23,15 @@ export interface SwapOptions {
   readonly base: string;
   readonly rootId: string;
   readonly islands?: BootOptions["islands"];
+  /** Runs after a swap commits, so the caller can mount client route roots that the next page introduced. */
+  readonly onNavigate?: () => void;
 }
 
 export interface SwapRuntime {
   readonly state: RouterState;
   wrap<T>(render: () => T): T;
+  /** While a client route root is mounted, it owns history and link handling for its subtree. */
+  setClientOwned(value: boolean): void;
   dispose(): void;
 }
 
@@ -340,6 +344,7 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
       const routed = routedEntry(route, landed);
       skipped = skip;
       commit(state, routed, parseLocation(routed), stubMatches(route, routed.path), scrollMode);
+      options.onNavigate?.();
       return true;
     };
     const apply = async (): Promise<boolean> => {
@@ -393,7 +398,10 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
   });
   loadPositions(state);
 
-  const unlisten = history.listen((entry) => onPop(state, entry));
+  let clientOwned = false;
+  const unlisten = history.listen((entry) => {
+    if (!clientOwned) onPop(state, entry);
+  });
   const previousRestoration = window.history.scrollRestoration;
   window.history.scrollRestoration = "manual";
   const onPageHide = (): void => persistPositions(state);
@@ -402,7 +410,7 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
   const onClick = (event: MouseEvent): void => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const anchor = anchorOf(event);
-    if (anchor === undefined) return;
+    if (anchor === undefined || anchor.closest("[data-rz-client]") !== null) return;
     const path = anchorPath(state, anchor);
     if (path === undefined) return;
     event.preventDefault();
@@ -413,6 +421,7 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
     });
   };
   const prefetch = (anchor: Element): void => {
+    if (anchor.closest("[data-rz-client]") !== null) return;
     const path = anchorPath(state, anchor);
     if (path === undefined) return;
     const url = history.base + path;
@@ -440,6 +449,9 @@ export function installSwapNavigation(options: SwapOptions): SwapRuntime {
   return {
     state,
     wrap,
+    setClientOwned(value) {
+      clientOwned = value;
+    },
     dispose() {
       unlisten();
       window.clearTimeout(timer);

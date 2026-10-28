@@ -40,7 +40,12 @@ export interface RouteRedirect {
   replace?: boolean;
 }
 
+/** How a page is produced: at build time (`static`), per request (`server`), or by the client router in an SSR shell (`client`). */
+export type RouteRender = "static" | "server" | "client";
+
 export interface RouteConfig<D = unknown, C = RouterContext> {
+  /** Defaults to `static` in a build with `ssg` and to `server` in one with only `ssr`. `client` renders the layout chain on the server and the route subtree in the browser. */
+  render?: RouteRender;
   /**
    * Runs root-to-leaf before the route's `preload`, on the server and in the browser alike; a returned object is
    * merged over the context this route's `preload` and `redirect` and every descendant route receive.
@@ -168,6 +173,7 @@ export type RoutePropsFor<P extends RoutePattern> = RouteProps<ParamsFor<P>, Dat
  * without data.
  */
 export interface RouteConfigFor<P extends RoutePattern, D = unknown, C = RouterContext> {
+  render?: RouteRender;
   beforeLoad?: (args: PreloadArgs<ParamsFor<P>, C>) => Awaitable<Partial<C> | undefined | void>;
   preload?: (args: PreloadArgs<ParamsFor<P>, C>) => D;
   redirect?: RouteRedirect | ((args: RouteResolvedArgs<ParamsFor<P>, D, C>) => Awaitable<RouteRedirect | undefined>);

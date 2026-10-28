@@ -4,7 +4,7 @@ import { signal } from "reze-js";
 
 import type { HistoryEntry, RouterHistory } from "./history";
 import { decode, matchBranches, pathKey, usesBeforeLoad, type Branch, type BranchMatch, type CompiledRoute } from "./match";
-import type { Awaitable, BeforeLeaveEvent, Location, NavigateOptions, Params, PreloadIntent, RouteRedirect, RouterContext } from "./types";
+import type { Awaitable, BeforeLeaveEvent, Location, NavigateOptions, Params, PreloadIntent, RouteRedirect, RouteRender, RouterContext } from "./types";
 
 export interface ActiveMatch {
   readonly route: CompiledRoute;
@@ -46,6 +46,13 @@ export interface RouterState {
   redirectCaptured: { to: string; replace: boolean } | undefined;
   /** Hover-warming depth: while nonzero, preloads run but navigations are ignored and redirects never run. */
   warming: number;
+  /** Server rendering only: the match index where a `render: "client"` route starts, rendered as a browser placeholder. */
+  stopDepth: number | undefined;
+  /** Server rendering only: renders the placeholder at `stopDepth` instead of the route. */
+  clientView: ((depth: number, match: ActiveMatch) => JSX.Element) | undefined;
+  /** Server rendering only: the client route the placeholder stands for. */
+  stopId: string | undefined;
+  stopParams: Params | undefined;
   /** Server rendering only: wraps one route level in a keyed marker range the swap compares across documents. */
   wrapLevel: ((depth: number, match: ActiveMatch, view: JSX.Element) => JSX.Element) | undefined;
   owner: Owner | undefined;
@@ -102,6 +109,10 @@ export function initRouterState(init: RouterStateInit): RouterState {
     swap: init.swap,
     redirectCaptured: undefined,
     warming: 0,
+    stopDepth: undefined,
+    clientView: undefined,
+    stopId: undefined,
+    stopParams: undefined,
     wrapLevel: undefined,
     owner: undefined,
     entry: undefined,
@@ -233,6 +244,13 @@ export function ensureLoaded(route: CompiledRoute): Promise<void> {
         route.preload = config?.preload ?? route.def.preload;
         route.redirect = config?.redirect ?? route.def.redirect;
         route.info = config?.info ?? route.def.info;
+        route.render = config?.render ?? route.def.render;
+        route.def.render = route.render;
+        if (route.render !== undefined && route.render !== "static" && route.render !== "server" && route.render !== "client") {
+          throw new Error(
+            `[reze-router] route ${JSON.stringify(route.id)} has render ${JSON.stringify(route.render)}; expected "static", "server" or "client"`,
+          );
+        }
         route.loadError = undefined;
         route.isLoaded = true;
       },
@@ -269,6 +287,7 @@ export function matchPathname(state: RouterState, pathname: string): BranchMatch
 /** The settled result of one navigation: rendered matches, one redirect step, or abandonment by a newer navigation. */
 export type SettleOutcome =
   | { kind: "render"; matches: ActiveMatch[] }
+  | { kind: "client"; depth: number; id: string; params: Params; matches: ActiveMatch[] }
   | { kind: "redirect"; to: string; replace: boolean }
   | { kind: "aborted" };
 
@@ -332,6 +351,10 @@ function finishSettled(
 ): void {
   if (generation !== state.generation) return;
   if (outcome.kind === "aborted") return;
+  if (outcome.kind === "client") {
+    commit(state, entry, location, outcome.matches, scrollMode);
+    return;
+  }
   if (outcome.kind === "redirect") {
     if (state.env === "html") {
       state.redirectCaptured = { to: outcome.to, replace: outcome.replace };
@@ -354,7 +377,8 @@ export function settleEntry(state: RouterState, entry: HistoryEntry, intent: Pre
   const loading = loadBranch(match);
   const settle = (): Promise<SettleOutcome> | SettleOutcome => {
     if (generation !== state.generation) return { kind: "aborted" };
-    return settleMatch(state, generation, match, location, intent);
+    const stop = match.branch.routes.findIndex((route) => route.render === "client");
+    return settleMatch(state, generation, match, location, intent, stop < 0 ? undefined : stop);
   };
   return loading === undefined ? Promise.resolve().then(settle) : loading.then(settle);
 }
@@ -372,6 +396,7 @@ function settleMatch(
   match: BranchMatch,
   location: Location,
   intent: PreloadIntent,
+  stop?: number,
 ): SettleOutcome | Promise<SettleOutcome> {
   const routes = match.branch.routes;
   for (const route of routes) {
@@ -389,6 +414,7 @@ function settleMatch(
     location,
     intent,
     context: state.context,
+    stop,
     matches: [],
   };
   return settleRoute(run, 0);
@@ -396,6 +422,7 @@ function settleMatch(
 
 interface Settling {
   readonly state: RouterState;
+  readonly stop: number | undefined;
   readonly generation: number;
   readonly routes: readonly CompiledRoute[];
   readonly params: Params;
@@ -407,6 +434,10 @@ interface Settling {
 }
 
 function settleRoute(run: Settling, index: number): SettleOutcome | Promise<SettleOutcome> {
+  if (run.stop !== undefined && index >= run.stop) {
+    const route = run.routes[run.stop]!;
+    return { kind: "client", depth: run.stop, id: route.id, params: run.params, matches: run.matches };
+  }
   if (index >= run.routes.length) return { kind: "render", matches: run.matches };
   const stopped = checkpoint(run.state, run.generation);
   if (stopped !== undefined) return stopped;

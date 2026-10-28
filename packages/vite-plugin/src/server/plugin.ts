@@ -10,6 +10,8 @@ import type { FileRoutesOptions } from "../routes";
 import {
   ClientId,
   ClientRequest,
+  ClientRootsId,
+  ClientRootsSpecifier,
   DevFactsId,
   DocumentViewId,
   GeneratedIds,
@@ -20,6 +22,7 @@ import {
   SsgRedirectId,
   SsgViewId,
   clientEntrySource,
+  clientRootsSource,
   devFactsSource,
   documentViewSource,
   islandsSource,
@@ -138,6 +141,7 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
     applyToEnvironment: isServerEnvironment,
     resolveId(id, importer) {
       if (id === ClientRequest) return ClientId;
+      if (id === ClientRootsSpecifier) return ClientRootsId;
       if (!isServe && id === htmlInput && this.environment.name === "client") return id;
       if (isServe && id === ServerFactsSpecifier && importer === ServerEntryId) return DevFactsId;
       if (GeneratedIds.includes(id) || id === SsgViewId || id === DocumentViewId) return id;
@@ -148,6 +152,7 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
       if (!isServe && id === htmlInput && this.environment.name === "client") return (await currentDocument()).html;
       if (id === ClientId) return clientEntrySource((await currentDocument()).rootId);
       if (id === IslandsId) return { code: islandsSource(islandEntries()), moduleSideEffects: "no-treeshake" };
+      if (id === ClientRootsId) return clientRootsSource();
       if (id === ServerEntryId) {
         return this.environment.name === HtmlEnv ? serverEntrySource() : undefined;
       }
