@@ -336,6 +336,8 @@ The document contains no inline executable script, so a `Content-Security-Policy
 
 Each request has its own module state. A module-level `signal`, `computed`, `action`, `store`, `selector`, `effect`, or `createContext` declaration is created again for each request, so one request never sees another request's values. Plain variables, such as a `let` that holds a number, stay shared across requests.
 
+Because a shared variable leaks values between users, the compiler rejects a component or a route `preload`, `beforeLoad`, `redirect`, `loader`, or `action` that writes one with `MODULE_STATE_SHARED`. Declare the value with `signal`, `store`, `selector`, or `createContext`, or carry it through the route `context` that [routing](/routing#share-context-with-child-routes) describes. A plain module variable stays legal as a build-time constant and as state that only browser event handlers write.
+
 ### Development
 
 `vite` (dev) serves the same streamed documents through the plugin. A change to a source file reloads the page.

@@ -908,6 +908,44 @@ Example:
 export const view = <div />;
 ```
 
+## MODULE_STATE_SHARED
+
+**Module state written during a request** · severity `error`
+
+> `{name}` is a module-level mutable binding, and a component or route callback writes it. The module is loaded once per process, so every request shares the value and sees writes from other users.
+
+`data` keys: `name`
+
+Automatic fix: no
+
+Server rendering keeps one module instance for every request. The compiler moves module-level `signal`, `computed`, `action`, `selector`, `store`, `createContext`, `effect` and `provideContext` declarations into per-request state, but a plain `let` or `var` stays where it is and is shared. A component body, `preload`, `beforeLoad`, `redirect`, `loader` or `action` that writes such a binding leaks data between requests. `data.name` is the binding.
+
+**Repair:** Declare the value with `signal`, `store`, `selector` or `createContext` so the compiler recreates it per request, or move it into the route `context` from `beforeLoad`. Keep plain module variables for build-time constants only.
+
+Before:
+
+```tsx
+let cart: string[] = [];
+
+export function Cart() {
+  cart = [...cart, "item"];
+  return <ul>{cart}</ul>;
+}
+```
+
+After:
+
+```tsx
+import { signal } from "reze-js";
+
+let cart = signal<string[]>([]);
+
+export function Cart() {
+  cart = [...cart, "item"];
+  return <ul>{cart}</ul>;
+}
+```
+
 ## CHILDREN_PROP_IGNORED
 
 **`children` attribute next to nested children** · severity `warn`
