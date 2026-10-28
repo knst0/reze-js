@@ -20,6 +20,7 @@ const origins: SsrOrigin[] = [];
 let moduleState: SsrBuild;
 let streaming: SsrBuild;
 let ppr: SsrBuild;
+let actions: SsrBuild;
 let islands: SsrBuild;
 let context: SsrBuild;
 let routerA: SsrBuild;
@@ -27,21 +28,24 @@ let routerB: SsrBuild;
 let routerActive: SsrBuild;
 let streamingOrigin: SsrOrigin;
 let pprOrigin: SsrOrigin;
+let actionsOrigin: SsrOrigin;
 let islandsOrigin: SsrOrigin;
 let contextOrigin: SsrOrigin;
 let routerOrigin: SsrOrigin;
 let devOrigin: SsrOrigin;
 let devRouterOrigin: SsrOrigin;
+let devActionsOrigin: SsrOrigin;
 
 function fixture(name: string): string {
   return join(FIXTURES, name);
 }
 
 beforeAll(async () => {
-  [moduleState, streaming, ppr, islands, context, routerA, routerB] = await Promise.all([
+  [moduleState, streaming, ppr, actions, islands, context, routerA, routerB] = await Promise.all([
     buildSsrFixture({ fixtureDir: fixture("module-state"), outDir: join(OUT, "module-state") }),
     buildSsrFixture({ fixtureDir: fixture("streaming"), outDir: join(OUT, "streaming") }),
     buildSsrFixture({ fixtureDir: fixture("ppr"), outDir: join(OUT, "ppr"), ssg: { ppr: true } }),
+    buildSsrFixture({ fixtureDir: fixture("actions"), outDir: join(OUT, "actions") }),
     buildSsrFixture({ fixtureDir: fixture("islands"), outDir: join(OUT, "islands") }),
     buildSsrFixture({ fixtureDir: fixture("context"), outDir: join(OUT, "context") }),
     buildSsrFixture({
@@ -58,6 +62,7 @@ beforeAll(async () => {
   routerActive = routerA;
   streamingOrigin = await serveSsrApp(() => streaming);
   pprOrigin = await serveSsrApp(() => ppr);
+  actionsOrigin = await serveSsrApp(() => actions);
   islandsOrigin = await serveSsrApp(() => islands);
   contextOrigin = await serveSsrApp(() => context);
   routerOrigin = await serveSsrApp(() => routerActive);
@@ -65,7 +70,18 @@ beforeAll(async () => {
   devRouterOrigin = await startDevServer(fixture("router"), [defineGlobals({ __RZ_TEST_VERSION__: "dev" })], {
     devContext: (request) => ({ tenant: request.headers.get("x-tenant") ?? undefined }),
   });
-  origins.push(streamingOrigin, pprOrigin, islandsOrigin, contextOrigin, routerOrigin, devOrigin, devRouterOrigin);
+  devActionsOrigin = await startDevServer(fixture("actions"));
+  origins.push(
+    streamingOrigin,
+    pprOrigin,
+    actionsOrigin,
+    islandsOrigin,
+    contextOrigin,
+    routerOrigin,
+    devOrigin,
+    devRouterOrigin,
+    devActionsOrigin,
+  );
   for (const engine of ENGINES) browsers.set(engine, await launchEngine(engine));
 }, 900_000);
 
@@ -371,6 +387,77 @@ for (const engine of ENGINES) {
         expect(errors).toEqual([]);
       } finally {
         await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: server actions validate input, answer typed RPC and accept a plain form post`,
+    async () => {
+      const page = await (
+        await fetch(`${actionsOrigin.origin}/`, { headers: { accept: "text/html" } })
+      ).text();
+      const id = /<p id=action-id>([^<]+)<\/p>/.exec(page)?.[1];
+      expect(id).toBeDefined();
+      const endpoint = `/_reze/action/${encodeURIComponent(id!)}`;
+      const rpc = await fetch(`${actionsOrigin.origin}${endpoint}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "json" }),
+      });
+      expect(rpc.status).toBe(200);
+      expect(await rpc.json()).toEqual({ ok: true, result: "saved:json" });
+
+      const invalid = await fetch(`${actionsOrigin.origin}${endpoint}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: 1 }),
+      });
+      expect(invalid.status).toBe(422);
+
+      const formPost = await fetch(`${actionsOrigin.origin}${endpoint}`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "title=form&_return=%2F",
+      });
+      expect(formPost.status).toBe(303);
+      expect(formPost.headers.get("location")).toBe("/");
+      expect(await (await fetch(`${actionsOrigin.origin}/`)).text()).toContain("saved:form");
+
+      const dev = await (
+        await fetch(`${devActionsOrigin.origin}/`, { headers: { accept: "text/html" } })
+      ).text();
+      const devId = /<p id=action-id>([^<]+)<\/p>/.exec(dev)?.[1];
+      expect(devId).toBeDefined();
+      const devRpc = await fetch(`${devActionsOrigin.origin}/_reze/action/${encodeURIComponent(devId!)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "dev" }),
+      });
+      expect(devRpc.status).toBe(200);
+      expect(await devRpc.json()).toEqual({ ok: true, result: "saved:dev" });
+
+      const { page: browser, errors, close } = await openPage(browsers.get(engine)!, `${actionsOrigin.origin}/`);
+      try {
+        await clickUntil(browser, "#rpc", "document.querySelector('#rpc')?.textContent === 'saved:rpc'");
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+
+      const { page: noJs, close: closeNoJs } = await openPage(browsers.get(engine)!, `${actionsOrigin.origin}/`, {
+        javaScript: false,
+      });
+      try {
+        await noJs.fill("#title", "nojs");
+        await noJs.click("#submit");
+        await noJs.waitForLoadState("load");
+        expect(noJs.url()).toBe(`${actionsOrigin.origin}/`);
+        expect(await noJs.textContent("#last")).toBe("saved:nojs");
+      } finally {
+        await closeNoJs();
       }
     },
     TIMEOUT,

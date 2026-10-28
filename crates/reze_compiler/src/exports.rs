@@ -6,6 +6,7 @@ pub const PUBLIC: &str = "reze-js";
 pub const RUNTIME: &str = "reze-js/internal/runtime";
 pub const REACTIVITY: &str = "reze-js/internal/reactivity";
 pub const ROUTER: &str = "@rezejs/router";
+pub const SCHEMA: &str = "reze-js/schema";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
@@ -101,6 +102,17 @@ static TABLE: &[&[Entry]] = &[
     &call("dynamicElement", RuntimeCallKind::DynamicElement),
     &call("island", RuntimeCallKind::Island),
     &call("createUniqueId", RuntimeCallKind::UniqueId),
+    &call("server", RuntimeCallKind::Server),
+    &[
+        row(SCHEMA, "object", Role::Plain, None),
+        row(SCHEMA, "string", Role::Plain, None),
+        row(SCHEMA, "number", Role::Plain, None),
+        row(SCHEMA, "boolean", Role::Plain, None),
+        row(SCHEMA, "array", Role::Plain, None),
+        row(SCHEMA, "optional", Role::Plain, None),
+        row(SCHEMA, "literal", Role::Plain, None),
+        row(SCHEMA, "enumOf", Role::Plain, None),
+    ],
     &[row(RUNTIME, "asyncComponent", Role::Call(RuntimeCallKind::AsyncComponent), None)],
     &[row(PUBLIC, "abortSignal", Role::Primitive(Primitive::AbortSignal), None)],
     &[row(PUBLIC, "isPending", Role::Primitive(Primitive::IsPending), None)],
@@ -141,7 +153,7 @@ pub fn lookup(specifier: &str, name: &str) -> Option<&'static Entry> {
 }
 
 pub fn module(specifier: &str) -> Option<&'static str> {
-    [PUBLIC, RUNTIME, REACTIVITY].into_iter().find(|module| *module == specifier)
+    [PUBLIC, RUNTIME, REACTIVITY, SCHEMA].into_iter().find(|module| *module == specifier)
 }
 
 pub fn syntax_named(specifier: &str, name: &str) -> Option<Syntax> {

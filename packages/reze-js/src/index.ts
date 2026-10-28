@@ -65,6 +65,9 @@ export type {
 };
 
 export { cache, render, revalidateTag, type CacheOptions } from "@rezejs/dom";
+export type { Infer, Schema } from "./schema";
+import type { Schema } from "./schema";
+import type { ServerAction, ServerActionContext } from "@rezejs/dom";
 
 /**
  * Compiler syntax for a reactive variable: `let count = signal(0)`. The compiler turns reads
@@ -133,6 +136,17 @@ export declare function omitProps(props: Props, ...keys: readonly PropertyKey[])
  * `initial` is adopted, not copied.
  */
 export declare function store<T extends object>(initial: T): T;
+
+/**
+ * Declares a server mutation. The first argument must be a schema from `reze-js/schema`; the
+ * compiler rejects a call without one. The returned action posts to its endpoint from the browser
+ * and can be used as a `<form>` action without JavaScript. Every action is a public endpoint:
+ * validate and authorize inside the handler.
+ */
+export declare function server<I, R>(
+  input: Schema<I>,
+  run: (input: I, context: ServerActionContext) => R | PromiseLike<R>,
+): ServerAction<I, Awaited<R>>;
 
 /**
  * Runs `fn` now and again, on the next flush, whenever what it read changes. The function `fn`

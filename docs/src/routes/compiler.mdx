@@ -15,6 +15,7 @@ The compiler recognizes a fixed set of names that you import from `reze-js`, and
 - Async helpers: `abortSignal` and `isPending`. The compiler accepts `abortSignal()` only in the load of an async component and `isPending()` only in its view. [Building interfaces](/building-interfaces) covers async components.
 - Control-flow tags: `Show`, `For`, `Repeat`, `Switch`, `Match`, and `Portal`. The compiler compiles them as JSX tags, so they have no runtime value. See [Control-flow tags](#control-flow-tags) below.
 - Props helpers: `mergeProps`, `splitProps`, and `omitProps`. The compiler refuses them as values, so you call them. [Components](/components) covers props.
+- Server actions: `server`. The compiler requires a schema from `reze-js/schema` as the first argument, inserts a stable id, and lowers the call to the request endpoint. [The Vite plugin](/vite-plugin#server-actions) covers the API.
 
 Other `reze-js` exports, such as `store` and `effect`, are runtime functions. The compiler rewrites their import source to the runtime module, which is private, so you import them from `reze-js` as usual. [Lifecycle](/lifecycle) covers `effect`, and [Reactivity](/reactivity) covers `store`. `render` is the one value export that mounts an app in the browser.
 
@@ -318,6 +319,7 @@ Errors:
 | `ISLAND_ORPHAN`               | An island companion attribute appears on a component without `island`.                                     |
 | `MISSING_MODULE_ID`           | An `island` or `html` build has no `moduleId`.                                                             |
 | `MODULE_STATE_SHARED`         | A component or route callback writes a module-level `let`, which every request shares.                     |
+| `SERVER_INPUT_SCHEMA`         | A `server` action has no input schema, so its public endpoint would accept any body.                        |
 | `ASYNC_COMPONENT_SHAPE`       | An async component has a form the compiler cannot rewrite.                                                 |
 | `ASYNC_VIEW_PROPERTY`         | A `pending` or `failure` view is assigned to a component instead of a `<Loading>`/`<Errored>` boundary.    |
 | `INTERNAL_REACTIVITY_IMPORT`  | A reactive primitive is imported from `reze-js/internal/reactivity`.                                       |

@@ -7,6 +7,7 @@
     "jsxImportSource": "reze-js",
     "paths": {
       "reze-js": ["./packages/reze-js/src/index.ts"],
+      "reze-js/schema": ["./packages/reze-js/src/schema.ts"],
       "reze-js/jsx-runtime": ["./packages/reze-js/src/jsx-runtime.ts"],
       "reze-js/jsx-dev-runtime": ["./packages/reze-js/src/jsx-dev-runtime.ts"],
       "reze-js/internal/reactivity": ["./packages/reze-js/src/internal/reactivity.ts"],

@@ -946,6 +946,37 @@ export function Cart() {
 }
 ```
 
+## SERVER_INPUT_SCHEMA
+
+**Server function without an input schema** · severity `error`
+
+> A server action is a public POST endpoint, and this call has no input schema, so its body would accept any JSON shape. Pass a schema from `reze-js/schema` as the first argument.
+
+`data` keys: none
+
+Automatic fix: no
+
+The compiler rewrites `server` to a typed RPC endpoint. Every request reaches the handler with whatever body a client sends, so the value must be parsed by a schema before the handler runs. The first argument must be a `reze-js/schema` builder such as `s.object`, or a module-level constant initialized with one.
+
+**Repair:** Write `server(s.object({ … }), async (input) => …)`. The schema validates the body and gives the handler a typed input; authorize the caller inside the handler.
+
+Before:
+
+```tsx
+import { server } from "reze-js";
+
+export const save = server(async (input: { title: string }) => input.title);
+```
+
+After:
+
+```tsx
+import { server } from "reze-js";
+import * as s from "reze-js/schema";
+
+export const save = server(s.object({ title: s.string() }), async (input) => input.title);
+```
+
 ## CHILDREN_PROP_IGNORED
 
 **`children` attribute next to nested children** · severity `warn`

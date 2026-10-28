@@ -366,6 +366,40 @@ Reze ships no service worker and puts nothing in the way of yours. The plugin wr
 
 `buildId` changes whenever the client files change. `files` lists every emitted client file, joined with `base`, so a service worker can precache them. Every document carries `<meta name="reze-build" content="<buildId>">`, and a service worker can compare it with the manifest. Navigations between pages are ordinary `fetch` requests for HTML, so a worker that answers them from a cache or a network fallback works with the swap.
 
+## Server actions
+
+`server(schema, run)` declares a mutation that runs on the server and is called from the browser or from a plain form. The schema comes from `reze-js/schema` and is the first argument; the compiler rejects a call without one, because every action is a public POST endpoint:
+
+```tsx file=src/todos.tsx
+import { server } from "reze-js";
+import * as s from "reze-js/schema";
+
+export const createTodo = server(s.object({ title: s.string() }), async (input) => ({ id: 1, title: input.title }));
+```
+
+The handler receives the parsed input and the request. `createTodo.call({ title })` posts JSON and resolves to the handler's result. `createTodo.endpoint` is the path of the endpoint; use it as a form action:
+
+```tsx fragment
+<form method="post" action={createTodo.endpoint}>
+  <input name="title" />
+  <input type="hidden" name="_return" value="/todos" />
+  <button type="submit">Add</button>
+</form>
+```
+
+A form submission is URL-encoded or multipart, runs the same schema and handler, and answers `303` to `_return` on success or to `_return?_action_error=1` when the input is invalid. Without `_return` it redirects to `/`.
+
+The builders are `object`, `string`, `number`, `boolean`, `array`, `optional`, `literal`, and `enumOf`. A form field arrives as a string, so use `s.string()` for it and convert in the handler, or call the action from script for typed JSON values. A schema can also be a module-level constant:
+
+```tsx fragment
+const input = s.object({ title: s.string() });
+export const createTodo = server(input, async (value) => value.title);
+```
+
+Every action is a public endpoint. The schema checks the shape, not the caller: read the session, authorize, and apply CSRF protection to cookie-authenticated forms. A thrown error answers `500` without its message, and the endpoint rejects request bodies above 1 MiB.
+
+An action registers when its module loads on the server. A module that a server-rendered route imports is loaded before the form or the `.call()` reaches the endpoint; a module that only a client route touches is not, so keep actions in a page, a layout, or a module those import.
+
 ## Choose a render mode per route
 
 A route module can pick how its page is produced:

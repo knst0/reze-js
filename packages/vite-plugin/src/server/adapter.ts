@@ -48,6 +48,7 @@ export function serverEntrySource(): string {
   const viewLiteral = JSON.stringify(SsgViewId);
   return String.raw`import facts from "${ServerFactsSpecifier}";
 import { HtmlSession, renderStream } from "reze-js/internal/html";
+import { handleServerAction } from "reze-js/internal/runtime";
 import * as routerServer from "@rezejs/router/internal/server";
 const externalBase = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(facts.base) || facts.base.startsWith("//");
 const absoluteBase = facts.base.startsWith("/") && !facts.base.startsWith("//");
@@ -231,6 +232,10 @@ function errorDocument(template, head) {
   return new Response(html, { status: 500, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 export async function handler(request, options) {
+  if (request.method === "POST") {
+    const action = await handleServerAction(request);
+    if (action !== undefined) return action;
+  }
   const url = new URL(request.url);
   const isResume = request.headers.get("x-reze-resume") === "1";
   try {

@@ -10,6 +10,7 @@ export default defineConfig({
     },
     entry: [
       "src/index.ts",
+      "src/schema.ts",
       "src/jsx-runtime.ts",
       "src/jsx-dev-runtime.ts",
       "src/internal/reactivity.ts",

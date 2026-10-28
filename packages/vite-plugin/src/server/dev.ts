@@ -44,6 +44,7 @@ export function createDevDocumentMiddleware(server: ViteDevServer, options: DevD
 }
 
 function isDocumentRequest(req: IncomingMessage): boolean {
+  if (req.method === "POST") return (req.url ?? "").includes("/_reze/action/");
   if (req.method !== "GET") return false;
   if (!(req.headers.accept ?? "").includes("text/html")) return false;
   const pathname = (req.url ?? "/").split("?")[0] ?? "/";
@@ -52,6 +53,14 @@ function isDocumentRequest(req: IncomingMessage): boolean {
 }
 
 async function renderDocument(server: ViteDevServer, options: DevDocumentOptions, request: Request): Promise<Response> {
+  if (request.method === "POST") {
+    const environment = server.environments[HtmlEnv];
+    if (environment === undefined || !isRunnableDevEnvironment(environment)) {
+      throw new Error(`[reze] ${HtmlEnv} environment is not runnable in dev`);
+    }
+    const entry = (await environment.runner.import(ServerEntryUrl)) as DevServerEntry;
+    return await entry.handler(request, {} as DevOverrides);
+  }
   const url = new URL(request.url);
   const errorHead = (error: unknown) => errorOverlayScript(server, error);
   let prepared: PreparedTemplate | undefined;

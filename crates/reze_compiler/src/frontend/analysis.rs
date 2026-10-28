@@ -436,6 +436,7 @@ pub fn collect(
         client_work: HashMap::new(),
     };
     collect_imports(program, &mut facts);
+    check_server_calls(program, scoping, &facts, reports);
     for statement in &program.body {
         let components = components_of(statement);
         if components.is_empty() {
@@ -538,6 +539,87 @@ pub fn collect(
         }
     }
     facts
+}
+
+fn schema_builder(facts: &SharedFacts, scoping: &Scoping, callee: &Expression<'_>) -> bool {
+    matches!(
+        facts.imported(scoping, callee),
+        Some("object" | "string" | "number" | "boolean" | "array" | "optional" | "literal" | "enumOf")
+    )
+}
+
+fn is_schema_expression(
+    expression: &Expression<'_>,
+    facts: &SharedFacts,
+    scoping: &Scoping,
+    bindings: &HashMap<SymbolId, &Expression<'_>>,
+    depth: u32,
+) -> bool {
+    if depth > 8 {
+        return false;
+    }
+    match expression.without_parentheses() {
+        Expression::CallExpression(call) => schema_builder(facts, scoping, &call.callee),
+        Expression::Identifier(id) => id
+            .reference_id
+            .get()
+            .and_then(|reference| scoping.get_reference(reference).symbol_id())
+            .and_then(|symbol| bindings.get(&symbol))
+            .is_some_and(|init| is_schema_expression(init, facts, scoping, bindings, depth + 1)),
+        _ => false,
+    }
+}
+
+struct ServerCalls<'a, 'f> {
+    facts: &'f SharedFacts,
+    scoping: &'f Scoping,
+    bindings: HashMap<SymbolId, &'a Expression<'a>>,
+    reports: &'f mut Vec<Report>,
+}
+
+impl<'a> Visit<'a> for ServerCalls<'a, '_> {
+    fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
+        if self.facts.imported(self.scoping, &call.callee) == Some("server") {
+            let valid = call.arguments.len() == 2
+                && call
+                    .arguments
+                    .first()
+                    .and_then(|argument| argument.as_expression())
+                    .is_some_and(|input| is_schema_expression(input, self.facts, self.scoping, &self.bindings, 0));
+            if !valid {
+                self.reports.push(Report::new(Code::ServerInputSchema, call.span));
+            }
+        }
+        walk::walk_call_expression(self, call);
+    }
+}
+
+/// A server action is a POST endpoint; without a schema its body would accept any JSON shape.
+fn check_server_calls(
+    program: &Program<'_>,
+    scoping: &Scoping,
+    facts: &SharedFacts,
+    reports: &mut Vec<Report>,
+) {
+    let mut bindings = HashMap::new();
+    for statement in &program.body {
+        let declaration = match statement {
+            Statement::VariableDeclaration(declaration) => declaration,
+            Statement::ExportDeclaration(export) => {
+                let Declaration::VariableDeclaration(declaration) = &export.declaration else { continue };
+                declaration
+            }
+            _ => continue,
+        };
+        for declarator in &declaration.declarations {
+            let BindingPattern::BindingIdentifier(id) = &declarator.id else { continue };
+            if let Some(init) = declarator.init.as_ref() {
+                bindings.insert(id.symbol_id(), init);
+            }
+        }
+    }
+    let mut visitor = ServerCalls { facts, scoping, bindings, reports };
+    visitor.visit_program(program);
 }
 
 #[derive(Clone, Copy)]
@@ -1443,6 +1525,7 @@ pub enum RuntimeCallKind {
     Dynamic,
     DynamicElement,
     Island,
+    Server,
 }
 
 pub(crate) struct IntrinsicTags {
