@@ -40,7 +40,7 @@ export async function prerenderSite(input: SsgBuildInput): Promise<void> {
     writeFileSync(workerFile, workerEntrySource(`./${entry}`));
     const pages = await runWorker<PrerenderedPages>(
       workerFile,
-      { paths, trailingSlash: options.trailingSlash, mode: input.hybrid ? "hybrid" : "ssg" },
+      { paths, trailingSlash: options.trailingSlash, mode: input.hybrid ? "hybrid" : "ssg", ppr: options.ppr },
       options.timeoutMs,
     );
     const urls = pages.map((page) => page.pathname);

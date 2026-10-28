@@ -45,7 +45,7 @@
     "bench:scaling": "node benches/scaling/run.mjs",
     "bench:size": "node ../../scripts/bench/size.mjs",
     "build": "vp pack",
-    "test": "vp test run"
+    "test": "vp test run && vp test run --config vitest.node.config.mts"
   },
   "dependencies": {
     "@rezejs/signals": "workspace:^",

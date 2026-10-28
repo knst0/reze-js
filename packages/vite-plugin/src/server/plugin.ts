@@ -260,6 +260,9 @@ export function createServerPlugin(input: ServerOptions, shared: ServerShared, f
       ssrOptions = resolvedSsr === undefined ? undefined : { ...resolvedSsr, outDir: resolve(root, resolvedSsr.outDir) };
       if (ssrOptions !== undefined) assertDisjointOutDirs(outDir, ssrOptions.outDir);
       if (ssgOptions !== undefined && ssrOptions !== undefined) assertSharedServerOptions(ssgOptions, ssrOptions);
+      if (ssgOptions?.ppr === true && ssrOptions === undefined) {
+        throw new Error("[reze] ssg.ppr streams the dynamic parts from the server; enable ssr as well");
+      }
       primary = ssgOptions ?? ssrOptions;
       if (primary === undefined) throw new Error("[reze] server plugin needs ssg or ssr options");
       if (!isServe) {

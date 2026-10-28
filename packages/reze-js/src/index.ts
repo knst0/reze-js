@@ -64,7 +64,7 @@ export type {
   SwitchProps,
 };
 
-export { render } from "@rezejs/dom";
+export { cache, render, revalidateTag, type CacheOptions } from "@rezejs/dom";
 
 /**
  * Compiler syntax for a reactive variable: `let count = signal(0)`. The compiler turns reads

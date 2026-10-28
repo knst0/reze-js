@@ -25,7 +25,10 @@ export interface RenderStreamOptions {
   readonly head: string;
   readonly headDefaults: readonly HeadDefault[];
   readonly clientModules: ClientModules;
-  readonly mode: "stream" | "buffered";
+  /** `shell` ends after the part before the first async boundary; `resume` sends only the parts after that shell. */
+  readonly mode: "stream" | "buffered" | "shell" | "resume";
+  /** Reports whether the shell still has async work to stream; called once after the shell is serialized. */
+  readonly onShell?: (pending: boolean) => void;
   readonly signal?: AbortSignal;
 }
 
@@ -229,7 +232,7 @@ export async function renderStream(options: RenderStreamOptions): Promise<Readab
     session.run(() => hMount(options.build));
     for (;;) {
       session.flush();
-      if (mode === "stream" ? session.isShellReady() : !session.hasPendingWork()) break;
+      if (mode === "buffered" ? !session.hasPendingWork() : session.isShellReady()) break;
       await session.waitForWork();
     }
     for (const [pending, isPending] of session.pendingRanges) {
@@ -244,24 +247,28 @@ export async function renderStream(options: RenderStreamOptions): Promise<Readab
     const portals = writer.portals();
     const resources = writer.resources();
     const headTags = writer.shellHead();
-    write(
-      template.beforeHeadEnd +
-        resources +
-        options.head +
-        headTags +
-        template.headEndToRoot +
-        content +
-        template.rootEndToBodyEnd +
-        `<!--rz:p-->${portals}<!--/rz:p--><!--rz-shell-->`,
-    );
-    write(writer.descriptors());
+    if (mode !== "resume") {
+      write(
+        template.beforeHeadEnd +
+          resources +
+          options.head +
+          headTags +
+          template.headEndToRoot +
+          content +
+          template.rootEndToBodyEnd +
+          `<!--rz:p-->${portals}<!--/rz:p--><!--rz-shell-->`,
+      );
+    }
+    const descriptors = writer.descriptors();
+    if (mode !== "resume") write(descriptors);
     session.markShellFlushed();
+    options.onShell?.(session.hasPendingWork());
   } catch (error) {
     close();
     throw error;
   }
 
-  if (mode === "buffered") {
+  if (mode === "buffered" || mode === "shell") {
     write(template.bodyEndToEnd);
     close();
     return stream;

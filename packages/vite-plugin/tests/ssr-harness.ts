@@ -7,7 +7,7 @@ import { serve } from "reze-js/server";
 import { createServer as createDevServer } from "vite";
 import type { Plugin } from "vite";
 
-import reze, { type SsrOptions } from "../src/index";
+import reze, { type SsgOptions, type SsrOptions } from "../src/index";
 import { buildSsgFixture } from "./ssg-harness";
 
 export interface SsrRegistryEntry {
@@ -26,6 +26,7 @@ export interface SsrRegistry {
 export interface SsrBuild {
   clientDir: string;
   handler: (request: Request, options?: { context?: unknown }) => Promise<Response>;
+  revalidateTag: (tag: string) => number;
   registry: SsrRegistry;
 }
 
@@ -37,6 +38,7 @@ export interface SsrOrigin {
 export interface SsrFixtureOptions {
   fixtureDir: string;
   outDir: string;
+  ssg?: true | SsgOptions;
   plugins?: Plugin[];
 }
 
@@ -45,15 +47,23 @@ export async function buildSsrFixture(options: SsrFixtureOptions): Promise<SsrBu
   await buildSsgFixture({
     fixtureDir: options.fixtureDir,
     outDir: options.outDir,
-    plugins: [...(await reze({ fileRoutes: { types: false }, ssr: { outDir: serverDir } })), ...(options.plugins ?? [])],
+    plugins: [
+      ...(await reze({
+        fileRoutes: { types: false },
+        ...(options.ssg === undefined ? {} : { ssg: options.ssg }),
+        ssr: { outDir: serverDir },
+      })),
+      ...(options.plugins ?? []),
+    ],
   });
   const server = (await import(pathToFileURL(join(serverDir, "entry.js")).href)) as {
     handler: SsrBuild["handler"];
+    revalidateTag: SsrBuild["revalidateTag"];
   };
   const client = (await import(pathToFileURL(join(serverDir, "reze-client.js")).href)) as {
     default: SsrRegistry;
   };
-  return { clientDir: options.outDir, handler: server.handler, registry: client.default };
+  return { clientDir: options.outDir, handler: server.handler, revalidateTag: server.revalidateTag, registry: client.default };
 }
 
 export function defineGlobals(values: Record<string, string>): Plugin {

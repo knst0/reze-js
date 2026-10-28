@@ -443,7 +443,48 @@ The plugin stops with an error for these cases:
 - Two records that produce the same output, or the same URL after decoding.
 - A configuration that enumerates no pages at all.
 
-### Output layout
+### Stream dynamic parts
+
+With `ssg` and `ssr` in one build, `ssg: { ppr: true }` prerenders each page up to its first async boundary. The generated file contains the layouts, the settled content and the `<Loading>` fallbacks. It also carries a `data-rz-resume` script, and the browser fetches the settled parts from the same path with an `x-reze-resume: 1` header. The handler renders the page again, sends only the patches for the parts below the first boundary, and the client applies them with the same stream protocol a server response uses. Pages without async work are written complete, without the resume script.
+
+The parts before the first boundary must not depend on the request. Layout data from `beforeLoad` is fixed at build time, and a layout that reads a cookie would bake one visitor's value into the shared file. Keep request-dependent output below a `<Loading>` boundary, or leave the route on `server`.
+
+`ssg.ppr` needs `ssr`; without it the build fails with a message to enable `ssr`. A static host serves the shell from the CDN, and only the resume request reaches the handler.
+
+### Cache async data
+
+`cache(load, { ttl, tags })` wraps an async loader and keys its result by the JSON-serializable call arguments on the server:
+
+```tsx
+import { cache } from "reze-js";
+
+const loadProfile = cache(
+  async (id: string) => fetch(`https://api.example.test/users/${id}`).then((response) => response.json()),
+  { ttl: 30_000, tags: (id) => [`user:${id}`] },
+);
+```
+
+A second render with the same arguments reuses the promise, including a render that runs concurrently. `ttl` is milliseconds; `Infinity` keeps the entry until it is revalidated. `tags` is a list or a function of the arguments. Arguments that JSON cannot represent call the loader without caching. A rejected load is dropped, so the next call retries. In the browser the loader runs directly, because the client router owns its own requests.
+
+Call `revalidateTag(tag)` from the server handler to drop every entry with that tag:
+
+```ts fragment
+import { serve } from "reze-js/server";
+
+import { handler, revalidateTag } from "../dist/server/entry.js";
+
+await serve(async (request) => {
+  if (new URL(request.url).pathname === "/internal/revalidate") {
+    revalidateTag("user:42");
+    return new Response(null, { status: 204 });
+  }
+  return handler(request);
+}, { port: 3000 });
+```
+
+The cache lives in the server process and is shared by every request, like any other server cache. Include the tenant or user id in the arguments of anything that differs per visitor.
+
+### Output layout### Output layout
 
 Each page writes an `index.html` file inside a directory named after its URL. The output directory is Vite's `build.outDir`:
 

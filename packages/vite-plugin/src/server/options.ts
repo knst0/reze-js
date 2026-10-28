@@ -9,6 +9,8 @@ export interface SsgOptions {
   trailingSlash?: "always" | "never";
   timeoutMs?: number;
   paths?: Readonly<Record<string, StaticPathsValue>>;
+  /** Prerender up to the first async boundary and stream the rest from `ssr` at request time. */
+  ppr?: boolean;
 }
 
 export interface ResolvedSsgOptions {
@@ -16,6 +18,7 @@ export interface ResolvedSsgOptions {
   trailingSlash: "always" | "never";
   timeoutMs: number;
   paths: Readonly<Record<string, StaticPathsValue>>;
+  ppr: boolean;
 }
 
 export type DevContext = (request: Request) => unknown;
@@ -65,6 +68,9 @@ export function resolveSsgOptions(option: true | SsgOptions): ResolvedSsgOptions
   }
   const timeoutMs = input.timeoutMs ?? TimeoutDefault;
   checkTimeout("ssg", timeoutMs);
+  if (input.ppr !== undefined && typeof input.ppr !== "boolean") {
+    throw new Error(`[reze] ssg.ppr must be a boolean, got ${JSON.stringify(input.ppr)}`);
+  }
   if (input.paths !== undefined && (typeof input.paths !== "object" || input.paths === null || Array.isArray(input.paths))) {
     throw new Error("[reze] ssg.paths must map route patterns to param lists or listing callbacks");
   }
@@ -73,6 +79,7 @@ export function resolveSsgOptions(option: true | SsgOptions): ResolvedSsgOptions
     trailingSlash,
     timeoutMs,
     paths: input.paths ?? {},
+    ppr: input.ppr ?? false,
   };
 }
 

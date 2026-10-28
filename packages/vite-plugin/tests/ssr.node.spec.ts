@@ -19,12 +19,14 @@ const origins: SsrOrigin[] = [];
 
 let moduleState: SsrBuild;
 let streaming: SsrBuild;
+let ppr: SsrBuild;
 let islands: SsrBuild;
 let context: SsrBuild;
 let routerA: SsrBuild;
 let routerB: SsrBuild;
 let routerActive: SsrBuild;
 let streamingOrigin: SsrOrigin;
+let pprOrigin: SsrOrigin;
 let islandsOrigin: SsrOrigin;
 let contextOrigin: SsrOrigin;
 let routerOrigin: SsrOrigin;
@@ -36,9 +38,10 @@ function fixture(name: string): string {
 }
 
 beforeAll(async () => {
-  [moduleState, streaming, islands, context, routerA, routerB] = await Promise.all([
+  [moduleState, streaming, ppr, islands, context, routerA, routerB] = await Promise.all([
     buildSsrFixture({ fixtureDir: fixture("module-state"), outDir: join(OUT, "module-state") }),
     buildSsrFixture({ fixtureDir: fixture("streaming"), outDir: join(OUT, "streaming") }),
+    buildSsrFixture({ fixtureDir: fixture("ppr"), outDir: join(OUT, "ppr"), ssg: { ppr: true } }),
     buildSsrFixture({ fixtureDir: fixture("islands"), outDir: join(OUT, "islands") }),
     buildSsrFixture({ fixtureDir: fixture("context"), outDir: join(OUT, "context") }),
     buildSsrFixture({
@@ -54,6 +57,7 @@ beforeAll(async () => {
   ]);
   routerActive = routerA;
   streamingOrigin = await serveSsrApp(() => streaming);
+  pprOrigin = await serveSsrApp(() => ppr);
   islandsOrigin = await serveSsrApp(() => islands);
   contextOrigin = await serveSsrApp(() => context);
   routerOrigin = await serveSsrApp(() => routerActive);
@@ -61,7 +65,7 @@ beforeAll(async () => {
   devRouterOrigin = await startDevServer(fixture("router"), [defineGlobals({ __RZ_TEST_VERSION__: "dev" })], {
     devContext: (request) => ({ tenant: request.headers.get("x-tenant") ?? undefined }),
   });
-  origins.push(streamingOrigin, islandsOrigin, contextOrigin, routerOrigin, devOrigin, devRouterOrigin);
+  origins.push(streamingOrigin, pprOrigin, islandsOrigin, contextOrigin, routerOrigin, devOrigin, devRouterOrigin);
   for (const engine of ENGINES) browsers.set(engine, await launchEngine(engine));
 }, 900_000);
 
@@ -295,6 +299,49 @@ for (const engine of ENGINES) {
         await page.click("#dashboard-about");
         await waitFor(page, "location.pathname === '/about' && document.querySelector('#about') !== null");
         expect(await page.evaluate("window.__marker")).toBeUndefined();
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  test(
+    `${engine}: a prerendered shell streams the parts below its first async boundary`,
+    async () => {
+      const shell = await fetch(`${pprOrigin.origin}/index.html`);
+      expect(shell.status).toBe(200);
+      const html = await shell.text();
+      expect(html).toContain("data-rz-resume");
+      expect(html).toContain(">shell<");
+      expect(html).toContain('id=slow');
+      expect(html).not.toContain("settled-");
+      expect(html).not.toContain("data-rz-end");
+
+      const resumed = await fetch(`${pprOrigin.origin}/`, {
+        headers: { accept: "text/html", "x-reze-resume": "1" },
+      });
+      expect(resumed.status).toBe(200);
+      expect(resumed.headers.get("x-reze-resume")).toBe("1");
+      const patches = await resumed.text();
+      expect(patches).toContain("settled-");
+      expect(patches).not.toContain("<!--rz-shell-->");
+      const first = /settled-(\d+)/.exec(patches)?.[1];
+      expect(first).toBeDefined();
+      const again = await (
+        await fetch(`${pprOrigin.origin}/`, { headers: { accept: "text/html", "x-reze-resume": "1" } })
+      ).text();
+      expect(/settled-(\d+)/.exec(again)?.[1]).toBe(first);
+      expect(ppr.revalidateTag("slow")).toBeGreaterThan(0);
+      const after = await (
+        await fetch(`${pprOrigin.origin}/`, { headers: { accept: "text/html", "x-reze-resume": "1" } })
+      ).text();
+      expect(/settled-(\d+)/.exec(after)?.[1]).not.toBe(first);
+
+      const { page, errors, close } = await openPage(browsers.get(engine)!, `${pprOrigin.origin}/index.html`);
+      try {
+        await waitFor(page, "document.querySelector('#slow')?.textContent?.startsWith('settled-') === true");
         expect(errors).toEqual([]);
       } finally {
         await close();

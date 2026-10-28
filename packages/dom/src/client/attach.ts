@@ -117,3 +117,40 @@ export function attachStream(source: Document, target: Document, options: Attach
     },
   };
 }
+
+/** Fetches the streamed parts a prerendered shell left out and applies them to the live document. */
+export async function resumeStream(url: string, options: AttachOptions = {}): Promise<boolean> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      credentials: "same-origin",
+      headers: { accept: "text/html", "x-reze-resume": "1" },
+    });
+  } catch {
+    return false;
+  }
+  if (!response.ok || response.headers.get("x-reze-resume") !== "1") return false;
+  const incoming = document.implementation.createHTMLDocument("");
+  incoming.open();
+  const handle = attachStream(incoming, document, options);
+  try {
+    if (response.body === null) {
+      incoming.write(await response.text());
+    } else {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        incoming.write(decoder.decode(value, { stream: true }));
+      }
+      incoming.write(decoder.decode());
+    }
+    incoming.close();
+    handle.flush(true);
+    return true;
+  } catch {
+    handle.dispose();
+    return false;
+  }
+}

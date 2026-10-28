@@ -172,6 +172,7 @@ function redirectResult(appPath, redirect) {
   };
 }
 async function respond(pathname, search, mode, signal, options) {
+  let pending = false;
   const appPath = stripBase(pathname);
   if (appPath === undefined) return { status: "not-found" };
   const depth = pageDepth(pathname);
@@ -194,17 +195,31 @@ async function respond(pathname, search, mode, signal, options) {
     const clientModules = options?.clientModules ?? clientModulesAt(depth);
     const headDefaults = options?.headDefaults ?? rebaseHeadDefaults(facts.headDefaults, depth);
     handedOff = true;
-    const body = await renderStream({ build, session, template, head: pageHead(route), headDefaults, clientModules, mode, signal });
+    const body = await renderStream({
+      build,
+      session,
+      template,
+      head: pageHead(route),
+      headDefaults,
+      clientModules,
+      mode,
+      signal,
+      onShell: (value) => {
+        pending = value;
+      },
+    });
     const redirect = routerServer.takeServerRedirect(prepared.handle);
     if (redirect !== undefined) {
       await body.cancel();
       return redirectResult(appPath, redirect);
     }
-    return { status: "render", body: substituteAssets(body, assetsAt(depth)) };
+    return { status: "render", body: substituteAssets(body, assetsAt(depth)), pending };
   } finally {
     if (!handedOff) session.dispose();
   }
 }
+export { revalidateTag } from "reze-js";
+
 function text(status, body) {
   return new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
 }
@@ -217,11 +232,20 @@ function errorDocument(template, head) {
 }
 export async function handler(request, options) {
   const url = new URL(request.url);
+  const isResume = request.headers.get("x-reze-resume") === "1";
   try {
-    const result = await respond(url.pathname, url.search, "stream", request.signal, options);
-    if (result.status === "not-found") return text(404, "Not Found");
-    if (result.status === "redirect") return new Response(null, { status: 302, headers: { location: result.to } });
-    return new Response(result.body, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+    const result = await respond(url.pathname, url.search, isResume ? "resume" : "stream", request.signal, options);
+    if (result.status !== "render") {
+      if (isResume) return text(404, "Not Found");
+      if (result.status === "redirect") return new Response(null, { status: 302, headers: { location: result.to } });
+      return text(404, "Not Found");
+    }
+    return new Response(result.body, {
+      status: 200,
+      headers: isResume
+        ? { "content-type": "text/html; charset=utf-8", "x-reze-resume": "1" }
+        : { "content-type": "text/html; charset=utf-8" },
+    });
   } catch (error) {
     console.error(error);
     const depth = pageDepth(url.pathname);
@@ -232,10 +256,15 @@ export async function handler(request, options) {
   }
 }
 export async function prerender(input) {
-  const result = await respond(basePath + input.pathname, "", "buffered", undefined, undefined);
+  const mode = input.ppr === true ? "shell" : "buffered";
+  const result = await respond(basePath + input.pathname, "", mode, undefined, undefined);
   if (result.status === "redirect") return result;
   if (result.status === "not-found") throw new Error("[reze] SSG route " + input.pathname + " matched no route");
-  return { status: "render", html: await new Response(result.body).text() };
+  const html = await new Response(result.body).text();
+  if (mode !== "shell" || result.pending !== true) return { status: "render", html };
+  const marker = '<script type="application/json" data-rz-resume>' + jsonScript({ path: basePath + input.pathname }) + "</script>";
+  const at = html.lastIndexOf("</body>");
+  return { status: "render", html: at < 0 ? html + marker : html.slice(0, at) + marker + html.slice(at) };
 }
 export async function discover(input) {
   const session = new HtmlSession({
@@ -262,7 +291,7 @@ export async function discover(input) {
 }
 
 export function clientEntrySource(rootId: string): string {
-  return `import { attachStream } from "reze-js/internal/client";
+  return `import { attachStream, resumeStream } from "reze-js/internal/client";
 import { installSwapNavigation } from "@rezejs/router/internal/swap";
 import islands from ${JSON.stringify(IslandsId)};
 export { islands };
@@ -282,6 +311,15 @@ const swap = installSwapNavigation({
 });
 attachStream(document, document, { wrap: swap.wrap, islands, onApplied: mountClientRoots });
 mountClientRoots();
+const resume = document.querySelector("script[data-rz-resume]");
+if (resume !== null) {
+  let path = location.href;
+  try {
+    const value = JSON.parse(resume.textContent);
+    if (typeof value?.path === "string") path = value.path;
+  } catch {}
+  void resumeStream(path, { wrap: swap.wrap, islands, onApplied: mountClientRoots });
+}
 `;
 }
 
@@ -357,7 +395,7 @@ try {
   const pages = [];
   for (const url of urls) {
     current = url;
-    pages.push({ pathname: url, result: await adapter.prerender({ pathname: url }) });
+    pages.push({ pathname: url, result: await adapter.prerender({ pathname: url, ppr: workerData.input.ppr }) });
     report({ ok: true, progress: url });
   }
   report({ ok: true, result: pages });
