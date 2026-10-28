@@ -167,7 +167,7 @@ async function run(
       const adoption = beginAdoption(roots);
       let dispose: (() => void) | undefined;
       try {
-        dispose = runWithOwner(owner, () =>
+        runWithOwner(owner, () =>
           renderRoot((stop) => {
             dispose = stop;
             return options.wrap === undefined ? render() : options.wrap(render);
