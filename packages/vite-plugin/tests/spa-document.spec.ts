@@ -105,7 +105,12 @@ test("the dev server serves the compiled document for every route", async () => 
     const document = join(root, "src", "document.tsx");
     writeFileSync(document, readFileSync(document, "utf8").replace("<title>Acme</title>", "<title>Second</title>"));
     server.watcher.emit("change", document);
-    const reloaded = await (await fetch(url, { headers: { accept: "text/html" } })).text();
+    let reloaded = "";
+    for (let attempt = 0; attempt < 50; attempt++) {
+      reloaded = await (await fetch(url, { headers: { accept: "text/html" } })).text();
+      if (reloaded.includes("<title>Second</title>")) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     expect(reloaded).toContain("<title>Second</title>");
   } finally {
     await server.close();
