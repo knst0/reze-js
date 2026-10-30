@@ -7,6 +7,7 @@
     "bench:codspeed": "pnpm --workspace-concurrency=1 --no-sort --filter \"./packages/*\" --if-present bench:codspeed",
     "bench:scaling": "pnpm build && pnpm --filter @rezejs/dom bench:scaling",
     "bench:size": "pnpm build && pnpm --workspace-concurrency=1 --no-sort --filter \"./packages/*\" --if-present bench:size",
+    "bench:size:docs": "pnpm build && pnpm --filter @rezejs/docs exec vp build && node scripts/bench/docs-size.mjs",
     "build": "turbo build --filter=./packages/*",
     "fmt": "vp fmt",
     "lint": "vp lint --type-aware --type-check",

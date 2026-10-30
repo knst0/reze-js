@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-30T11:42:34.426Z",
+  "sizes": {
+    "/building-interfaces": {
+      "raw": 80845,
+      "gzip": 29329,
+      "brotli": 26237
+    },
+    "/compiler": {
+      "raw": 80845,
+      "gzip": 29329,
+      "brotli": 26237
+    },
+    "/components": {
+      "raw": 80845,
+      "gzip": 29329,
+      "brotli": 26237
+    },
+    "/familiar-patterns": {
+      "raw": 80845,
+      "gzip": 29329,
+      "brotli": 26237
+    },
+    "/installation": {
+      "raw": 80845,
+      "gzip": 29329,
+      "brotli": 26237
+    },
+    "/lifecycle": {
+      "raw": 80845,
+      "gzip": 29329,
+      "brotli": 26237
+    },
+    "/reactivity": {
+      "raw": 80845,
+      "gzip": 29329,
+      "brotli": 26237
+    },
+    "/router-api": {
+      "raw": 80845,
+      "gzip": 29329,
+      "brotli": 26237
+    },
+    "/routing": {
+      "raw": 80845,
+      "gzip": 29329,
+      "brotli": 26237
+    }
+  }
+}
