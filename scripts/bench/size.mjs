@@ -1,8 +1,8 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { measureDir } from "./bundle.mjs";
-import { diffSizes, sizeFields } from "./sizes.mjs";
+import { diffSizes, readSnapshot, recordSnapshot, sizeFields } from "./sizes.mjs";
 
 const pkgDir = process.cwd();
 const { name: pkgName } = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
@@ -17,7 +17,7 @@ if (!fixtures.includes("baseline")) throw new Error(`${pkgName} needs benches/si
 const sizes = {};
 for (const fixture of fixtures) sizes[fixture] = await measureDir(join(fixturesDir, fixture));
 
-const previous = existsSync(resultsPath) ? JSON.parse(readFileSync(resultsPath, "utf8")).sizes : {};
+const previous = readSnapshot(resultsPath);
 const baseline = sizes.baseline;
 const format = (value) => value.toLocaleString("en-US");
 const signed = (value) => (value > 0 ? `+${format(value)}` : value < 0 ? `-${format(-value)}` : "0");
@@ -37,10 +37,4 @@ const rows = fixtures.map((fixture) => {
 console.log(`${pkgName}: JS bytes of production bundles (feature = fixture − baseline)`);
 console.table(rows);
 
-const sorted = Object.fromEntries(Object.entries(sizes).sort(([a], [b]) => a.localeCompare(b)));
-if (JSON.stringify(sorted) === JSON.stringify(previous)) {
-  console.log(`unchanged: ${resultsPath}`);
-} else {
-  writeFileSync(resultsPath, `${JSON.stringify({ schema: 1, recordedAt: new Date().toISOString(), sizes: sorted }, null, 2)}\n`);
-  console.log(`wrote ${resultsPath}`);
-}
+recordSnapshot(resultsPath, sizes, { check: process.argv.includes("--check") });
