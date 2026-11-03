@@ -984,7 +984,11 @@ The current implementation differs from this design in these points:
   not with a `data-rz-l` attribute, so it needs no wrapper element. Each streamed template holds the
   state block of its part, which the `stream` module adds once the dispatcher has started.
 - A deferred field that rejects leaves the fallback in place and reports the error to `onError`.
-- `103 Early Hints` are not sent: a handler returns one `Response`.
+- The JS handler takes a second argument, `hints(links)`, which it calls with the `Link` values of
+  `103 Early Hints` for a document request before guards and loaders run. The Node middleware of
+  `vite dev` and `vite preview` sends them with `writeEarlyHints`. The app has no stylesheets or
+  fonts of its own, so the hints hold only the dispatcher as `modulepreload`; route chunks load on
+  intent and are not hinted. The Rust server sends no hints: hyper has no `103` response.
 - A route is static when every loader of its chain destructures only `params` and no layout has a
   guard. A page opts out with `prerender = false`. The build renders each static URL with the
   request header `rz-prerender`, which awaits deferred fields, and writes a `200` page to

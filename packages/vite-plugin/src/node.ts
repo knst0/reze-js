@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 
-export type Handler = (request: Request) => Promise<Response>;
+export type Handler = (request: Request, hints?: (links: string[]) => void) => Promise<Response>;
 
 function toRequest(message: IncomingMessage): Request {
   const headers = new Headers();
@@ -36,7 +36,7 @@ export function middleware(load: () => Promise<Handler>) {
   return (message: IncomingMessage, out: ServerResponse, next: (error?: unknown) => void): void => {
     Promise.resolve()
       .then(load)
-      .then((handler) => handler(toRequest(message)))
+      .then((handler) => handler(toRequest(message), (links) => out.writeEarlyHints({ link: links })))
       .then((response) => send(response, out))
       .catch(next);
   };

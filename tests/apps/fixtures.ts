@@ -34,7 +34,7 @@ interface Running {
   close(): Promise<void>;
 }
 
-type Handler = (request: Request) => Promise<Response>;
+type Handler = (request: Request, hints?: (links: string[]) => void) => Promise<Response>;
 
 function toRequest(message: IncomingMessage, origin: string): Request {
   const headers = new Headers();
@@ -101,7 +101,7 @@ async function listen(serve: (message: IncomingMessage, out: ServerResponse) => 
 }
 
 function respond(handler: Handler, message: IncomingMessage, out: ServerResponse): void {
-  handler(toRequest(message, `http://${message.headers.host}`))
+  handler(toRequest(message, `http://${message.headers.host}`), (links) => out.writeEarlyHints({ link: links }))
     .then((response) => send(response, out))
     .catch((error: unknown) => {
       out.statusCode = 500;

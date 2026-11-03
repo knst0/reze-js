@@ -33,5 +33,5 @@ export function createHandler(options: HandlerOptions = {}): Handler {
   const app = import("virtual:rz-app").then((m) =>
     createApp(m.default, m.root, { ...options, assets: m.assets, build: m.build, dev: m.dev }),
   );
-  return async (request) => (await app)(request);
+  return async (request, hints) => (await app)(request, hints);
 }

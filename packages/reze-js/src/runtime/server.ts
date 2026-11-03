@@ -675,7 +675,8 @@ export interface AppOptions extends HandlerOptions {
   build?: string;
 }
 
-export type Handler = (request: Request) => Promise<Response>;
+/** Answers `request`. `hints` sends `103 Early Hints` with `Link` values, where the server supports it. */
+export type Handler = (request: Request, hints?: (links: string[]) => void) => Promise<Response>;
 
 const html = { "content-type": "text/html; charset=utf-8" };
 
@@ -769,7 +770,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
 
   const timing = options.serverTiming ?? options.dev ?? false;
 
-  return async (request) => {
+  return async (request, hints) => {
     options.onRequest?.(request);
     const timings: string[] = [];
     const time = (name: string, start: number) => {
@@ -801,6 +802,9 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
         return new Response(null, { status: 308, headers: { location: matched[1] + url.search } });
       }
       break;
+    }
+    if (build === null && (request.method === "GET" || request.method === "HEAD") && options.assets) {
+      hints?.([`<${options.assets.dispatcher}>; rel=modulepreload`]);
     }
     const writers: Writer[] = [];
     const finish = async ([document, status, rest]: [string, number, AsyncGenerator<string> | undefined], headers: Headers) => {

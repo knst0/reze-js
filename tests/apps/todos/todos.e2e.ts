@@ -1,3 +1,5 @@
+import { get } from "node:http";
+
 import type { Page } from "@playwright/test";
 
 import { expect, test, type Server } from "../fixtures";
@@ -146,4 +148,19 @@ test("accepts a JSON call", async ({ page, request, server }) => {
   response = await request.post(server.url(action!), { headers, data: { title: "Bad", priority: "3" } });
   expect(response.status()).toBe(422);
   expect((await response.json()).issues[0].path).toEqual(["priority"]);
+});
+
+test("sends the dispatcher in early hints before the loaders finish", async ({ server }) => {
+  const hints = await new Promise<string[]>((done, fail) => {
+    const links: string[] = [];
+    get(server.url("/about?from=hints"), (response) => {
+      response.resume();
+      response.on("end", () => done(links));
+    })
+      .on("information", (info) => {
+        if (info.statusCode === 103) links.push(String(info.headers.link));
+      })
+      .on("error", fail);
+  });
+  expect(hints).toEqual([expect.stringMatching(/^<\/.*dispatcher.*>; rel=modulepreload$/)]);
 });
