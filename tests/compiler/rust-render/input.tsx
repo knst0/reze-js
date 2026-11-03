@@ -17,6 +17,8 @@ export default function Home(props: { data: Shop }) {
       <head>
         <title>{props.data.title}</title>
       </head>
+      <a href="/">Home</a>
+      <a href={props.data.title}>Title</a>
       <h1 class={props.data.open ? "open" : "closed"}>{props.data.title}</h1>
       <ul>
         <For each={props.data.items} fallback={<li>Empty</li>}>

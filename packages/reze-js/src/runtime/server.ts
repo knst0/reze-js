@@ -356,6 +356,13 @@ export function $fa($r: RenderContext, value: unknown): string {
   return ` method="post"${$a("action", `${$r.url.pathname}?${search}`)}`;
 }
 
+/** `aria-current` and `data-active` of an anchor whose `href` is the current path. */
+export function $ac($r: RenderContext, href: unknown): string {
+  return typeof href === "string" && href[0] === "/" && href[1] !== "/" && href.split(/[?#]/)[0] === $r.url.pathname
+    ? ' aria-current="page" data-active'
+    : "";
+}
+
 export function $s(props: Record<string, unknown> | null | undefined): string {
   let out = "";
   for (const name in props) {

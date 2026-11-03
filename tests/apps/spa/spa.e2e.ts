@@ -18,6 +18,8 @@ test("navigates between routes and keeps the layout's state", async ({ page, ser
   await expect(page.getByRole("heading", { name: "Note first" })).toBeVisible();
   await expect(page).toHaveURL(server.url("/notes/first"));
   await expect(page).toHaveTitle("Note first");
+  await expect(page.getByRole("link", { name: "First note" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current");
   await page.getByRole("link", { name: "Second note" }).click();
   await expect(page.getByRole("heading", { name: "Note second" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Visits 1" })).toBeVisible();

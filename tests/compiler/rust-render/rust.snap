@@ -27,7 +27,16 @@ pub mod routes {
         h2.text((data).title.as_str());
         h2.raw("</title>");
         cx.head(Some("title"), h2);
-        out.raw("<h1");
+        out.raw("<a href=\"/\"");
+        if page.active("/") {
+            out.raw(" aria-current=\"page\" data-active");
+        }
+        out.raw(">Home</a><a");
+        out.attr("href", (data).title.as_str());
+        if page.active((data).title.as_str()) {
+            out.raw(" aria-current=\"page\" data-active");
+        }
+        out.raw(">Title</a><h1");
         if ((data).open) {
             out.attr("class", "open");
         } else {

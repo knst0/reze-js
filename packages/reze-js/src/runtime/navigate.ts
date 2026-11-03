@@ -126,6 +126,18 @@ function swap(fetched: Fetched, kind: Kind, after: (root: Node[]) => void): bool
   return true;
 }
 
+/** Moves `aria-current="page"` and `data-active` to the anchors that point at the current path. */
+function mark(): void {
+  for (const anchor of document.querySelectorAll("a[href^='/']")) {
+    if (anchor.hasAttribute("aria-current") && !anchor.hasAttribute("data-active")) continue;
+    const href = anchor.getAttribute("href")!;
+    const active = href[1] !== "/" && href.split(/[?#]/)[0] === current.pathname;
+    anchor.toggleAttribute("data-active", active);
+    if (active) anchor.setAttribute("aria-current", "page");
+    else anchor.removeAttribute("aria-current");
+  }
+}
+
 function focus(root: Node[]): void {
   const find = (selector: string) =>
     root
@@ -161,6 +173,7 @@ export async function navigate(href: string, pop = false): Promise<void> {
   const moved = url.pathname !== current.pathname;
   const finish = (to: string, root: Node[]) => {
     current = new URL(to);
+    mark();
     if (!pop) history.pushState({}, "", to);
     const saved = (history.state as { scroll?: [number, number] } | null)?.scroll;
     if (pop && saved) scrollTo(...saved);
@@ -203,6 +216,7 @@ export async function submit(form: HTMLFormElement, submitter: HTMLElement | nul
   swap(fetched, "mutation", () => {
     if (!fetched.redirected || url.pathname === current.pathname) return;
     current = url;
+    mark();
     history.pushState({}, "", url.href);
     scrollTo(0, 0);
   });

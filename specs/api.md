@@ -423,3 +423,13 @@ The current implementation differs from this design in these points:
 - The quick fix rewrites a ternary and `&&` into `<Show>`, and `.map` with one arrow function into
   `<For>`, and adds the missing import. `||` and the other array methods get the diagnostic
   without a fix.
+- Active links: the compiler marks an `<a>` whose `href` is a static path or an expression, and
+  skips one with a spread or its own `aria-current`. After a client navigation the runtime moves
+  the marks across every `<a href>` in the document, including ones the compiler did not see,
+  and leaves an anchor alone that has `aria-current` without `data-active`.
+- Of the router hooks, only `useParams` exists, and only in the server render. `useLocation`,
+  `useSearchParams`, and `useLinkState` are not implemented.
+- `buildPaths` and typed `href` values are not implemented; `routes.gen.d.ts` types route props
+  only.
+- `render` is not exported. `render: "client"` routes and `target: "spa"` mount through the
+  navigation runtime instead.

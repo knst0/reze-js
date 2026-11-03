@@ -18,6 +18,8 @@ use crate::view::{
     Node, PropValue, Value,
 };
 
+const ACTIVE: &str = " aria-current=\"page\" data-active";
+
 type Names<'e, 'a> = HashMap<String, Binding<'e, 'a>>;
 
 impl<'e, 'a> Emitter<'e, 'a> {
@@ -218,6 +220,40 @@ impl<'e, 'a> Emitter<'e, 'a> {
         }
     }
 
+    fn active_hole(&mut self, expression: &'a Expression<'a>, frame: &Rc<Frame<'e, 'a>>) {
+        let result = match expression.without_parentheses() {
+            Expression::ConditionalExpression(conditional) => {
+                self.val(&conditional.test, frame).map(|test| {
+                    self.open(&format!("if {}", truthy(&test)));
+                    self.active_hole(&conditional.consequent, frame);
+                    self.reopen("else");
+                    self.active_hole(&conditional.alternate, frame);
+                    self.close();
+                })
+            }
+            _ => self.val(expression, frame).map(|val| match &val.ty {
+                Ty::Str => {
+                    self.open(&format!("if page.active({})", val.str()));
+                    self.raw(ACTIVE);
+                    self.close();
+                }
+                Ty::Opt(inner) if **inner == Ty::Str => {
+                    let href = self.fresh("href");
+                    self.open(&format!(
+                        "if let Some({href}) = {} && page.active({href})",
+                        val.code
+                    ));
+                    self.raw(ACTIVE);
+                    self.close();
+                }
+                _ => {}
+            }),
+        };
+        if let Err(reason) = result {
+            self.report(frame.module, expression.span(), reason);
+        }
+    }
+
     fn element(&mut self, element: &'e Element<'a>, frame: &Rc<Frame<'e, 'a>>) {
         self.raw(&format!("<{}", element.tag));
         for item in &element.attributes {
@@ -237,6 +273,15 @@ impl<'e, 'a> Emitter<'e, 'a> {
                     }
                 }
             }
+        }
+        match element.active_href() {
+            Some(Value::Static(href)) => {
+                self.open(&format!("if page.active({})", literal(href)));
+                self.raw(ACTIVE);
+                self.close();
+            }
+            Some(Value::Expr(expression)) => self.active_hole(expression, frame),
+            _ => {}
         }
         if let Some(mark) = self.plan.modules[frame.module].marks.get(&element.span.start) {
             self.raw(" data-rz=");

@@ -258,6 +258,7 @@ impl<C: Send + Sync + 'static> App<C> {
             let page = Page {
                 table: self.table,
                 chain: self.table.root,
+                path,
                 params: &Params::new(),
                 data: &[],
                 error: Some((self.table.root.len(), RouteError::not_found())),
@@ -301,6 +302,7 @@ impl<C: Send + Sync + 'static> App<C> {
             let page = Page {
                 table: self.table,
                 chain,
+                path,
                 params: &params,
                 data: &data,
                 error: error.clone(),
@@ -313,7 +315,7 @@ impl<C: Send + Sync + 'static> App<C> {
             let mut state = Run { data: &mut data, error: &mut error, timings: &mut timings };
             self.run(route, (0..from).collect(), &params, context, &mut state).await;
         }
-        let page = Page { table: self.table, chain, params: &params, data: &data, error };
+        let page = Page { table: self.table, chain, path, params: &params, data: &data, error };
         let rendered = self.render(&page, route.chunk, 0, &mut timings);
         self.finish(rendered, headers, &timings, head, request)
     }

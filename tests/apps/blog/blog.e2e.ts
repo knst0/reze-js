@@ -67,3 +67,16 @@ test("navigates between Rust pages", async ({ page, server }) => {
   await page.getByRole("link", { name: "Home" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Blog");
 });
+
+test("marks the link to the current page", async ({ page, server }) => {
+  await page.goto(server.url("/"));
+  const home = page.getByRole("link", { name: "Home" });
+  await expect(home).toHaveAttribute("aria-current", "page");
+  await expect(home).toHaveAttribute("data-active", "");
+  await page.getByRole("link", { name: "Hello, world" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hello, world");
+  await expect(home).not.toHaveAttribute("aria-current");
+  await expect(home).not.toHaveAttribute("data-active");
+  await page.goBack();
+  await expect(home).toHaveAttribute("aria-current", "page");
+});

@@ -313,6 +313,19 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 }
             }
         }
+        match element.active_href() {
+            Some(Value::Static(href)) => {
+                let ac = self.helper("$ac");
+                let code = format!("{ac}($r, {})", serde_json::to_string(href).unwrap());
+                self.interpolate(out, &code);
+            }
+            Some(Value::Expr(expression)) => {
+                let ac = self.helper("$ac");
+                let code = format!("{ac}($r, {})", self.expression(expression));
+                self.interpolate(out, &code);
+            }
+            _ => {}
+        }
         if let Some(mark) = self.plan.marks.get(&element.span.start) {
             out.push_str(&format!(
                 " data-rz=${{{}}}.{}",

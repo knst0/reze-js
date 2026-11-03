@@ -137,6 +137,7 @@ impl Render {
 pub struct Page<'p> {
     pub(crate) table: &'static Table,
     pub(crate) chain: &'static [usize],
+    pub(crate) path: &'p str,
     pub(crate) params: &'p Params,
     pub(crate) data: &'p [Option<Box<dyn Value>>],
     pub(crate) error: Option<(usize, RouteError)>,
@@ -158,6 +159,13 @@ impl Page<'_> {
 
     pub fn param_opt(&self, name: &str) -> Option<&str> {
         self.params.get(name)
+    }
+
+    /// Whether an anchor's `href` points at the current path.
+    pub fn active(&self, href: &str) -> bool {
+        href.starts_with('/')
+            && !href.starts_with("//")
+            && href.split(['?', '#']).next() == Some(self.path)
     }
 }
 

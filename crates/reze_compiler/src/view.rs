@@ -55,6 +55,37 @@ pub enum AttributeItem<'a> {
     Spread(&'a Expression<'a>),
 }
 
+impl<'a> Element<'a> {
+    /// The `href` of an anchor that gets `aria-current="page"` and `data-active` when it points at
+    /// the current path: one without a spread or an `aria-current` of its own.
+    pub fn active_href(&self) -> Option<&Value<'a>> {
+        if self.tag != "a" {
+            return None;
+        }
+        let mut href = None;
+        for item in &self.attributes {
+            match item {
+                AttributeItem::Spread(_) => return None,
+                AttributeItem::Attribute(attribute) => match attribute.name {
+                    "aria-current" => return None,
+                    "href" => href = Some(&attribute.value),
+                    _ => {}
+                },
+            }
+        }
+        match href {
+            Some(Value::Static(href)) if !routable(href) => None,
+            Some(Value::True) => None,
+            href => href,
+        }
+    }
+}
+
+/// A same-origin absolute path, which a static `href` needs to ever be active.
+fn routable(href: &str) -> bool {
+    href.starts_with('/') && !href.starts_with("//")
+}
+
 pub struct Handler<'a> {
     /// DOM event name, `click`.
     pub event: String,
