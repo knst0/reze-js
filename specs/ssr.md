@@ -1037,20 +1037,26 @@ The current implementation differs from this design in these points:
 - `reze_server::tower::service(app, context)` takes the context as an argument instead of
   extracting it from the framework's state. `reze_server::actix::service(Arc<App<C>>)` returns a
   `Route` for `default_service`, which reads the context from the app's `web::Data<C>`; each
-  worker of `HttpServer` calls it with a clone of the `Arc`. Both answer with the whole body.
+  worker of `HttpServer` calls it with a clone of the `Arc`. Both stream a page with deferred
+  parts.
 - The dev JSON of a Rust loader uses named fields. The Rust state block writes a typed value
   with `reze::Data::wire`, positionally, and the compiler reads the types of
   `virtual:reze-types/<crate>` from the IR. Params reach
   a Rust loader as strings, in the generated `Params` of the route.
-- A `SystemTime` field is a `Date`, a `BTreeSet` or `HashSet` a `Set`, and a `BTreeMap` or
-  `HashMap` with `String` keys a `Map<string, V>`. The IR has no tuples, no enums with fields, no
-  `Uint8Array`, and no `Record`: a field of another type fails the build with "has no wire
-  encoding". Only client code reads a `Date`, `Set`, or `Map`: the Rust render has no lowering for
-  them. A date string of mutation input is read as UTC when it has no offset, and only in the ISO
+- A `SystemTime` field is a `Date`, a `BTreeSet` or `HashSet` a `Set`, a `BTreeMap` or
+  `HashMap` with `String` keys a `Map<string, V>`, and a tuple of up to four items a TS tuple. An
+  enum of unit variants is a union of string literals, and an enum whose variants have named
+  fields or none is a discriminated union tagged with `kind`, `{ kind: "Image"; src: string }`; a
+  field may not be named `kind`. The IR has no `Uint8Array` and no `Record`: a field of another
+  type fails the build with "has no wire encoding". Only client code reads a `Date`, `Set`, or
+  `Map`: the Rust render has no lowering for them. The Rust render reads `kind` of an enum with
+  fields, and a field of its variants as a value that is absent in the other variants, without
+  narrowing. A date string of mutation input is read as UTC when it has no offset, and only in the ISO
   8601 formats of `toISOString`. The JS dev server checks the JSON of `/__reze/load` against the
   loader's type with the validators of mutation input, so its render reads the same `Date`, `Set`,
-  `Map`, and `bigint` values as with a JS loader. The `reze-ir` binary of `reze_build` writes the IR in place of `cargo xtask reze-ir`,
-  and the Vite plugin reads it through `reze({ rust: { types } })`.
+  `Map`, and `bigint` values as with a JS loader. The `reze-ir` binary of `reze_build` writes the
+  IR in place of `cargo xtask reze-ir`, and the Vite plugin reads it through
+  `reze({ rust: { types } })`.
 - The generated code renders one function per route level into `Html` and a `Render` state, and
   `reze_build::compile` runs the compiler itself in `build.rs`. The server reads the client URLs
   from `dist/server/reze.json` at startup, through `App::manifest`.

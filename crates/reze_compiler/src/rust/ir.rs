@@ -32,6 +32,10 @@ pub enum TypeRef {
     },
     /// `std::time::SystemTime`, a JS `Date`.
     Date,
+    /// A tuple, a JS tuple.
+    Tuple {
+        items: Vec<TypeRef>,
+    },
     /// A `reze::Defer` struct field, which streams into its `<Loading>` boundary.
     Defer {
         of: Box<TypeRef>,
@@ -52,14 +56,33 @@ pub struct FieldDef {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum TypeDef {
-    Struct { name: String, fields: Vec<FieldDef> },
-    Enum { name: String, variants: Vec<String> },
+    Struct {
+        name: String,
+        fields: Vec<FieldDef>,
+    },
+    Enum {
+        name: String,
+        variants: Vec<String>,
+    },
+    /// An enum with fields: a union of objects tagged with `kind`.
+    Union {
+        name: String,
+        variants: Vec<VariantDef>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct VariantDef {
+    pub name: String,
+    pub fields: Vec<FieldDef>,
 }
 
 impl TypeDef {
     pub fn name(&self) -> &str {
         match self {
-            TypeDef::Struct { name, .. } | TypeDef::Enum { name, .. } => name,
+            TypeDef::Struct { name, .. }
+            | TypeDef::Enum { name, .. }
+            | TypeDef::Union { name, .. } => name,
         }
     }
 }

@@ -5,7 +5,7 @@ mod ir;
 mod lower;
 mod nodes;
 
-pub use ir::{CrateIr, FieldDef, TypeDef, TypeRef};
+pub use ir::{CrateIr, FieldDef, TypeDef, TypeRef, VariantDef};
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -33,6 +33,7 @@ enum Ty {
     Enum(String),
     Opt(Box<Ty>),
     List(Box<Ty>),
+    Tuple(Vec<Ty>),
 }
 
 impl Ty {
@@ -327,6 +328,9 @@ impl<'e, 'a> Emitter<'e, 'a> {
             TypeRef::Set { .. } => Ty::Struct("Set".into()),
             TypeRef::Map { .. } => Ty::Struct("Map".into()),
             TypeRef::Date => Ty::Struct("Date".into()),
+            TypeRef::Tuple { items } => {
+                Ty::Tuple(items.iter().map(|item| self.ty_of(item, krate)).collect())
+            }
             TypeRef::Defer { of } => self.ty_of(of, krate),
             TypeRef::Named { name } => self.named(&format!("{krate}::{name}")),
         }

@@ -26,13 +26,20 @@ type RustType =
   | { kind: "date" }
   | { kind: "option" | "list" | "set" | "defer"; of: RustType }
   | { kind: "map"; value: RustType }
+  | { kind: "tuple"; items: RustType[] }
   | { kind: "named"; name: string };
+
+interface RustField {
+  name: string;
+  type: RustType;
+}
 
 interface CrateIr {
   crate: string;
   types: (
-    | { kind: "struct"; name: string; fields: { name: string; type: RustType }[] }
+    | { kind: "struct"; name: string; fields: RustField[] }
     | { kind: "enum"; name: string; variants: string[] }
+    | { kind: "union"; name: string; variants: { name: string; fields: RustField[] }[] }
   )[];
 }
 
@@ -54,6 +61,8 @@ function tsType(type: RustType): string {
       return `Set<${tsType(type.of)}>`;
     case "map":
       return `Map<string, ${tsType(type.value)}>`;
+    case "tuple":
+      return `[${type.items.map(tsType).join(", ")}]`;
     case "defer":
       return tsType(type.of);
     case "named":
@@ -69,6 +78,14 @@ function rustTypes(crates: CrateIr[]): string {
     for (const type of krate.types) {
       if (type.kind === "enum") {
         out += `  export type ${type.name} = ${type.variants.map((variant) => JSON.stringify(variant)).join(" | ")};\n`;
+        continue;
+      }
+      if (type.kind === "union") {
+        const variants = type.variants.map(
+          (variant) =>
+            `{ kind: ${JSON.stringify(variant.name)}${variant.fields.map((field) => `; ${field.name}: ${tsType(field.type)}`).join("")} }`,
+        );
+        out += `  export type ${type.name} = ${variants.join(" | ")};\n`;
         continue;
       }
       out += `  export interface ${type.name} {\n`;

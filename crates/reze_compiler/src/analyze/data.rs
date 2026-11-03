@@ -158,6 +158,28 @@ fn rust_type(ir: &CrateIr, name: &str, depth: u32) -> Option<Ty> {
         TypeDef::Enum { variants, .. } => {
             Ty::union(variants.iter().map(|v| Ty::Literal(Literal::String(v.clone()))).collect())
         }
+        TypeDef::Union { variants, .. } => Ty::Union(
+            variants
+                .iter()
+                .map(|variant| {
+                    let tag = Field {
+                        name: "kind".into(),
+                        ty: Ty::Literal(Literal::String(variant.name.clone())),
+                        optional: false,
+                    };
+                    let fields = variant.fields.iter().map(|field| {
+                        Some(Field {
+                            name: field.name.clone(),
+                            ty: rust_ref(ir, &field.ty, depth)?,
+                            optional: false,
+                        })
+                    });
+                    Some(Ty::Object(
+                        std::iter::once(Some(tag)).chain(fields).collect::<Option<_>>()?,
+                    ))
+                })
+                .collect::<Option<_>>()?,
+        ),
     })
 }
 
@@ -169,6 +191,9 @@ fn rust_ref(ir: &CrateIr, ty: &TypeRef, depth: u32) -> Option<Ty> {
         TypeRef::Set { of } => Some(Ty::Set(Box::new(rust_ref(ir, of, depth)?))),
         TypeRef::Map { value } => Some(Ty::Map(Box::new(rust_ref(ir, value, depth)?))),
         TypeRef::Date => Some(Ty::Date),
+        TypeRef::Tuple { items } => Some(Ty::Tuple(
+            items.iter().map(|item| rust_ref(ir, item, depth)).collect::<Option<_>>()?,
+        )),
         TypeRef::Defer { of } => rust_ref(ir, of, depth),
         TypeRef::String => Some(Ty::String),
         TypeRef::Boolean => Some(Ty::Boolean),

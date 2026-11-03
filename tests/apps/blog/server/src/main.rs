@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 
 use actix_web::{HttpServer, web};
-use blog_types::{Added, Comment, Home, NewComment, Post, Status, Summary};
+use blog_types::{Added, Comment, Cover, Home, NewComment, Post, Status, Summary};
 use generated::routes;
 use reze_server::http::request::Parts;
 use reze_server::reze::Defer;
@@ -35,6 +35,12 @@ impl Db {
                 published: UNIX_EPOCH + Duration::from_millis(1_714_564_800_000 + u64::from(id)),
                 reactions: [("like".to_string(), id * 3), ("wow".to_string(), 1)].into(),
                 editors: ["ann".to_string(), "bo".to_string()].into(),
+                cover: if id == 1 {
+                    Cover::Image { src: "/hello.png".into(), alt: "A wave".into() }
+                } else {
+                    Cover::Plain
+                },
+                rank: ("weekly".into(), id),
                 comments: Vec::new(),
             };
         Self {

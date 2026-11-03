@@ -10,8 +10,10 @@
 use std::path::{Path, PathBuf};
 
 pub use reze_compiler::Chunks;
-use reze_compiler::{CrateIr, DiskFs, FieldDef, Options, TypeDef, TypeRef, compile_project};
-use syn::{Fields, GenericArgument, Item, PathArguments, Type};
+use reze_compiler::{
+    CrateIr, DiskFs, FieldDef, Options, TypeDef, TypeRef, VariantDef, compile_project,
+};
+use syn::{Fields, FieldsNamed, GenericArgument, Item, PathArguments, Type};
 
 /// What [`compile`] builds: the Vite project and the crates of its loader data types.
 pub struct Config {
@@ -138,23 +140,26 @@ fn collect(items: &[Item], file: &Path, out: &mut Vec<TypeDef>) -> Result<(), St
         match item {
             Item::Struct(item) if derives_data(&item.attrs) => {
                 let Fields::Named(named) = &item.fields else { continue };
-                let mut fields = Vec::new();
-                for field in &named.named {
-                    let ident = field.ident.as_ref().expect("a named field");
-                    let ty = field_ref(&field.ty).map_err(|ty| {
-                        format!(
-                            "{}: `{}.{ident}` has the type `{ty}`, which has no wire encoding",
-                            file.display(),
-                            item.ident
-                        )
-                    })?;
-                    fields.push(FieldDef { name: ident.to_string(), ty });
-                }
+                let fields = field_defs(named, &item.ident.to_string(), file)?;
                 out.push(TypeDef::Struct { name: item.ident.to_string(), fields });
             }
             Item::Enum(item) if derives_data(&item.attrs) => {
-                let variants = item.variants.iter().map(|v| v.ident.to_string()).collect();
-                out.push(TypeDef::Enum { name: item.ident.to_string(), variants });
+                let name = item.ident.to_string();
+                if item.variants.iter().all(|v| matches!(v.fields, Fields::Unit)) {
+                    let variants = item.variants.iter().map(|v| v.ident.to_string()).collect();
+                    out.push(TypeDef::Enum { name, variants });
+                    continue;
+                }
+                let mut variants = Vec::new();
+                for variant in &item.variants {
+                    let owner = format!("{name}::{}", variant.ident);
+                    let fields = match &variant.fields {
+                        Fields::Named(named) => field_defs(named, &owner, file)?,
+                        _ => Vec::new(),
+                    };
+                    variants.push(VariantDef { name: variant.ident.to_string(), fields });
+                }
+                out.push(TypeDef::Union { name, variants });
             }
             Item::Mod(module) => {
                 if let Some((_, inner)) = &module.content {
@@ -165,6 +170,23 @@ fn collect(items: &[Item], file: &Path, out: &mut Vec<TypeDef>) -> Result<(), St
         }
     }
     Ok(())
+}
+
+fn field_defs(named: &FieldsNamed, owner: &str, file: &Path) -> Result<Vec<FieldDef>, String> {
+    named
+        .named
+        .iter()
+        .map(|field| {
+            let ident = field.ident.as_ref().expect("a named field");
+            let ty = field_ref(&field.ty).map_err(|ty| {
+                format!(
+                    "{}: `{owner}.{ident}` has the type `{ty}`, which has no wire encoding",
+                    file.display()
+                )
+            })?;
+            Ok(FieldDef { name: ident.to_string(), ty })
+        })
+        .collect()
 }
 
 /// The last segment of a type path and its type arguments.
@@ -200,6 +222,9 @@ fn type_ref(ty: &Type) -> Result<TypeRef, String> {
     match ty {
         Type::Reference(reference) => type_ref(&reference.elem),
         Type::Slice(slice) => Ok(TypeRef::List { of: Box::new(type_ref(&slice.elem)?) }),
+        Type::Tuple(tuple) if !tuple.elems.is_empty() => Ok(TypeRef::Tuple {
+            items: tuple.elems.iter().map(type_ref).collect::<Result<_, _>>()?,
+        }),
         Type::Path(_) => {
             let Some((name, arguments)) = path_of(ty) else { return unsupported() };
             Ok(match (name.as_str(), arguments.as_slice()) {

@@ -258,3 +258,34 @@ impl Data for SystemTime {
         out.push_str(&date::millis(*self).to_string());
     }
 }
+
+macro_rules! tuples {
+    ($(($($ty:ident $index:tt),+)),*) => {$(
+        /// A tuple crosses as an array.
+        impl<$($ty: Data),+> Data for ($($ty,)+) {
+            fn write(&self, out: &mut String) {
+                out.push('[');
+                $(
+                    if $index > 0 {
+                        out.push(',');
+                    }
+                    self.$index.write(out);
+                )+
+                out.push(']');
+            }
+
+            fn wire(&self, out: &mut String) {
+                out.push('[');
+                $(
+                    if $index > 0 {
+                        out.push(',');
+                    }
+                    self.$index.wire(out);
+                )+
+                out.push(']');
+            }
+        }
+    )*};
+}
+
+tuples!((A 0), (A 0, B 1), (A 0, B 1, C 2), (A 0, B 1, C 2, D 3));

@@ -25,6 +25,12 @@ pub struct Home {
 }
 
 #[derive(Clone, Data)]
+pub enum Cover {
+    Plain,
+    Image { src: String, alt: String },
+}
+
+#[derive(Clone, Data)]
 pub struct Post {
     pub id: u32,
     pub title: String,
@@ -38,6 +44,8 @@ pub struct Post {
     pub published: SystemTime,
     pub reactions: BTreeMap<String, u32>,
     pub editors: BTreeSet<String>,
+    pub cover: Cover,
+    pub rank: (String, u32),
     pub comments: Vec<Comment>,
 }
 

@@ -4,8 +4,9 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
-/// Implements `reze::Data` and `reze::Input` for a struct with named fields, and also `Variant`
-/// for an enum of unit variants.
+/// Implements `reze::Data` and `reze::Input` for a struct with named fields, and for an enum, and
+/// also `Variant` for an enum. An enum of unit variants crosses as a union of string literals, and
+/// an enum with fields as a union of objects tagged with `kind`.
 #[proc_macro_derive(Data)]
 pub fn derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -94,7 +95,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
         Data::Enum(data) => {
             if data.variants.iter().any(|variant| !matches!(variant.fields, Fields::Unit)) {
-                return error(&input, "reze::Data needs an enum of unit variants");
+                return tagged(&input, data);
             }
             let arms = data.variants.iter().map(|variant| {
                 let ident = &variant.ident;
@@ -168,6 +169,125 @@ pub fn derive(input: TokenStream) -> TokenStream {
         Data::Union(_) => return error(&input, "reze::Data does not support unions"),
     };
     expanded.into()
+}
+
+/// An enum whose variants have named fields or none: `{"kind":"Circle","radius":1}` in JSON, and
+/// `[variant index, ...fields]` in the positional encoding.
+fn tagged(input: &DeriveInput, data: &syn::DataEnum) -> TokenStream {
+    let name = &input.ident;
+    let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
+    let mut variants = Vec::new();
+    for variant in &data.variants {
+        let fields: Vec<_> = match &variant.fields {
+            Fields::Named(named) => named.named.iter().collect(),
+            Fields::Unit => Vec::new(),
+            Fields::Unnamed(_) => {
+                return error(input, "reze::Data needs enum variants with named fields or none");
+            }
+        };
+        if fields.iter().any(|field| field.ident.as_ref().unwrap() == "kind") {
+            return error(input, "reze::Data tags enum variants with `kind`, which a field takes");
+        }
+        variants.push((&variant.ident, fields));
+    }
+    let describe = vec!["an object"; variants.len()].join(" or ");
+    let mut names = Vec::new();
+    let mut writes = Vec::new();
+    let mut wires = Vec::new();
+    let mut reads = Vec::new();
+    for (index, (ident, fields)) in variants.iter().enumerate() {
+        let text = ident.to_string();
+        let idents: Vec<_> = fields.iter().map(|f| f.ident.as_ref().unwrap()).collect();
+        let types: Vec<_> = fields.iter().map(|f| &f.ty).collect();
+        let keys: Vec<String> = idents.iter().map(|ident| ident.to_string()).collect();
+        let tag = format!("{{\"kind\":{text:?}");
+        let pattern = quote! { Self::#ident { #(#idents,)* } };
+        names.push(quote! { Self::#ident { .. } => #text });
+        writes.push(quote! {
+            #pattern => {
+                out.push_str(#tag);
+                #(
+                    out.push_str(concat!(",\"", #keys, "\":"));
+                    ::reze::Data::write(#idents, out);
+                )*
+                out.push('}');
+            }
+        });
+        let start = format!("[{index}");
+        wires.push(quote! {
+            #pattern => {
+                out.push_str(#start);
+                #(
+                    out.push(',');
+                    ::reze::Data::wire(#idents, out);
+                )*
+                out.push(']');
+            }
+        });
+        reads.push(quote! {
+            #text => {
+                #(
+                    let #idents = <#types as ::reze::Input>::json(
+                        ::reze::input::field(value, #keys),
+                        path,
+                        &mut own,
+                    );
+                )*
+                (|| ::std::option::Option::Some(Self::#ident { #(#idents: #idents?,)* }))()
+            }
+        });
+    }
+    quote! {
+        impl #impl_generics ::reze::Input for #name #type_generics #where_clause {
+            fn describe() -> ::std::string::String {
+                #describe.into()
+            }
+
+            fn json(
+                value: ::std::option::Option<&::reze::Json>,
+                path: &[::reze::Key],
+                issues: &mut ::std::vec::Vec<::reze::Issue>,
+            ) -> ::std::option::Option<Self> {
+                let mut own = ::std::vec::Vec::new();
+                let read = match value {
+                    ::std::option::Option::Some(value @ ::reze::Json::Object(_)) => {
+                        match ::reze::input::field(value, "kind") {
+                            ::std::option::Option::Some(::reze::Json::String(kind)) => match kind.as_str() {
+                                #(#reads)*
+                                _ => ::std::option::Option::None,
+                            },
+                            _ => ::std::option::Option::None,
+                        }
+                    }
+                    _ => ::std::option::Option::None,
+                };
+                match read {
+                    ::std::option::Option::Some(read) if own.is_empty() => ::std::option::Option::Some(read),
+                    _ => {
+                        issues.push(::reze::Issue { message: format!("Expected {}", #describe), path: path.to_vec() });
+                        ::std::option::Option::None
+                    }
+                }
+            }
+        }
+
+        impl #impl_generics ::reze::Variant for #name #type_generics #where_clause {
+            fn name(&self) -> &'static str {
+                match self { #(#names,)* }
+            }
+        }
+
+        impl #impl_generics ::reze::Data for #name #type_generics #where_clause {
+            fn write(&self, out: &mut ::std::string::String) {
+                match self { #(#writes)* }
+            }
+
+            fn wire(&self, out: &mut ::std::string::String) {
+                match self { #(#wires)* }
+            }
+        }
+    }
+    .into()
 }
 
 fn error(input: &DeriveInput, message: &str) -> TokenStream {

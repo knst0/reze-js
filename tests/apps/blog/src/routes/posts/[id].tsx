@@ -1,6 +1,6 @@
 import { Errored, For, Show, signal } from "reze-js";
 import { guardRoute, loader, mutation, useSubmission } from "reze-js/server";
-import type { Added, NewComment, Post } from "virtual:reze-types/blog_types";
+import type { Added, Cover, NewComment, Post } from "virtual:reze-types/blog_types";
 
 export const guard = guardRoute.external();
 
@@ -41,6 +41,20 @@ function Facts(props: { published: Date; reactions: Map<string, number>; editors
         Facts
       </button>{" "}
       <span aria-label="Facts">{facts}</span>
+    </p>
+  );
+}
+
+function Poster(props: { cover: Cover; rank: [string, number] }) {
+  let caption = signal("");
+  return (
+    <p>
+      <button
+        onClick={() => (caption = `${props.cover.kind === "Image" ? props.cover.alt : "No cover"}, ${props.rank[0]} #${props.rank[1]}`)}
+      >
+        Caption
+      </button>{" "}
+      <span aria-label="Caption">{caption}</span>
     </p>
   );
 }
@@ -113,6 +127,8 @@ export default function PostPage(props: { data: Post }) {
       <p>{props.data.status === "Draft" ? "Draft" : "Published"}</p>
       <p>{props.data.tags.length > 0 && "Tagged"}</p>
       <Share />
+      <p class="cover">{props.data.cover.kind === "Image" ? "Has a cover" : "No cover"}</p>
+      <Poster cover={props.data.cover} rank={props.data.rank} />
       <Facts published={props.data.published} reactions={props.data.reactions} editors={props.data.editors} />
       <Errored fallback={(error) => <p role="alert">Report failed with {error.status}</p>}>
         <Report />

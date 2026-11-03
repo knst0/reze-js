@@ -473,6 +473,29 @@ impl Input for SystemTime {
     }
 }
 
+macro_rules! tuples {
+    ($(($($ty:ident $index:tt),+; $len:literal)),*) => {$(
+        /// A JSON array of exactly the tuple's length.
+        impl<$($ty: Input),+> Input for ($($ty,)+) {
+            fn describe() -> String {
+                "an array".into()
+            }
+
+            fn json(value: Option<&Json>, path: &[Key], issues: &mut Vec<Issue>) -> Option<Self> {
+                let Some(Json::Array(items)) = value.filter(
+                    |value| matches!(value, Json::Array(items) if items.len() == $len),
+                ) else {
+                    return expected(path, issues);
+                };
+                let read = ($($ty::json(items.get($index), &child(path, Key::Index($index)), issues),)+);
+                Some(($(read.$index?,)+))
+            }
+        }
+    )*};
+}
+
+tuples!((A 0; 1), (A 0, B 1; 2), (A 0, B 1, C 2; 3), (A 0, B 1, C 2, D 3; 4));
+
 impl<T: Input> Input for Box<T> {
     const SCALAR: bool = T::SCALAR;
     const FIELD: bool = T::FIELD;

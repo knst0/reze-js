@@ -6,7 +6,9 @@ use oxc_ast::ast::{
     BinaryOperator, ChainElement, Expression, LogicalOperator, ObjectPropertyKind, UnaryOperator,
 };
 
-use super::{Binding, Emitter, Frame, ISSUE, Lowered, Ty, TypeDef, TypeRef, Val, float, literal};
+use super::{
+    Binding, Emitter, Frame, ISSUE, Lowered, Ty, TypeDef, TypeRef, Val, VariantDef, float, literal,
+};
 use crate::analyze::{Api, Endpoint, EndpointKind, ImportSource};
 
 const JS: &str = "::reze_server::reze::js";
@@ -24,11 +26,11 @@ pub(super) fn view(place: &str, ty: &Ty) -> Result<String, String> {
     Ok(match ty {
         Ty::Str => format!("{place}.as_str()"),
         Ty::Num(_) | Ty::Bool | Ty::Null => place.to_string(),
-        Ty::Struct(_) | Ty::Enum(_) | Ty::List(_) => format!("&{place}"),
+        Ty::Struct(_) | Ty::Enum(_) | Ty::List(_) | Ty::Tuple(_) => format!("&{place}"),
         Ty::Opt(inner) => match **inner {
             Ty::Str => format!("{place}.as_deref()"),
             Ty::Num(_) | Ty::Bool => place.to_string(),
-            Ty::Struct(_) | Ty::Enum(_) | Ty::List(_) => format!("{place}.as_ref()"),
+            Ty::Struct(_) | Ty::Enum(_) | Ty::List(_) | Ty::Tuple(_) => format!("{place}.as_ref()"),
             _ => return Err("Nested optional values have no Rust lowering".into()),
         },
     })
@@ -44,7 +46,7 @@ pub(super) fn truthy(val: &Val) -> String {
         Ty::Num(_) => format!("({code}) != 0"),
         Ty::Bool => format!("({code})"),
         Ty::Null => "false".into(),
-        Ty::Struct(_) | Ty::Enum(_) | Ty::List(_) => "true".into(),
+        Ty::Struct(_) | Ty::Enum(_) | Ty::List(_) | Ty::Tuple(_) => "true".into(),
         Ty::Opt(inner) => {
             let test = truthy(&Val::new("x", (**inner).clone()));
             if test == "true" {
@@ -77,7 +79,7 @@ fn push(var: &str, val: &Val) -> Result<String, String> {
                 "A template literal of a value that may be absent prints `undefined`".into()
             );
         }
-        Ty::Struct(_) | Ty::List(_) => {
+        Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_) => {
             return Err("A template literal of an object or a list has no Rust lowering".into());
         }
     })
@@ -261,11 +263,9 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 self.member(object, &member.property.name, chain)
             }
             Expression::ComputedMemberExpression(member) => {
-                let Expression::StringLiteral(key) = member.expression.without_parentheses() else {
-                    return Err("Computed member access has no Rust lowering".into());
-                };
+                let key = literal_key(&member.expression)?;
                 let object = self.lower(&member.object, frame, chain)?;
-                self.member(object, &key.value, chain)
+                self.member(object, &key, chain)
             }
             Expression::ChainExpression(chain) => match &chain.expression {
                 ChainElement::StaticMemberExpression(member) => {
@@ -273,12 +273,9 @@ impl<'e, 'a> Emitter<'e, 'a> {
                     self.member(object, &member.property.name, true)
                 }
                 ChainElement::ComputedMemberExpression(member) => {
-                    let Expression::StringLiteral(key) = member.expression.without_parentheses()
-                    else {
-                        return Err("Computed member access has no Rust lowering".into());
-                    };
+                    let key = literal_key(&member.expression)?;
                     let object = self.lower(&member.object, frame, true)?;
-                    self.member(object, &key.value, true)
+                    self.member(object, &key, true)
                 }
                 _ => Err("Optional calls have no Rust lowering".into()),
             },
@@ -523,6 +520,13 @@ impl<'e, 'a> Emitter<'e, 'a> {
     }
 
     fn field(&self, object: &Val, name: &str) -> Result<Val, String> {
+        if let Ty::Tuple(items) = &object.ty {
+            let Some(ty) = name.parse::<usize>().ok().and_then(|index| items.get(index)) else {
+                return Err(format!("`{name}` is read from a tuple without it"));
+            };
+            let code = view(&format!("({}).{name}", object.code), ty)?;
+            return Ok(Val::new(code, ty.clone()));
+        }
         let Ty::Struct(path) = &object.ty else {
             return Err(format!("`{name}` is read from a value that is not a struct"));
         };
@@ -532,8 +536,15 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 _ => Err(format!("`{name}` of an issue has no Rust lowering")),
             };
         }
-        let Some(TypeDef::Struct { fields, .. }) = self.types.get(path).copied() else {
-            return Err(format!("`{path}` is not a struct of the Rust type IR"));
+        let fields = match self.types.get(path).copied() {
+            Some(TypeDef::Struct { fields, .. }) => fields,
+            Some(TypeDef::Union { .. }) if name == "kind" => {
+                return Ok(Val::new(format!("{VARIANT}({})", object.code), Ty::Str));
+            }
+            Some(TypeDef::Union { variants, .. }) => {
+                return self.variant_field(object, path, variants, name);
+            }
+            _ => return Err(format!("`{path}` is not a struct of the Rust type IR")),
         };
         let Some(field) = fields.iter().find(|f| f.name == name) else {
             return Err(format!("`{path}` has no field `{name}`"));
@@ -553,6 +564,42 @@ impl<'e, 'a> Emitter<'e, 'a> {
         }
         let code = view(&place, &ty)?;
         Ok(Val::new(code, ty))
+    }
+
+    /// A field of an enum with fields, `undefined` in the variants without it, as in JS.
+    fn variant_field(
+        &self,
+        object: &Val,
+        path: &str,
+        variants: &[VariantDef],
+        name: &str,
+    ) -> Result<Val, String> {
+        let krate = path.split("::").next().unwrap_or_default();
+        let mut ty = None;
+        let mut arms = String::new();
+        for variant in variants {
+            let Some(field) = variant.fields.iter().find(|f| f.name == name) else { continue };
+            if matches!(field.ty, TypeRef::Defer { .. }) {
+                return Err(format!("`{name}` of an enum variant is deferred"));
+            }
+            let field_ty = self.ty_of(&field.ty, krate);
+            if ty.as_ref().is_some_and(|ty| *ty != field_ty) {
+                return Err(format!("`{name}` has another type in each variant of `{path}`"));
+            }
+            let field = super::rust_ident(name);
+            let value = view("(*x)", &field_ty)?;
+            arms.push_str(&format!(
+                "::{path}::{} {{ {field}: x, .. }} => Some({value}), ",
+                variant.name
+            ));
+            ty = Some(field_ty);
+        }
+        let Some(ty) = ty else { return Err(format!("No variant of `{path}` has `{name}`")) };
+        if matches!(ty, Ty::Opt(_)) {
+            return Err("Nested optional values have no Rust lowering".into());
+        }
+        let code = format!("(match {} {{ {arms}_ => None }})", object.code);
+        Ok(Val::new(code, Ty::Opt(Box::new(ty))))
     }
 
     fn binary(&mut self, left: &Val, operator: BinaryOperator, right: &Val) -> Result<Val, String> {
@@ -640,7 +687,8 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 format!("({} == {})", number(a)?, number(b)?)
             }
             (Ty::Bool, Ty::Bool) => format!("({} == {})", a.code, b.code),
-            (Ty::Struct(_) | Ty::List(_), _) | (_, Ty::Struct(_) | Ty::List(_)) => {
+            (Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_), _)
+            | (_, Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_)) => {
                 return Err("Objects compare by identity, which has no Rust lowering".into());
             }
             _ => "false".into(),
@@ -746,11 +794,22 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 self.close();
                 result?;
             }
-            (Ty::Struct(_) | Ty::List(_), _) => {
+            (Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_), _) => {
                 return Err("An object or a list prints as text, which has no Rust lowering".into());
             }
         }
         Ok(())
+    }
+}
+
+/// The key of a computed member access: a string, or an integer index of a tuple.
+fn literal_key(key: &Expression<'_>) -> Result<String, String> {
+    match key.without_parentheses() {
+        Expression::StringLiteral(key) => Ok(key.value.to_string()),
+        Expression::NumericLiteral(index) if index.value.fract() == 0.0 && index.value >= 0.0 => {
+            Ok((index.value as usize).to_string())
+        }
+        _ => Err("Computed member access has no Rust lowering".into()),
     }
 }
 

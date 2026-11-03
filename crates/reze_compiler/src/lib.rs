@@ -22,7 +22,7 @@ pub use diagnostic::{
 };
 pub use fs::{DiskFs, FileSystem, MemoryFs};
 pub use routes::{RouteNode, RouteTable, Segment};
-pub use rust::{CrateIr, FieldDef, TypeDef, TypeRef};
+pub use rust::{CrateIr, FieldDef, TypeDef, TypeRef, VariantDef};
 
 /// The module compiled server code imports render helpers from.
 pub const SERVER_RUNTIME: &str = "reze-js/runtime/server";

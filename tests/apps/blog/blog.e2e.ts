@@ -193,6 +193,17 @@ test("restores dates, maps, and sets from Rust data at the read site", async ({ 
   await expect(page.getByLabel("Facts")).toHaveText("2024-05-01T12:00:00.001Z, 3 likes, edited by ann");
 });
 
+test("reads Rust enums with fields and tuples", async ({ page, server }) => {
+  await page.goto(server.url("/posts/1"));
+  await expect(page.locator(".cover")).toHaveText("Has a cover");
+  await page.getByRole("button", { name: "Caption" }).click();
+  await expect(page.getByLabel("Caption")).toHaveText("A wave, weekly #1");
+  await page.goto(server.url("/posts/2"));
+  await expect(page.locator(".cover")).toHaveText("No cover");
+  await page.getByRole("button", { name: "Caption" }).click();
+  await expect(page.getByLabel("Caption")).toHaveText("No cover, weekly #2");
+});
+
 test("sends Rust data to the client in the positional encoding", async ({ page, request, server }) => {
   const html = await (await request.get(server.url("/"))).text();
   expect(/<script type="rz">(.*?)<\/script>/.exec(html)![1]).toContain('[[1,"Hello, world",1],[2,"Drafts \\"quoted\\"",0]]');
@@ -204,7 +215,7 @@ test("sends Rust data to the client in the positional encoding", async ({ page, 
 test("loads each component from its own chunk", async ({ page, request, server }) => {
   const html = await (await request.get(server.url("/posts/1"))).text();
   const [, chunks] = JSON.parse(/<script type="rz">(.*?)<\/script>/.exec(html)![1]!) as [string, Record<number, string>];
-  expect(new Set(Object.values(chunks)).size).toBe(4);
+  expect(new Set(Object.values(chunks)).size).toBe(5);
   await page.goto(server.url("/posts/1"));
   await page.getByRole("button", { name: "Share" }).click();
   await expect(page.getByText("Link copied")).toBeVisible();
