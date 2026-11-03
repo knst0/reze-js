@@ -110,11 +110,13 @@ function swap(fetched: Fetched, kind: Kind, after: (root: Node[]) => void): bool
     if (applied) return;
     applied = true;
     const shift = offset(rz.n());
-    for (const element of page.body.querySelectorAll("[data-rz]")) element.setAttribute("data-rz", shift(element.getAttribute("data-rz")!));
-    const walker = page.createTreeWalker(page.body, NodeFilter.SHOW_COMMENT);
-    while (walker.nextNode()) {
-      const comment = walker.currentNode as Comment;
-      if (/^[0-9a-z]+\.[0-9a-z]+$/.test(comment.data)) comment.data = shift(comment.data);
+    for (const root of [page.body, ...[...page.querySelectorAll<HTMLTemplateElement>("template[data-rz-e]")].map((t) => t.content)]) {
+      for (const element of root.querySelectorAll("[data-rz]")) element.setAttribute("data-rz", shift(element.getAttribute("data-rz")!));
+      const walker = page.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+      while (walker.nextNode()) {
+        const comment = walker.currentNode as Comment;
+        if (/^[0-9a-z]+\.[0-9a-z]+$/.test(comment.data)) comment.data = shift(comment.data);
+      }
     }
     if (page.title) document.title = page.title;
     const next = [...page.body.childNodes];
@@ -248,4 +250,25 @@ export async function call(id: string, input: unknown): Promise<unknown> {
   if (!response.ok) throw new Error(body.message);
   swap({ status: body.status!, depth: body.segment!, url: current.href, redirected: false, text: body.html! }, "mutation", () => {});
   return body.result;
+}
+
+/** Replaces the content of the nearest `<Errored>` around `node` with its fallback, or reports `error` when none is there. */
+export function fault(node: Node, error: unknown): void {
+  const isEnd = (sibling: Node) => (sibling as Element).matches?.("template[data-rz-e]");
+  const isStart = (sibling: Node) => sibling.nodeType === 8 && (sibling as Comment).data === "e";
+  for (let at: Node | null = node; at; at = at.parentNode) {
+    let open = 0;
+    for (let end = at.nextSibling; end; end = end.nextSibling) {
+      if (isStart(end)) open++;
+      else if (isEnd(end) && !open--) {
+        let start = end.previousSibling!;
+        for (let depth = 0; !isStart(start) || depth--; start = start.previousSibling!) if (isEnd(start)) depth++;
+        while (start.nextSibling !== end) start.nextSibling!.remove();
+        end.replaceWith((end as HTMLTemplateElement).content);
+        start.remove();
+        return;
+      }
+    }
+  }
+  reportError(error);
 }

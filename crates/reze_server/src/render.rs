@@ -136,6 +136,11 @@ impl Render {
         self.depth = mark.depth;
     }
 
+    /// Whether the render added state entries since `mark`.
+    pub fn grew(&self, mark: &Mark) -> bool {
+        self.entries.len() > mark.entries
+    }
+
     /// Records the error an `<Errored>` caught: the page answers with its status.
     pub fn fail(&mut self, error: &RouteError) {
         self.status = error.status;

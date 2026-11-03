@@ -520,8 +520,8 @@ The current implementation differs from this design in these points:
   `EVENT_DECISION_DEFERRED`.
 - After a chunk fails to load, the dispatcher goes inert for the rest of the page. The native
   fallback, `rz:chunkerror` on `window`, or the single reload takes over.
-- The dispatcher is about 1.9 KB gzip, above the 1 KB target: it also intercepts links,
-  server-tier forms, and history navigation, and accepts the state blocks of navigations and
-  streamed parts.
+- The dispatcher is about 2 KB gzip, above the 1 KB target: it also intercepts links,
+  server-tier forms, and history navigation, accepts the state blocks of navigations and
+  streamed parts, and hands handler errors to the nearest `<Errored>`.
 - `scripts/bench/size.mts` measures only the test applications, which are too small to judge the
   2% metadata share.

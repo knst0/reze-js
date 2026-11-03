@@ -1,4 +1,4 @@
-import { For, Show, signal } from "reze-js";
+import { Errored, For, Show, signal } from "reze-js";
 import { loader } from "reze-js/server";
 import type { Post } from "virtual:reze-types/blog_types";
 
@@ -25,6 +25,23 @@ function Hearts(props: { likes: number }) {
   return <p aria-label="Hearts">{props.likes > 2 ? "Loved" : "Liked"}</p>;
 }
 
+function Report() {
+  let reports = signal(0);
+  return (
+    <p>
+      <button onClick={() => reports++}>Report</button> {reports} reports
+      <button
+        onClick={() => {
+          throw new Error("Broken report");
+        }}
+      >
+        Break
+      </button>
+      <button onClick={() => Promise.reject(new Error("Late report"))}>Break later</button>
+    </p>
+  );
+}
+
 export default function PostPage(props: { data: Post }) {
   let likes = signal(props.data.likes);
   let notes = signal(props.data.tags);
@@ -45,6 +62,9 @@ export default function PostPage(props: { data: Post }) {
       <p>{props.data.status === "Draft" ? "Draft" : "Published"}</p>
       <p>{props.data.tags.length > 0 && "Tagged"}</p>
       <Share />
+      <Errored fallback={(error) => <p role="alert">Report failed with {error.status}</p>}>
+        <Report />
+      </Errored>
       <button onClick={() => likes++}>Like</button>
       <output>{likes} likes</output>
       <Hearts likes={likes} />

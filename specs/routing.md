@@ -241,8 +241,12 @@ The current implementation differs from this design in these points:
   whole page. The client keys a segment by its route node, its params, and the search string when
   its loader reads `search` or its arguments cannot be read statically. A link to the current URL
   renders the last segment again.
-- `<Errored>` catches errors on the server only. A boundary rolls back the HTML, head entries, and
-  state rows its children produced before the error.
+- A boundary rolls back the HTML, head entries, and state rows its children produced before a
+  server error. When its children add state rows, the server renders the boundary as
+  `<!--e-->children<template data-rz-e>fallback</template>`, the fallback rendered with
+  `RouteError(500, "Internal Server Error")`. When a handler inside throws or returns a promise
+  that rejects, the client replaces the children with the template's content; without a boundary
+  the error goes to `reportError`. Errors of effects are not caught.
 - The compiled application exports `root`, the root layout chain, which renders the `404` of a URL
   that matches no route.
 - A `POST` is checked for a cross-site origin before guards run, so a forged post answers `403`

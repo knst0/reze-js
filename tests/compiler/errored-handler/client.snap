@@ -1,0 +1,15 @@
+// src/routes/index.tsx
+import { $fx, $q, $sig, $str, $text } from "reze-js/runtime/client";
+export const $c0 = ($s, $i, $a) => {
+  const count = $sig(0);
+  for (const $b of $q($i, 0)) {
+    const [$t138] = $text($b, null, 0, [6, $str(count.v)]);
+    $fx(() => { $t138.data = $str(count.v); });
+  }
+  return { 0: { click: ($r) => () => count.v++ } };
+};
+
+// virtual:rz-route/0
+import { $c0 } from "/src/routes/index.tsx";
+export default { 0: $c0 };
+export const g = [];

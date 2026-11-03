@@ -64,7 +64,7 @@ test("runs a handler over Rust data", async ({ page, server }) => {
 test("loads each component from its own chunk", async ({ page, request, server }) => {
   const html = await (await request.get(server.url("/posts/1"))).text();
   const [, chunks] = JSON.parse(/<script type="rz">(.*?)<\/script>/.exec(html)![1]!) as [string, Record<number, string>];
-  expect(new Set(Object.values(chunks)).size).toBe(2);
+  expect(new Set(Object.values(chunks)).size).toBe(3);
   await page.goto(server.url("/posts/1"));
   await page.getByRole("button", { name: "Share" }).click();
   await expect(page.getByText("Link copied")).toBeVisible();
@@ -119,3 +119,16 @@ test("updates client ranges over Rust data", async ({ page, server }) => {
   await expect(notes).toHaveText(["1: rustDrop rust", "2: note 3Drop note 3"]);
   await expect(page.getByLabel("Words")).toHaveText("rustnote 3");
 });
+
+for (const name of ["Break", "Break later"]) {
+  test(`renders the boundary's fallback when a handler fails: ${name}`, async ({ page, server }) => {
+    await page.goto(server.url("/posts/1"));
+    await page.getByRole("button", { name: "Report", exact: true }).click();
+    await expect(page.getByText("1 reports")).toBeVisible();
+    await page.getByRole("button", { name, exact: true }).click();
+    await expect(page.getByRole("alert")).toHaveText("Report failed with 500");
+    await expect(page.getByRole("button", { name: "Report", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Share" }).click();
+    await expect(page.getByText("Link copied")).toBeVisible();
+  });
+}

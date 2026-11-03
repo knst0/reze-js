@@ -1,6 +1,6 @@
 type Entry = unknown[];
 type Block = [string, string | Record<number, string>, number[], ...Entry[]];
-type Handlers = Record<number, Record<string, (row: Entry) => (event: Event) => void>>;
+type Handlers = Record<number, Record<string, (row: Entry) => (event: Event) => unknown>>;
 type Factory = (entry: Entry, index: number, entries: Entry[], instance: (index: number) => Handlers) => Handlers;
 interface Chunk {
   default: Record<number, Factory>;
@@ -47,11 +47,22 @@ const run = (sites: Element[], event: Event) => {
     const handler = instance(owner(scope))[mark]?.[event.type];
     if (!handler) continue;
     Object.defineProperty(event, "currentTarget", { value: node, configurable: true });
-    handler(entries[scope]!)(event);
+    try {
+      const result = handler(entries[scope]!)(event);
+      if (result instanceof Promise) result.catch((error: unknown) => fault(node, error));
+    } catch (error) {
+      fault(node, error);
+    }
     delete (event as { currentTarget?: unknown }).currentTarget;
     if (event.cancelBubble) break;
   }
 };
+
+const fault = (node: Element, error: unknown) =>
+  void nav().then(
+    (m) => m.fault(node, error),
+    () => reportError(error),
+  );
 
 const fail = (error: unknown) => {
   const queued = queue.splice(0);

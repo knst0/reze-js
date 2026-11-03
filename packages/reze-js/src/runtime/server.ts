@@ -552,7 +552,9 @@ function render(
     boundary(children, fallback) {
       const mark = [entries.length, unkeyed.length, new Map(keyed), ids, this.depth] as const;
       try {
-        return children();
+        const html = children();
+        if (entries.length === mark[0]) return html;
+        return `<!--e-->${html}<template data-rz-e>${fallback(new RouteError(500, "Internal Server Error"))}</template>`;
       } catch (thrown) {
         entries.length = mark[0];
         unkeyed.length = mark[1];

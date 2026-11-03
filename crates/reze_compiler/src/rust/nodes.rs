@@ -117,6 +117,7 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 self.labels.push(label);
                 self.content(&boundary.children, frame);
                 self.labels.pop();
+                self.flush();
                 self.out = out;
                 self.stmt("Ok(())");
                 self.indent -= 1;
@@ -124,16 +125,23 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 let error = self.fresh("e");
                 let out = self.out.clone();
                 self.open(&format!("match {result}"));
-                self.line(&format!("Ok(()) => {out}.append({var}),"));
+                self.open(&format!("Ok(()) => if cx.grew(&{mark})"));
+                self.raw("<!--e-->");
+                self.stmt(&format!("{out}.append({var});"));
+                self.raw("<template data-rz-e>");
+                self.stmt(&format!("let {error} = ::reze_server::RouteError::internal();"));
+                if let Some(fallback) = &boundary.fallback {
+                    self.branch(fallback, vec![Binding::Error(error.clone())], frame);
+                }
+                self.raw("</template>");
+                self.reopen("else");
+                self.stmt(&format!("{out}.append({var});"));
+                self.close();
                 self.open(&format!("Err({error}) =>"));
                 self.line(&format!("cx.restore({mark});"));
                 self.line(&format!("cx.fail(&{error});"));
-                match &boundary.fallback {
-                    Some(Branch::Content(content)) => self.content(content, frame),
-                    Some(Branch::Callback(callback)) => {
-                        self.callback(callback, vec![Binding::Error(error)], frame);
-                    }
-                    None => {}
+                if let Some(fallback) = &boundary.fallback {
+                    self.branch(fallback, vec![Binding::Error(error.clone())], frame);
                 }
                 self.close();
                 self.close();
