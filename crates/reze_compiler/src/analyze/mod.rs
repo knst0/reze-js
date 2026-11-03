@@ -131,6 +131,25 @@ impl<'a> Context<'_, 'a> {
         self.modules[module].semantic.scoping().get_reference(id).symbol_id()
     }
 
+    /// The framework call that initializes the variable `reference` names: `useSearchParams` for
+    /// `const params = useSearchParams()`.
+    pub fn initializer_api(
+        &self,
+        module: usize,
+        reference: &IdentifierReference<'a>,
+    ) -> Option<Api> {
+        let semantic = &self.modules[module].semantic;
+        let declaration = semantic.scoping().symbol_declaration(self.symbol(module, reference)?);
+        let AstKind::VariableDeclarator(declarator) = semantic.nodes().get_node(declaration).kind()
+        else {
+            return None;
+        };
+        match declarator.init.as_ref().map(Expression::without_parentheses) {
+            Some(Expression::CallExpression(call)) => self.api(module, &call.callee),
+            _ => None,
+        }
+    }
+
     pub fn api(&self, module: usize, expression: &Expression<'a>) -> Option<Api> {
         match expression.without_parentheses() {
             Expression::Identifier(reference) => {

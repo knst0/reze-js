@@ -1,3 +1,4 @@
+import type { Href } from "../index";
 import { compare, match, type Segment } from "./match";
 
 type Thunk = () => string;
@@ -24,6 +25,8 @@ export interface RenderContext {
   url: URL;
   head(key: string | null, html: string): string;
   id(): string;
+  /** `useLinkState(href)`. */
+  link(href: unknown): { active: boolean };
   /** Adds the state entry of a client component instance and returns its id. */
   scope(component: number, events: string, captures: unknown[], eager: boolean): string;
   /** Adds the state entry of a callback call that client code captures values of. */
@@ -246,7 +249,7 @@ class Redirect {
 }
 
 /** Stops the request with a redirect: `307` from a loader, `303` from a mutation. */
-export function redirect(location: string, status?: 301 | 302 | 303 | 307 | 308): never {
+export function redirect(location: Href, status?: 301 | 302 | 303 | 307 | 308): never {
   throw new Redirect(location, status);
 }
 
@@ -356,12 +359,11 @@ export function $fa($r: RenderContext, value: unknown): string {
   return ` method="post"${$a("action", `${$r.url.pathname}?${search}`)}`;
 }
 
+const active = ($r: RenderContext, href: unknown): boolean =>
+  typeof href === "string" && href[0] === "/" && href[1] !== "/" && href.split(/[?#]/)[0] === $r.url.pathname;
+
 /** `aria-current` and `data-active` of an anchor whose `href` is the current path. */
-export function $ac($r: RenderContext, href: unknown): string {
-  return typeof href === "string" && href[0] === "/" && href[1] !== "/" && href.split(/[?#]/)[0] === $r.url.pathname
-    ? ' aria-current="page" data-active'
-    : "";
-}
+export const $ac = ($r: RenderContext, href: unknown): string => (active($r, href) ? ' aria-current="page" data-active' : "");
 
 export function $s(props: Record<string, unknown> | null | undefined): string {
   let out = "";
@@ -527,6 +529,7 @@ function render(
       return "";
     },
     id: () => `rz-${ids++}`,
+    link: (href) => ({ active: active($r, href) }),
     scope(component, names, captures, isEager) {
       for (const name of names.split(" ")) if (name) events.add(name);
       eager ||= isEager;

@@ -149,7 +149,7 @@ impl<'e, 'a> Emitter<'e, 'a> {
         match self.force(binding)? {
             Binding::Val(val) => Ok(val),
             Binding::Null => Ok(Val::new("()", Ty::Null)),
-            Binding::Props(_) | Binding::Params(_) | Binding::Error(_) => {
+            Binding::Props(_) | Binding::Params(_) | Binding::Search | Binding::Error(_) => {
                 Err("An object is used as a value".into())
             }
             _ => Err("Markup is used as a value".into()),
@@ -332,6 +332,28 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 Ok(Binding::Invalid("Functions have no Rust lowering".into()))
             }
             Expression::CallExpression(call) => {
+                if let Expression::StaticMemberExpression(member) =
+                    call.callee.without_parentheses()
+                    && let method @ ("get" | "has") = member.property.name.as_str()
+                    && let Ok(Binding::Search) = self.lower(&member.object, frame, false)
+                {
+                    let Some(name) = call.arguments.first().and_then(|a| a.as_expression()) else {
+                        return Err(format!("`{method}` takes the name of a search param"));
+                    };
+                    let name = self.val(name, frame)?;
+                    if name.ty != Ty::Str {
+                        return Err(format!("`{method}` takes a string"));
+                    }
+                    let query = format!("page.query({})", name.str());
+                    return val(if method == "get" {
+                        Val::new(query, Ty::Opt(Box::new(Ty::Str)))
+                    } else {
+                        Val::new(format!("{query}.is_some()"), Ty::Bool)
+                    });
+                }
+                if self.api_of(frame.module, &call.callee) == Some(Api::BuildPaths) {
+                    return self.build_path(call, frame).map(Binding::Val);
+                }
                 if self.api_of(frame.module, &call.callee) == Some(Api::Untrack)
                     && let Some(Expression::ArrowFunctionExpression(arrow)) =
                         call.arguments.first().and_then(|a| a.as_expression())
@@ -343,6 +365,64 @@ impl<'e, 'a> Emitter<'e, 'a> {
             }
             _ => Err("This expression has no Rust lowering".into()),
         }
+    }
+
+    /// `buildPaths("/posts/:id", { id })`: the pattern is a literal, so its segments are known.
+    fn build_path(
+        &mut self,
+        call: &oxc_ast::ast::CallExpression<'_>,
+        frame: &Rc<Frame<'e, 'a>>,
+    ) -> Result<Val, String> {
+        let mut arguments = call.arguments.iter().map(|a| a.as_expression());
+        let Some(Some(Expression::StringLiteral(pattern))) = arguments.next() else {
+            return Err("`buildPaths` takes a pattern literal".into());
+        };
+        let params = match arguments.next().flatten() {
+            Some(params) => self.lower(params, frame, false)?,
+            None => Binding::Null,
+        };
+        let var = self.fresh("t");
+        let mut code = format!("{{ let mut {var} = String::new(); ");
+        for part in pattern.value.split('/').filter(|part| !part.is_empty()) {
+            let (splat, name) = match part.as_bytes()[0] {
+                b':' => (false, &part[1..]),
+                b'*' => (true, &part[1..]),
+                _ => {
+                    code.push_str(&format!("{var}.push_str({}); ", literal(&format!("/{part}"))));
+                    continue;
+                }
+            };
+            let (optional, name) =
+                name.strip_suffix('?').map_or((splat, name), |name| (true, name));
+            let value = match &params {
+                Binding::Props(_) => self.member(params.clone(), name, false)?,
+                _ => Binding::Null,
+            };
+            let value = self.as_val(value)?;
+            let segment = |this: &mut Self, val: &Val| -> Result<String, String> {
+                let p = this.fresh("p");
+                Ok(format!(
+                    "{{ let mut {p} = String::new(); {} {var}.push('/'); ::reze_server::push_segment(&mut {var}, &{p}, {splat}); }} ",
+                    push(&p, val)?
+                ))
+            };
+            match &value.ty {
+                Ty::Null if optional => {}
+                Ty::Null => return Err(format!("`buildPaths` needs the param `{name}`")),
+                Ty::Opt(inner) if optional => {
+                    let x = self.fresh("x");
+                    let inner = segment(self, &Val::new(x.clone(), (**inner).clone()))?;
+                    code.push_str(&format!("if let Some({x}) = {} {{ {inner}}} ", value.code));
+                }
+                Ty::Str if optional => {
+                    let inner = segment(self, &value)?;
+                    code.push_str(&format!("if !({}).is_empty() {{ {inner}}} ", value.str()));
+                }
+                _ => code.push_str(&segment(self, &value)?),
+            }
+        }
+        code.push_str(&format!("if {var}.is_empty() {{ {var}.push('/'); }} {var} }}"));
+        Ok(Val::owned(code))
     }
 
     pub(super) fn member(
@@ -371,6 +451,9 @@ impl<'e, 'a> Emitter<'e, 'a> {
                         Ty::Opt(Box::new(Ty::Str)),
                     ))
                 }
+            }
+            Binding::Search => {
+                return Err(format!("`{name}` of search params has no Rust lowering"));
             }
             Binding::Error(var) => match name {
                 "status" => Binding::Val(Val::new(format!("{var}.status"), Ty::Num("u16".into()))),

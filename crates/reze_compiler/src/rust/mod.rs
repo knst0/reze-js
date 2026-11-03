@@ -82,6 +82,8 @@ enum Binding<'e, 'a> {
     Children,
     /// The params of the route node.
     Params(usize),
+    /// `useSearchParams()`.
+    Search,
     /// A `RouteError` in the named variable.
     Error(String),
     Null,

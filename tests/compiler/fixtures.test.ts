@@ -54,6 +54,7 @@ for (const fixture of fixtures) {
     const diagnostics = result.diagnostics.map(format).join("\n\n");
     await snapshot(dir, "diagnostics.snap", diagnostics ? `${diagnostics}\n` : undefined);
     await snapshot(dir, "rust.snap", result.rust ?? undefined);
+    if (existsSync(join(dir, "types.snap"))) await snapshot(dir, "types.snap", result.types);
     if (rust || result.diagnostics.some((d) => d.severity === "error")) {
       await snapshot(dir, "html.snap", undefined);
       return;
@@ -82,7 +83,8 @@ for (const fixture of fixtures) {
     await snapshot(dir, "client.snap", client.length > 0 ? client.join("\n") : undefined);
     const app = await import(pathToFileURL(join(target, "app.ts")).href);
     const assets = { dispatcher: "/dispatcher.js", stream: "/stream.js", chunk: (node: number) => `/route-${node}.js` };
-    const response = await createApp(app.default, app.root, { assets })(new Request("http://localhost/"));
+    const url = existsSync(join(dir, "url")) ? readFileSync(join(dir, "url"), "utf8").trim() : "/";
+    const response = await createApp(app.default, app.root, { assets })(new Request(new URL(url, "http://localhost")));
     await snapshot(dir, "html.snap", `${await response.text()}\n`);
   });
 }

@@ -417,6 +417,17 @@ impl<'a> Visit<'a> for Lowering<'_, 'a> {
                 self.edits.push((it.span, "$r.params".into()));
                 return;
             }
+            Some(Api::UseLocation) => {
+                self.edits.push((it.span, "$r.url".into()));
+                return;
+            }
+            Some(Api::UseSearchParams) => {
+                self.edits.push((it.span, "$r.url.searchParams".into()));
+                return;
+            }
+            Some(Api::UseLinkState) => {
+                self.edits.push((it.callee.span(), "$r.link".into()));
+            }
             Some(Api::UseSubmission) => {
                 self.edits.push((it.callee.span(), "$r.submission".into()));
             }

@@ -35,3 +35,9 @@ test("opens a deep link and renders 404 for an unknown URL", async ({ page, serv
   await page.goto(server.url("/missing"));
   await expect(page.getByText("Not Found")).toBeVisible();
 });
+
+test("reads the location in a handler", async ({ page, server }) => {
+  await page.goto(server.url("/notes/first#intro"));
+  await page.getByRole("button", { name: "Share" }).click();
+  await expect(page.locator("output")).toHaveText("/notes/first#intro");
+});

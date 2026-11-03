@@ -427,9 +427,18 @@ The current implementation differs from this design in these points:
   skips one with a spread or its own `aria-current`. After a client navigation the runtime moves
   the marks across every `<a href>` in the document, including ones the compiler did not see,
   and leaves an anchor alone that has `aria-current` without `data-active`.
-- Of the router hooks, only `useParams` exists, and only in the server render. `useLocation`,
-  `useSearchParams`, and `useLinkState` are not implemented.
-- `buildPaths` and typed `href` values are not implemented; `routes.gen.d.ts` types route props
-  only.
+- `useLocation()` returns `{ pathname, search, hash }`, `useSearchParams()` an object with `get`
+  and `has`, and `useLinkState(href)` returns `{ active }`. A component reads them at its top
+  level; they are read-only. The server render and the Rust render read the request, where
+  `hash` is empty and `search` leaves out `_s` and `_b`. A handler reads the current `location`.
+  A segment whose components reach one of the hooks includes the pathname or the search string in
+  its key, so a client navigation renders it again. `useParams` exists in the server render only.
+- `buildPaths(pattern, params)` takes a route pattern of `routes.gen.d.ts`, such as
+  `buildPaths("/posts/:id", { id: 1 })`, instead of a `paths` object keyed by route name. Params
+  are encoded as `encodeURIComponent` does, a catch-all keeps its `/`, and a missing required
+  param fails the type check. The Rust render needs a literal pattern.
+- `Href` is the union of the route shapes in `routes.gen.d.ts`, plus query, hash,
+  protocol-relative, and absolute URLs. `<a href>` and `redirect` take it, so a link to a path
+  that matches no route fails the type check of a project that includes the generated file.
 - `render` is not exported. `render: "client"` routes and `target: "spa"` mount through the
   navigation runtime instead.

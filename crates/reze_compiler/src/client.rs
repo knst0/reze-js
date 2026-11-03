@@ -307,6 +307,9 @@ fn declare<'a>(
                     (Some(Api::Store), Some(call)) => Kind::Store(first_argument(call)),
                     (Some(Api::Computed), Some(call)) => Kind::Computed(first_argument(call)),
                     (Some(Api::Action), Some(call)) => Kind::Action(first_argument(call)),
+                    (Some(Api::UseLocation | Api::UseSearchParams | Api::UseLinkState), _) => {
+                        Kind::Declarator(declarator, variables.kind)
+                    }
                     _ if !local || init.is_some_and(|e| is_function(e) || is_constant(e)) => {
                         Kind::Declarator(declarator, variables.kind)
                     }
@@ -1189,6 +1192,22 @@ impl<'a> Visit<'a> for Rewrite<'_, '_, '_, 'a> {
             }
             Some(Api::OnCleanup) => {
                 let helper = self.helper("$cleanup");
+                self.edits.push((it.callee.span(), helper.into()));
+            }
+            Some(Api::UseLocation) => {
+                let helper = self.helper("$loc");
+                self.edits.push((it.callee.span(), helper.into()));
+            }
+            Some(Api::UseSearchParams) => {
+                let helper = self.helper("$search");
+                self.edits.push((it.callee.span(), helper.into()));
+            }
+            Some(Api::UseLinkState) => {
+                let helper = self.helper("$link");
+                self.edits.push((it.callee.span(), helper.into()));
+            }
+            Some(Api::BuildPaths) => {
+                let helper = self.helper("$path");
                 self.edits.push((it.callee.span(), helper.into()));
             }
             _ => {

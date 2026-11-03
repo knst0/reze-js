@@ -104,6 +104,16 @@ export function $comp<T>(fn: () => T): Signal<T> {
   return signal;
 }
 
+export { buildPaths as $path } from "./paths";
+
+export const $loc = (): Location => location;
+
+export const $search = (): URLSearchParams => new URLSearchParams(location.search);
+
+export const $link = (href: unknown): { active: boolean } => ({
+  active: typeof href === "string" && href[0] === "/" && href[1] !== "/" && href.split(/[?#]/)[0] === location.pathname,
+});
+
 export function $cleanup(fn: () => void): void {
   current?._cleanups.push(fn);
 }

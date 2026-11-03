@@ -1,4 +1,5 @@
 import type { JSX } from "./jsx-runtime";
+import { buildPaths as fill } from "./runtime/paths";
 import type { Loader } from "./runtime/server";
 
 export type { JSX };
@@ -22,6 +23,24 @@ export type RoutePropsFor<P extends keyof Routes> = Routes[P];
 /** Props of the layout that wraps `prefix`: `params`, `data`, and `children`. */
 export type LayoutPropsFor<P extends keyof Layouts> = Layouts[P] & { children: JSX.Element };
 
+type HrefOf<P extends string> =
+  | P
+  | `${P}?${string}`
+  | `${P}#${string}`
+  | `?${string}`
+  | `#${string}`
+  | `//${string}`
+  | `${string}:${string}`;
+/** What `<a href>` takes: a path of one of the app's pages, with a query or a fragment, or a link that leaves the router. */
+export type Href = Register extends { paths: infer P extends string } ? HrefOf<P> : string;
+
+type ParamsOf<P extends keyof Routes> = { [K in keyof Routes[P]["params"]]: Routes[P]["params"][K] | number };
+/** The path of the page at `pattern` with `params` filled in: `buildPaths("/posts/:id", { id: 1 })` is `/posts/1`. */
+export const buildPaths = fill as <P extends keyof Routes>(
+  pattern: P,
+  ...params: {} extends Routes[P]["params"] ? [params?: ParamsOf<P>] : [params: ParamsOf<P>]
+) => Href;
+
 type Branch<T> = JSX.Element | ((value: NonNullable<T>) => JSX.Element);
 
 /** Compiler syntax for state: reads and writes stay plain JS. */
@@ -38,6 +57,23 @@ export declare function onCleanup(fn: () => void): void;
 export declare function untrack<T>(fn: () => T): T;
 export declare function createUniqueId(): string;
 export declare function useParams<T extends Record<string, string | undefined>>(): T;
+/** The current URL's path and query. The server has no `hash`, so it reads `""` there. */
+export interface RouterLocation {
+  readonly pathname: string;
+  readonly search: string;
+  readonly hash: string;
+}
+export declare function useLocation(): RouterLocation;
+export interface RouterSearchParams {
+  get(name: string): string | null;
+  has(name: string): boolean;
+}
+export declare function useSearchParams(): RouterSearchParams;
+/** What an `<a href>` gets as `aria-current="page"` and `data-active`, for links the compiler cannot see. */
+export interface LinkState {
+  readonly active: boolean;
+}
+export declare function useLinkState(href: string | undefined): LinkState;
 
 export declare function Show<T>(props: { when: T; fallback?: JSX.Element; children: Branch<T> }): JSX.Element;
 export declare function Switch(props: { fallback?: JSX.Element; children: JSX.Element }): JSX.Element;

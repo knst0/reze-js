@@ -1,0 +1,17 @@
+// src/routes/index.tsx
+import { $fx, $loc, $q, $search, $sig, $str, $text } from "reze-js/runtime/client";
+export const $c0 = (s, i, a) => {
+  const location = $loc();
+  const params = $search();
+  const copied = $sig("");
+  for (const b of $q(i, 0)) {
+    const [t1025] = $text(b, null, 0, [5, $str(copied.v)]);
+    $fx(() => { t1025.data = $str(copied.v); });
+  }
+  return { 0: { click: (r) => () => (copied.v = location.pathname + params.get("q")) } };
+};
+
+// virtual:rz-route/2
+import { $c0 } from "/src/routes/index.tsx";
+export default { 0: $c0 };
+export const g = [];

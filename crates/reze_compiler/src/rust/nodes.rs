@@ -255,6 +255,21 @@ impl<'e, 'a> Emitter<'e, 'a> {
     }
 
     fn element(&mut self, element: &'e Element<'a>, frame: &Rc<Frame<'e, 'a>>) {
+        let href = match element.active_href() {
+            Some(Value::Expr(expression))
+                if !matches!(
+                    expression.without_parentheses(),
+                    Expression::ConditionalExpression(_)
+                ) =>
+            {
+                self.val(expression, frame).ok().filter(|val| val.owned).map(|val| {
+                    let name = self.fresh("href");
+                    self.stmt(&format!("let {name} = {};", val.code));
+                    Val { code: name, ..val }
+                })
+            }
+            _ => None,
+        };
         self.raw(&format!("<{}", element.tag));
         for item in &element.attributes {
             match item {
@@ -265,7 +280,14 @@ impl<'e, 'a> Emitter<'e, 'a> {
                         self.raw(&html);
                     }
                     Value::True => self.raw(&format!(" {}", attribute.name)),
-                    Value::Expr(expression) => self.attr_hole(attribute.name, expression, frame),
+                    Value::Expr(expression) => match &href {
+                        Some(val) if attribute.name == "href" => {
+                            if let Err(reason) = self.output(val, Sink::Attr("href")) {
+                                self.report(frame.module, expression.span(), reason);
+                            }
+                        }
+                        _ => self.attr_hole(attribute.name, expression, frame),
+                    },
                 },
                 AttributeItem::Spread(expression) => {
                     if let Err(reason) = self.spread(expression, frame) {
@@ -277,6 +299,11 @@ impl<'e, 'a> Emitter<'e, 'a> {
         match element.active_href() {
             Some(Value::Static(href)) => {
                 self.open(&format!("if page.active({})", literal(href)));
+                self.raw(ACTIVE);
+                self.close();
+            }
+            Some(Value::Expr(_)) if let Some(val) = &href => {
+                self.open(&format!("if page.active({})", val.str()));
                 self.raw(ACTIVE);
                 self.close();
             }
@@ -722,6 +749,33 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 Binding::Val(Val::new(format!("{var}.as_str()"), Ty::Str))
             }
             Api::UseParams => Binding::Params(usize::MAX),
+            Api::UseLocation => Binding::Props(Rc::new(vec![
+                ("pathname".into(), Binding::Val(Val::new("page.pathname()", Ty::Str))),
+                ("search".into(), Binding::Val(Val::new("page.search()", Ty::Str))),
+                ("hash".into(), Binding::Val(Val::new("\"\"", Ty::Str))),
+            ])),
+            Api::UseSearchParams => Binding::Search,
+            Api::UseLinkState => {
+                let active = match argument.map(|href| self.val(href, frame)) {
+                    Some(Ok(href)) => match &href.ty {
+                        Ty::Str => Ok(format!("page.active({})", href.str())),
+                        Ty::Opt(inner) if **inner == Ty::Str => {
+                            let h = self.fresh("h");
+                            Ok(format!("({}).is_some_and(|{h}| page.active({h}))", href.code))
+                        }
+                        _ => Ok("false".into()),
+                    },
+                    Some(Err(reason)) => Err(reason),
+                    None => Ok("false".into()),
+                };
+                match active {
+                    Ok(code) => Binding::Props(Rc::new(vec![(
+                        "active".into(),
+                        Binding::Val(Val::new(code, Ty::Bool)),
+                    )])),
+                    Err(reason) => Binding::Invalid(reason),
+                }
+            }
             _ => Binding::Invalid(format!("`{api:?}` has no Rust lowering")),
         }
     }

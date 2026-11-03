@@ -35,8 +35,8 @@ function segments(url: URL): string[] | undefined {
     const matched = match(route, parts);
     if (!matched) continue;
     return route.chain.map((node) => {
-      const [names, search] = keys[node]!;
-      return [node, ...names.map((name) => matched[0][name] ?? ""), search ? url.search : ""].join("\0");
+      const [names, search, path] = keys[node]!;
+      return [node, ...names.map((name) => matched[0][name] ?? ""), search ? url.search : "", path ? url.pathname : ""].join("\0");
     });
   }
 }

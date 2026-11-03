@@ -27,6 +27,8 @@ pub enum Api {
     UseParams,
     UseLocation,
     UseSearchParams,
+    UseLinkState,
+    BuildPaths,
 }
 
 impl Api {
@@ -59,6 +61,8 @@ impl Api {
             ("reze-js" | "@rezejs/router", "useParams") => UseParams,
             ("reze-js" | "@rezejs/router", "useLocation") => UseLocation,
             ("reze-js" | "@rezejs/router", "useSearchParams") => UseSearchParams,
+            ("reze-js" | "@rezejs/router", "useLinkState") => UseLinkState,
+            ("reze-js", "buildPaths") => BuildPaths,
             _ => return None,
         })
     }
@@ -80,6 +84,9 @@ impl Api {
 
     /// Lowered away on every target, so the import has no runtime value.
     pub fn is_syntax(self) -> bool {
-        !matches!(self, Api::CreateContext | Api::Loader | Api::Mutation | Api::Defer)
+        !matches!(
+            self,
+            Api::CreateContext | Api::Loader | Api::Mutation | Api::Defer | Api::BuildPaths
+        )
     }
 }

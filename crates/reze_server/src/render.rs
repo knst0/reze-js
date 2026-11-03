@@ -1,5 +1,7 @@
 use std::any::Any;
 
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+
 use crate::html::{Html, escape_attr};
 use crate::{Manifest, Params, RouteError, Table, Value};
 
@@ -138,6 +140,9 @@ pub struct Page<'p> {
     pub(crate) table: &'static Table,
     pub(crate) chain: &'static [usize],
     pub(crate) path: &'p str,
+    /// The query without `_b` and `_s`, with its `?`, or empty.
+    pub(crate) search: &'p str,
+    pub(crate) query: &'p [(String, String)],
     pub(crate) params: &'p Params,
     pub(crate) data: &'p [Option<Box<dyn Value>>],
     pub(crate) error: Option<(usize, RouteError)>,
@@ -161,12 +166,45 @@ impl Page<'_> {
         self.params.get(name)
     }
 
+    pub fn pathname(&self) -> &str {
+        self.path
+    }
+
+    pub fn search(&self) -> &str {
+        self.search
+    }
+
+    /// The first value of a search param.
+    pub fn query(&self, name: &str) -> Option<&str> {
+        if name == "_b" || name == "_s" {
+            return None;
+        }
+        self.query.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
+    }
+
     /// Whether an anchor's `href` points at the current path.
     pub fn active(&self, href: &str) -> bool {
         href.starts_with('/')
             && !href.starts_with("//")
             && href.split(['?', '#']).next() == Some(self.path)
     }
+}
+
+const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'!')
+    .remove(b'~')
+    .remove(b'*')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')');
+const SPLAT: &AsciiSet = &COMPONENT.remove(b'/');
+
+/// Appends a param to a path as `encodeURIComponent` does, keeping each `/` of a `splat`.
+pub fn push_segment(out: &mut String, value: &str, splat: bool) {
+    out.extend(utf8_percent_encode(value, if splat { SPLAT } else { COMPONENT }));
 }
 
 fn level(out: &mut Html, cx: &mut Render, page: &Page<'_>, depth: usize) -> Result<(), RouteError> {

@@ -1,6 +1,6 @@
 import { expect, test } from "../fixtures";
 
-const paths = ["/", "/posts/1", "/posts/2", "/posts/9", "/posts/abc", "/missing"];
+const paths = ["/", "/?ref=mail&_s=x", "/posts/1?ref=feed", "/posts/1", "/posts/2", "/posts/9", "/posts/abc", "/missing"];
 
 test("renders the same HTML on the Rust and the JS server", async ({ request, server }) => {
   for (const path of paths) {
@@ -79,4 +79,15 @@ test("marks the link to the current page", async ({ page, server }) => {
   await expect(home).not.toHaveAttribute("data-active");
   await page.goBack();
   await expect(home).toHaveAttribute("aria-current", "page");
+});
+
+test("reads the location through router hooks", async ({ page, server }) => {
+  await page.goto(server.url("/?ref=mail"));
+  const where = page.locator(".where");
+  await expect(where).toHaveText("At /?ref=mail from mail");
+  await expect(where).toHaveAttribute("data-home", "");
+  await page.getByRole("link", { name: "Hello, world" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hello, world");
+  await expect(where).toHaveText("At /posts/1");
+  await expect(where).not.toHaveAttribute("data-home");
 });

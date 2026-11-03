@@ -3,14 +3,15 @@ mod server;
 pub(crate) use server::head_key;
 pub use server::server;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
-use crate::analyze::{Analysis, EndpointKind};
+use crate::analyze::{Analysis, Api, EndpointKind};
 use crate::project::Module;
 use crate::routes::{RouteTable, Segment};
 
 /// Source of `virtual:rz-routes`: the route table the client matches URLs against, and the
-/// inputs that key each segment: its params and, when its loader reads them, the search params.
+/// inputs that key each segment: its params, the search params when its loader or a router hook
+/// reads them, and the path when a router hook reads it.
 pub fn navigation(modules: &[Module<'_>], analysis: &Analysis<'_>, routes: &RouteTable) -> String {
     let mut out = String::from("export const routes = [\n");
     for (index, node) in routes.nodes.iter().enumerate() {
@@ -24,23 +25,45 @@ pub fn navigation(modules: &[Module<'_>], analysis: &Analysis<'_>, routes: &Rout
     out.push_str("];\nexport const keys = {\n");
     for (index, node) in routes.nodes.iter().enumerate() {
         let names: Vec<&str> = node.segments.iter().filter_map(Segment::name).collect();
-        let search = modules.iter().position(|m| m.path == node.file).is_some_and(|module| {
-            analysis.facts[module].endpoints.iter().any(|endpoint| {
-                endpoint.kind == EndpointKind::Loader
-                    && endpoint.export == "load"
-                    && endpoint
-                        .reads
-                        .as_ref()
-                        .is_none_or(|reads| reads.iter().any(|r| r == "search"))
-            })
-        });
+        let module = modules.iter().position(|m| m.path == node.file);
+        let hooks = module.map_or_else(Vec::new, |module| hooks(modules, analysis, module));
+        let path = hooks.contains(&Api::UseLocation) || hooks.contains(&Api::UseLinkState);
+        let search = hooks.contains(&Api::UseLocation)
+            || hooks.contains(&Api::UseSearchParams)
+            || module.is_some_and(|module| {
+                analysis.facts[module].endpoints.iter().any(|endpoint| {
+                    endpoint.kind == EndpointKind::Loader
+                        && endpoint.export == "load"
+                        && endpoint
+                            .reads
+                            .as_ref()
+                            .is_none_or(|reads| reads.iter().any(|r| r == "search"))
+                })
+            });
         out.push_str(&format!(
-            "  {index}: [{}, {}],\n",
+            "  {index}: [{}, {search}, {path}],\n",
             serde_json::to_string(&names).unwrap(),
-            search
         ));
     }
     out.push_str("};\n");
+    out
+}
+
+/// The router hooks that `module` and the modules it imports call.
+fn hooks(modules: &[Module<'_>], analysis: &Analysis<'_>, module: usize) -> Vec<Api> {
+    let mut seen = HashSet::from([module]);
+    let mut pending = vec![module];
+    let mut out = Vec::new();
+    while let Some(module) = pending.pop() {
+        out.extend(analysis.facts[module].apis.values().copied().filter(|api| {
+            matches!(api, Api::UseLocation | Api::UseSearchParams | Api::UseLinkState)
+        }));
+        for &next in modules[module].resolved.values() {
+            if seen.insert(next) {
+                pending.push(next);
+            }
+        }
+    }
     out
 }
 
@@ -104,7 +127,33 @@ pub fn types(routes: &RouteTable, dir: &str) -> String {
     let mut pages = String::new();
     let mut layouts = String::new();
     let mut seen = Vec::new();
+    let mut paths: Vec<String> = Vec::new();
     for node in &routes.nodes {
+        if !node.is_layout {
+            let mut shapes = vec![String::new()];
+            for segment in &node.segments {
+                match segment {
+                    Segment::Static(name) => {
+                        shapes.iter_mut().for_each(|s| *s += &format!("/{name}"))
+                    }
+                    Segment::Param(_) | Segment::Splat(_) => {
+                        shapes.iter_mut().for_each(|s| *s += "/${string}")
+                    }
+                    Segment::Optional(_) => {
+                        let with: Vec<String> =
+                            shapes.iter().map(|s| format!("{s}/${{string}}")).collect();
+                        shapes.extend(with);
+                    }
+                }
+            }
+            for shape in shapes {
+                let shape = if shape.is_empty() { "/".to_string() } else { shape };
+                let shape = format!("`{shape}`");
+                if !paths.contains(&shape) {
+                    paths.push(shape);
+                }
+            }
+        }
         let params: Vec<String> = node
             .segments
             .iter()
@@ -133,7 +182,8 @@ pub fn types(routes: &RouteTable, dir: &str) -> String {
             layouts.push_str(&entry);
         }
     }
+    let paths = if paths.is_empty() { "never".to_string() } else { paths.join(" | ") };
     format!(
-        "// Generated by reze-js from the route files. Do not edit.\nimport type {{ RouteData }} from \"reze-js\";\n\ndeclare module \"reze-js\" {{\n  interface Register {{\n    routes: {{\n{pages}    }};\n    layouts: {{\n{layouts}    }};\n  }}\n}}\n"
+        "// Generated by reze-js from the route files. Do not edit.\nimport type {{ RouteData }} from \"reze-js\";\n\ndeclare module \"reze-js\" {{\n  interface Register {{\n    routes: {{\n{pages}    }};\n    layouts: {{\n{layouts}    }};\n    paths: {paths};\n  }}\n}}\n"
     )
 }

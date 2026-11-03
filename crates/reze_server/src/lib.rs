@@ -21,7 +21,7 @@ pub use reze;
 
 pub use app::App;
 pub use html::Html;
-pub use render::{Mark, Page, Render, children};
+pub use render::{Mark, Page, Render, children, push_segment};
 
 /// A route error: its status and message reach the nearest `<Errored>`, or the built-in error page.
 #[derive(Clone, Debug, PartialEq, Eq)]

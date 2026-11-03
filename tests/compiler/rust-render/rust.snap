@@ -36,7 +36,23 @@ pub mod routes {
         if page.active((data).title.as_str()) {
             out.raw(" aria-current=\"page\" data-active");
         }
-        out.raw(">Title</a><h1");
+        out.raw(">Title</a><p");
+        if page.active("/") { out.raw(" data-home"); }
+        out.raw(">");
+        out.text(page.pathname());
+        out.raw("<!>");
+        out.text(page.search());
+        out.raw(" ");
+        if let Some(x3) = page.query("q") {
+            out.text(x3);
+        }
+        out.raw("</p>");
+        let x4 = page.query("all").is_some();
+        if (x4) {
+            out.raw("<p>All</p>");
+        } else {
+        }
+        out.raw("<h1");
         if ((data).open) {
             out.attr("class", "open");
         } else {
@@ -45,28 +61,41 @@ pub mod routes {
         out.raw(">");
         out.text((data).title.as_str());
         out.raw("</h1><ul>");
-        let l3 = &(data).items;
-        if !l3.is_empty() {
-            for (i4, x5) in l3.iter().enumerate() {
+        let l5 = &(data).items;
+        if !l5.is_empty() {
+            for (i6, x7) in l5.iter().enumerate() {
                 out.raw("<li");
-                out.attr("data-kind", ::reze_server::reze::Variant::name(&(&(*x5)).kind));
+                out.attr("data-kind", ::reze_server::reze::Variant::name(&(&(*x7)).kind));
                 out.raw(">");
-                out.number((((i4) as f64) + ((1.0_f64) as f64)) as f64);
+                out.number((((i6) as f64) + ((1.0_f64) as f64)) as f64);
                 out.raw(". ");
-                out.text((&(*x5)).name.as_str());
+                out.text((&(*x7)).name.as_str());
                 out.raw(" <span class=price>");
-                out.number((&(*x5)).price as f64);
+                out.number((&(*x7)).price as f64);
                 out.raw("</span>");
-                match (&(*x5)).note.as_deref() {
-                    Some(x6) if !(x6).is_empty() => {
+                match (&(*x7)).note.as_deref() {
+                    Some(x8) if !(x8).is_empty() => {
                         out.raw("<small>");
-                        out.text(x6);
+                        out.text(x8);
                         out.raw("</small>");
                     }
                     _ => {
                     }
                 }
-                out.raw("</li>");
+                let href12 = { let mut t9 = String::new(); t9.push_str("/items"); { let mut p10 = String::new(); p10.push_str((&(*x7)).name.as_str()); t9.push('/'); ::reze_server::push_segment(&mut t9, &p10, false); } if !("a/b c").is_empty() { { let mut p11 = String::new(); p11.push_str("a/b c"); t9.push('/'); ::reze_server::push_segment(&mut t9, &p11, true); } } if t9.is_empty() { t9.push('/'); } t9 };
+                out.raw("<a");
+                out.attr("href", (href12).as_str());
+                if page.active((href12).as_str()) {
+                    out.raw(" aria-current=\"page\" data-active");
+                }
+                out.raw(">Open</a>");
+                let href16 = { let mut t13 = String::new(); t13.push_str("/notes"); if let Some(x14) = (&(*x7)).note.as_deref() { { let mut p15 = String::new(); p15.push_str(x14); t13.push('/'); ::reze_server::push_segment(&mut t13, &p15, false); } } if t13.is_empty() { t13.push('/'); } t13 };
+                out.raw("<a");
+                out.attr("href", (href16).as_str());
+                if page.active((href16).as_str()) {
+                    out.raw(" aria-current=\"page\" data-active");
+                }
+                out.raw(">Note</a></li>");
             }
         } else {
             out.raw("<li>Empty</li>");

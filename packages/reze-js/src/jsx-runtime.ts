@@ -1,3 +1,5 @@
+import type { Href } from "./index";
+
 /** The DOM event behind each `on*` handler name, as the compiler lowers it. */
 interface HandlerEvents {
   Abort: "abort";
@@ -72,7 +74,9 @@ type Attributes<E extends Element> = Handlers<E> & {
   [attribute: string]: unknown;
 };
 
-type HtmlElements = { [K in keyof HTMLElementTagNameMap]: Attributes<HTMLElementTagNameMap[K]> };
+type HtmlElements = { [K in Exclude<keyof HTMLElementTagNameMap, "a">]: Attributes<HTMLElementTagNameMap[K]> } & {
+  a: Attributes<HTMLAnchorElement> & { href?: Href };
+};
 type SvgElements = {
   [K in Exclude<keyof SVGElementTagNameMap, keyof HTMLElementTagNameMap>]: Attributes<SVGElementTagNameMap[K]>;
 };

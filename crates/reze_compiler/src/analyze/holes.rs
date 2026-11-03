@@ -309,6 +309,17 @@ impl<'a> Visit<'a> for HoleCheck<'_, '_, 'a> {
             }
             return;
         }
+        if let (Some("get" | "has"), Some(member)) = (method, it.callee.get_member_expr())
+            && let Expression::Identifier(object) = member.object().without_parentheses()
+            && self.cx.initializer_api(self.module, object) == Some(Api::UseSearchParams)
+        {
+            walk::walk_arguments(self, &it.arguments);
+            return;
+        }
+        if self.cx.api(self.module, &it.callee) == Some(Api::BuildPaths) {
+            walk::walk_arguments(self, &it.arguments);
+            return;
+        }
         let callee = self.text(it.callee.span());
         self.unsupported(
             it.span,

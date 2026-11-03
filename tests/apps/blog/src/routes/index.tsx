@@ -1,4 +1,4 @@
-import { For } from "reze-js";
+import { buildPaths, For } from "reze-js";
 import { loader } from "reze-js/server";
 import type { Home } from "virtual:reze-types/blog_types";
 
@@ -12,7 +12,7 @@ export default function Index(props: { data: Home }) {
         <For each={props.data.posts} fallback={<li>No posts</li>}>
           {(post, index) => (
             <li class={post.status}>
-              {index + 1}. <a href={`/posts/${post.id}`}>{post.title}</a> <span>{post.status}</span>
+              {index + 1}. <a href={buildPaths("/posts/:id", { id: post.id })}>{post.title}</a> <span>{post.status}</span>
             </li>
           )}
         </For>

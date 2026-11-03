@@ -232,7 +232,8 @@ The current implementation differs from this design in these points:
 
 - Route props come from `reze-js`: `RoutePropsFor`, `LayoutPropsFor`, and `RouteData` augment its
   `Register`. The generated file is `routes.gen.d.ts` next to the routes folder, `src/`.
-- Typed `paths` builders are not generated, so `redirect` takes a plain string.
+- The path builder is `buildPaths("/blog/:page?", { page: 2 })`, keyed by the route pattern; it
+  fills path params only. `redirect` takes the same `Href` type as `<a href>`.
 - `LayoutPropsFor` keys layouts by URL prefix, so a group layout such as `(app).tsx` shares the key
   `/` with the root layout and cannot use it.
 - A request with `_s` runs the loaders of that depth and below and renders those segments. When the

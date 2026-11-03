@@ -11,7 +11,7 @@ declare module "virtual:rz-routes" {
   /** The page routes: their segments and the route nodes of their chains. */
   export const routes: { segments: import("./runtime/match").Segment[]; chain: number[] }[];
   /** By route node: the names of the params its key holds, and whether its loader reads search. */
-  export const keys: Record<number, [string[], boolean]>;
+  export const keys: Record<number, [string[], boolean, boolean]>;
   export const build: string;
 }
 
