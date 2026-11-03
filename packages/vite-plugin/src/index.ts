@@ -178,6 +178,9 @@ export default function reze(options: RezeOptions = {}): Plugin {
   return {
     name: "reze",
     enforce: "pre",
+    onLog(_, log) {
+      if (log.code === "INEFFECTIVE_DYNAMIC_IMPORT" && /runtime\/render\.[jt]s/.test(log.message)) return false;
+    },
     config(config, env) {
       const outDirs = {
         client: config.environments?.client?.build?.outDir ?? "dist/client",
