@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { compileProject, type Diagnostic } from "@rezejs/compiler";
+import { compileProject, compileProjectAsync, type Diagnostic } from "@rezejs/compiler";
 import { createApp } from "reze-js/runtime/server";
 import { expect, test } from "vite-plus/test";
 
@@ -88,3 +89,23 @@ for (const fixture of fixtures) {
     await snapshot(dir, "html.snap", `${await response.text()}\n`);
   });
 }
+
+test("caches the source of an installed package by its version", async () => {
+  const project = mkdtempSync(join(tmpdir(), "rz-package-"));
+  const write = (path: string, source: string) => {
+    mkdirSync(dirname(join(project, path)), { recursive: true });
+    writeFileSync(join(project, path), source);
+  };
+  for (const [path, source] of Object.entries(sources(join(root, "package-source")))) write(path, source);
+  const manifest = JSON.parse(readFileSync(join(project, "node_modules/ui-kit/package.json"), "utf8"));
+  const title = "node_modules/ui-kit/src/title.tsx";
+  const compiled = async () => (await compileProjectAsync({ root: project })).modules[title]?.server;
+  write("node_modules/ui-kit/package.json", JSON.stringify({ ...manifest, version: "1.0.0" }));
+  const first = await compiled();
+  expect(first).toContain("<h1");
+  write(title, readFileSync(join(project, title), "utf8").replace("<h1", "<h2").replace("</h1>", "</h2>"));
+  expect(await compiled()).toBe(first);
+  write("node_modules/ui-kit/package.json", JSON.stringify({ ...manifest, version: "1.0.1" }));
+  expect(await compiled()).toContain("<h2");
+  rmSync(project, { recursive: true, force: true });
+});

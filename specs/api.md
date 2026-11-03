@@ -415,8 +415,11 @@ A package exposes TSX through the `reze` export condition:
 The current implementation differs from this design in these points:
 
 - The compiler reads a package's `reze` source from `node_modules/<package>` under the project
-  root, through the `.` or subpath entry of `exports`. The build compiles it each time instead
-  of caching it by package version.
+  root, through the `.` or subpath entry of `exports`. The process caches the source files of
+  an installed package by its directory and `version`, so a rebuild reads them again only after
+  the version changes; a linked workspace package, which resolves outside `node_modules`, is read
+  each time. The analysis of the package runs with every build, since client scope ids and chunks
+  are numbered across the whole project.
 - The Vite plugin adds the `reze` condition to both environments, bundles the app's
   dependencies that declare it into the server build, and dedupes `reze-js`, so a package's
   compiled code imports the app's runtime.

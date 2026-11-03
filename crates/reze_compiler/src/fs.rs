@@ -1,5 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 /// Project files addressed by posix paths relative to the project root.
 pub trait FileSystem {
@@ -64,9 +65,46 @@ impl DiskFs {
     }
 }
 
+/// Files of installed packages by package directory and version, shared by every compile of the
+/// process. A linked workspace package resolves outside `node_modules` and is read each time.
+type Packages = HashMap<(PathBuf, String), HashMap<String, Option<String>>>;
+static PACKAGES: LazyLock<Mutex<Packages>> = LazyLock::new(Mutex::default);
+
+/// The directory of the package `path` belongs to, as `node_modules/<name>`.
+fn package_dir(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("node_modules/")?;
+    let segments = if rest.starts_with('@') { 2 } else { 1 };
+    let end = rest.match_indices('/').nth(segments - 1)?.0;
+    Some(&path[.."node_modules/".len() + end])
+}
+
+impl DiskFs {
+    fn read_package(&self, dir: &str, path: &str) -> Option<String> {
+        let read = || std::fs::read_to_string(self.root.join(path)).ok();
+        let manifest = format!("{dir}/package.json");
+        if path == manifest {
+            return read();
+        }
+        let installed = std::fs::canonicalize(self.root.join(dir))
+            .ok()
+            .filter(|real| real.components().any(|part| part.as_os_str() == "node_modules"));
+        let version = std::fs::read_to_string(self.root.join(manifest))
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .and_then(|manifest| Some(manifest.get("version")?.as_str()?.to_string()));
+        let (Some(real), Some(version)) = (installed, version) else { return read() };
+        let mut packages = PACKAGES.lock().unwrap_or_else(|error| error.into_inner());
+        let files = packages.entry((real, version)).or_default();
+        files.entry(path.to_string()).or_insert_with(read).clone()
+    }
+}
+
 impl FileSystem for DiskFs {
     fn read(&self, path: &str) -> Option<String> {
-        std::fs::read_to_string(self.root.join(path)).ok()
+        match package_dir(path) {
+            Some(dir) => self.read_package(dir, path),
+            None => std::fs::read_to_string(self.root.join(path)).ok(),
+        }
     }
 
     fn list(&self, dir: &str) -> Vec<String> {
