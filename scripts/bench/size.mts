@@ -23,8 +23,9 @@ const metadata = [
   /<!--[0-9a-z]+\.[0-9a-z]+-->/g,
   /<!>/g,
   /<script type="rz">.*?<\/script>/gs,
-  /<script type="module" async src="[^"]*"><\/script>/g,
 ];
+/** The pages measured besides `/`, for the applications sized like a real site. */
+const pages: Record<string, string[]> = { shop: ["/products/8"] };
 
 async function build(app: string, out: string): Promise<(request: Request) => Promise<Response>> {
   const builder = await createBuilder({
@@ -54,11 +55,15 @@ for (const app of (await readdir(apps, { withFileTypes: true }))
   await writeFile(join(out, "package.json"), '{ "type": "module" }');
   try {
     const handler = await build(join(apps, app), out);
-    const html = await (await handler(new Request("http://localhost/"))).text();
-    const bare = metadata.reduce((text, pattern) => text.replace(pattern, ""), html);
-    const page = measure(html);
-    sizes[`${app}: html`] = page;
-    rows.push({ file: `${app}: html`, ...page, metadata: `${(((page.brotli - measure(bare).brotli) / page.brotli) * 100).toFixed(1)}%` });
+    for (const path of ["/", ...(pages[app] ?? [])]) {
+      const html = await (await handler(new Request(`http://localhost${path}`))).text();
+      const bare = metadata.reduce((text, pattern) => text.replace(pattern, ""), html);
+      const page = measure(html);
+      const bytes = page.brotli - measure(bare).brotli;
+      const file = path === "/" ? `${app}: html` : `${app}: html ${path}`;
+      sizes[file] = page;
+      rows.push({ file, ...page, metadata: `${((bytes / page.brotli) * 100).toFixed(1)}%, ${bytes} B` });
+    }
     const assets = join(out, "client", "assets");
     const files = await readdir(assets).catch(() => [] as string[]);
     for (const file of files.sort()) {
@@ -76,6 +81,8 @@ for (const row of rows) {
   const committed = previous[row.file as string];
   row["Δ gzip"] = committed === undefined ? "new" : (row.gzip as number) - committed.gzip;
 }
-console.log("Bytes each test app ships for `/` (metadata = share of brotli HTML spent on resumability markup)");
+console.log(
+  "Bytes each test app ships per page (metadata = markers, data-rz attributes, and the state block, as a share of the brotli HTML)",
+);
 console.table(rows);
 recordSnapshot(results, sizes, { check: process.argv.includes("--check") });

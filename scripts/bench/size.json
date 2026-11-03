@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recordedAt": "2026-11-03T19:41:29.315Z",
+  "recordedAt": "2026-11-03T20:00:30.077Z",
   "sizes": {
     "menu: client.js": {
       "raw": 5875,
@@ -58,6 +58,56 @@
       "brotli": 210
     },
     "menu: stream.js": {
+      "raw": 1270,
+      "gzip": 688,
+      "brotli": 575
+    },
+    "shop: client.js": {
+      "raw": 2344,
+      "gzip": 1222,
+      "brotli": 1089
+    },
+    "shop: dispatcher.js": {
+      "raw": 1790,
+      "gzip": 990,
+      "brotli": 862
+    },
+    "shop: html": {
+      "raw": 92662,
+      "gzip": 7906,
+      "brotli": 6201
+    },
+    "shop: html /products/8": {
+      "raw": 27953,
+      "gzip": 6074,
+      "brotli": 5024
+    },
+    "shop: idle.js": {
+      "raw": 779,
+      "gzip": 522,
+      "brotli": 436
+    },
+    "shop: links.js": {
+      "raw": 1239,
+      "gzip": 643,
+      "brotli": 533
+    },
+    "shop: navigate.js": {
+      "raw": 8578,
+      "gzip": 3726,
+      "brotli": 3310
+    },
+    "shop: route-1.js": {
+      "raw": 227,
+      "gzip": 196,
+      "brotli": 170
+    },
+    "shop: route-2.js": {
+      "raw": 745,
+      "gzip": 420,
+      "brotli": 378
+    },
+    "shop: stream.js": {
       "raw": 1270,
       "gzip": 688,
       "brotli": 575

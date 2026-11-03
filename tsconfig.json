@@ -25,5 +25,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "exclude": ["**/node_modules", "**/dist", "examples", "docs", "tests/apps/*/src/routes.gen.d.ts"]
+  "exclude": ["**/node_modules", "**/dist", "examples", "docs", "tests/apps/*/src/routes.gen.d.ts", "tests/apps/shop"]
 }

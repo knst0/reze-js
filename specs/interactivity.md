@@ -528,5 +528,7 @@ The current implementation differs from this design in these points:
   click on a link or a submit of a server-tier form before `links` has loaded is a full page load.
   Client code reaches the navigation module, for `.call` and for handing an error to the nearest
   `<Errored>`, through `window.rzNav`, which `links` sets.
-- `scripts/bench/size.mts` measures only the test applications, which are too small to judge the
-  2% metadata share.
+- The state block names a chunk by its URL, not by an index into the build manifest: the
+  dispatcher holds no manifest, which would grow it with every route. The URL costs about 20
+  compressed bytes per page. On `shop`, the test application sized like a real store, metadata is
+  about 1.5% of the brotli HTML of the catalog and 1.9% of the product page.
