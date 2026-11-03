@@ -19,4 +19,5 @@ declare module "virtual:rz-nav" {
   export const navigate: typeof import("./runtime/navigate").navigate;
   export const prefetch: typeof import("./runtime/navigate").prefetch;
   export const submit: typeof import("./runtime/navigate").submit;
+  export const call: typeof import("./runtime/navigate").call;
 }

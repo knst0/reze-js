@@ -1,5 +1,8 @@
 import type { Href } from "../index";
+import type { Issue } from "./errors";
 import { compare, match, type Segment } from "./match";
+
+export { MutationInputError, type Issue } from "./errors";
 
 type Thunk = () => string;
 
@@ -94,10 +97,6 @@ interface StandardIssue {
 }
 
 /** A validation issue in the Standard Schema format. */
-export interface Issue {
-  message: string;
-  path: (string | number)[];
-}
 
 export interface CookieOptions {
   httpOnly?: boolean;
@@ -231,13 +230,6 @@ export class RouteError extends Error {
     message: string,
   ) {
     super(message);
-  }
-}
-
-/** Thrown by `.call` in the browser when the server rejects the input. */
-export class MutationInputError extends Error {
-  constructor(readonly issues: Issue[]) {
-    super("Invalid mutation input");
   }
 }
 
@@ -858,6 +850,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     }
 
     let submission: Page["submission"];
+    let called: { result: unknown } | undefined;
     let status = 200;
     if (request.method === "POST") {
       const record = mutations.get(url.searchParams.get("_m") ?? "");
@@ -893,11 +886,15 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
           if ("json" in input) return Response.json({ message: error.message }, { status: error.status, headers: headersOf(writers) });
           return respond({ route, params, url, data: [], error: [chain.length - 1, error] });
         }
-        if ("json" in input) return Response.json({ result: result ?? null }, { headers: headersOf(writers) });
-        const search = new URLSearchParams(url.search);
-        search.delete("_m");
-        const location = url.pathname + (search.size > 0 ? `?${search}` : "");
-        return new Response(null, { status: 303, headers: headersOf(writers, { location }) });
+        if ("json" in input) {
+          if (build === null) return Response.json({ result: result ?? null }, { headers: headersOf(writers) });
+          called = { result: result ?? null };
+        } else {
+          const search = new URLSearchParams(url.search);
+          search.delete("_m");
+          const location = url.pathname + (search.size > 0 ? `?${search}` : "");
+          return new Response(null, { status: 303, headers: headersOf(writers, { location }) });
+        }
       }
     }
 
@@ -979,7 +976,9 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
         return finish(rendered, headers);
       }
     }
-    return respond(page(), status);
+    if (!called) return respond(page(), status);
+    const response = await respond(page(), status);
+    return Response.json({ ...called, status: response.status, html: await response.text() }, { headers: headersOf(writers) });
   };
 }
 

@@ -82,6 +82,23 @@ test("answers with typed params, headers, and cookies", async ({ page, server })
   expect(await response!.headerValue("set-cookie")).toContain("last=1");
 });
 
+test("calls a mutation from a handler and morphs the page", async ({ page, server }) => {
+  await signIn(page, server);
+  await add(page, "Read a book");
+  await page.getByRole("link", { name: "Read a book" }).click();
+  await expect(page.getByRole("heading", { name: "Read a book" })).toBeVisible();
+  await page.getByLabel("New title").fill("Read two books");
+  await page.getByLabel("New priority").fill("3");
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect(page.getByRole("heading", { name: "Read two books" })).toBeVisible();
+  await expect(page.getByText("Priority 3")).toBeVisible();
+  await expect(page.getByLabel("New title")).toHaveValue("Read two books");
+  await page.getByLabel("New priority").fill("7");
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect(page.getByRole("status")).toHaveText("Invalid priority");
+  await expect(page.getByText("Priority 3")).toBeVisible();
+});
+
 test("writes Server-Timing in development only", async ({ request, server, serverKind }) => {
   const timing = (await request.get(server.url("/about"))).headers()["server-timing"];
   if (serverKind === "js") expect(timing).toMatch(/^loader-1;dur=\d+\.\d, render;dur=\d+\.\d$/);

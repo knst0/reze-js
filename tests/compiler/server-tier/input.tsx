@@ -20,7 +20,7 @@ export default function Home(props: { data: { id: number; title: string }[] }) {
               <button class="toggle" onClick={() => toggleTodo.call({ id: todo.id })}>
                 {todo.title}
               </button>
-              <button onClick={() => rename({ id: todo.id, title: draft, urgent: false })}>Rename</button>
+              <button onClick={() => rename.call({ id: todo.id, title: draft, urgent: false })}>Rename</button>
             </li>
           )}
         </For>

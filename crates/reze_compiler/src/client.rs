@@ -2916,7 +2916,19 @@ impl<'m, 'a> Planner<'m, 'a> {
                     self.index.modules[sym.0].semantic.scoping().symbol_name(sym.1).to_string();
                 let mut needs = Needs::default();
                 let mut reports = Vec::new();
-                let text = self.decl_code(sym.0, &name, &decl, None, &mut needs, &mut reports);
+                let mutation = self.index.analysis.facts[sym.0]
+                    .endpoints
+                    .iter()
+                    .find(|e| e.kind == EndpointKind::Mutation && e.symbol == Some(sym.1))
+                    .and_then(|e| e.id.as_ref());
+                let text = match mutation {
+                    Some(id) => {
+                        needs.helpers.insert("$call");
+                        let export = if decl.exported { "export " } else { "" };
+                        format!("{export}const {name} = $call({id:?});")
+                    }
+                    None => self.decl_code(sym.0, &name, &decl, None, &mut needs, &mut reports),
+                };
                 code[sym.0].insert(decl.span.start, text);
                 let target = &mut self.needs[sym.0];
                 target.decls.extend(needs.decls);
@@ -3131,13 +3143,11 @@ fn imports(index: &Index<'_, '_>, module: usize, needed: &BTreeSet<Sym>) -> Stri
             parts.push(format!("{{ {} }}", named.join(", ")));
         }
         if !parts.is_empty() {
-            writeln!(
-                out,
-                "import {} from {:?};",
-                parts.join(", "),
-                declaration.source.value.as_str()
-            )
-            .unwrap();
+            let source = match declaration.source.value.as_str() {
+                "reze-js/server" => CLIENT_RUNTIME,
+                source => source,
+            };
+            writeln!(out, "import {} from {source:?};", parts.join(", ")).unwrap();
         }
     }
     out

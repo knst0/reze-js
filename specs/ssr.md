@@ -945,10 +945,18 @@ change.
 The current implementation differs from this design in these points:
 
 - A mutation's id is base-36 of the 32-bit FNV-1a hash of `path#export`.
-- The client receives no `.call` stub yet, and `revalidate` does not narrow what reruns: a form post
-  answers `303` back to the page and a JSON post answers `{ result }`. With the dispatcher, the
-  client follows the `303` and morphs the whole body with the page it answers, or with the `422`
-  page.
+- `revalidate` does not narrow what reruns. A form post answers `303` back to the page; with the
+  dispatcher, the client follows it and morphs the whole body with the page it answers, or with the
+  `422` page.
+- In the client bundle a mutation is a stub whose `.call`, or a direct call, posts JSON with `_b`.
+  The server answers `{ result, status, html }` with the whole page, and the client morphs the body
+  before `.call` resolves. Client state in the morphed body starts again from the new state block,
+  so a value a handler sets after `await` on that state is lost. A JSON post without `_b` answers
+  `{ result }`. The result uses named JSON, and `MutationInputError` comes from
+  `reze-js/server`, which client code imports from the client runtime.
+- On its first run, a binding of `value`, `checked`, or `selected` over the server's nodes skips a
+  field whose live value differs from its default, so input typed before the chunk loaded or kept
+  by a morph survives.
 - A form posted to a mutation without a generated form coercer, a schema-first mutation, answers
   `415`.
 - JSON input encodes `Date` as an ISO string or a timestamp, `Map` as `[key, value]` pairs, `Set`

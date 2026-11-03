@@ -31,6 +31,8 @@ let current: Effect | null = null;
 let owner: (() => void)[] | null = null;
 /** Whether client code is creating nodes rather than adopting the server's. */
 let fresh = false;
+/** Whether an effect runs for the first time. */
+let initial = false;
 const pending = new Set<Effect>();
 
 function flush(): void {
@@ -110,7 +112,13 @@ export function $fx(fn: () => void): void {
     clear(effect);
     pending.delete(effect);
   });
-  run(effect);
+  const outer = initial;
+  initial = true;
+  try {
+    run(effect);
+  } finally {
+    initial = outer;
+  }
 }
 
 /** Runs `fn` untracked, as the owner of what it creates, and returns the disposal. */
@@ -135,6 +143,13 @@ export function $comp<T>(fn: () => T): Signal<T> {
 }
 
 export { buildPaths as $path } from "./paths";
+export { MutationInputError } from "./errors";
+
+/** The browser side of a mutation: a call, or `.call`, posts through the navigation module. */
+export function $call(id: string): ((input?: unknown) => Promise<unknown>) & { id: string; call(input?: unknown): Promise<unknown> } {
+  const call = (input?: unknown) => import("virtual:rz-nav").then((nav) => nav.call(id, input));
+  return Object.assign(call, { id, call });
+}
 
 export const $loc = (): Location => location;
 
@@ -168,8 +183,16 @@ export function $attr(element: Element, name: string, value: unknown): void {
   else element.setAttribute(name, value === true ? "" : String(value as string));
 }
 
+const defaults: Record<string, string> = { value: "defaultValue", checked: "defaultChecked", selected: "defaultSelected" };
+
+/**
+ * Sets a property. The first run of a binding over the server's nodes leaves a field the user
+ * changed, so input typed before the chunk loaded survives the binding.
+ */
 export function $prop(element: Element, name: string, value: unknown): void {
-  (element as unknown as Record<string, unknown>)[name] = value;
+  const target = element as unknown as Record<string, unknown>;
+  if (initial && !fresh && name in defaults && target[name] !== target[defaults[name]!]) return;
+  target[name] = value;
 }
 
 /**

@@ -354,9 +354,9 @@ export default function reze(options: RezeOptions = {}): Plugin {
       }
       if (id === `\0${spaEntry}`) {
         const client = existsSync(join(root, "src/client.ts"));
-        return `import { render } from "reze-js/runtime/render";\nexport { navigate, prefetch, submit } from "reze-js/runtime/navigate";\n${client ? 'export { render };\nimport "/src/client.ts";\n' : "render();\n"}`;
+        return `import { render } from "reze-js/runtime/render";\nexport { call, navigate, prefetch, submit } from "reze-js/runtime/navigate";\n${client ? 'export { render };\nimport "/src/client.ts";\n' : "render();\n"}`;
       }
-      if (id === `\0${nav}`) return 'export { navigate, prefetch, submit } from "reze-js/runtime/navigate";';
+      if (id === `\0${nav}`) return 'export { call, navigate, prefetch, submit } from "reze-js/runtime/navigate";';
       if (id === `\0${routes}`) return `${(await compile()).navigation}export const build = ${JSON.stringify(await buildId())};\n`;
       if (id.startsWith(`\0${route}`)) return (await compile()).chunks[id.slice(route.length + 1)];
       if (id !== resolvedApp) return;

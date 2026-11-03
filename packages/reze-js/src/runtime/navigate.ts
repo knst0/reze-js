@@ -1,5 +1,6 @@
 import { build, keys, routes } from "virtual:rz-routes";
 
+import { MutationInputError, type Issue } from "./errors";
 import { compare, match } from "./match";
 import { morph } from "./morph";
 
@@ -220,4 +221,24 @@ export async function submit(form: HTMLFormElement, submitter: HTMLElement | nul
     history.pushState({}, "", url.href);
     scrollTo(0, 0);
   });
+}
+
+/** Posts `input` to mutation `id` as JSON, morphs the page it answers with, and returns the result. */
+export async function call(id: string, input: unknown): Promise<unknown> {
+  prefetched.clear();
+  const target = new URL(current);
+  target.searchParams.set("_m", id);
+  target.searchParams.set("_b", build);
+  const response = await send(
+    new Request(target, { method: "POST", body: JSON.stringify(input ?? {}), headers: { "content-type": "application/json" } }),
+  );
+  if (response.status === 409) {
+    location.reload();
+    return new Promise(() => {});
+  }
+  const body = (await response.json()) as { result?: unknown; status?: number; html?: string; issues?: Issue[]; message?: string };
+  if (body.issues) throw new MutationInputError(body.issues);
+  if (!response.ok) throw new Error(body.message);
+  swap({ status: body.status!, depth: 0, url: current.href, redirected: false, text: body.html! }, "mutation", () => {});
+  return body.result;
 }
