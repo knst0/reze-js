@@ -70,6 +70,9 @@ A fixture directory is a project: `input.tsx` is the route `/`, and any other fi
 the emitted server code, and requests `/` from the JS server. That way an HTML snapshot covers the
 compiler and the JS runtime together.
 
+Files under `packages/<name>/` sit under `node_modules/<name>/`, so a fixture can hold a
+component library. An empty `spa` file compiles the fixture for `target: "spa"`.
+
 A fixture with client code also has `client.snap`: the client module of each source file and the
 chunk of each route, so the handler factories and bindings show in review next to the HTML.
 
@@ -88,7 +91,7 @@ or streaming yet.
 The size benchmark builds the fixture applications and records, per page: the compressed first
 response, the dispatcher, each chunk, and the metadata share of the HTML. A run that grows past
 the recorded snapshot fails; the snapshot changes only in a reviewed commit. The benchmark lives
-in `scripts/bench/size.mts`, measures `/` of each application under `tests/apps` that runs on the JS server, and records
+in `scripts/bench/size.mts`, measures `/` of each application under `tests/apps` that runs on the JS server, except the client-only `spa`, and records
 `scripts/bench/size.json`. It does not measure compile time yet.
 
 ## Running

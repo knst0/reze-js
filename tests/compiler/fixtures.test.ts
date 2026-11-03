@@ -49,7 +49,8 @@ for (const fixture of fixtures) {
   test(fixture.name, async () => {
     const dir = join(root, fixture.name);
     const rust = existsSync(join(dir, "rust.json")) ? JSON.parse(readFileSync(join(dir, "rust.json"), "utf8")) : undefined;
-    const result = compileProject({ files: sources(dir) }, { rust });
+    const spa = existsSync(join(dir, "spa"));
+    const result = compileProject({ files: sources(dir) }, { rust, target: spa ? "spa" : undefined });
     const diagnostics = result.diagnostics.map(format).join("\n\n");
     await snapshot(dir, "diagnostics.snap", diagnostics ? `${diagnostics}\n` : undefined);
     await snapshot(dir, "rust.snap", result.rust ?? undefined);

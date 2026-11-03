@@ -1,0 +1,13 @@
+[SERVER_IN_SPA] `target: "spa"` has no server to run `load`.
+  at src/routes/index.tsx:3:21
+  2 | 
+> 3 | export const load = loader(async () => ({ count: 1 }));
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 |
+
+[SERVER_IN_SPA] `target: "spa"` has no server to run `reset`.
+  at src/routes/index.tsx:5:22
+  4 | 
+> 5 | export const reset = mutation(async (input: { id: string }) => input.id);
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6 |

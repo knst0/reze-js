@@ -19,11 +19,11 @@ use oxc_syntax::scope::ScopeFlags;
 pub use api::Api;
 pub use data::{Endpoint, EndpointKind};
 
-use crate::Options;
 use crate::diagnostic::{Code, Report};
 use crate::project::Module;
 use crate::routes::RouteTable;
 use crate::view::{ComponentRef, Content};
+use crate::{Options, Target};
 
 pub enum ImportSource {
     Module(usize),
@@ -379,7 +379,7 @@ fn collect_declaration<'a>(
     }
 }
 
-pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, _options: &Options) -> Analysis<'a> {
+pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, options: &Options) -> Analysis<'a> {
     let facts = (0..modules.len()).map(|m| collect_facts(modules, m)).collect();
     let mut cx = Context { modules, facts };
     let mut reports: Vec<Vec<Report>> = modules.iter().map(|_| Vec::new()).collect();
@@ -424,6 +424,13 @@ pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, _options: &Options) 
             (node.pattern.as_str(), node.segments.iter().filter_map(|s| s.name()).collect())
         });
         cx.facts[module].endpoints = data::endpoints(&cx, module, pattern, &mut reports[module]);
+        if options.target == Target::Spa {
+            for endpoint in &cx.facts[module].endpoints {
+                reports[module].push(
+                    Report::new(Code::ServerInSpa, endpoint.call).arg("name", &endpoint.export),
+                );
+            }
+        }
     }
     check_mutation_ids(&cx, &mut reports);
     for (module, reports) in reports.iter_mut().enumerate() {

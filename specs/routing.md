@@ -246,3 +246,8 @@ The current implementation differs from this design in these points:
   that matches no route.
 - A `POST` is checked for a cross-site origin before guards run, so a forged post answers `403`
   even when a guard would redirect.
+- `target: "spa"` runs the compiled JS render in the browser: the navigation runtime answers each
+  request with the app's handler instead of `fetch`, and morphs the result into the page as for a
+  server response. The build writes `index.html`, the dispatcher, one module with the render of
+  every route, and the client chunk of each route. Routing uses the history only, and the static
+  host serves `index.html` for every path. `vite dev` renders on the server.

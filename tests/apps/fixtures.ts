@@ -16,8 +16,11 @@ import { sourceAliases } from "../../vitest.shared";
 
 export { expect } from "@playwright/test";
 
-/** `js` runs the Vite dev server; `js-build` serves a production build; `rust` serves it from the Rust server. */
-export type ServerKind = "js" | "js-build" | "rust";
+/**
+ * `js` runs the Vite dev server; `js-build` serves a production build; `rust` serves it from the Rust server; `spa` serves
+ * the static build of `target: "spa"`.
+ */
+export type ServerKind = "js" | "js-build" | "rust" | "spa";
 
 export interface Server {
   url(path: string): string;
@@ -151,6 +154,37 @@ async function startJsBuild(app: string): Promise<Running> {
   return serveBuild(client, handler(), () => rm(out, { recursive: true, force: true }));
 }
 
+/** Builds `app` with `target: "spa"` and serves its files, with `index.html` for every other path. */
+async function startSpa(app: string): Promise<Running> {
+  const out = await mkdtemp(join(tmpdir(), "rz-spa-"));
+  const builder = await createBuilder({
+    root: app,
+    configFile: false,
+    logLevel: "warn",
+    plugins: [reze({ target: "spa" })],
+    resolve: { alias: sourceAliases },
+    environments: { client: { build: { outDir: out, emptyOutDir: true } } },
+  });
+  await builder.buildApp();
+  return listen(
+    (message, response) => {
+      const path = normalize(new URL(message.url ?? "/", "http://localhost").pathname);
+      const file = extname(path) ? path : "index.html";
+      readFile(join(out, file)).then(
+        (body) => {
+          response.writeHead(200, { "content-type": types[extname(file)] ?? "text/html; charset=utf-8" });
+          response.end(body);
+        },
+        () => {
+          response.statusCode = 404;
+          response.end();
+        },
+      );
+    },
+    () => rm(out, { recursive: true, force: true }),
+  );
+}
+
 const repo = resolve(import.meta.dirname, "../..");
 
 function run(command: string, args: string[], env: Record<string, string> = {}): Promise<void> {
@@ -194,6 +228,7 @@ async function startRust(app: string): Promise<Running> {
 
 function start(kind: ServerKind, app: string): Promise<Running> {
   if (kind === "rust") return startRust(app);
+  if (kind === "spa") return startSpa(app);
   return kind === "js-build" ? startJsBuild(app) : startJs(app);
 }
 

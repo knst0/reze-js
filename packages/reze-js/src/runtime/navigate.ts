@@ -24,6 +24,7 @@ const rz = (window as unknown as { rz: Dispatcher }).rz;
 const ordered = [...routes].sort(compare);
 const prefetched = new Map<string, [number, Promise<Fetched>]>();
 let current = new URL(location.href);
+let send = (request: Request): Promise<Response> => fetch(request);
 
 history.scrollRestoration = "manual";
 
@@ -55,7 +56,7 @@ async function request(url: URL, depth: number, init: RequestInit = {}): Promise
   const target = new URL(url);
   if (depth > 0) target.searchParams.set("_s", String(depth));
   target.searchParams.set("_b", build);
-  const response = await fetch(target, init);
+  const response = await send(new Request(target, init));
   if (response.status === 409 || !response.headers.get("content-type")?.startsWith("text/html")) throw new Error(String(response.status));
   return {
     status: response.status,
@@ -177,6 +178,18 @@ export async function navigate(href: string, pop = false): Promise<void> {
   } catch {
     location.assign(url.href);
   }
+}
+
+/** Renders the page at the current URL in the browser with `handler`, which then answers every navigation: a client-only application. */
+export async function mount(handler: (request: Request) => Promise<Response>): Promise<void> {
+  send = async (request) => {
+    const response = await handler(request);
+    const location = response.headers.get("location");
+    if (!location || response.status < 300 || response.status > 399) return response;
+    const next = await send(new Request(new URL(location, request.url)));
+    return Object.defineProperties(next, { redirected: { value: true }, url: { value: next.url || new URL(location, request.url).href } });
+  };
+  swap(await request(current, 0), "navigation", () => {});
 }
 
 /** Posts a server-tier form through `fetch` and morphs the page it answers with. */
