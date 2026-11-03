@@ -12,6 +12,7 @@ use super::{
 use crate::analyze::{Api, Endpoint, EndpointKind, ImportSource};
 
 const JS: &str = "::reze_server::reze::js";
+const DATE: &str = "::reze_server::reze::date";
 const VARIANT: &str = "::reze_server::reze::Variant::name";
 
 /// Where a value prints: as text, or as the value of an attribute.
@@ -26,11 +27,23 @@ pub(super) fn view(place: &str, ty: &Ty) -> Result<String, String> {
     Ok(match ty {
         Ty::Str => format!("{place}.as_str()"),
         Ty::Num(_) | Ty::Bool | Ty::Null => place.to_string(),
-        Ty::Struct(_) | Ty::Enum(_) | Ty::List(_) | Ty::Tuple(_) => format!("&{place}"),
+        Ty::Struct(_)
+        | Ty::Enum(_)
+        | Ty::List(_)
+        | Ty::Tuple(_)
+        | Ty::Date
+        | Ty::Set(_)
+        | Ty::Map(_) => format!("&{place}"),
         Ty::Opt(inner) => match **inner {
             Ty::Str => format!("{place}.as_deref()"),
             Ty::Num(_) | Ty::Bool => place.to_string(),
-            Ty::Struct(_) | Ty::Enum(_) | Ty::List(_) | Ty::Tuple(_) => format!("{place}.as_ref()"),
+            Ty::Struct(_)
+            | Ty::Enum(_)
+            | Ty::List(_)
+            | Ty::Tuple(_)
+            | Ty::Date
+            | Ty::Set(_)
+            | Ty::Map(_) => format!("{place}.as_ref()"),
             _ => return Err("Nested optional values have no Rust lowering".into()),
         },
     })
@@ -46,7 +59,13 @@ pub(super) fn truthy(val: &Val) -> String {
         Ty::Num(_) => format!("({code}) != 0"),
         Ty::Bool => format!("({code})"),
         Ty::Null => "false".into(),
-        Ty::Struct(_) | Ty::Enum(_) | Ty::List(_) | Ty::Tuple(_) => "true".into(),
+        Ty::Struct(_)
+        | Ty::Enum(_)
+        | Ty::List(_)
+        | Ty::Tuple(_)
+        | Ty::Date
+        | Ty::Set(_)
+        | Ty::Map(_) => "true".into(),
         Ty::Opt(inner) => {
             let test = truthy(&Val::new("x", (**inner).clone()));
             if test == "true" {
@@ -79,7 +98,7 @@ fn push(var: &str, val: &Val) -> Result<String, String> {
                 "A template literal of a value that may be absent prints `undefined`".into()
             );
         }
-        Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_) => {
+        Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_) | Ty::Date | Ty::Set(_) | Ty::Map(_) => {
             return Err("A template literal of an object or a list has no Rust lowering".into());
         }
     })
@@ -391,6 +410,22 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 {
                     return self.lower(body, frame, chain);
                 }
+                if let Expression::StaticMemberExpression(member) =
+                    call.callee.without_parentheses()
+                    && let Ok(object) = self.val(&member.object, frame)
+                    && matches!(object.ty, Ty::Date | Ty::Set(_) | Ty::Map(_))
+                {
+                    let mut arguments = Vec::new();
+                    for argument in &call.arguments {
+                        let Some(argument) = argument.as_expression() else {
+                            return Err("Spread arguments have no Rust lowering".into());
+                        };
+                        arguments.push(self.val(argument, frame)?);
+                    }
+                    return self
+                        .method(&object, &member.property.name, &arguments)
+                        .map(Binding::Val);
+                }
                 Err("Calls to unanalyzed functions are not lowered".into())
             }
             _ => Err("This expression has no Rust lowering".into()),
@@ -520,6 +555,12 @@ impl<'e, 'a> Emitter<'e, 'a> {
     }
 
     fn field(&self, object: &Val, name: &str) -> Result<Val, String> {
+        if let Ty::Set(_) | Ty::Map(_) = object.ty {
+            return match name {
+                "size" => Ok(Val::new(format!("({}).len()", object.code), Ty::Num("usize".into()))),
+                _ => Err(format!("`{name}` of a set or a map has no Rust lowering")),
+            };
+        }
         if let Ty::Tuple(items) = &object.ty {
             let Some(ty) = name.parse::<usize>().ok().and_then(|index| items.get(index)) else {
                 return Err(format!("`{name}` is read from a tuple without it"));
@@ -564,6 +605,52 @@ impl<'e, 'a> Emitter<'e, 'a> {
         }
         let code = view(&place, &ty)?;
         Ok(Val::new(code, ty))
+    }
+
+    /// A method call on a `Date`, a `Set`, or a `Map`.
+    fn method(&mut self, object: &Val, name: &str, arguments: &[Val]) -> Result<Val, String> {
+        let code = &object.code;
+        match (&object.ty, name, arguments) {
+            (Ty::Date, "getTime" | "valueOf", []) => {
+                Ok(Val::new(format!("({DATE}::millis(*({code})) as f64)"), Ty::Num("f64".into())))
+            }
+            (Ty::Date, "toISOString" | "toJSON", []) => {
+                Ok(Val::owned(format!("{DATE}::iso(*({code}))")))
+            }
+            (Ty::Set(of), "has", [item]) => {
+                let test = match (&**of, &item.ty) {
+                    (Ty::Str, Ty::Str) => format!("({code}).contains({})", item.str()),
+                    (Ty::Bool, Ty::Bool) => format!("({code}).contains(&({}))", item.code),
+                    (Ty::Enum(x), Ty::Enum(y)) if x == y => {
+                        format!("({code}).contains({})", item.code)
+                    }
+                    (Ty::Num(rust), Ty::Num(_)) if !of.is_float() && !of.is_big() => {
+                        let v = self.fresh("v");
+                        format!(
+                            "{{ let {v} = {}; ({v} as {rust}) as f64 == {v} && ({code}).contains(&({v} as {rust})) }}",
+                            number(item)?
+                        )
+                    }
+                    _ => "false".into(),
+                };
+                Ok(Val::new(test, Ty::Bool))
+            }
+            (Ty::Map(_), "has", [key]) if key.ty == Ty::Str => {
+                Ok(Val::new(format!("({code}).contains_key({})", key.str()), Ty::Bool))
+            }
+            (Ty::Map(value), "get", [key]) if key.ty == Ty::Str => {
+                if matches!(**value, Ty::Opt(_)) {
+                    return Err("Nested optional values have no Rust lowering".into());
+                }
+                let x = self.fresh("x");
+                let read = view(&format!("(*{x})"), value)?;
+                Ok(Val::new(
+                    format!("({code}).get({}).map(|{x}| {read})", key.str()),
+                    Ty::Opt(value.clone()),
+                ))
+            }
+            _ => Err(format!("`{name}` with these arguments has no Rust lowering")),
+        }
     }
 
     /// A field of an enum with fields, `undefined` in the variants without it, as in JS.
@@ -687,8 +774,14 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 format!("({} == {})", number(a)?, number(b)?)
             }
             (Ty::Bool, Ty::Bool) => format!("({} == {})", a.code, b.code),
-            (Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_), _)
-            | (_, Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_)) => {
+            (
+                Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_) | Ty::Date | Ty::Set(_) | Ty::Map(_),
+                _,
+            )
+            | (
+                _,
+                Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_) | Ty::Date | Ty::Set(_) | Ty::Map(_),
+            ) => {
                 return Err("Objects compare by identity, which has no Rust lowering".into());
             }
             _ => "false".into(),
@@ -794,7 +887,10 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 self.close();
                 result?;
             }
-            (Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_), _) => {
+            (
+                Ty::Struct(_) | Ty::List(_) | Ty::Tuple(_) | Ty::Date | Ty::Set(_) | Ty::Map(_),
+                _,
+            ) => {
                 return Err("An object or a list prints as text, which has no Rust lowering".into());
             }
         }

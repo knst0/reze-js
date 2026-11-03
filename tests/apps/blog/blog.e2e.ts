@@ -196,6 +196,12 @@ test("restores dates, maps, and sets from Rust data at the read site", async ({ 
   await expect(page.getByLabel("Facts")).toHaveText("2024-05-01T12:00:00.001Z, 3 likes, edited by ann");
 });
 
+test("renders dates, maps, and sets from Rust data on the server", async ({ page, server }) => {
+  await page.goto(server.url("/posts/1"));
+  await expect(page.getByLabel("Summary")).toHaveText("1714564800001, 3 likes, 2 reactions, 2 editors, with bo");
+  await expect(page.getByLabel("Summary").locator("time")).toHaveAttribute("datetime", "2024-05-01T12:00:00.001Z");
+});
+
 test("reads Rust enums with fields and tuples", async ({ page, server }) => {
   await page.goto(server.url("/posts/1"));
   await expect(page.locator(".cover")).toHaveText("Has a cover");

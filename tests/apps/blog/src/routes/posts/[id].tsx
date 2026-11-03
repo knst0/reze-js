@@ -128,6 +128,11 @@ export default function PostPage(props: { data: Post }) {
       <p>{props.data.tags.length > 0 && "Tagged"}</p>
       <Share />
       <p class="cover">{props.data.cover.kind === "Image" ? "Has a cover" : "No cover"}</p>
+      <p aria-label="Summary">
+        <time datetime={props.data.published.toISOString()}>{props.data.published.getTime()}</time>, {props.data.reactions.get("like") ?? 0}{" "}
+        likes, {props.data.reactions.size} reactions, {props.data.editors.size} editors
+        {props.data.editors.has("bo") ? ", with bo" : ""}
+      </p>
       <Poster cover={props.data.cover} rank={props.data.rank} />
       <Facts published={props.data.published} reactions={props.data.reactions} editors={props.data.editors} />
       <Errored fallback={(error) => <p role="alert">Report failed with {error.status}</p>}>

@@ -23,6 +23,9 @@ pub enum Position {
     Condition,
 }
 
+/// The methods of `Date`, `Set`, and `Map` that a hole may read through.
+const READ_METHODS: &[&str] = &["get", "has", "getTime", "valueOf", "toISOString", "toJSON"];
+
 const ARRAY_METHODS: &[&str] = &[
     "at",
     "concat",
@@ -317,6 +320,13 @@ impl<'a> Visit<'a> for HoleCheck<'_, '_, 'a> {
             return;
         }
         if self.cx.api(self.module, &it.callee) == Some(Api::BuildPaths) {
+            walk::walk_arguments(self, &it.arguments);
+            return;
+        }
+        if let Some(member) = it.callee.get_member_expr()
+            && method.is_some_and(|method| READ_METHODS.contains(&method))
+        {
+            self.visit_expression(member.object());
             walk::walk_arguments(self, &it.arguments);
             return;
         }

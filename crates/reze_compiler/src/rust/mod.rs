@@ -28,12 +28,18 @@ enum Ty {
     Num(String),
     Bool,
     Null,
-    /// `crate::Name`, or `Date`, `Set`, and `Map`, which only client code reads.
+    /// `crate::Name`.
     Struct(String),
     Enum(String),
     Opt(Box<Ty>),
     List(Box<Ty>),
     Tuple(Vec<Ty>),
+    /// `SystemTime`.
+    Date,
+    /// `BTreeSet<T>` or `HashSet<T>`.
+    Set(Box<Ty>),
+    /// `BTreeMap<String, T>` or `HashMap<String, T>`.
+    Map(Box<Ty>),
 }
 
 impl Ty {
@@ -325,9 +331,9 @@ impl<'e, 'a> Emitter<'e, 'a> {
             TypeRef::Number { rust } | TypeRef::Bigint { rust } => Ty::Num(rust.clone()),
             TypeRef::Option { of } => Ty::Opt(Box::new(self.ty_of(of, krate))),
             TypeRef::List { of } => Ty::List(Box::new(self.ty_of(of, krate))),
-            TypeRef::Set { .. } => Ty::Struct("Set".into()),
-            TypeRef::Map { .. } => Ty::Struct("Map".into()),
-            TypeRef::Date => Ty::Struct("Date".into()),
+            TypeRef::Set { of } => Ty::Set(Box::new(self.ty_of(of, krate))),
+            TypeRef::Map { value } => Ty::Map(Box::new(self.ty_of(value, krate))),
+            TypeRef::Date => Ty::Date,
             TypeRef::Tuple { items } => {
                 Ty::Tuple(items.iter().map(|item| self.ty_of(item, krate)).collect())
             }

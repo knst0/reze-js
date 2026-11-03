@@ -756,6 +756,7 @@ compiler lowers:
 | Comparisons, `===`, `!==`                  | `data.count > 0`                |
 | Arithmetic on numbers                      | `data.page + 1`                 |
 | `.length` on strings and arrays            | `data.tags.length`              |
+| Reads of dates, sets, and maps             | `data.tags.has("rust")`         |
 | `<Show>`, `<For>`, `<Switch>`/`<Match>`    | as in the client target         |
 | Calls to project components                | `<Avatar user={data.author} />` |
 
@@ -1048,8 +1049,10 @@ The current implementation differs from this design in these points:
   enum of unit variants is a union of string literals, and an enum whose variants have named
   fields or none is a discriminated union tagged with `kind`, `{ kind: "Image"; src: string }`; a
   field may not be named `kind`. The IR has no `Uint8Array` and no `Record`: a field of another
-  type fails the build with "has no wire encoding". Only client code reads a `Date`, `Set`, or
-  `Map`: the Rust render has no lowering for them. The Rust render reads `kind` of an enum with
+  type fails the build with "has no wire encoding". The Rust render reads `getTime()` and
+  `toISOString()` of a `Date`, `size` and `has(x)` of a `Set` of strings, numbers, booleans, or
+  unit enums, and `size`, `has(key)`, and `get(key)` of a `Map`. Any other read of these types is
+  `SERVER_HOLE_UNSUPPORTED`. The Rust render reads `kind` of an enum with
   fields, and a field of its variants as a value that is absent in the other variants, without
   narrowing. A date string of mutation input is read as UTC when it has no offset, and only in the ISO
   8601 formats of `toISOString`. The JS dev server checks the JSON of `/__reze/load` against the
