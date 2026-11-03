@@ -1,7 +1,7 @@
 type Entry = unknown[];
 type Block = [string, string | Record<number, string>, number[], ...Entry[]];
 type Handlers = Record<number, Record<string, (row: Entry) => (event: Event) => void>>;
-type Factory = (entry: Entry, index: number, entries: Entry[]) => Handlers;
+type Factory = (entry: Entry, index: number, entries: Entry[], instance: (index: number) => Handlers) => Handlers;
 interface Chunk {
   default: Record<number, Factory>;
   g: number[];
@@ -29,7 +29,7 @@ let client: Promise<typeof import("virtual:rz-nav")> | undefined;
 let bypass: HTMLFormElement | undefined;
 
 const instance = (index: number) =>
-  (instances[index] ??= chunks[urls[index]!]!.default[entries[index]![0] as number]!(entries[index]!, index, entries));
+  (instances[index] ??= chunks[urls[index]!]!.default[entries[index]![0] as number]!(entries[index]!, index, entries, instance));
 
 /** Instantiates the entries from `start` whose chunks are loaded and that start without an event. */
 const start = (from = 0) =>

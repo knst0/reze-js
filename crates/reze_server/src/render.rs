@@ -97,6 +97,11 @@ impl Render {
         self.entry(component.to_string(), captures)
     }
 
+    /// The link of the scope being added to the instance `owner`, from its call site `site`.
+    pub fn parent(&self, owner: usize, site: usize) -> String {
+        format!("[{},{site}]", self.entries.len() - owner)
+    }
+
     /// Adds the state entry of a callback call that client code captures values of.
     pub fn row(&mut self, parent: usize, kind: usize, captures: Vec<String>) -> usize {
         self.entry(format!("{},{kind}", -(parent as i64) - 1), captures)

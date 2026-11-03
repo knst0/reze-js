@@ -168,3 +168,17 @@ test.describe("lists", () => {
     await expect(todos(page).nth(0)).toContainText("1. Item 1");
   });
 });
+
+test("updates child components from the props their parent passes", async ({ page, server }) => {
+  await page.goto(server.url("/props"));
+  await expect(page.getByLabel("Fixed")).toHaveText("7");
+  await page.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByLabel("Clicks")).toHaveText("1");
+  await expect(page.getByLabel("Double")).toHaveText("2");
+  await expect(page.getByLabel("Total")).toHaveText("11");
+  await expect(page.getByLabel("Value")).toHaveText("1");
+  await page.getByRole("button", { name: "Step" }).click();
+  await expect(page.getByLabel("Clicks")).toHaveText("2");
+  await expect(page.getByLabel("Double")).toHaveClass("many");
+  await expect(page.getByLabel("Fixed")).toHaveText("7");
+});

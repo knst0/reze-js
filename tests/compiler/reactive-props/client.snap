@@ -1,0 +1,28 @@
+// src/routes/index.tsx
+import { $attr, $fx, $q, $sig, $str, $text } from "reze-js/runtime/client";
+export const $c0 = ($s, $i, $a, $n) => {
+  const $P = $n($i - $s[1][0]).p[$s[1][1]];
+  for (const $b of $q($i, 0)) {
+    $fx(() => $attr($b, "class", $P.count > 2 ? "many" : "few"));
+    const [$t175] = $text($b, null, 1, [$str($P.count)]);
+    $fx(() => { $t175.data = $str($P.count); });
+  }
+  return {};
+};
+export const $c1 = ($s, $i, $a, $n) => {
+  const $P = $n($i - $s[1][0]).p[$s[1][1]];
+  for (const $b of $q($i, 0)) {
+    const [$t306] = $text($b.previousElementSibling, null, 0, [$str($P.value)]);
+    $fx(() => { $t306.data = $str($P.value); });
+  }
+  return { 0: { click: ($r) => () => $P.onStep() } };
+};
+export const $c2 = ($s, $i, $a) => {
+  const count = $sig(0);
+  return { 0: { click: ($r) => () => count.v++ }, p: { 0: { get count() { return count.v; } }, 1: { get count() { return count.v * 2; } }, 2: { get value() { return count.v; }, get onStep() { return () => count.v++; } } } };
+};
+
+// virtual:rz-route/0
+import { $c0, $c1, $c2 } from "/src/routes/index.tsx";
+export default { 0: $c0, 1: $c1, 2: $c2 };
+export const g = [0, 1];

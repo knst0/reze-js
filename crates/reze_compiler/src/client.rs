@@ -6,8 +6,8 @@ use std::fmt::Write;
 
 use oxc_ast::ast::{
     Argument, ArrowFunctionBody, ArrowFunctionExpression, AssignmentTarget, BinaryOperator,
-    BindingPattern, CallExpression, ChainElement, Class, Declaration, Expression, Function,
-    IdentifierReference, ImportDeclarationSpecifier, LogicalOperator, ObjectProperty,
+    BindingPattern, CallExpression, ChainElement, Class, Declaration, Expression, FormalParameters,
+    Function, IdentifierReference, ImportDeclarationSpecifier, LogicalOperator, ObjectProperty,
     SimpleAssignmentTarget, Statement, UnaryOperator, UpdateExpression, VariableDeclarationKind,
     VariableDeclarator,
 };
@@ -24,8 +24,8 @@ use crate::html;
 use crate::project::Module;
 use crate::routes::RouteTable;
 use crate::view::{
-    AttributeItem, Branch, CallTarget, Callback, ComponentRef, Content, Element, Node, PropValue,
-    Value,
+    AttributeItem, Branch, Call, CallTarget, Callback, ComponentRef, Content, Element, Node,
+    PropValue, Value,
 };
 
 /// The module compiled client code imports its helpers from.
@@ -47,6 +47,8 @@ pub struct ComponentScope {
     /// Server expressions whose values the state entry carries, in entry order.
     pub captures: Vec<String>,
     pub eager: bool,
+    /// The entry ends with the link to the parent instance that gives its live props.
+    pub linked: bool,
 }
 
 /// The scope of one callback call, such as a list row, whose values client code captures.
@@ -73,6 +75,8 @@ pub struct ModulePlan {
     pub ranges: HashMap<u32, (usize, usize)>,
     /// Callback content span starts of rows that open with `<!--,-->`.
     pub separated: HashSet<u32>,
+    /// Call sites that link the child instance to this one, by call span start, with the site.
+    pub links: HashMap<u32, usize>,
     pub client: Option<String>,
 }
 
@@ -254,6 +258,22 @@ struct Index<'m, 'a> {
     /// Component-level declarations that become code in the factory.
     locals: HashMap<ComponentRef, HashMap<SymbolId, Decl<'a>>>,
     reactive: HashSet<Sym>,
+    props: HashMap<ComponentRef, PropsParam>,
+    /// Props that change in the browser, by component; client code reads them from its parent.
+    live: HashMap<ComponentRef, BTreeSet<String>>,
+    /// Live props that an instance without a link takes from its state entry.
+    fallback: HashMap<ComponentRef, Vec<String>>,
+    /// The site of each call that links its child to the parent instance, by module and span.
+    links: HashMap<(usize, u32), usize>,
+}
+
+/// The props parameter of a component: the symbol of `props`, or the prop each destructured
+/// binding takes.
+#[derive(Default)]
+struct PropsParam {
+    symbol: Option<SymbolId>,
+    name: Option<String>,
+    fields: HashMap<SymbolId, String>,
 }
 
 impl<'a> Index<'_, 'a> {
@@ -314,6 +334,102 @@ impl<'a> Index<'_, 'a> {
     fn component(&self, component: ComponentRef) -> &crate::analyze::Component<'a> {
         &self.analysis.facts[component.module].components[component.index]
     }
+
+    /// The props of `component` that code under a node reads.
+    fn prop_reads(
+        &self,
+        component: ComponentRef,
+        visit: impl FnOnce(&mut PropReads<'_, '_, '_, 'a>),
+    ) -> BTreeSet<String> {
+        let Some(param) = self.props.get(&component) else { return BTreeSet::new() };
+        let mut reads =
+            PropReads { index: self, module: component.module, param, out: BTreeSet::new() };
+        visit(&mut reads);
+        reads.out
+    }
+
+    /// Whether `expression` in `component` reads state that changes in the browser.
+    fn reads_client(&self, component: ComponentRef, expression: &Expression<'a>) -> bool {
+        refs_of(self, component.module, |r| r.visit_expression(expression))
+            .iter()
+            .any(|sym| self.reactive.contains(sym))
+            || self.live.get(&component).is_some_and(|live| {
+                let reads = self.prop_reads(component, |r| r.visit_expression(expression));
+                !live.is_disjoint(&reads)
+            })
+    }
+
+    /// `$P.name` for a read of the live prop `name` of the component `component`.
+    fn live_read(&self, component: ComponentRef, expression: &Expression<'a>) -> Option<String> {
+        let live = self.live.get(&component)?;
+        let param = self.props.get(&component)?;
+        let name = match expression.without_parentheses() {
+            Expression::StaticMemberExpression(member) if !member.optional => {
+                let Expression::Identifier(id) = member.object.without_parentheses() else {
+                    return None;
+                };
+                if param.symbol.is_none() || self.symbol(component.module, id) != param.symbol {
+                    return None;
+                }
+                member.property.name.as_str()
+            }
+            Expression::Identifier(id) => {
+                param.fields.get(&self.symbol(component.module, id)?)?.as_str()
+            }
+            _ => return None,
+        };
+        live.contains(name).then(|| format!("$P.{name}"))
+    }
+}
+
+/// Props read as `props.name`, or through a destructured binding.
+struct PropReads<'i, 'p, 'm, 'a> {
+    index: &'i Index<'m, 'a>,
+    module: usize,
+    param: &'p PropsParam,
+    out: BTreeSet<String>,
+}
+
+impl<'a> Visit<'a> for PropReads<'_, '_, '_, 'a> {
+    fn visit_static_member_expression(&mut self, it: &oxc_ast::ast::StaticMemberExpression<'a>) {
+        if let Expression::Identifier(id) = it.object.without_parentheses()
+            && self.param.symbol.is_some()
+            && self.index.symbol(self.module, id) == self.param.symbol
+        {
+            self.out.insert(it.property.name.to_string());
+        }
+        walk::walk_static_member_expression(self, it);
+    }
+
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        if let Some(name) =
+            self.index.symbol(self.module, it).and_then(|symbol| self.param.fields.get(&symbol))
+        {
+            self.out.insert(name.clone());
+        }
+    }
+}
+
+fn props_param(params: &FormalParameters<'_>) -> PropsParam {
+    let mut param = PropsParam::default();
+    match params.items.first().map(|p| &p.pattern) {
+        Some(BindingPattern::BindingIdentifier(id)) => {
+            param.symbol = id.symbol_id.get();
+            param.name = Some(id.name.to_string());
+        }
+        Some(BindingPattern::ObjectPattern(object)) => {
+            for property in &object.properties {
+                if let (BindingPattern::BindingIdentifier(id), Some(name)) =
+                    (&property.value, property.key.static_name())
+                    && let Some(symbol) = id.symbol_id.get()
+                {
+                    param.fields.insert(symbol, name.to_string());
+                }
+            }
+        }
+        _ => {}
+    }
+    param
 }
 
 fn declare<'a>(
@@ -1296,6 +1412,10 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
         restore_read(self.index.analysis, target, symbol, &key, code)
     }
 
+    fn live(&self, expression: &Expression<'a>) -> Option<String> {
+        self.index.live_read(self.component.as_ref()?.component, expression)
+    }
+
     /// The replacement of a bare reference, or `None` when it stays.
     fn reference(&mut self, it: &IdentifierReference<'a>) -> Option<String> {
         let symbol = self.index.symbol(self.module, it)?;
@@ -1303,6 +1423,12 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
             return signal.then(|| format!("{}.v", it.name));
         }
         let component = self.component.as_ref().map(|c| c.component);
+        if let Some(component) = component
+            && let Some(name) = self.index.props[&component].fields.get(&symbol)
+            && self.index.live.get(&component).is_some_and(|live| live.contains(name))
+        {
+            return Some(format!("$P.{name}"));
+        }
         if let Some(component) = component
             && let Some(decl) = self.index.decl((self.module, symbol), Some(component))
             && self.index.locals[&component].contains_key(&symbol)
@@ -1340,6 +1466,10 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
     fn chain(&mut self, expression: &Expression<'a>) -> Option<String> {
         let mut current = expression;
         loop {
+            if let Some(live) = self.live(current) {
+                let rest = self.text(Span::new(current.span().end, expression.span().end));
+                return Some(format!("{live}{rest}"));
+            }
             match current {
                 Expression::StaticMemberExpression(member) if !member.optional => {
                     current = &member.object;
@@ -1419,7 +1549,10 @@ impl<'a> Visit<'a> for Rewrite<'_, '_, '_, 'a> {
                 self.edits.push((it.callee.span(), helper.into()));
             }
             _ => {
-                if let Expression::StaticMemberExpression(member) = it.callee.without_parentheses()
+                if let Some(live) = self.live(&it.callee) {
+                    self.edits.push((it.callee.span(), live));
+                } else if let Expression::StaticMemberExpression(member) =
+                    it.callee.without_parentheses()
                 {
                     self.visit_expression(&member.object);
                 } else {
@@ -1480,6 +1613,8 @@ struct Planner<'m, 'a> {
     /// Factory code of each client component.
     factories: HashMap<ComponentRef, (usize, String, bool)>,
     needs: Vec<Needs>,
+    /// Parents and the children they link.
+    linked: Vec<(ComponentRef, ComponentRef)>,
 }
 
 pub fn plan<'a>(
@@ -1494,6 +1629,10 @@ pub fn plan<'a>(
         decls: Vec::new(),
         locals: HashMap::new(),
         reactive: HashSet::new(),
+        props: HashMap::new(),
+        live: HashMap::new(),
+        fallback: HashMap::new(),
+        links: HashMap::new(),
     };
     for (module, current) in modules.iter().enumerate() {
         let mut decls = HashMap::new();
@@ -1574,24 +1713,40 @@ pub fn plan<'a>(
             writes.extend(writes_of(&index, component.module, |w| w.visit_expression(handler)));
         }
     }
+    let mut sites = Vec::new();
+    for (module, facts) in analysis.facts.iter().enumerate() {
+        for (i, component) in facts.components.iter().enumerate() {
+            let parent = ComponentRef { module, index: i };
+            index.props.insert(parent, props_param(component.function.params()));
+            let Some(template) = &component.template else { continue };
+            let mut calls = Vec::new();
+            call_sites(&template.nodes, true, &mut calls);
+            for (call, linkable) in calls {
+                match &call.target {
+                    CallTarget::Component(child) => sites.push((parent, call, *child, linkable)),
+                    CallTarget::Dynamic { candidates } => {
+                        sites.extend(candidates.iter().map(|(_, c)| (parent, call, *c, false)));
+                    }
+                }
+            }
+        }
+    }
+    for &(parent, call, _, _) in &sites {
+        for prop in &call.props {
+            if let PropValue::Value(Value::Expr(e)) = &prop.value
+                && is_function(e)
+            {
+                writes.extend(writes_of(&index, parent.module, |w| w.visit_expression(e)));
+            }
+        }
+    }
     for sym in writes {
         if state(&sym, &index) {
             written.insert(sym);
         }
     }
-    let mut reactive = written;
-    loop {
-        let before = reactive.len();
-        for (sym, refs) in &deps {
-            if !reactive.contains(sym) && refs.iter().any(|r| reactive.contains(r)) {
-                reactive.insert(*sym);
-            }
-        }
-        if reactive.len() == before {
-            break;
-        }
-    }
-    index.reactive = reactive;
+    index.reactive = written;
+    link_props(&mut index, &deps, &sites);
 
     let mut planner = Planner {
         plans: modules.iter().map(|_| ModulePlan::default()).collect(),
@@ -1599,6 +1754,7 @@ pub fn plan<'a>(
         index,
         reports,
         factories: HashMap::new(),
+        linked: Vec::new(),
     };
     let mut next_id = 0;
     for module in 0..modules.len() {
@@ -1612,6 +1768,164 @@ pub fn plan<'a>(
     planner.modules();
     let (chunks, route_chunks) = planner.chunks(routes, mode);
     Plan { modules: planner.plans, chunks, routes: route_chunks, reports: planner.reports }
+}
+
+type CallSite<'e, 'a> = (ComponentRef, &'e Call<'a>, ComponentRef, bool);
+
+/// Grows the reactive declarations and the live props of each component together: a prop is live
+/// when a call passes it an expression that reads client state or a live prop of the caller, or a
+/// function that client code of the child calls. Then gives each linkable call to a component with
+/// live props its site.
+fn link_props(
+    index: &mut Index<'_, '_>,
+    deps: &HashMap<Sym, Vec<Sym>>,
+    sites: &[CallSite<'_, '_>],
+) {
+    let mut reads: HashMap<ComponentRef, (BTreeSet<String>, BTreeSet<String>)> = HashMap::new();
+    for &(_, _, child, _) in sites {
+        let info = index.component(child);
+        let Some(template) = &info.template else { continue };
+        if reads.contains_key(&child) {
+            continue;
+        }
+        let function = info.function;
+        let all = index.prop_reads(child, |r| match (function.body(), function.returned()) {
+            (Some(body), _) => r.visit_function_body(body),
+            (None, Some(expression)) => r.visit_expression(expression),
+            (None, None) => {}
+        });
+        let mut handlers = Vec::new();
+        collect_handlers(&template.nodes, &mut handlers);
+        handlers.extend(effects(index, child));
+        let client = index.prop_reads(child, |r| {
+            handlers.iter().for_each(|h| r.visit_expression(h));
+            index.locals[&child].values().for_each(|decl| visit_decl(r, decl));
+        });
+        reads.insert(child, (all, client));
+    }
+    loop {
+        loop {
+            let added: Vec<Sym> = deps
+                .iter()
+                .filter(|(sym, refs)| {
+                    !index.reactive.contains(sym) && refs.iter().any(|r| index.reactive.contains(r))
+                })
+                .map(|(sym, _)| *sym)
+                .collect();
+            if added.is_empty() {
+                break;
+            }
+            index.reactive.extend(added);
+        }
+        let mut changed = false;
+        for &(parent, call, child, _) in sites {
+            let Some((all, client)) = reads.get(&child) else { continue };
+            for prop in &call.props {
+                let PropValue::Value(Value::Expr(e)) = &prop.value else { continue };
+                let live = if is_function(e) {
+                    client.contains(prop.name)
+                } else {
+                    all.contains(prop.name) && index.reads_client(parent, e)
+                };
+                if live && !index.live.get(&child).is_some_and(|l| l.contains(prop.name)) {
+                    index.live.entry(child).or_default().insert(prop.name.to_string());
+                    changed = true;
+                }
+            }
+        }
+        let mut added = Vec::new();
+        for (component, locals) in &index.locals {
+            let Some(live) = index.live.get(component) else { continue };
+            for (symbol, decl) in locals {
+                let sym = (component.module, *symbol);
+                if matches!(decl.kind, Kind::Signal(_) | Kind::Store(_))
+                    || index.reactive.contains(&sym)
+                {
+                    continue;
+                }
+                if !live.is_disjoint(&index.prop_reads(*component, |r| visit_decl(r, decl))) {
+                    added.push(sym);
+                }
+            }
+        }
+        changed |= !added.is_empty();
+        index.reactive.extend(added);
+        if !changed {
+            break;
+        }
+    }
+    let mut next: HashMap<ComponentRef, usize> = HashMap::new();
+    let mut unlinked: HashSet<ComponentRef> =
+        (0..index.modules.len()).filter_map(|m| default_component(index, m)).collect();
+    let mut functions: HashSet<(ComponentRef, &str)> = HashSet::new();
+    for &(parent, call, child, linkable) in sites {
+        if !index.live.contains_key(&child) {
+            continue;
+        }
+        for prop in &call.props {
+            if let PropValue::Value(Value::Expr(e)) = &prop.value
+                && is_function(e)
+            {
+                functions.insert((child, prop.name));
+            }
+        }
+        if linkable {
+            let site = next.entry(parent).or_default();
+            index.links.insert((parent.module, call.span.start), *site);
+            *site += 1;
+        } else {
+            unlinked.insert(child);
+        }
+    }
+    for child in unlinked {
+        if let Some(live) = index.live.get(&child) {
+            let values = live.iter().filter(|name| !functions.contains(&(child, name.as_str())));
+            index.fallback.insert(child, values.cloned().collect());
+        }
+    }
+}
+
+/// Component calls under `nodes`, with whether each can link its child to the caller's instance:
+/// a call outside callbacks, `<Loading>`, and `<Portal>`.
+fn call_sites<'e, 'a>(nodes: &'e [Node<'a>], linkable: bool, out: &mut Vec<(&'e Call<'a>, bool)>) {
+    let branch = |b: &'e Branch<'a>, out: &mut Vec<(&'e Call<'a>, bool)>| match b {
+        Branch::Content(c) => call_sites(&c.nodes, linkable, out),
+        Branch::Callback(c) => call_sites(&c.content.nodes, false, out),
+    };
+    for node in nodes {
+        match node {
+            Node::Element(element) => call_sites(&element.children, linkable, out),
+            Node::Component(call) => {
+                out.push((call, linkable));
+                for value in call.props.iter().map(|p| &p.value).chain(call.children.iter()) {
+                    if let PropValue::Content(content) = value {
+                        call_sites(&content.nodes, linkable, out);
+                    }
+                }
+            }
+            Node::Show(show) => {
+                branch(&show.children, out);
+                show.fallback.iter().for_each(|b| branch(b, out));
+            }
+            Node::Switch(switch) => {
+                switch.matches.iter().for_each(|m| branch(&m.children, out));
+                switch.fallback.iter().for_each(|b| branch(b, out));
+            }
+            Node::For(each) | Node::Repeat(each) => {
+                call_sites(&each.children.content.nodes, false, out);
+                each.fallback.iter().for_each(|b| branch(b, out));
+            }
+            Node::Errored(b) => {
+                call_sites(&b.children.nodes, linkable, out);
+                b.fallback.iter().for_each(|f| branch(f, out));
+            }
+            Node::Loading(b) | Node::Portal(b) => {
+                call_sites(&b.children.nodes, false, out);
+                b.fallback.iter().for_each(|f| branch(f, out));
+            }
+            Node::Text(_) | Node::Expr(_) | Node::Head(_) => {}
+        }
+    }
 }
 
 /// `effect(…)` statements of a component body.
@@ -1981,15 +2295,13 @@ impl Emission<'_, '_, '_> {
 }
 
 impl<'m, 'a> Planner<'m, 'a> {
-    fn reads_reactive(&self, module: usize, expression: &Expression<'a>) -> bool {
-        refs_of(&self.index, module, |r| r.visit_expression(expression))
-            .iter()
-            .any(|sym| self.index.reactive.contains(sym))
-    }
-
     /// Ranges whose content client code creates, and the regions inside them: a range is a
     /// client range when its source reads client state or it sits in a client region.
-    fn client_ranges(&self, module: usize, layout: &Layout<'_, 'a>) -> (Vec<bool>, Vec<bool>) {
+    fn client_ranges(
+        &self,
+        component: ComponentRef,
+        layout: &Layout<'_, 'a>,
+    ) -> (Vec<bool>, Vec<bool>) {
         let mut ranges = vec![false; layout.ranges.len()];
         let mut regions = vec![false; layout.regions.len()];
         loop {
@@ -1997,7 +2309,7 @@ impl<'m, 'a> Planner<'m, 'a> {
             for (r, range) in layout.ranges.iter().enumerate() {
                 if !ranges[r]
                     && (regions[range.region]
-                        || range.sources.iter().any(|e| self.reads_reactive(module, e)))
+                        || range.sources.iter().any(|e| self.index.reads_client(component, e)))
                 {
                     ranges[r] = true;
                     changed = true;
@@ -2032,7 +2344,7 @@ impl<'m, 'a> Planner<'m, 'a> {
         let roots = layout.nodes_in(&template.nodes, None, root, template.span.start);
         layout.regions[root].roots = roots;
 
-        let (client_range, client_region) = self.client_ranges(module, &layout);
+        let (client_range, client_region) = self.client_ranges(component, &layout);
         let mut reports = Vec::new();
         let mut reported = HashSet::new();
         for &(region, span, what) in &layout.unsupported {
@@ -2072,7 +2384,7 @@ impl<'m, 'a> Planner<'m, 'a> {
         let attrs: Vec<usize> = (0..layout.attrs.len())
             .filter(|&i| {
                 client_region[layout.attrs[i].region]
-                    || self.reads_reactive(module, layout.attrs[i].expression)
+                    || self.index.reads_client(component, layout.attrs[i].expression)
             })
             .collect();
         let mut texts = Vec::new();
@@ -2080,7 +2392,8 @@ impl<'m, 'a> Planner<'m, 'a> {
             for (position, node) in container.nodes.iter().enumerate() {
                 if let Node::Expr(expression) = node
                     && !is_slot(expression)
-                    && (client_region[container.region] || self.reads_reactive(module, expression))
+                    && (client_region[container.region]
+                        || self.index.reads_client(component, expression))
                 {
                     texts.push(TextBinding { container: c, position, expression });
                 }
@@ -2089,12 +2402,23 @@ impl<'m, 'a> Planner<'m, 'a> {
         let actives: Vec<usize> =
             (0..layout.actives.len()).filter(|&i| client_region[layout.actives[i].1]).collect();
         let effects = effects(&self.index, component);
+        let linked = self.index.live.contains_key(&component);
+        let mut calls = Vec::new();
+        call_sites(&template.nodes, true, &mut calls);
+        let links: Vec<(&Call<'a>, usize)> = calls
+            .into_iter()
+            .filter_map(|(call, _)| {
+                Some((call, *self.index.links.get(&(module, call.span.start))?))
+            })
+            .collect();
         if layout.sites.is_empty()
             && attrs.is_empty()
             && texts.is_empty()
             && effects.is_empty()
             && layout.refs.is_empty()
             && !client_range.contains(&true)
+            && !linked
+            && links.is_empty()
         {
             return false;
         }
@@ -2621,6 +2945,45 @@ impl<'m, 'a> Planner<'m, 'a> {
             }
         }
 
+        let mut link_code = Vec::new();
+        for &(call, site) in &links {
+            let CallTarget::Component(child) = call.target else { continue };
+            let live = &self.index.live[&child];
+            let mut getters = Vec::new();
+            for prop in call.props.iter().filter(|p| live.contains(p.name)) {
+                let code = match &prop.value {
+                    PropValue::Value(Value::Static(text)) => serde_json::to_string(text).unwrap(),
+                    PropValue::Value(Value::True) => "true".to_string(),
+                    PropValue::Value(Value::Expr(expression)) => {
+                        let mut cx = ComponentCx {
+                            component,
+                            span: function_span,
+                            scoped: &scoped,
+                            captures: &mut captures,
+                            access: &binding_access,
+                            params: &client_params,
+                        };
+                        self.rewrite(
+                            module,
+                            Some(&mut cx),
+                            &mut needs,
+                            &mut reports,
+                            |r| r.visit_expression(expression),
+                            expression.span(),
+                        )
+                    }
+                    _ => continue,
+                };
+                let key = if html::is_identifier_name(prop.name) {
+                    prop.name.to_string()
+                } else {
+                    format!("{:?}", prop.name)
+                };
+                getters.push(format!("get {key}() {{ return {code}; }}"));
+            }
+            link_code.push(format!("{site}: {{ {} }}", getters.join(", ")));
+        }
+
         let mut local_code: BTreeMap<u32, String> = BTreeMap::new();
         for effect in &effects {
             let mut cx = ComponentCx {
@@ -2701,15 +3064,62 @@ impl<'m, 'a> Planner<'m, 'a> {
         };
 
         let mut code = String::new();
-        writeln!(code, "export const $c{id} = ($s, $i, $a) => {{").unwrap();
+        if linked {
+            let param = &self.index.props[&component];
+            let mut fallback = Vec::new();
+            for name in self.index.fallback.get(&component).into_iter().flatten() {
+                let server = match &param.name {
+                    Some(props) => format!("{props}.{name}"),
+                    None => param
+                        .fields
+                        .iter()
+                        .find(|(_, field)| *field == name)
+                        .map_or("undefined".to_string(), |(symbol, _)| {
+                            scoping.symbol_name(*symbol).to_string()
+                        }),
+                };
+                let slot = captures[0].slot(format!("$P.{name}"), server.clone());
+                let code = format!("$s[{}]", slot + 1);
+                let code = match param.symbol.or_else(|| {
+                    param.fields.iter().find(|(_, f)| *f == name).map(|(symbol, _)| *symbol)
+                }) {
+                    Some(symbol) => {
+                        restore_read(self.index.analysis, component, symbol, &server, code)
+                    }
+                    None => code,
+                };
+                fallback.push(format!("{name}: {code}"));
+            }
+            let link = captures[0].keys.len() + 1;
+            let parent = format!("$n($i - $s[{link}][0]).p[$s[{link}][1]]");
+            if self.index.fallback.contains_key(&component) {
+                writeln!(
+                    code,
+                    "export const $c{id} = ($s, $i, $a, $n) => {{\n  const $P = $s[{link}] ? {parent} : {{ {} }};",
+                    fallback.join(", ")
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    code,
+                    "export const $c{id} = ($s, $i, $a, $n) => {{\n  const $P = {parent};"
+                )
+                .unwrap();
+            }
+        } else {
+            writeln!(code, "export const $c{id} = ($s, $i, $a) => {{").unwrap();
+        }
         for line in local_code.values() {
             writeln!(code, "  {line}").unwrap();
         }
         emission.unit(&mut code, root, 1, false, &mut needs);
-        let handlers: Vec<String> = handler_code
+        let mut handlers: Vec<String> = handler_code
             .iter()
             .map(|(mark, handlers)| format!("{mark}: {{ {} }}", handlers.join(", ")))
             .collect();
+        if !link_code.is_empty() {
+            handlers.push(format!("p: {{ {} }}", link_code.join(", ")));
+        }
         if handlers.is_empty() {
             code.push_str("  return {};\n};\n");
         } else {
@@ -2729,6 +3139,7 @@ impl<'m, 'a> Planner<'m, 'a> {
         plan.anchors.extend(anchors);
         plan.ranges.extend(range_keys);
         plan.separated.extend(separated);
+        plan.links.extend(links.iter().map(|(call, site)| (call.span.start, *site)));
         plan.components.insert(
             template.span.start,
             ComponentScope {
@@ -2736,6 +3147,7 @@ impl<'m, 'a> Planner<'m, 'a> {
                 events: events.into_iter().collect::<Vec<_>>().join(" "),
                 captures: captures[0].keys.iter().map(|(_, server)| server.clone()).collect(),
                 eager,
+                linked,
             },
         );
         for (&c, &scope) in &scope_of_callback {
@@ -2756,7 +3168,12 @@ impl<'m, 'a> Planner<'m, 'a> {
         target.decls.extend(needs.decls);
         target.imports.extend(needs.imports);
         target.helpers.extend(needs.helpers);
-        self.factories.insert(component, (id, code, reads_module_state));
+        self.factories.insert(component, (id, code, reads_module_state || linked));
+        for &(call, _) in &links {
+            if let CallTarget::Component(child) = call.target {
+                self.linked.push((component, child));
+            }
+        }
         true
     }
 
@@ -2994,6 +3411,31 @@ impl<'m, 'a> Planner<'m, 'a> {
     ) -> (BTreeMap<String, String>, BTreeMap<usize, RouteChunk>) {
         let mut chunks = BTreeMap::new();
         let mut out = BTreeMap::new();
+        let mut group: BTreeMap<usize, usize> = BTreeMap::new();
+        for (parent, child) in &self.linked {
+            let (Some(parent), Some(child)) =
+                (self.factories.get(parent), self.factories.get(child))
+            else {
+                continue;
+            };
+            let root = |group: &BTreeMap<usize, usize>, mut id: usize| {
+                while let Some(&next) = group.get(&id).filter(|&&next| next != id) {
+                    id = next;
+                }
+                id
+            };
+            let (a, b) = (root(&group, parent.0), root(&group, child.0));
+            group.insert(a.max(b), a.min(b));
+        }
+        let mut members: BTreeMap<usize, Vec<(usize, usize, bool)>> = BTreeMap::new();
+        for (component, &(id, _, reads)) in &self.factories {
+            let mut root = id;
+            while let Some(&next) = group.get(&root).filter(|&&next| next != root) {
+                root = next;
+            }
+            group.insert(id, root);
+            members.entry(root).or_default().push((component.module, id, reads));
+        }
         for (node_index, node) in routes.nodes.iter().enumerate() {
             if node.is_layout {
                 continue;
@@ -3034,10 +3476,15 @@ impl<'m, 'a> Planner<'m, 'a> {
                 continue;
             }
             let mut keys = Vec::new();
-            for &factory in &factories {
-                let key = format!("c{}", factory.1);
-                chunks.entry(key.clone()).or_insert_with(|| self.chunk_code(&[factory]));
-                keys.push((factory.1, key));
+            for &(_, id, _) in &factories {
+                let root = group[&id];
+                let key = format!("c{root}");
+                chunks.entry(key.clone()).or_insert_with(|| {
+                    let mut factories = members[&root].clone();
+                    factories.sort_unstable();
+                    self.chunk_code(&factories)
+                });
+                keys.push((id, key));
             }
             out.insert(node_index, RouteChunk::Factories(keys));
         }

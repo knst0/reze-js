@@ -32,6 +32,10 @@ export interface RenderContext {
   link(href: unknown): { active: boolean };
   /** Adds the state entry of a client component instance and returns its id. */
   scope(component: number, events: string, captures: unknown[], eager: boolean): string;
+  /** Links the next scope to the instance `scope` as its call site `site`. */
+  owner(scope: string, site: number): void;
+  /** The link of the scope being added to its owner, `[distance, site]`, or `0`. */
+  parent(): unknown;
   /** Adds the state entry of a callback call that client code captures values of. */
   row(parent: string, kind: number, captures: unknown[]): string;
   submission(mutation: Mutation<never, unknown>): Submission;
@@ -507,6 +511,7 @@ function render(
   const entries: unknown[][] = [];
   const events = new Set<string>();
   const eager = new Set<number>();
+  let owner: [number, number] | undefined;
   const parts: { children: Thunk; depth: number; promise: Promise<unknown> }[] = [];
   const $r: RenderContext = {
     depth: 0,
@@ -526,6 +531,14 @@ function render(
       for (const name of names.split(" ")) if (name) events.add(name);
       if (isEager) eager.add(component);
       return (entries.push([component, ...captures]) - 1).toString(36);
+    },
+    owner(scope, site) {
+      owner = [parseInt(scope, 36), site];
+    },
+    parent() {
+      const link = owner ? [entries.length - owner[0], owner[1]] : 0;
+      owner = undefined;
+      return link;
     },
     row(parent, kind, captures) {
       return (entries.push([~parseInt(parent, 36), kind, ...captures]) - 1).toString(36);

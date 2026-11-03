@@ -136,7 +136,14 @@ impl<'e, 'a> Emitter<'e, 'a> {
         out.push('`');
         let key = content.span.start;
         if let Some(scope) = self.plan.components.get(&key) {
-            let captures = scope.captures.join(", ");
+            let mut captures = scope.captures.join(", ");
+            if scope.linked {
+                captures.push_str(if scope.captures.is_empty() {
+                    "$r.parent()"
+                } else {
+                    ", $r.parent()"
+                });
+            }
             return format!(
                 "(($i) => {out})($r.scope({}, {:?}, [{captures}], {}))",
                 scope.id, scope.events, scope.eager
@@ -396,7 +403,10 @@ impl<'e, 'a> Emitter<'e, 'a> {
         }
         let props =
             if props.is_empty() { "{}".to_string() } else { format!("{{ {} }}", props.join(", ")) };
-        format!("{}({props}, $r)", call.name)
+        match self.plan.links.get(&call.span.start) {
+            Some(site) => format!("($r.owner($i, {site}), {}({props}, $r))", call.name),
+            None => format!("{}({props}, $r)", call.name),
+        }
     }
 }
 

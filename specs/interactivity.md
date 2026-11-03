@@ -492,7 +492,14 @@ The current implementation differs from this design in these points:
   handlers, and nested ranges. Components, boundaries, `<head>`, `<Portal>`, `children`, spread
   attributes, computed form actions, and callback bodies with statements inside a client range
   raise `CLIENT_RANGE_UNSUPPORTED`.
-- Reactive props passed to child components are not supported.
+- A prop is live when a call passes it an expression that reads client state or a live prop of
+  the caller, or a function that the child's handlers, effects, or locals call. The parent
+  instance gives each live prop as a getter for the call's site, and the child entry ends with
+  `[distance, site]`, the link to the parent entry. A child with live props starts when its chunk
+  loads, and in `component` and `handler` modes shares one chunk with the parents that link it.
+  Calls inside a callback, `<Loading>`, `<Portal>`, or `dynamic(…)` do not link: the child reads
+  the server values of its live props from its entry, and a function prop is `undefined` there.
+  Spread props never become live.
 - The state block writes a `Date` as milliseconds, a `Set` as an array, a `Map` as pairs, and a
   `bigint` as a decimal string; a `Record` stays an object. Client code converts a read back when
   the component's props annotation gives its type, or the loader result types `props.data` in a

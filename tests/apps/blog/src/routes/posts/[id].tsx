@@ -21,6 +21,10 @@ function Share() {
   );
 }
 
+function Hearts(props: { likes: number }) {
+  return <p aria-label="Hearts">{props.likes > 2 ? "Loved" : "Liked"}</p>;
+}
+
 export default function PostPage(props: { data: Post }) {
   let likes = signal(props.data.likes);
   let notes = signal(props.data.tags);
@@ -43,6 +47,7 @@ export default function PostPage(props: { data: Post }) {
       <Share />
       <button onClick={() => likes++}>Like</button>
       <output>{likes} likes</output>
+      <Hearts likes={likes} />
       <Show when={likes > 2} fallback={<p>Few likes</p>}>
         <p>Popular with {likes} likes</p>
       </Show>

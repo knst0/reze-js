@@ -203,6 +203,8 @@ struct Emitter<'e, 'a> {
     labels: Vec<String>,
     /// Components being inlined, which a recursive call would repeat forever.
     inlining: Vec<ComponentRef>,
+    /// The scope variable and site of the call that links the next inlined component.
+    owner: Option<(String, usize)>,
     /// Lazy values being lowered, which a cycle would repeat forever.
     lowering: usize,
     reports: Vec<Vec<Report>>,
@@ -420,6 +422,7 @@ pub fn emit(
         counter: 0,
         labels: Vec::new(),
         inlining: Vec::new(),
+        owner: None,
         lowering: 0,
         reports: modules.iter().map(|_| Vec::new()).collect(),
         reported: HashSet::new(),

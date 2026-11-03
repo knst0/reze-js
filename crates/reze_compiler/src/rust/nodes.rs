@@ -642,6 +642,9 @@ impl<'e, 'a> Emitter<'e, 'a> {
             };
             set(&mut props, name.to_string(), binding);
         }
+        if let Some(&site) = self.plan.modules[frame.module].links.get(&call.span.start) {
+            self.owner = frame.scope(0).map(|var| (var, site));
+        }
         self.inline(*component, Rc::new(props), frame.clone(), call.span);
     }
 
@@ -674,7 +677,14 @@ impl<'e, 'a> Emitter<'e, 'a> {
         if let Some(scope) =
             self.plan.modules[component.module].components.get(&template.span.start)
         {
-            let captures = self.captures(&scope.captures, &frame);
+            let mut captures = self.captures(&scope.captures, &frame);
+            if scope.linked {
+                let link = match self.owner.take() {
+                    Some((var, site)) => format!("cx.parent({var}, {site})"),
+                    None => "\"0\".to_string()".to_string(),
+                };
+                captures = if captures.is_empty() { link } else { format!("{captures}, {link}") };
+            }
             let var = self.fresh("s");
             self.stmt(&format!(
                 "let {var} = cx.scope({}, {}, {}, vec![{captures}]);",

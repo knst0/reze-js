@@ -55,8 +55,10 @@ test.describe("without JS", () => {
 test("runs a handler over Rust data", async ({ page, server }) => {
   await page.goto(server.url("/posts/1"));
   await expect(page.locator("output")).toHaveText("2 likes");
+  await expect(page.getByLabel("Hearts")).toHaveText("Liked");
   await page.getByRole("button", { name: "Like" }).click();
   await expect(page.locator("output")).toHaveText("3 likes");
+  await expect(page.getByLabel("Hearts")).toHaveText("Loved");
 });
 
 test("loads each component from its own chunk", async ({ page, request, server }) => {
