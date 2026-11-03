@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use napi::bindgen_prelude::{AsyncTask, Env, Task};
 use napi_derive::napi;
@@ -149,7 +149,7 @@ pub struct ProjectResult {
     /// Source of `virtual:rz-routes`.
     pub navigation: String,
     /// Source of `virtual:rz-route/{key}`, by the chunk key that the route table names.
-    pub chunks: HashMap<String, String>,
+    pub chunks: BTreeMap<String, String>,
     pub diagnostics: Vec<Diagnostic>,
     /// Source of `reze_routes.rs`, when the options name Rust crates.
     pub rust: Option<String>,
