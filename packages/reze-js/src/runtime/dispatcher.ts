@@ -207,6 +207,12 @@ addEventListener("popstate", () => {
   );
 });
 
+if (document.querySelector("template[data-rz-client]"))
+  nav().then(
+    (m) => m.navigate(location.href, true),
+    () => {},
+  );
+
 const block = document.querySelector("script[type=rz]");
 if (block) {
   block.remove();

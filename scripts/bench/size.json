@@ -1,21 +1,21 @@
 {
   "schema": 1,
-  "recordedAt": "2026-11-03T10:05:40.373Z",
+  "recordedAt": "2026-11-03T10:19:32.654Z",
   "sizes": {
     "menu: dispatcher.js": {
-      "raw": 3780,
-      "gzip": 1791,
-      "brotli": 1578
+      "raw": 3881,
+      "gzip": 1814,
+      "brotli": 1598
     },
     "menu: html": {
       "raw": 788,
-      "gzip": 442,
-      "brotli": 301
+      "gzip": 440,
+      "brotli": 325
     },
     "menu: navigate.js": {
-      "raw": 6948,
-      "gzip": 3117,
-      "brotli": 2782
+      "raw": 6971,
+      "gzip": 3130,
+      "brotli": 2792
     },
     "menu: route-1.js": {
       "raw": 1914,
@@ -28,44 +28,54 @@
       "brotli": 581
     },
     "static: dispatcher.js": {
-      "raw": 3780,
-      "gzip": 1789,
-      "brotli": 1576
+      "raw": 3881,
+      "gzip": 1815,
+      "brotli": 1598
     },
     "static: html": {
       "raw": 473,
-      "gzip": 311,
-      "brotli": 206
+      "gzip": 309,
+      "brotli": 210
     },
     "static: navigate.js": {
-      "raw": 6987,
-      "gzip": 3131,
-      "brotli": 2798
+      "raw": 7010,
+      "gzip": 3146,
+      "brotli": 2814
     },
     "static: stream.js": {
       "raw": 1298,
       "gzip": 692,
       "brotli": 581
     },
+    "todos: client.js": {
+      "raw": 1086,
+      "gzip": 598,
+      "brotli": 535
+    },
     "todos: dispatcher.js": {
-      "raw": 3780,
-      "gzip": 1791,
-      "brotli": 1582
+      "raw": 3881,
+      "gzip": 1817,
+      "brotli": 1599
     },
     "todos: html": {
       "raw": 341,
       "gzip": 246,
-      "brotli": 167
+      "brotli": 165
     },
     "todos: navigate.js": {
-      "raw": 7384,
-      "gzip": 3218,
-      "brotli": 2873
+      "raw": 7472,
+      "gzip": 3244,
+      "brotli": 2884
     },
-    "todos: route-8.js": {
-      "raw": 1216,
-      "gzip": 671,
-      "brotli": 599
+    "todos: route-6.js": {
+      "raw": 229,
+      "gzip": 198,
+      "brotli": 175
+    },
+    "todos: route-9.js": {
+      "raw": 232,
+      "gzip": 203,
+      "brotli": 175
     },
     "todos: stream.js": {
       "raw": 1298,

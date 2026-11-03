@@ -44,6 +44,8 @@ interface RouteModule {
   /** Seconds a rendered page stays fresh in a shared cache. */
   revalidate?: number;
   prerender?: boolean;
+  /** `"client"` leaves the page's segment empty in a document, and the browser fetches it as a navigation. */
+  render?: "client";
   entries?: () => Record<string, string>[] | Promise<Record<string, string>[]>;
 }
 
@@ -478,6 +480,8 @@ interface Page {
   data: unknown[];
   /** The error of the first segment that failed, and its depth. */
   error?: [number, unknown];
+  /** The depth of a `render: "client"` page, which renders empty. */
+  client?: number;
   submission?: [MutationRecord, Submission];
 }
 
@@ -610,6 +614,7 @@ function render(
             }
           })
         : undefined;
+    if (page.client === depth) return "<template data-rz-client></template>";
     return route.chain[depth]!.default({ params, data: page.data[depth], children }, $r);
   };
   $r.depth = from;
@@ -937,12 +942,13 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
         if (!error || error[0] > depth) error = [depth, result.reason];
       }
     };
+    const client = submission || build !== null || chain.at(-1)!.render !== "client" ? undefined : chain.length - 1;
     const depths = chain.map((_, depth) => depth);
-    const redirected = await run(depths.slice(from));
+    const redirected = await run(depths.slice(from).filter((depth) => depth !== client));
     if (redirected) return redirected;
     if (request.headers.has("rz-prerender")) await Promise.all(deferred);
     for (const writer of writers) writer.sealed = true;
-    const page = (): Page => ({ route, params: typed, url, data, error, submission });
+    const page = (): Page => ({ route, params: typed, url, data, error, submission, client });
     const revalidate = Math.min(...chain.map((module) => module.revalidate ?? Infinity));
     if (revalidate !== Infinity && request.method !== "POST") {
       const writer = new Writer();

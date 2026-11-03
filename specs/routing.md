@@ -251,3 +251,8 @@ The current implementation differs from this design in these points:
   server response. The build writes `index.html`, the dispatcher, one module with the render of
   every route, and the client chunk of each route. Routing uses the history only, and the static
   host serves `index.html` for every path. `vite dev` renders on the server.
+- A `render: "client"` page renders on the server as `<template data-rz-client>`, and its loader
+  does not run for the document. The dispatcher then navigates to the same URL, so the page
+  arrives as the HTML of its segment through `?_s=<depth>`, not as JSON data that a client render
+  turns into DOM. Without JavaScript the segment stays empty. The Rust server renders the page as
+  any other.
