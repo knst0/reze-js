@@ -407,7 +407,10 @@ export function $list(
     if (scope) {
       const [entries, parent, kind] = scope;
       entry = nodes ? entries.findIndex((e) => e[0] === ~parent && e[1] === kind && e.length < 3) : -1;
-      if (entry < 0) entry = entries.push([~parent, kind]) - 1;
+      if (entry < 0) {
+        const { u: modules } = (window as unknown as { rz: Rz }).rz;
+        modules[(entry = entries.push([~parent, kind]) - 1)] = modules[parent]!;
+      }
       entries[entry]!.push(item, row.index);
     }
     row.dispose = root(!nodes, () => {
@@ -501,8 +504,9 @@ export interface Chunk {
  */
 export interface Rz {
   e: Entry[];
-  u: string[];
-  c: Record<string, Chunk>;
+  /** The manifest index of each entry's chunk. */
+  u: number[];
+  c: Record<number, Chunk>;
   s: number[];
 }
 
@@ -515,9 +519,9 @@ const nav = () => (window as unknown as { rzNav(): Promise<typeof import("virtua
  * the entries whose chunks are loaded and that start without an event.
  */
 export function $run(rz: Rz, sites?: Element[], event?: Event): void {
-  const { e: entries, u: urls, c: chunks } = rz;
+  const { e: entries, u: modules, c: chunks } = rz;
   const instance = (index: number): Handlers =>
-    (instances[index] ??= chunks[urls[index]!]!.default[entries[index]![0] as number]!(entries[index]!, index, entries, instance));
+    (instances[index] ??= chunks[modules[index]!]!.default[entries[index]![0] as number]!(entries[index]!, index, entries, instance));
   const fault = (node: Element, error: unknown) =>
     void nav().then(
       (module) => module.fault(node, error),
@@ -525,7 +529,7 @@ export function $run(rz: Rz, sites?: Element[], event?: Event): void {
     );
   if (!sites || !event) {
     entries.forEach((entry, index) => {
-      const chunk = chunks[urls[index]!];
+      const chunk = chunks[modules[index]!];
       if (chunk && !instances[index] && (rz.s.includes(entry[0] as number) || chunk.g.includes(entry[0] as number))) instance(index);
     });
     return;

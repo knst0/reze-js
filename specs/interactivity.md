@@ -520,15 +520,16 @@ The current implementation differs from this design in these points:
   `EVENT_DECISION_DEFERRED`.
 - After a chunk fails to load, the dispatcher goes inert for the rest of the page. The native
   fallback, `rz:chunkerror` on `window`, or the single reload takes over.
-- The dispatcher is 990 B gzip, under the 1 KB budget, and handles only handler sites: intent, replay, `aria-busy`,
-  the failure ladder, and the state blocks of navigations and streamed parts. Two more modules
-  load beside it. `links`, under 700 B and on every page next to the dispatcher, intercepts links
-  and server-tier forms, sets `aria-busy` on a posting form, and loads the navigation module and
-  the morph on intent. `idle` loads after the dispatcher has started and runs the idle preload. A
-  click on a link or a submit of a server-tier form before `links` has loaded is a full page load.
-  Client code reaches the navigation module, for `.call` and for handing an error to the nearest
-  `<Errored>`, through `window.rzNav`, which `links` sets.
-- The state block names a chunk by its URL, not by an index into the build manifest: the
-  dispatcher holds no manifest, which would grow it with every route. The URL costs about 20
-  compressed bytes per page. On `shop`, the test application sized like a real store, metadata is
-  about 1.5% of the brotli HTML of the catalog and 1.9% of the product page.
+- The dispatcher is 985 B gzip, under the 1 KB budget, and handles only handler sites: intent,
+  replay, `aria-busy`, the failure ladder, and the state blocks of navigations and streamed parts.
+  Two more modules load beside it. `links`, under 700 B and on every page next to the dispatcher,
+  intercepts links and server-tier forms, sets `aria-busy` on a posting form, and loads the
+  navigation module and the morph on intent. A click on a link or a submit of a server-tier form
+  before `links` has loaded is a full page load. Client code reaches the navigation module, for
+  `.call` and for handing an error to the nearest `<Errored>`, through `window.rzNav`, which
+  `links` sets.
+- The state block names a chunk by its index into the build manifest, `chunks.js`, which holds the
+  URL of each client chunk and the idle preload. The dispatcher starts importing it when it starts
+  and waits for it only before it loads a chunk, so the manifest grows with the routes while the
+  dispatcher does not. On `shop`, the test application sized like a real store, metadata is about
+  1.5% of the brotli HTML of the catalog and 1.6% of the product page.

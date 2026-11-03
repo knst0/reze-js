@@ -1,28 +1,32 @@
 import type { Chunk } from "./client";
 
-type Block = [string, string | Record<number, string>, number[], ...unknown[][]];
+type Block = [string, number | Record<number, number>, number[], ...unknown[][]];
 
 const entries: unknown[][] = [];
-const urls: string[] = [];
-const chunks: Record<string, Chunk> = {};
-const loading: Record<string, Promise<void> | 0> = {};
+const modules: number[] = [];
+const chunks: Record<number, Chunk> = {};
+const loading: Record<number, Promise<void> | 0> = {};
 const queue: [Element[], Event][] = [];
 const up = (node: unknown, selector: string) => (node as Element | null | undefined)?.closest?.(selector) as any;
 const noop = () => {};
 let run: Chunk["r"] | undefined;
 let dead: unknown;
 
-const get = (url: string) => import(/* @vite-ignore */ url) as Promise<Chunk>;
+/** The build manifest: the URLs of the client chunks by index, and the idle preload. */
+const manifest = import("virtual:rz-chunks");
 
-const load = (url: string) =>
-  (loading[url] ||= get(url)
-    .catch(() => get(url + "?r=1"))
+/** Imports the chunk at `url`, then once more past the cache. */
+const get = (url: string) => import(/* @vite-ignore */ url).catch(() => import(/* @vite-ignore */ url + "?r=1")) as Promise<Chunk>;
+
+const load = (module: number) =>
+  (loading[module] ||= manifest
+    .then((urls) => get(urls.default[module]!))
     .then(
       (chunk) => {
-        (run = (chunks[url] = chunk).r)(rz);
+        (run = (chunks[module] = chunk).r)(rz);
       },
       (error: unknown) => {
-        loading[url] = 0;
+        loading[module] = 0;
         throw error;
       },
     ));
@@ -49,8 +53,8 @@ const fail = (error: unknown) => {
   }
 };
 
-/** The chunk URL of the handler site `node`. */
-const urlOf = (node: Element) => urls[parseInt(node.getAttribute("data-rz")!, 36)]!;
+/** The chunk of the handler site `node`, by its index in the build manifest. */
+const moduleOf = (node: Element) => modules[parseInt(node.getAttribute("data-rz")!, 36)]!;
 
 /** Runs the handler sites around the target of `event`, once their chunks have loaded. */
 const handle = (event: Event) => {
@@ -63,15 +67,15 @@ const handle = (event: Event) => {
         type == event.type &&
         conditions.every((condition) => {
           const [field, value] = condition.split("=");
-          return String((event as unknown as Record<string, unknown>)[value ? field! : "key"]) == (value ?? field);
+          return (event as unknown as Record<string, unknown>)[value ? field! : "key"] + "" == (value ?? field);
         })
       )
         event.preventDefault();
     }
   }
-  const needed = sites.map(urlOf).filter((url) => !chunks[url]);
+  const needed = sites.map(moduleOf).filter((module) => !chunks[module]);
   if (!sites[0]) return;
-  if (!needed[0]) return run!(rz, sites, event);
+  if (!needed.length) return run!(rz, sites, event);
   queue.push([sites, event]);
   sites[0].setAttribute("aria-busy", "true");
   Promise.all(needed.map(load))
@@ -84,7 +88,7 @@ const handle = (event: Event) => {
 
 /**
  * Adds a state block, `[events, chunks, eager, ...entries]`, whose entries follow the current ones.
- * `chunks` is the URL of the page's chunk, or the URL of each factory's chunk by factory id, and
+ * `chunks` is the manifest index of the page's chunk, or of each factory's chunk by factory id, and
  * `eager` lists the factories that start without an event.
  */
 const add = ([events, chunk, starting, ...block]: Block) => {
@@ -92,16 +96,16 @@ const add = ([events, chunk, starting, ...block]: Block) => {
   rz.s.push(...starting);
   for (const entry of block) {
     const id = (entry[0] as number) < 0 ? (entry[0] = ~(~(entry[0] as number) + base)) : (entry[0] as number);
-    urls[entries.push(entry) - 1] = id < 0 ? urls[~id]! : typeof chunk == "string" ? chunk : chunk[id]!;
+    modules[entries.push(entry) - 1] = id < 0 ? modules[~id]! : ((chunk as Record<number, number>)[id] ?? (chunk as number));
   }
   for (const type of events.split(" ")) document.addEventListener(type, handle, true);
   run?.(rz);
-  import("virtual:rz-idle").then((m) => m.watch(rz), noop);
+  manifest.then((m) => m.watch(rz), noop);
 };
 
 const rz = ((window as unknown as { rz: unknown }).rz = {
   e: entries,
-  u: urls,
+  u: modules,
   c: chunks,
   s: [] as number[],
   l: load,
@@ -114,7 +118,7 @@ for (const type of ["pointerenter", "pointerdown", "focusin"]) {
     type,
     (event) => {
       const node = up(event.target, "[data-rz]");
-      if (node && (type != "pointerenter" || /mouse|pen/.test((event as PointerEvent).pointerType))) load(urlOf(node)).catch(noop);
+      if (node && (type != "pointerenter" || /mouse|pen/.test((event as PointerEvent).pointerType))) load(moduleOf(node)).catch(noop);
     },
     true,
   );

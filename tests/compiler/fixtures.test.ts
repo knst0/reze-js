@@ -84,7 +84,12 @@ for (const fixture of fixtures) {
     ];
     await snapshot(dir, "client.snap", client.length > 0 ? client.join("\n") : undefined);
     const app = await import(pathToFileURL(join(target, "app.ts")).href);
-    const assets = { dispatcher: "/dispatcher.js", links: "/links.js", stream: "/stream.js", chunk: (key: string) => `/route-${key}.js` };
+    const assets = {
+      dispatcher: "/dispatcher.js",
+      links: "/links.js",
+      stream: "/stream.js",
+      chunk: (key: string) => Object.keys(result.chunks).indexOf(key),
+    };
     const url = existsSync(join(dir, "url")) ? readFileSync(join(dir, "url"), "utf8").trim() : "/";
     const response = await createApp(app.default, app.root, { assets })(new Request(new URL(url, "http://localhost")));
     await snapshot(dir, "html.snap", `${await response.text()}\n`);

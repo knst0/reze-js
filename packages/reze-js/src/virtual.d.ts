@@ -23,6 +23,10 @@ declare module "virtual:rz-nav" {
   export const fault: typeof import("./runtime/navigate").fault;
 }
 
-declare module "virtual:rz-idle" {
-  export const watch: typeof import("./runtime/idle").watch;
+declare module "virtual:rz-chunks" {
+  /** The URLs of the client chunks, by their index in the build manifest. */
+  const urls: string[];
+  export default urls;
+  /** Starts the idle preload of the chunks in the viewport. */
+  export function watch(rz: import("./runtime/idle").Dispatcher): void;
 }

@@ -1,8 +1,8 @@
 import type { Rz } from "./client";
 
 /** The dispatcher's state, with its chunk loader and its failure ladder. */
-interface Dispatcher extends Rz {
-  l: (url: string) => Promise<void>;
+export interface Dispatcher extends Rz {
+  l: (module: number) => Promise<void>;
   f: (error: unknown) => void;
 }
 
@@ -15,12 +15,12 @@ let seen: IntersectionObserver | undefined;
  * viewport, or at once when the component has no site, and preloads the chunk of any other site
  * in the viewport with a low priority, once the browser is idle after a state block.
  */
-export function watch(rz: Dispatcher): void {
-  (window.requestIdleCallback ?? setTimeout)(() => observe(rz));
+export function watch(rz: Dispatcher, urls: string[]): void {
+  (window.requestIdleCallback ?? setTimeout)(() => observe(rz, urls));
 }
 
-function observe(rz: Dispatcher): void {
-  const { e: entries, u: urls, c: chunks } = rz;
+function observe(rz: Dispatcher, urls: string[]): void {
+  const { e: entries, u: modules, c: chunks } = rz;
   const owner = (node: Element) => {
     let index = parseInt(node.getAttribute("data-rz")!, 36);
     while ((entries[index]![0] as number) < 0) index = ~(entries[index]![0] as number);
@@ -30,10 +30,11 @@ function observe(rz: Dispatcher): void {
   seen = new IntersectionObserver((records) => {
     for (const { target, isIntersecting } of records) {
       const index = owner(target);
-      const url = urls[index]!;
-      if (!isIntersecting || chunks[url]) continue;
+      const module = modules[index]!;
+      const url = urls[module]!;
+      if (!isIntersecting || chunks[module]) continue;
       seen!.unobserve(target);
-      if (rz.s.includes(entries[index]![0] as number)) rz.l(url).catch(rz.f);
+      if (rz.s.includes(entries[index]![0] as number)) rz.l(module).catch(rz.f);
       else if (!preloaded.has(url) && !connection?.saveData && !/2g/.test(connection?.effectiveType ?? "")) {
         preloaded.add(url);
         document.head.append(Object.assign(document.createElement("link"), { rel: "modulepreload", href: url, fetchPriority: "low" }));
@@ -46,6 +47,6 @@ function observe(rz: Dispatcher): void {
     seen.observe(node);
   }
   entries.forEach((entry, index) => {
-    if (rz.s.includes(entry[0] as number) && !chunks[urls[index]!] && !sited.has(index)) rz.l(urls[index]!).catch(rz.f);
+    if (rz.s.includes(entry[0] as number) && !chunks[modules[index]!] && !sited.has(index)) rz.l(modules[index]!).catch(rz.f);
   });
 }

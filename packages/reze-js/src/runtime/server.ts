@@ -78,7 +78,8 @@ export interface Assets {
   links: string;
   /** The module that moves streamed parts into their `<Loading>` boundaries. */
   stream: string;
-  chunk(key: string): string;
+  /** The index of a client chunk in the build manifest, by its key. */
+  chunk(key: string): number;
 }
 
 /** Declares the application's types: `interface Register { context: AppContext }`. */
@@ -606,11 +607,11 @@ function render(
   const block = () => {
     if (entries.length === 0 || !assets || route.chunk === null) return "";
     const chunk = route.chunk;
-    const urls =
+    const modules =
       typeof chunk === "string"
         ? assets.chunk(chunk)
         : Object.fromEntries(Object.entries(chunk).map(([id, key]) => [id, assets.chunk(key)]));
-    const block = [[...events].join(" "), urls, [...eager], ...entries];
+    const block = [[...events].join(" "), modules, [...eager], ...entries];
     entries.length = 0;
     events.clear();
     eager.clear();

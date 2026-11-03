@@ -257,8 +257,8 @@ pub struct Manifest {
     /// The module that hands clicks on links and submits of server-tier forms to client navigation.
     pub links: String,
     pub stream: String,
-    /// The URL of each client chunk, by its key.
-    pub chunks: HashMap<String, String>,
+    /// The index of each client chunk in the manifest that the dispatcher imports, by its key.
+    pub chunks: HashMap<String, usize>,
 }
 
 impl Manifest {

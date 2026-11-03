@@ -458,12 +458,12 @@ fn block(
     let mut block = String::from("[");
     reze::js::push_json_string(&mut block, &events.join(" "));
     block.push(',');
-    let url = |block: &mut String, key: &str| match manifest.chunks.get(key) {
-        Some(url) => reze::js::push_json_string(block, url),
+    let module = |block: &mut String, key: &str| match manifest.chunks.get(key) {
+        Some(index) => block.push_str(&index.to_string()),
         None => block.push_str("null"),
     };
     match chunk {
-        Chunk::Route(key) => url(&mut block, key),
+        Chunk::Route(key) => module(&mut block, key),
         Chunk::Factories(keys) => {
             block.push('{');
             for (index, (id, key)) in keys.iter().enumerate() {
@@ -471,7 +471,7 @@ fn block(
                     block.push(',');
                 }
                 block.push_str(&format!("\"{id}\":"));
-                url(&mut block, key);
+                module(&mut block, key);
             }
             block.push('}');
         }
