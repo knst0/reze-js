@@ -511,7 +511,7 @@ export interface Rz {
 }
 
 const instances: Handlers[] = [];
-/** The navigation module, through the loader of the links module. */
+/** The navigation module, through the loader the dispatcher sets up. */
 const nav = () => (window as unknown as { rzNav(): Promise<typeof import("virtual:rz-nav")> }).rzNav();
 
 /**

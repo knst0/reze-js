@@ -980,9 +980,9 @@ The current implementation differs from this design in these points:
   `createHandler({ limits })`.
 - In development, a `500` carries the error message. In production it carries
   `Internal Server Error`.
-- The dispatcher and the `links` module are on every page, not only on pages with handler sites,
-  so that links and server-tier forms navigate on the client. `links` loads the navigation module
-  and the morph on intent over a link or a server-tier form. The navigation module handles
+- The dispatcher is on every page, not only on pages with handler sites, so that links and
+  server-tier forms navigate on the client. It loads the navigation module and the morph on intent
+  over a link or a server-tier form. The navigation module handles
   `popstate`; it has loaded whenever the history holds an entry it pushed.
 - A partial render's `<head>` holds only the entries of the segments it renders. When they set no
   title, the page keeps the current one.
@@ -995,7 +995,7 @@ The current implementation differs from this design in these points:
 - The JS handler takes a second argument, `hints(links)`, which it calls with the `Link` values of
   `103 Early Hints` for a document request before guards and loaders run. The Node middleware of
   `vite dev` and `vite preview` sends them with `writeEarlyHints`. The app has no stylesheets or
-  fonts of its own, so the hints hold only the dispatcher and `links` as `modulepreload`; route chunks load on
+  fonts of its own, so the hints hold only the dispatcher script and the `chunks.js` module it imports as `modulepreload`; route chunks load on
   intent and are not hinted. Neither hyper nor actix-web writes a `103`, so the Rust server
   exposes the same links through `App::hints(&request)` for a stack that can write one, and its
   document responses carry them in a `Link` header, which a CDN can turn into a `103` for later

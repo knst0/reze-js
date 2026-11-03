@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "recordedAt": "2026-11-03T20:22:15.343Z",
+  "recordedAt": "2026-11-03T23:01:30.274Z",
   "sizes": {
     "menu: chunks.js": {
-      "raw": 975,
-      "gzip": 633,
-      "brotli": 542
+      "raw": 2234,
+      "gzip": 1135,
+      "brotli": 995
     },
     "menu: client.js": {
       "raw": 5903,
@@ -13,19 +13,14 @@
       "brotli": 2365
     },
     "menu: dispatcher.js": {
-      "raw": 1802,
-      "gzip": 985,
-      "brotli": 862
+      "raw": 1806,
+      "gzip": 986,
+      "brotli": 867
     },
     "menu: html": {
-      "raw": 830,
-      "gzip": 444,
-      "brotli": 303
-    },
-    "menu: links.js": {
-      "raw": 1239,
-      "gzip": 642,
-      "brotli": 533
+      "raw": 821,
+      "gzip": 455,
+      "brotli": 313
     },
     "menu: navigate.js": {
       "raw": 8794,
@@ -63,9 +58,9 @@
       "brotli": 575
     },
     "shop: chunks.js": {
-      "raw": 885,
-      "gzip": 591,
-      "brotli": 503
+      "raw": 2144,
+      "gzip": 1094,
+      "brotli": 942
     },
     "shop: client.js": {
       "raw": 2344,
@@ -73,24 +68,19 @@
       "brotli": 1089
     },
     "shop: dispatcher.js": {
-      "raw": 1802,
+      "raw": 1806,
       "gzip": 986,
-      "brotli": 858
+      "brotli": 865
     },
     "shop: html": {
-      "raw": 92634,
-      "gzip": 7885,
-      "brotli": 6190
+      "raw": 92625,
+      "gzip": 7896,
+      "brotli": 6201
     },
     "shop: html /products/8": {
-      "raw": 27925,
-      "gzip": 6053,
-      "brotli": 5002
-    },
-    "shop: links.js": {
-      "raw": 1239,
-      "gzip": 643,
-      "brotli": 533
+      "raw": 27916,
+      "gzip": 6065,
+      "brotli": 5025
     },
     "shop: navigate.js": {
       "raw": 8578,
@@ -113,24 +103,19 @@
       "brotli": 575
     },
     "static: chunks.js": {
-      "raw": 826,
-      "gzip": 550,
-      "brotli": 463
+      "raw": 2085,
+      "gzip": 1061,
+      "brotli": 910
     },
     "static: dispatcher.js": {
-      "raw": 1802,
-      "gzip": 983,
-      "brotli": 866
+      "raw": 1806,
+      "gzip": 988,
+      "brotli": 861
     },
     "static: html": {
-      "raw": 574,
-      "gzip": 350,
-      "brotli": 236
-    },
-    "static: links.js": {
-      "raw": 1239,
-      "gzip": 641,
-      "brotli": 534
+      "raw": 565,
+      "gzip": 360,
+      "brotli": 252
     },
     "static: navigate.js": {
       "raw": 8575,
@@ -143,9 +128,9 @@
       "brotli": 575
     },
     "todos: chunks.js": {
-      "raw": 945,
-      "gzip": 615,
-      "brotli": 522
+      "raw": 2204,
+      "gzip": 1118,
+      "brotli": 968
     },
     "todos: client.js": {
       "raw": 2225,
@@ -153,9 +138,9 @@
       "brotli": 1048
     },
     "todos: dispatcher.js": {
-      "raw": 1802,
-      "gzip": 985,
-      "brotli": 864
+      "raw": 1806,
+      "gzip": 988,
+      "brotli": 869
     },
     "todos: errors.js": {
       "raw": 111,
@@ -163,14 +148,9 @@
       "brotli": 86
     },
     "todos: html": {
-      "raw": 410,
-      "gzip": 265,
-      "brotli": 163
-    },
-    "todos: links.js": {
-      "raw": 1239,
-      "gzip": 640,
-      "brotli": 531
+      "raw": 401,
+      "gzip": 275,
+      "brotli": 172
     },
     "todos: navigate.js": {
       "raw": 9007,

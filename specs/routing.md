@@ -255,11 +255,11 @@ The current implementation differs from this design in these points:
   even when a guard would redirect.
 - `target: "spa"` runs the compiled JS render in the browser: the navigation runtime answers each
   request with the app's handler instead of `fetch`, and morphs the result into the page as for a
-  server response. The build writes `index.html`, the dispatcher, `links`, one module with the render of
+  server response. The build writes `index.html`, the dispatcher with its `chunks.js`, one module with the render of
   every route, and the client chunk of each route. Routing uses the history only, and the static
   host serves `index.html` for every path. `vite dev` renders on the server and does not run `src/client.ts`.
 - A `render: "client"` page renders on the server as `<template data-rz-client>`, and its loader
-  does not run for the document. The `links` module then navigates to the same URL, so the page
+  does not run for the document. The dispatcher then navigates to the same URL, so the page
   arrives as the HTML of its segment through `?_s=<depth>`, not as JSON data that a client render
   turns into DOM. Without JavaScript the segment stays empty. The Rust server renders the page as
   any other.

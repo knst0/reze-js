@@ -107,6 +107,7 @@ const rz = ((window as unknown as { rz: unknown }).rz = {
   e: entries,
   u: modules,
   c: chunks,
+  g: get,
   s: [] as number[],
   l: load,
   f: fail,

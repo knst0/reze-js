@@ -254,8 +254,9 @@ pub struct Manifest {
     /// The id of the build, which client requests carry in `_b`.
     pub build: String,
     pub dispatcher: String,
-    /// The module that hands clicks on links and submits of server-tier forms to client navigation.
-    pub links: String,
+    /// The module the dispatcher imports at start: the chunk URLs, the idle preload, and the
+    /// handling of links and server-tier forms.
+    pub modules: String,
     pub stream: String,
     /// The index of each client chunk in the manifest that the dispatcher imports, by its key.
     pub chunks: HashMap<String, usize>,

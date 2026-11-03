@@ -104,7 +104,6 @@ const stream = "virtual:rz-stream";
 const route = "virtual:rz-route/";
 const routes = "virtual:rz-routes";
 const nav = "virtual:rz-nav";
-const links = "virtual:rz-links";
 const manifest = "virtual:rz-chunks";
 const prerender = "virtual:rz-prerender";
 const spaEntry = "virtual:rz-spa";
@@ -129,7 +128,8 @@ const types: Record<string, string> = {
 /** URLs of the client build, which the server build reads. */
 interface Built {
   dispatcher: string;
-  links: string;
+  /** The module the dispatcher imports at start: the chunk URLs, the idle preload, and the handling of links and server-tier forms. */
+  modules: string;
   stream: string;
   /** The index of each client chunk in the manifest that the dispatcher imports, by its key. */
   chunks: Record<string, number>;
@@ -166,7 +166,6 @@ export default function reze(options: RezeOptions = {}): Plugin {
   const refs = new Map<string, string>();
   let dispatcherCode = "";
   let streamCode = "";
-  let linksCode = "";
   let navRef = "";
   let manifestRef = "";
   let devHandler: Promise<Handler> | undefined;
@@ -298,7 +297,6 @@ export default function reze(options: RezeOptions = {}): Plugin {
       };
       dispatcherCode = await standalone("reze-js/runtime/dispatcher");
       streamCode = await standalone("reze-js/runtime/stream");
-      linksCode = await standalone("reze-js/runtime/links");
     },
     generateBundle() {
       if (dev || this.environment.name !== "client") return;
@@ -307,23 +305,23 @@ export default function reze(options: RezeOptions = {}): Plugin {
         name: "dispatcher.js",
         source: dispatcherCode.replace(manifest, base + this.getFileName(manifestRef)),
       });
-      const linksRef = this.emitFile({ type: "asset", name: "links.js", source: linksCode.replace(nav, base + this.getFileName(navRef)) });
       if (spa) {
         const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`;
-        const scripts = [dispatcherRef, linksRef, navRef]
+        const scripts = [dispatcherRef, navRef]
           .map((ref) => `<script type="module" src="${base}${this.getFileName(ref)}"></script>`)
           .join("");
+        const preload = `<link rel="modulepreload" href="${base}${this.getFileName(manifestRef)}">`;
         this.emitFile({
           type: "asset",
           fileName: "index.html",
-          source: `<!doctype html><html><head>${head}${scripts}</head><body></body></html>\n`,
+          source: `<!doctype html><html><head>${head}${scripts}${preload}</head><body></body></html>\n`,
         });
         return;
       }
       const streamRef = this.emitFile({ type: "asset", name: "stream.js", source: streamCode });
       builds.set(root, {
         dispatcher: base + this.getFileName(dispatcherRef),
-        links: base + this.getFileName(linksRef),
+        modules: base + this.getFileName(manifestRef),
         stream: base + this.getFileName(streamRef),
         chunks: Object.fromEntries([...refs.keys()].map((node, index) => [node, index])),
       });
@@ -378,7 +376,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
         return resolved && (await moduleKey(resolved.id)) !== undefined ? `${resolved.id}${serverQuery}` : resolved;
       }
       if (id === spaEntry) return `\0${id}`;
-      if ([app, dispatcher, links, stream, prerender, routes, nav, manifest].includes(id) || id.startsWith(route)) return `\0${id}`;
+      if ([app, dispatcher, stream, prerender, routes, nav, manifest].includes(id) || id.startsWith(route)) return `\0${id}`;
       if (id.startsWith(rustTypesPrefix)) return `\0${id}`;
       if (importer === resolvedApp && id.startsWith("./"))
         return join(root, id) + (spa && this.environment.name === "client" ? serverQuery : "");
@@ -387,12 +385,12 @@ export default function reze(options: RezeOptions = {}): Plugin {
       if (id.startsWith(`\0${rustTypesPrefix}`)) return "export {};";
       if (id === `\0${dispatcher}`) return 'import "reze-js/runtime/dispatcher";';
       if (id === `\0${stream}`) return 'import "reze-js/runtime/stream";';
-      if (id === `\0${links}`) return 'import "reze-js/runtime/links";';
       if (id === `\0${manifest}`) {
         const urls = dev
           ? (await chunkKeys()).map((node) => JSON.stringify(devUrl(route + node)))
           : [...refs.values()].map((ref) => `import.meta.ROLLUP_FILE_URL_${ref}`);
-        return `import { watch as idle } from "reze-js/runtime/idle";\nconst urls = [${urls.join(", ")}];\nexport default urls;\nexport const watch = (rz) => idle(rz, urls);\n`;
+        const navigation = dev ? JSON.stringify(devUrl(nav)) : `import.meta.ROLLUP_FILE_URL_${navRef}`;
+        return `import { watch as idle } from "reze-js/runtime/idle";\nimport { links } from "reze-js/runtime/links";\nconst urls = [${urls.join(", ")}];\nlinks(${navigation});\nexport default urls;\nexport const watch = (rz) => idle(rz, urls);\n`;
       }
       if (id === `\0${prerender}`) {
         return `import routes from "${app}";\nimport { prerendered } from "reze-js/runtime/server";\nexport default () => prerendered(routes);\nexport const every = () => prerendered(routes, true);\n`;
@@ -413,10 +411,10 @@ export default function reze(options: RezeOptions = {}): Plugin {
       const built = dev ? undefined : builds.get(root);
       const assets =
         spa && !dev && this.environment.name === "client"
-          ? `const chunks = ${JSON.stringify(Object.fromEntries([...refs.keys()].map((node, index) => [node, index])))};\nexport const assets = { dispatcher: "", links: "", stream: "", chunk: (node) => chunks[node] };\n`
+          ? `const chunks = ${JSON.stringify(Object.fromEntries([...refs.keys()].map((node, index) => [node, index])))};\nexport const assets = { dispatcher: "", modules: "", stream: "", chunk: (node) => chunks[node] };\n`
           : built
-            ? `const chunks = ${JSON.stringify(built.chunks)};\nexport const assets = { dispatcher: ${JSON.stringify(built.dispatcher)}, links: ${JSON.stringify(built.links)}, stream: ${JSON.stringify(built.stream)}, chunk: (node) => chunks[node] };\n`
-            : `export const assets = { dispatcher: ${JSON.stringify(devUrl(dispatcher))}, links: ${JSON.stringify(devUrl(links))}, stream: ${JSON.stringify(devUrl(stream))}, chunk: (node) => ${JSON.stringify(await chunkKeys())}.indexOf(node) };\n`;
+            ? `const chunks = ${JSON.stringify(built.chunks)};\nexport const assets = { dispatcher: ${JSON.stringify(built.dispatcher)}, modules: ${JSON.stringify(built.modules)}, stream: ${JSON.stringify(built.stream)}, chunk: (node) => chunks[node] };\n`
+            : `export const assets = { dispatcher: ${JSON.stringify(devUrl(dispatcher))}, modules: ${JSON.stringify(devUrl(manifest))}, stream: ${JSON.stringify(devUrl(stream))}, chunk: (node) => ${JSON.stringify(await chunkKeys())}.indexOf(node) };\n`;
       return `${result.app}${assets}export const build = ${JSON.stringify(await buildId())};\nexport const dev = ${dev};\n`;
     },
     async transform(_, id, transformOptions) {

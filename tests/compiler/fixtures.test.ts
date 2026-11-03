@@ -86,7 +86,7 @@ for (const fixture of fixtures) {
     const app = await import(pathToFileURL(join(target, "app.ts")).href);
     const assets = {
       dispatcher: "/dispatcher.js",
-      links: "/links.js",
+      modules: "/chunks.js",
       stream: "/stream.js",
       chunk: (key: string) => Object.keys(result.chunks).indexOf(key),
     };

@@ -504,12 +504,11 @@ pub(crate) fn render(
         document.push_str(html);
     }
     if let Some(manifest) = manifest {
-        for src in [&manifest.dispatcher, &manifest.links] {
-            document.push_str(&format!(
-                r#"<script type="module" async src="{}"></script>"#,
-                escape_attr(src)
-            ));
-        }
+        document.push_str(&format!(
+            r#"<script type="module" async src="{}"></script><link rel="modulepreload" href="{}">"#,
+            escape_attr(&manifest.dispatcher),
+            escape_attr(&manifest.modules)
+        ));
         if !cx.parts.is_empty() {
             document.push_str(&format!(
                 r#"<script type="module" async src="{}"></script>"#,
