@@ -11,7 +11,7 @@ dist
 /.omp
 
 .vitest/
-examples/islands/src/routes.gen.d.ts
+examples/*/src/routes.gen.d.ts
 tests/compiler/.out
 test-results/
 playwright-report/

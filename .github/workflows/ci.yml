@@ -37,6 +37,10 @@ jobs:
           cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Rust tests
         run: cargo test --workspace
+      - name: Build the examples
+        run: |
+          pnpm --filter "./examples/*" build
+          for example in examples/*/; do pnpm exec tsc -p "$example"; done
 
   e2e:
     name: Tests in ${{ matrix.browser }}
