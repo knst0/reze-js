@@ -434,8 +434,8 @@ impl<C: Send + Sync + 'static> App<C> {
         self.server_timing = on;
     }
 
-    /// The `Link` values of `103 Early Hints` for `request`: the dispatcher as `modulepreload`,
-    /// for a document request. A server that can write a `103` writes them before it calls
+    /// The `Link` values of `103 Early Hints` for `request`: the dispatcher and the links module
+    /// as `modulepreload`, for a document request. A server that can write a `103` writes them before it calls
     /// [`App::handle`]. The document response carries them in `Link`, which a CDN can turn into
     /// a `103` for later requests.
     pub fn hints<B>(&self, request: &Request<B>) -> Vec<String> {
@@ -447,9 +447,10 @@ impl<C: Send + Sync + 'static> App<C> {
             && !form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
                 .any(|(key, _)| key == "_b");
         match &self.manifest {
-            Some(manifest) if document => {
-                vec![format!("<{}>; rel=modulepreload", manifest.dispatcher)]
-            }
+            Some(manifest) if document => [&manifest.dispatcher, &manifest.links]
+                .iter()
+                .map(|src| format!("<{src}>; rel=modulepreload"))
+                .collect(),
             _ => Vec::new(),
         }
     }

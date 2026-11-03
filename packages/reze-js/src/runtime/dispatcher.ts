@@ -1,82 +1,44 @@
-type Entry = unknown[];
-type Block = [string, string | Record<number, string>, number[], ...Entry[]];
-type Handlers = Record<number, Record<string, (row: Entry) => (event: Event) => unknown>>;
-type Factory = (entry: Entry, index: number, entries: Entry[], instance: (index: number) => Handlers) => Handlers;
-interface Chunk {
-  default: Record<number, Factory>;
-  g: number[];
-}
+import type { Chunk } from "./client";
 
-const entries: Entry[] = [];
+type Block = [string, string | Record<number, string>, number[], ...unknown[][]];
+
+const entries: unknown[][] = [];
 const urls: string[] = [];
-const instances: Handlers[] = [];
 const chunks: Record<string, Chunk> = {};
-const loading: Record<string, Promise<void> | undefined> = {};
-const eager = new Set<number>();
-const preloaded = new Set<string>();
-const types = new Set<string>();
+const loading: Record<string, Promise<void> | 0> = {};
 const queue: [Element[], Event][] = [];
-const site = (node: EventTarget | null | undefined) => (node as Element | null | undefined)?.closest?.("[data-rz]");
-const owner = (scope: number) => {
-  while ((entries[scope]![0] as number) < 0) scope = ~(entries[scope]![0] as number);
-  return scope;
-};
-const scopeOf = (node: Element) => owner(parseInt(node.getAttribute("data-rz")!, 36));
-const connection = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-const idle = (callback: () => void) => (window.requestIdleCallback ?? setTimeout)(callback);
-let dead: number | undefined;
-let client: Promise<typeof import("virtual:rz-nav")> | undefined;
-let bypass: HTMLFormElement | undefined;
+const up = (node: unknown, selector: string) => (node as Element | null | undefined)?.closest?.(selector) as any;
+const noop = () => {};
+let run: Chunk["r"] | undefined;
+let dead: unknown;
 
-const instance = (index: number) =>
-  (instances[index] ??= chunks[urls[index]!]!.default[entries[index]![0] as number]!(entries[index]!, index, entries, instance));
+const get = (url: string) => import(/* @vite-ignore */ url) as Promise<Chunk>;
 
-/** Instantiates the entries from `start` whose chunks are loaded and that start without an event. */
-const start = (from = 0) =>
-  entries.forEach((entry, index) => {
-    const chunk = chunks[urls[index]!];
-    if (index >= from && chunk && (eager.has(entry[0] as number) || chunk.g.includes(entry[0] as number))) instance(index);
-  });
+const load = (url: string) =>
+  (loading[url] ||= get(url)
+    .catch(() => get(url + "?r=1"))
+    .then(
+      (chunk) => {
+        (run = (chunks[url] = chunk).r)(rz);
+      },
+      (error: unknown) => {
+        loading[url] = 0;
+        throw error;
+      },
+    ));
 
-const run = (sites: Element[], event: Event) => {
-  for (const node of sites) {
-    const [scope, mark] = node
-      .getAttribute("data-rz")!
-      .split(".")
-      .map((part) => parseInt(part, 36)) as [number, number];
-    const handler = instance(owner(scope))[mark]?.[event.type];
-    if (!handler) continue;
-    Object.defineProperty(event, "currentTarget", { value: node, configurable: true });
-    try {
-      const result = handler(entries[scope]!)(event);
-      if (result instanceof Promise) result.catch((error: unknown) => fault(node, error));
-    } catch (error) {
-      fault(node, error);
-    }
-    delete (event as { currentTarget?: unknown }).currentTarget;
-    if (event.cancelBubble) break;
-  }
-};
-
-const fault = (node: Element, error: unknown) =>
-  void nav().then(
-    (m) => m.fault(node, error),
-    () => reportError(error),
-  );
-
+/**
+ * Falls back to the native action of the first prevented queued event, a submit or the click of a
+ * link or a submit button, or reports `error`.
+ */
 const fail = (error: unknown) => {
   const queued = queue.splice(0);
   dead = 1;
-  for (const [sites, event] of queued) {
-    if (!event.defaultPrevented) continue;
-    const target = event.target as HTMLElement;
-    const link = sites[0]!.closest<HTMLAnchorElement>("a[href]");
-    const submitter =
-      ((event as SubmitEvent).submitter as HTMLButtonElement | null) ??
-      target.closest?.<HTMLButtonElement | HTMLInputElement>("button:not([type]),[type=submit]");
-    const form = submitter?.form ?? (event.type === "submit" ? (target as HTMLFormElement) : null);
-    if (link) return location.assign(link.href);
-    if (form) return form.requestSubmit(submitter);
+  for (const [, event] of queued) {
+    const action = up(event.target, "a[href],button:not([type]),[type=submit]");
+    if (event.defaultPrevented && event.type == "submit")
+      return (event.target as HTMLFormElement).requestSubmit((event as SubmitEvent).submitter);
+    if (event.defaultPrevented && action) return action.click();
   }
   if (
     dispatchEvent(new CustomEvent("rz:chunkerror", { cancelable: true, detail: { site: queued[0]?.[0][0], error } })) &&
@@ -87,62 +49,34 @@ const fail = (error: unknown) => {
   }
 };
 
-const load = (url: string) =>
-  (loading[url] ??= importChunk(url)
-    .catch(() => importChunk(`${url}?r=1`))
-    .then(
-      (chunk) => {
-        chunks[url] = chunk;
-        start();
-      },
-      (error: unknown) => {
-        loading[url] = undefined;
-        throw error;
-      },
-    ));
+/** The chunk URL of the handler site `node`. */
+const urlOf = (node: Element) => urls[parseInt(node.getAttribute("data-rz")!, 36)]!;
 
-const urlsOf = (sites: Element[]) => [...new Set(sites.map((node) => urls[scopeOf(node)]!))];
-
-/**
- * Loads the chunk of a component that starts without an event once one of its sites enters the
- * viewport, and preloads the chunk of any other site there when the browser is idle.
- */
-const seen = new IntersectionObserver((records) => {
-  for (const { target, isIntersecting } of records) {
-    const scope = scopeOf(target);
-    const url = urls[scope]!;
-    if (!isIntersecting || chunks[url]) continue;
-    seen.unobserve(target);
-    if (eager.has(entries[scope]![0] as number)) load(url).catch(fail);
-    else if (!preloaded.has(url) && !connection?.saveData && !/2g/.test(connection?.effectiveType ?? "")) {
-      preloaded.add(url);
-      idle(() =>
-        document.head.append(Object.assign(document.createElement("link"), { rel: "modulepreload", href: url, fetchPriority: "low" })),
-      );
-    }
-  }
-});
-
+/** Runs the handler sites around the target of `event`, once their chunks have loaded. */
 const handle = (event: Event) => {
-  if (dead) return;
   const sites: Element[] = [];
-  for (let node = site(event.target); node; node = site(node.parentElement)) {
+  for (let node: Element | undefined = up(event.target, "[data-rz]"); node && !dead; node = up(node.parentElement, "[data-rz]")) {
     sites.push(node);
     for (const token of node.getAttribute("data-rz-prevent")?.split(" ") ?? []) {
-      const [type, conditions] = token.split(":");
-      if (type === event.type && (conditions ?? "").split("+").every((condition) => !condition || matches(event, condition))) {
+      const [type, ...conditions] = token.split(/[:+]/);
+      if (
+        type == event.type &&
+        conditions.every((condition) => {
+          const [field, value] = condition.split("=");
+          return String((event as unknown as Record<string, unknown>)[value ? field! : "key"]) == (value ?? field);
+        })
+      )
         event.preventDefault();
-      }
     }
   }
-  if (!sites.length) return;
-  const needed = urlsOf(sites).filter((url) => !chunks[url]);
-  if (!needed.length) return run(sites, event);
+  const needed = sites.map(urlOf).filter((url) => !chunks[url]);
+  if (!sites[0]) return;
+  if (!needed[0]) return run!(rz, sites, event);
   queue.push([sites, event]);
-  sites[0]!.setAttribute("aria-busy", "true");
+  sites[0].setAttribute("aria-busy", "true");
   Promise.all(needed.map(load))
     .then(() => {
-      for (const [queued, replay] of queue.splice(0)) run(queued, replay);
+      for (const [queued, replay] of queue.splice(0)) run!(rz, queued, replay);
     })
     .catch(fail)
     .finally(() => sites[0]!.removeAttribute("aria-busy"));
@@ -155,114 +89,39 @@ const handle = (event: Event) => {
  */
 const add = ([events, chunk, starting, ...block]: Block) => {
   const base = entries.length;
-  for (const id of starting) eager.add(id);
+  rz.s.push(...starting);
   for (const entry of block) {
-    if ((entry[0] as number) < 0) entry[0] = ~(~(entry[0] as number) + base);
-    urls[entries.push(entry) - 1] = typeof chunk === "string" ? chunk : chunk[entry[0] as number]!;
+    const id = (entry[0] as number) < 0 ? (entry[0] = ~(~(entry[0] as number) + base)) : (entry[0] as number);
+    urls[entries.push(entry) - 1] = id < 0 ? urls[~id]! : typeof chunk == "string" ? chunk : chunk[id]!;
   }
-  for (const type of events.split(" ")) {
-    if (type && !types.has(type)) {
-      types.add(type);
-      document.addEventListener(type, handle, true);
-    }
-  }
-  start(base);
-  const sites = [...document.querySelectorAll("[data-rz]")];
-  seen.disconnect();
-  for (const node of sites) seen.observe(node);
-  block.forEach((entry, offset) => {
-    const url = urls[base + offset]!;
-    if (eager.has(entry[0] as number) && !chunks[url] && !sites.some((node) => scopeOf(node) === base + offset))
-      idle(() => load(url).catch(fail));
-  });
+  for (const type of events.split(" ")) document.addEventListener(type, handle, true);
+  run?.(rz);
+  import("virtual:rz-idle").then((m) => m.watch(rz), noop);
 };
 
-const nav = () => (client ??= import("virtual:rz-nav"));
-
-(window as unknown as { rz: unknown }).rz = { n: () => entries.length, add, nav };
-dispatchEvent(new Event("rz:ready"));
-
-/** The same-origin link a navigation event targets, when the client may handle it. */
-const link = (event: Event) => {
-  const anchor = (event.target as Element | null)?.closest?.<HTMLAnchorElement>("a[href]");
-  if (!anchor || anchor.origin !== location.origin || anchor.hasAttribute("download") || (anchor.target && anchor.target !== "_self"))
-    return;
-  if (anchor.pathname === location.pathname && anchor.search === location.search && anchor.hash) return;
-  return anchor;
-};
+const rz = ((window as unknown as { rz: unknown }).rz = {
+  e: entries,
+  u: urls,
+  c: chunks,
+  s: [] as number[],
+  l: load,
+  f: fail,
+  add,
+});
 
 for (const type of ["pointerenter", "pointerdown", "focusin"]) {
   document.addEventListener(
     type,
     (event) => {
-      if (type === "pointerenter" && !/mouse|pen/.test((event as PointerEvent).pointerType)) return;
-      const urls = site(event.target) && urlsOf([site(event.target)!]);
-      for (const url of urls || []) if (!chunks[url]) load(url).catch(() => {});
-      const anchor = link(event);
-      const form = (event.target as Element | null)?.closest?.("form");
-      if (anchor && !connection?.saveData)
-        nav().then(
-          (m) => m.prefetch(anchor.href),
-          () => {},
-        );
-      else if (form?.action.includes("_m=")) nav().catch(() => {});
+      const node = up(event.target, "[data-rz]");
+      if (node && (type != "pointerenter" || /mouse|pen/.test((event as PointerEvent).pointerType))) load(urlOf(node)).catch(noop);
     },
     true,
   );
 }
 
-addEventListener("click", (event) => {
-  const anchor = link(event);
-  if (!anchor || event.defaultPrevented || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-  event.preventDefault();
-  nav().then(
-    (m) => m.navigate(anchor.href),
-    () => location.assign(anchor.href),
-  );
-});
-
-addEventListener("submit", (event) => {
-  const form = event.target as HTMLFormElement;
-  if (event.defaultPrevented || form === bypass || form.method !== "post" || !form.action.includes("_m=")) return;
-  event.preventDefault();
-  if (form.getAttribute("aria-busy")) return;
-  const submitter = (event as SubmitEvent).submitter;
-  form.setAttribute("aria-busy", "true");
-  nav()
-    .then((m) => m.submit(form, submitter))
-    .catch(() => {
-      bypass = form;
-      form.requestSubmit(submitter);
-    })
-    .finally(() => form.removeAttribute("aria-busy"));
-});
-
-addEventListener("popstate", () => {
-  nav().then(
-    (m) => m.navigate(location.href, true),
-    () => location.reload(),
-  );
-});
-
-if (document.querySelector("template[data-rz-client]"))
-  nav().then(
-    (m) => m.navigate(location.href, true),
-    () => {},
-  );
-
 const block = document.querySelector("script[type=rz]");
 if (block) {
   block.remove();
   add(JSON.parse(block.textContent!) as Block);
-}
-
-/** A condition of `data-rz-prevent`: `Enter` for a key, or `field=value`, as in `ctrlKey=true`. */
-function matches(event: Event, condition: string): boolean {
-  const [field, value] = condition.includes("=") ? condition.split("=") : ["key", condition];
-  return String((event as unknown as Record<string, unknown>)[field!]) === value;
-}
-
-/** Imports a route chunk. */
-function importChunk(url: string): Promise<Chunk> {
-  return import(/* @vite-ignore */ url) as Promise<Chunk>;
 }

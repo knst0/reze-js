@@ -22,3 +22,7 @@ declare module "virtual:rz-nav" {
   export const call: typeof import("./runtime/navigate").call;
   export const fault: typeof import("./runtime/navigate").fault;
 }
+
+declare module "virtual:rz-idle" {
+  export const watch: typeof import("./runtime/idle").watch;
+}

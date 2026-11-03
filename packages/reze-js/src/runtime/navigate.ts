@@ -4,9 +4,9 @@ import { MutationInputError, type Issue } from "./errors";
 import { compare, match } from "./match";
 import { morph } from "./morph";
 
-/** The dispatcher's state blocks: the count of entries, and the call that adds a block. */
+/** The dispatcher's entries, and the call that adds a state block after them. */
 interface Dispatcher {
-  n(): number;
+  e: unknown[];
   add(block: unknown[]): void;
 }
 
@@ -21,13 +21,23 @@ interface Fetched {
 
 type Kind = "navigation" | "mutation";
 
-const rz = (window as unknown as { rz: Dispatcher }).rz;
+let rz: Dispatcher | undefined;
+/** Resolves once the dispatcher has run, which a link clicked early may precede. */
+const ready = new Promise<void>((resolve) => {
+  const poll = () => {
+    rz = (window as unknown as { rz?: Dispatcher }).rz;
+    if (rz) resolve();
+    else setTimeout(poll, 10);
+  };
+  poll();
+});
 const ordered = [...routes].sort(compare);
 const prefetched = new Map<string, [number, Promise<Fetched>]>();
 let current = new URL(location.href);
 let send = (request: Request): Promise<Response> => fetch(request);
 
 history.scrollRestoration = "manual";
+addEventListener("popstate", () => void navigate(location.href, true));
 
 /** The key of each segment of the page at `url`: its module, params, and read search params. */
 function segments(url: URL): string[] | undefined {
@@ -54,6 +64,7 @@ function changed(from: URL, to: URL): number {
 }
 
 async function request(url: URL, depth: number, init: RequestInit = {}): Promise<Fetched> {
+  await ready;
   const target = new URL(url);
   if (depth > 0) target.searchParams.set("_s", String(depth));
   target.searchParams.set("_b", build);
@@ -109,7 +120,7 @@ function swap(fetched: Fetched, kind: Kind, after: (root: Node[]) => void): bool
   const apply = () => {
     if (applied) return;
     applied = true;
-    const shift = offset(rz.n());
+    const shift = offset(rz!.e.length);
     for (const root of [page.body, ...[...page.querySelectorAll<HTMLTemplateElement>("template[data-rz-e]")].map((t) => t.content)]) {
       for (const element of root.querySelectorAll("[data-rz]")) element.setAttribute("data-rz", shift(element.getAttribute("data-rz")!));
       const walker = page.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
@@ -122,7 +133,7 @@ function swap(fetched: Fetched, kind: Kind, after: (root: Node[]) => void): bool
     const next = [...page.body.childNodes];
     if (page.querySelector("template[data-rz-s]")) void import("./stream").then((stream) => stream.flush());
     morph(target[0], target[1], next, target[2]);
-    if (block) rz.add(block);
+    if (block) rz!.add(block);
     after(range(fetched.depth)?.[1] ?? []);
   };
   if (dispatchEvent(new CustomEvent("rz:swap", { cancelable: true, detail: { kind, apply } }))) apply();
@@ -227,6 +238,7 @@ export async function submit(form: HTMLFormElement, submitter: HTMLElement | nul
 
 /** Posts `input` to mutation `id` as JSON, morphs the page it answers with, and returns the result. */
 export async function call(id: string, input: unknown): Promise<unknown> {
+  await ready;
   prefetched.clear();
   const target = new URL(current);
   target.searchParams.set("_m", id);

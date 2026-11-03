@@ -3548,6 +3548,7 @@ impl<'m, 'a> Planner<'m, 'a> {
         writeln!(code, "export default {{ {} }};", entries.join(", ")).unwrap();
         let global: Vec<String> = global.iter().map(ToString::to_string).collect();
         writeln!(code, "export const g = [{}];", global.join(", ")).unwrap();
+        writeln!(code, "export {{ $run as r }} from {CLIENT_RUNTIME:?};").unwrap();
         code
     }
 }

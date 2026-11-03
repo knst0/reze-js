@@ -520,10 +520,13 @@ The current implementation differs from this design in these points:
   `EVENT_DECISION_DEFERRED`.
 - After a chunk fails to load, the dispatcher goes inert for the rest of the page. The native
   fallback, `rz:chunkerror` on `window`, or the single reload takes over.
-- The dispatcher is about 2 KB gzip, above the 1 KB target: it also intercepts links,
-  server-tier forms, and history navigation, accepts the state blocks of navigations and
-  streamed parts, and hands handler errors to the nearest `<Errored>`. It stays in one module
-  because a click on a link or a submit of a server-tier form must call `preventDefault` before
-  any other module could load; split out, those clicks would become full page loads.
+- The dispatcher is about 1 KB gzip and handles only handler sites: intent, replay, `aria-busy`,
+  the failure ladder, and the state blocks of navigations and streamed parts. Two more modules
+  load beside it. `links`, under 700 B and on every page next to the dispatcher, intercepts links
+  and server-tier forms, sets `aria-busy` on a posting form, and loads the navigation module and
+  the morph on intent. `idle` loads after the dispatcher has started and runs the idle preload. A
+  click on a link or a submit of a server-tier form before `links` has loaded is a full page load.
+  Client code reaches the navigation module, for `.call` and for handing an error to the nearest
+  `<Errored>`, through `window.rzNav`, which `links` sets.
 - `scripts/bench/size.mts` measures only the test applications, which are too small to judge the
   2% metadata share.

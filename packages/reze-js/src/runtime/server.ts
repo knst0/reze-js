@@ -74,6 +74,8 @@ export interface Route {
 /** URLs of the client code. */
 export interface Assets {
   dispatcher: string;
+  /** The module that hands clicks on links and submits of server-tier forms to client navigation. */
+  links: string;
   /** The module that moves streamed parts into their `<Loading>` boundaries. */
   stream: string;
   chunk(key: string): string;
@@ -667,7 +669,10 @@ function render(
   let head = "";
   for (const entry of keyed.values()) head += entry.html;
   head += unkeyed.join("");
-  if (assets) head += `<script type="module" async src="${assets.dispatcher.replace(attribute, replace)}"></script>`;
+  if (assets) {
+    for (const src of [assets.dispatcher, assets.links])
+      head += `<script type="module" async src="${src.replace(attribute, replace)}"></script>`;
+  }
   if (assets && parts.length > 0) head += `<script type="module" async src="${assets.stream.replace(attribute, replace)}"></script>`;
   const document = `<!doctype html><html><head>${head}</head><body>${root}${block()}`;
   return parts.length > 0 ? [document, status, stream()] : [`${document}</body></html>`, status, undefined];
@@ -858,7 +863,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
       break;
     }
     if (build === null && (request.method === "GET" || request.method === "HEAD") && options.assets) {
-      hints?.([`<${options.assets.dispatcher}>; rel=modulepreload`]);
+      hints?.([options.assets.dispatcher, options.assets.links].map((src) => `<${src}>; rel=modulepreload`));
     }
     const writers: Writer[] = [];
     const finish = async ([document, status, rest]: [string, number, AsyncGenerator<string> | undefined], headers: Headers) => {

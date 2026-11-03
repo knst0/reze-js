@@ -254,6 +254,8 @@ pub struct Manifest {
     /// The id of the build, which client requests carry in `_b`.
     pub build: String,
     pub dispatcher: String,
+    /// The module that hands clicks on links and submits of server-tier forms to client navigation.
+    pub links: String,
     pub stream: String,
     /// The URL of each client chunk, by its key.
     pub chunks: HashMap<String, String>,

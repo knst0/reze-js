@@ -87,6 +87,7 @@ test("answers with typed params, headers, and cookies", async ({ page, server })
 test("renders only the segments a mutation revalidates", async ({ page, server }) => {
   const name = await signIn(page, server);
   await add(page, "Water plants");
+  await expect(page.getByRole("button", { name: "Toggle Water plants" })).toBeVisible();
   const layout = page.getByText(`Signed in as ${name}`);
   await layout.evaluate((node) => node.setAttribute("data-kept", ""));
   const response = page.waitForResponse((response) => response.request().method() === "POST");

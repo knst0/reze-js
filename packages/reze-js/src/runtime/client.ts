@@ -183,8 +183,7 @@ export { MutationInputError } from "./errors";
 
 /** The browser side of a mutation: a call, or `.call`, posts through the navigation module. */
 export function $call(id: string): ((input?: unknown) => Promise<unknown>) & { id: string; call(input?: unknown): Promise<unknown> } {
-  const call = (input?: unknown) =>
-    (window as unknown as { rz: { nav(): Promise<typeof import("virtual:rz-nav")> } }).rz.nav().then((nav) => nav.call(id, input));
+  const call = (input?: unknown) => nav().then((module) => module.call(id, input));
   return Object.assign(call, { id, call });
 }
 
@@ -484,4 +483,70 @@ function split(nodes: Node[], separated: number): Node[][] {
     else if (data === "]") depth--;
   }
   return out;
+}
+
+type Handlers = Record<number, Record<string, (row: Entry) => (event: Event) => unknown>>;
+type Factory = (entry: Entry, index: number, entries: Entry[], instance: (index: number) => Handlers) => Handlers;
+
+/** A loaded client chunk: the factories by id, those that start without an event, and `$run`. */
+export interface Chunk {
+  default: Record<number, Factory>;
+  g: number[];
+  r: typeof $run;
+}
+
+/**
+ * The dispatcher's state: the entries, the chunk URL of each entry, the loaded chunks by URL, and
+ * the factories that start without an event.
+ */
+export interface Rz {
+  e: Entry[];
+  u: string[];
+  c: Record<string, Chunk>;
+  s: number[];
+}
+
+const instances: Handlers[] = [];
+/** The navigation module, through the loader of the links module. */
+const nav = () => (window as unknown as { rzNav(): Promise<typeof import("virtual:rz-nav")> }).rzNav();
+
+/**
+ * Runs the handlers of `sites` for `event`, innermost first, or without an event, instantiates
+ * the entries whose chunks are loaded and that start without an event.
+ */
+export function $run(rz: Rz, sites?: Element[], event?: Event): void {
+  const { e: entries, u: urls, c: chunks } = rz;
+  const instance = (index: number): Handlers =>
+    (instances[index] ??= chunks[urls[index]!]!.default[entries[index]![0] as number]!(entries[index]!, index, entries, instance));
+  const fault = (node: Element, error: unknown) =>
+    void nav().then(
+      (module) => module.fault(node, error),
+      () => reportError(error),
+    );
+  if (!sites || !event) {
+    entries.forEach((entry, index) => {
+      const chunk = chunks[urls[index]!];
+      if (chunk && !instances[index] && (rz.s.includes(entry[0] as number) || chunk.g.includes(entry[0] as number))) instance(index);
+    });
+    return;
+  }
+  for (const node of sites) {
+    const [scope, mark] = node
+      .getAttribute("data-rz")!
+      .split(".")
+      .map((part) => parseInt(part, 36)) as [number, number];
+    let index = scope;
+    while ((entries[index]![0] as number) < 0) index = ~(entries[index]![0] as number);
+    const handler = instance(index)[mark]?.[event.type];
+    if (!handler) continue;
+    Object.defineProperty(event, "currentTarget", { value: node, configurable: true });
+    try {
+      const result = handler(entries[scope]!)(event);
+      if (result instanceof Promise) result.catch((error: unknown) => fault(node, error));
+    } catch (error) {
+      fault(node, error);
+    }
+    delete (event as { currentTarget?: unknown }).currentTarget;
+    if (event.cancelBubble) break;
+  }
 }

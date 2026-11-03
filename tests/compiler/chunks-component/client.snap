@@ -23,8 +23,10 @@ export const $c0 = ($s, $i, $a) => {
 import { $c0 } from "/src/routes/index.tsx";
 export default { 0: $c0 };
 export const g = [];
+export { $run as r } from "reze-js/runtime/client";
 
 // virtual:rz-route/c1
 import { $c1 } from "/src/components/counter.tsx";
 export default { 1: $c1 };
 export const g = [];
+export { $run as r } from "reze-js/runtime/client";

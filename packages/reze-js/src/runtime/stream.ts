@@ -1,5 +1,6 @@
+/** The dispatcher's entries, and the call that adds a state block after them. */
 interface Dispatcher {
-  n(): number;
+  e: unknown[];
   add(block: unknown[]): void;
 }
 
@@ -7,11 +8,14 @@ const shift = (base: number) => (id: string) => id.replace(/^[0-9a-z]+/, (scope)
 let added = Promise.resolve();
 
 /** The dispatcher, once its module has run. */
-const dispatcher = () =>
-  new Promise<Dispatcher>((resolve) => {
-    const rz = (window as unknown as { rz?: Dispatcher }).rz;
-    if (rz) return resolve(rz);
-    addEventListener("rz:ready", () => resolve((window as unknown as { rz: Dispatcher }).rz), { once: true });
+const dispatcher = (): Promise<Dispatcher> =>
+  new Promise((resolve) => {
+    const poll = () => {
+      const rz = (window as unknown as { rz?: Dispatcher }).rz;
+      if (rz) resolve(rz);
+      else setTimeout(poll, 10);
+    };
+    poll();
   });
 
 /** Moves the streamed part `template` into its `<Loading>` boundary and adds its state block. */
@@ -43,7 +47,7 @@ function place(template: HTMLTemplateElement): void {
   if (!script) return;
   added = added.then(async () => {
     const rz = await dispatcher();
-    const offset = shift(rz.n());
+    const offset = shift(rz.e.length);
     for (const site of sites) site.setAttribute("data-rz", offset(site.getAttribute("data-rz")!));
     for (const mark of marks) mark.data = offset(mark.data);
     rz.add(JSON.parse(script.textContent!) as unknown[]);

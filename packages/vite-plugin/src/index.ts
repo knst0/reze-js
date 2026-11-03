@@ -104,6 +104,8 @@ const stream = "virtual:rz-stream";
 const route = "virtual:rz-route/";
 const routes = "virtual:rz-routes";
 const nav = "virtual:rz-nav";
+const links = "virtual:rz-links";
+const idle = "virtual:rz-idle";
 const prerender = "virtual:rz-prerender";
 const spaEntry = "virtual:rz-spa";
 const rustTypesPrefix = "virtual:reze-types/";
@@ -127,6 +129,7 @@ const types: Record<string, string> = {
 /** URLs of the client build, which the server build reads. */
 interface Built {
   dispatcher: string;
+  links: string;
   stream: string;
   chunks: Record<string, string>;
 }
@@ -162,7 +165,9 @@ export default function reze(options: RezeOptions = {}): Plugin {
   const refs = new Map<string, string>();
   let dispatcherCode = "";
   let streamCode = "";
+  let linksCode = "";
   let navRef = "";
+  let idleRef = "";
   let devHandler: Promise<Handler> | undefined;
 
   const routesDir = options.routesDir ?? "src/routes";
@@ -281,25 +286,28 @@ export default function reze(options: RezeOptions = {}): Plugin {
       navRef = spa
         ? this.emitFile({ type: "chunk", id: spaEntry, name: "app", preserveSignature: "exports-only" })
         : this.emitFile({ type: "chunk", id: nav, name: "navigate", preserveSignature: "exports-only" });
+      idleRef = this.emitFile({ type: "chunk", id: idle, name: "idle", preserveSignature: "exports-only" });
       const standalone = async (specifier: string) => {
         const file = (await this.resolve(specifier, join(root, "index.html")))!.id;
         let code = await readFile(file, "utf8");
         if (file.endsWith(".ts")) code = (await transformWithOxc(code, file)).code;
-        return (await minify(file, code, { module: true, mangle: { toplevel: true } })).code;
+        return (await minify(file, code, { module: true, mangle: { toplevel: true } })).code.replace(/export\s*\{\s*\};?\s*$/, "");
       };
       dispatcherCode = await standalone("reze-js/runtime/dispatcher");
       streamCode = await standalone("reze-js/runtime/stream");
+      linksCode = await standalone("reze-js/runtime/links");
     },
     generateBundle() {
       if (dev || this.environment.name !== "client") return;
       const dispatcherRef = this.emitFile({
         type: "asset",
         name: "dispatcher.js",
-        source: dispatcherCode.replace(nav, base + this.getFileName(navRef)),
+        source: dispatcherCode.replace(idle, base + this.getFileName(idleRef)),
       });
+      const linksRef = this.emitFile({ type: "asset", name: "links.js", source: linksCode.replace(nav, base + this.getFileName(navRef)) });
       if (spa) {
         const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`;
-        const scripts = [dispatcherRef, navRef]
+        const scripts = [dispatcherRef, linksRef, navRef]
           .map((ref) => `<script type="module" src="${base}${this.getFileName(ref)}"></script>`)
           .join("");
         this.emitFile({
@@ -312,6 +320,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
       const streamRef = this.emitFile({ type: "asset", name: "stream.js", source: streamCode });
       builds.set(root, {
         dispatcher: base + this.getFileName(dispatcherRef),
+        links: base + this.getFileName(linksRef),
         stream: base + this.getFileName(streamRef),
         chunks: Object.fromEntries([...refs].map(([node, ref]) => [node, base + this.getFileName(ref)])),
       });
@@ -366,8 +375,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
         return resolved && (await moduleKey(resolved.id)) !== undefined ? `${resolved.id}${serverQuery}` : resolved;
       }
       if (id === spaEntry) return `\0${id}`;
-      if (id === app || id === dispatcher || id === stream || id === prerender || id === routes || id === nav || id.startsWith(route))
-        return `\0${id}`;
+      if ([app, dispatcher, links, stream, prerender, routes, nav, idle].includes(id) || id.startsWith(route)) return `\0${id}`;
       if (id.startsWith(rustTypesPrefix)) return `\0${id}`;
       if (importer === resolvedApp && id.startsWith("./"))
         return join(root, id) + (spa && this.environment.name === "client" ? serverQuery : "");
@@ -376,6 +384,8 @@ export default function reze(options: RezeOptions = {}): Plugin {
       if (id.startsWith(`\0${rustTypesPrefix}`)) return "export {};";
       if (id === `\0${dispatcher}`) return 'import "reze-js/runtime/dispatcher";';
       if (id === `\0${stream}`) return 'import "reze-js/runtime/stream";';
+      if (id === `\0${links}`) return 'import "reze-js/runtime/links";';
+      if (id === `\0${idle}`) return 'export { watch } from "reze-js/runtime/idle";';
       if (id === `\0${prerender}`) {
         return `import routes from "${app}";\nimport { prerendered } from "reze-js/runtime/server";\nexport default () => prerendered(routes);\nexport const every = () => prerendered(routes, true);\n`;
       }
@@ -383,7 +393,8 @@ export default function reze(options: RezeOptions = {}): Plugin {
         const client = existsSync(join(root, "src/client.ts"));
         return `import { render } from "reze-js/runtime/render";\nexport { call, fault, navigate, prefetch, submit } from "reze-js/runtime/navigate";\n${client ? 'export { render };\nimport "/src/client.ts";\n' : "render();\n"}`;
       }
-      if (id === `\0${nav}`) return 'export { call, fault, navigate, prefetch, submit } from "reze-js/runtime/navigate";';
+      if (id === `\0${nav}`)
+        return `export { call, fault, navigate, prefetch, submit } from "${spa ? spaEntry : "reze-js/runtime/navigate"}";`;
       if (id === `\0${routes}`) return `${(await compile()).navigation}export const build = ${JSON.stringify(await buildId())};\n`;
       if (id.startsWith(`\0${route}`)) return (await compile()).chunks[id.slice(route.length + 1)];
       if (id !== resolvedApp) return;
@@ -394,10 +405,10 @@ export default function reze(options: RezeOptions = {}): Plugin {
       const built = dev ? undefined : builds.get(root);
       const assets =
         spa && !dev && this.environment.name === "client"
-          ? `const chunks = { ${[...refs].map(([node, ref]) => `${node}: import.meta.ROLLUP_FILE_URL_${ref}`).join(", ")} };\nexport const assets = { dispatcher: "", stream: "", chunk: (node) => chunks[node] };\n`
+          ? `const chunks = { ${[...refs].map(([node, ref]) => `${node}: import.meta.ROLLUP_FILE_URL_${ref}`).join(", ")} };\nexport const assets = { dispatcher: "", links: "", stream: "", chunk: (node) => chunks[node] };\n`
           : built
-            ? `const chunks = ${JSON.stringify(built.chunks)};\nexport const assets = { dispatcher: ${JSON.stringify(built.dispatcher)}, stream: ${JSON.stringify(built.stream)}, chunk: (node) => chunks[node] };\n`
-            : `export const assets = { dispatcher: ${JSON.stringify(devUrl(dispatcher))}, stream: ${JSON.stringify(devUrl(stream))}, chunk: (node) => ${JSON.stringify(devUrl(route))} + node };\n`;
+            ? `const chunks = ${JSON.stringify(built.chunks)};\nexport const assets = { dispatcher: ${JSON.stringify(built.dispatcher)}, links: ${JSON.stringify(built.links)}, stream: ${JSON.stringify(built.stream)}, chunk: (node) => chunks[node] };\n`
+            : `export const assets = { dispatcher: ${JSON.stringify(devUrl(dispatcher))}, links: ${JSON.stringify(devUrl(links))}, stream: ${JSON.stringify(devUrl(stream))}, chunk: (node) => ${JSON.stringify(devUrl(route))} + node };\n`;
       return `${result.app}${assets}export const build = ${JSON.stringify(await buildId())};\nexport const dev = ${dev};\n`;
     },
     async transform(_, id, transformOptions) {

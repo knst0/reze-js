@@ -21,3 +21,4 @@ export const $c1 = ($s, $i, $a) => {
 import { $c0, $c1 } from "/src/routes/index.tsx";
 export default { 0: $c0, 1: $c1 };
 export const g = [];
+export { $run as r } from "reze-js/runtime/client";

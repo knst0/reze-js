@@ -14,6 +14,7 @@
   "type": "module",
   "sideEffects": [
     "./dist/runtime/dispatcher.js",
+    "./dist/runtime/links.js",
     "./dist/runtime/stream.js"
   ],
   "types": "./dist/index.d.ts",
@@ -37,6 +38,14 @@
     "./runtime/dispatcher": {
       "types": "./dist/runtime/dispatcher.d.ts",
       "import": "./dist/runtime/dispatcher.js"
+    },
+    "./runtime/idle": {
+      "types": "./dist/runtime/idle.d.ts",
+      "import": "./dist/runtime/idle.js"
+    },
+    "./runtime/links": {
+      "types": "./dist/runtime/links.d.ts",
+      "import": "./dist/runtime/links.js"
     },
     "./runtime/navigate": {
       "types": "./dist/runtime/navigate.d.ts",
