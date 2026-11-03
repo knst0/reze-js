@@ -88,7 +88,7 @@ or streaming yet.
 The size benchmark builds the fixture applications and records, per page: the compressed first
 response, the dispatcher, each chunk, and the metadata share of the HTML. A run that grows past
 the recorded snapshot fails; the snapshot changes only in a reviewed commit. The benchmark lives
-in `scripts/bench/size.mts`, measures `/` of each application under `tests/apps`, and records
+in `scripts/bench/size.mts`, measures `/` of each application under `tests/apps` that runs on the JS server, and records
 `scripts/bench/size.json`. It does not measure compile time yet.
 
 ## Running

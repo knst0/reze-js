@@ -22,4 +22,8 @@ serde_json = "1.0.151"
 serde_json = "1.0.151"
 
 [dev-dependencies]
-insta = "1"
+codspeed-divan-compat = "5.0.2"
+
+[[bench]]
+name = "compile"
+harness = false

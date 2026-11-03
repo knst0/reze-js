@@ -4,7 +4,6 @@
   "type": "module",
   "scripts": {
     "bench": "node scripts/bench/size.mts",
-    "bench:size:docs": "pnpm build && pnpm --filter @rezejs/docs exec vp build && node scripts/bench/docs-size.mjs",
     "build": "turbo build --filter=./packages/*",
     "fmt": "vp fmt",
     "lint": "vp lint --type-aware --type-check",

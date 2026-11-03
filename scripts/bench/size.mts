@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -41,7 +42,7 @@ async function build(app: string, out: string): Promise<(request: Request) => Pr
 const sizes: Record<string, Size> = {};
 const rows: Record<string, string | number>[] = [];
 for (const app of (await readdir(apps, { withFileTypes: true }))
-  .filter((entry) => entry.isDirectory())
+  .filter((entry) => entry.isDirectory() && !existsSync(join(apps, entry.name, "Cargo.toml")))
   .map((entry) => entry.name)
   .sort()) {
   const out = await mkdtemp(join(tmpdir(), "rz-size-"));

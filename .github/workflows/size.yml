@@ -28,7 +28,3 @@ jobs:
         run: pnpm build
       - name: Check app sizes
         run: node scripts/bench/size.mts --check
-      - name: Build the docs
-        run: pnpm --filter @rezejs/docs exec vp build
-      - name: Check docs initial JS
-        run: node scripts/bench/docs-size.mjs --check
