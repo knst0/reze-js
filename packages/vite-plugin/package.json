@@ -8,6 +8,9 @@
     "url": "git+https://github.com/knst0/reze-js.git",
     "directory": "packages/vite-plugin"
   },
+  "bin": {
+    "reze": "./dist/cli.js"
+  },
   "files": [
     "dist"
   ],

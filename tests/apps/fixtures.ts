@@ -26,11 +26,14 @@ export interface Server {
   url(path: string): string;
   /** With `rust`: the same build on the JS server, whose external loaders run in the Rust server. */
   js?(path: string): string;
+  /** With `rust`: runs `reze check --render-diff` over `paths` and resolves to its exit code and output. */
+  renderDiff?(paths: string[]): Promise<{ code: number; output: string }>;
 }
 
 interface Running {
   origin: string;
   js?: string;
+  rust?: { origin: string; build: string };
   close(): Promise<void>;
 }
 
@@ -230,7 +233,21 @@ async function startRust(app: string, adapter: "tower" | "actix"): Promise<Runni
     await rm(out, { recursive: true, force: true });
     await rm(dirname(ir), { recursive: true, force: true });
   });
-  return { ...running, js: js.origin };
+  return { ...running, js: js.origin, rust: { origin: rust, build: out } };
+}
+
+function check(rust: string, build: string, paths: string[]): Promise<{ code: number; output: string }> {
+  const cli = join(repo, "packages/vite-plugin/dist/cli.js");
+  return new Promise((done, fail) => {
+    const child = spawn(process.execPath, [cli, "check", "--render-diff", "--rust", rust, "--build", build, ...paths], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", (chunk: Buffer) => (output += chunk));
+    child.stderr.on("data", (chunk: Buffer) => (output += chunk));
+    child.on("error", fail);
+    child.on("exit", (code) => done({ code: code ?? 1, output }));
+  });
 }
 
 function start(kind: ServerKind, app: string): Promise<Running> {
@@ -258,7 +275,11 @@ export const test = base.extend<{ server: Server }, { serverKind: ServerKind; se
       if (serverKind.startsWith("rust")) testInfo.setTimeout(testInfo.timeout + 600_000);
       servers.set(app, (running = start(serverKind, app)));
     }
-    const { origin, js } = await running;
-    await use({ url: (path) => new URL(path, origin).href, js: js ? (path) => new URL(path, js).href : undefined });
+    const { origin, js, rust } = await running;
+    await use({
+      url: (path) => new URL(path, origin).href,
+      js: js ? (path) => new URL(path, js).href : undefined,
+      renderDiff: rust ? (paths) => check(rust.origin, rust.build, paths) : undefined,
+    });
   },
 });

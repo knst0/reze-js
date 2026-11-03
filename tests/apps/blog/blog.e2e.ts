@@ -4,13 +4,16 @@ import { expect, test } from "../fixtures";
 
 const paths = ["/", "/?ref=mail&_s=x", "/posts/1?ref=feed", "/posts/1", "/posts/2", "/posts/9", "/posts/abc", "/posts/members", "/missing"];
 
-test("renders the same HTML on the Rust and the JS server", async ({ request, server }) => {
-  const headers = { "rz-prerender": "1" };
-  for (const path of paths) {
-    const [rust, js] = await Promise.all([request.get(server.url(path), { headers }), request.get(server.js!(path), { headers })]);
-    expect(rust.status(), path).toBe(js.status());
-    expect(await rust.text(), path).toBe(await js.text());
-  }
+test("renders the same HTML on the Rust and the JS server", async ({ server }) => {
+  const { code, output } = await server.renderDiff!(paths);
+  expect(output).toContain(`${paths.length} of ${paths.length} paths render the same.`);
+  expect(code).toBe(0);
+});
+
+test("renders every static route the same without listed paths", async ({ server }) => {
+  const { code, output } = await server.renderDiff!([]);
+  expect(output).toContain("✓ /\n");
+  expect(code).toBe(0);
 });
 
 test("redirects from a Rust loader", async ({ request, server }) => {

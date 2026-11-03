@@ -1075,12 +1075,16 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
   };
 }
 
-/** The URLs to prerender: static routes and routes whose page exports `prerender = true`, once for each of their `entries`. */
-export async function prerendered(routes: Route[]): Promise<string[]> {
+/**
+ * The URLs to prerender: static routes and routes whose page exports `prerender = true`, once for each of their `entries`.
+ * With `every`, the URL of each static route and of each `entries` item of every route.
+ */
+export async function prerendered(routes: Route[], every = false): Promise<string[]> {
   const out: string[] = [];
   for (const route of routes) {
     const page = route.chain.at(-1)!;
-    if (page.prerender === false || !(page.prerender || (route.static && !route.chain.some((module) => module.guard)))) continue;
+    const listed = every || (page.prerender ?? (route.static && !route.chain.some((module) => module.guard)));
+    if (!listed) continue;
     const dynamic = route.segments.some((segment) => segment.kind !== "static");
     for (const params of dynamic ? ((await page.entries?.()) ?? []) : [{}]) {
       const parts = route.segments.flatMap((segment) => {

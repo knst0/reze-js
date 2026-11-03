@@ -81,10 +81,15 @@ chunk of each route, so the handler factories and bindings show in review next t
 `reze check --render-diff` renders every route of every fixture application with its fixture data
 through the JS render and the Rust render and compares the bytes. Any difference fails CI.
 
-The render diff is an end-to-end test, not a `reze check` command: on the Rust server, the
-`blog` application compares the status and body of each route from the Rust server with the JS
-server over the same Rust loaders, with `rz-prerender`, so deferred fields render in place on both.
-Only `blog` runs on the Rust server, since the other applications have JS loaders.
+`reze check --render-diff --rust <origin> [--build <dir>] [path...]` is a bin of
+`@rezejs/vite-plugin`. It takes a build from `vite build` and a running Rust server. The JS
+handler of the build renders through the Rust server's loaders, and the Rust server renders
+directly. Each path is requested with `rz-prerender`, so deferred fields render in place on both.
+The command compares the statuses and bodies and exits with `1` on any difference. Without paths,
+it renders each static route once, and each other route once per item of its `entries`; routes
+with params and no `entries` need their paths listed. On the Rust server, the end-to-end tests of
+`blog` run the command over a list of paths. Only `blog` runs on the Rust server, since the other
+applications have JS loaders.
 
 ### Size
 

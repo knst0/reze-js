@@ -377,7 +377,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
       if (id === `\0${dispatcher}`) return 'import "reze-js/runtime/dispatcher";';
       if (id === `\0${stream}`) return 'import "reze-js/runtime/stream";';
       if (id === `\0${prerender}`) {
-        return `import routes from "${app}";\nimport { prerendered } from "reze-js/runtime/server";\nexport default () => prerendered(routes);\n`;
+        return `import routes from "${app}";\nimport { prerendered } from "reze-js/runtime/server";\nexport default () => prerendered(routes);\nexport const every = () => prerendered(routes, true);\n`;
       }
       if (id === `\0${spaEntry}`) {
         const client = existsSync(join(root, "src/client.ts"));
