@@ -95,6 +95,8 @@ export interface ProjectResult {
   types: string
   /** Source of `virtual:rz-app`. */
   app: string
+  /** Source of `virtual:rz-routes`. */
+  navigation: string
   /** Source of `virtual:rz-route/{node}`, by route node index. */
   chunks: Record<string, string>
   diagnostics: Array<Diagnostic>

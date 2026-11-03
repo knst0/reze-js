@@ -430,6 +430,27 @@ pub fn first_param<'a>(function: &'a Expression<'a>) -> Option<&'a FormalParamet
     }
 }
 
+/// The arguments a loader function destructures from its first parameter.
+fn loader_reads(call: &CallExpression<'_>) -> Option<Vec<String>> {
+    let function = call.arguments.last().and_then(Argument::as_expression)?;
+    if !matches!(
+        function.without_parentheses(),
+        Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+    ) {
+        return None;
+    }
+    let Some(param) = first_param(function) else { return Some(Vec::new()) };
+    let oxc_ast::ast::BindingPattern::ObjectPattern(object) = &param.pattern else { return None };
+    if object.rest.is_some() {
+        return None;
+    }
+    object
+        .properties
+        .iter()
+        .map(|property| property.key.static_name().map(|n| n.to_string()))
+        .collect()
+}
+
 /// The result annotation of a loader: `loader<T>(…)`, or the function's return type, with
 /// `Promise` unwrapped.
 pub fn loader_result<'a>(call: &'a CallExpression<'a>) -> Option<&'a TSType<'a>> {
@@ -733,6 +754,8 @@ pub struct Endpoint {
     pub typed: bool,
     /// The pattern of the route that exports the endpoint.
     pub route: Option<String>,
+    /// The loader arguments the function reads, `None` when it may read any of them.
+    pub reads: Option<Vec<String>>,
 }
 
 fn report_unlowered(reports: &mut Vec<Report>, unlowered: Unlowered, span: Span) {
@@ -784,6 +807,7 @@ pub fn endpoints<'a>(
                 input: None,
                 typed: loader_result(call).is_some(),
                 route: pattern.as_ref().map(|(route, _)| route.to_string()),
+                reads: loader_reads(call),
             };
             match kind {
                 EndpointKind::Loader => {

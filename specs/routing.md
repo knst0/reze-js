@@ -235,7 +235,11 @@ The current implementation differs from this design in these points:
 - Typed `paths` builders are not generated, so `redirect` takes a plain string.
 - `LayoutPropsFor` keys layouts by URL prefix, so a group layout such as `(app).tsx` shares the key
   `/` with the root layout and cannot use it.
-- Segment keys and `_s` partial renders are not implemented; every request renders the whole chain.
+- A request with `_s` runs the loaders of that depth and below and renders those segments. When the
+  render throws with no boundary inside them, the server runs the other loaders and answers the
+  whole page. The client keys a segment by its route node, its params, and the search string when
+  its loader reads `search` or its arguments cannot be read statically. A link to the current URL
+  renders the last segment again.
 - `<Errored>` catches errors on the server only. A boundary rolls back the HTML, head entries, and
   state rows its children produced before the error.
 - The compiled application exports `root`, the root layout chain, which renders the `404` of a URL

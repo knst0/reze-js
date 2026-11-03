@@ -14,6 +14,8 @@ export default defineConfig({
       "src/jsx-dev-runtime.ts",
       "src/runtime/client.ts",
       "src/runtime/dispatcher.ts",
+      "src/runtime/navigate.ts",
+      "src/runtime/stream.ts",
       "src/runtime/server.ts",
       "src/server.ts",
       "src/types.ts",

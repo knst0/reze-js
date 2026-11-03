@@ -76,6 +76,8 @@ pub struct ProjectOutput {
     pub types: String,
     /// Source of `virtual:rz-app`: the route modules and the route table for `createHandler`.
     pub app: String,
+    /// Source of `virtual:rz-routes`: the route table of client navigation.
+    pub navigation: String,
     /// Source of `virtual:rz-route/{node}`: the client factories of each page route that has any.
     pub chunks: BTreeMap<usize, String>,
     pub diagnostics: Vec<Diagnostic>,

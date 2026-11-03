@@ -180,7 +180,8 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
         let client = plan.modules[i].client.take();
         output.modules.insert(module.path.clone(), ModuleOutput { server: Some(server), client });
     }
-    output.app = emit::app(&modules, &output.routes, &plan.chunks);
+    output.app = emit::app(&modules, &analysis, &output.routes, &plan.chunks);
+    output.navigation = emit::navigation(&modules, &analysis, &output.routes);
     output.chunks = std::mem::take(&mut plan.chunks);
     output
 }

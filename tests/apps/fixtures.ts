@@ -128,10 +128,13 @@ async function startJsBuild(app: string): Promise<Running> {
   const handler: Handler = existsSync(join(app, "src/server.ts")) ? server.default : server.createHandler();
   return listen(
     (message, response) => {
-      const path = normalize(new URL(message.url ?? "/", "http://localhost").pathname);
-      readFile(join(client, path))
+      const url = new URL(message.url ?? "/", "http://localhost");
+      const path = normalize(url.pathname);
+      const file = extname(path) ? path : url.search ? "" : join(path, "index.html");
+      if (!file || (message.method !== "GET" && message.method !== "HEAD")) return respond(handler, message, response);
+      readFile(join(client, file))
         .then((body) => {
-          response.writeHead(200, { "content-type": types[extname(path)] ?? "application/octet-stream" });
+          response.writeHead(200, { "content-type": types[extname(file)] ?? "text/html; charset=utf-8" });
           response.end(body);
         })
         .catch(() => respond(handler, message, response));

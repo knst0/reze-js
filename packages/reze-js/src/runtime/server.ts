@@ -1,3 +1,5 @@
+import { compare, match, type Segment } from "./match";
+
 type Thunk = () => string;
 
 class Markup {
@@ -29,6 +31,8 @@ export interface RenderContext {
   submission(mutation: Mutation<never, unknown>): Submission;
   /** Renders `children`, or `fallback` with the route error when rendering throws. */
   boundary(children: Thunk, fallback: (error: RouteError) => string): string;
+  /** Renders `children`, or `fallback` while they read a deferred field, and streams them later. */
+  loading(children: Thunk, fallback: Thunk): string;
 }
 
 type Component = (props: Record<string, unknown>, $r: RenderContext) => string;
@@ -37,9 +41,11 @@ interface RouteModule {
   default: Component;
   load?: Loader<unknown>;
   guard?: Guard;
+  /** Seconds a rendered page stays fresh in a shared cache. */
+  revalidate?: number;
+  prerender?: boolean;
+  entries?: () => Record<string, string>[] | Promise<Record<string, string>[]>;
 }
-
-type Segment = { kind: "static"; name: string } | { kind: "param" | "optional" | "splat"; name: string };
 
 export interface Route {
   pattern: string;
@@ -47,11 +53,15 @@ export interface Route {
   chain: RouteModule[];
   /** Route node of the client chunk, when the page has client code. */
   chunk: number | null;
+  /** Whether no loader of the route reads more than its params. */
+  static: boolean;
 }
 
 /** URLs of the client code. */
 export interface Assets {
   dispatcher: string;
+  /** The module that moves streamed parts into their `<Loading>` boundaries. */
+  stream: string;
   chunk(node: number): string;
 }
 
@@ -246,6 +256,57 @@ export function fail(status: number, message = "Request failed"): never {
   throw new RouteError(status, message);
 }
 
+class Deferred {
+  settled = false;
+  failed = false;
+  value: unknown;
+  readonly promise: Promise<unknown>;
+  constructor(value: unknown) {
+    this.promise = Promise.resolve(value).then(
+      (resolved) => {
+        this.value = resolved;
+        this.settled = true;
+      },
+      (error: unknown) => {
+        this.value = error;
+        this.settled = this.failed = true;
+      },
+    );
+  }
+}
+
+/** Thrown by a read of a deferred field before its value arrives. */
+class Pending {
+  constructor(readonly promise: Promise<unknown>) {}
+}
+
+/** Marks a loader field that streams into its `<Loading>` boundary when it resolves. */
+export function defer<T>(value: Promise<T> | T): T {
+  return new Deferred(value) as T;
+}
+
+/** Loader data whose deferred fields throw `Pending` until they settle, then read as their value. */
+function deferrable(value: unknown, pending: Promise<unknown>[]): unknown {
+  if (typeof value !== "object" || value === null || !Object.values(value).some((field) => field instanceof Deferred)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [name, field] of Object.entries(value)) {
+    if (!(field instanceof Deferred)) {
+      out[name] = field;
+      continue;
+    }
+    pending.push(field.promise);
+    Object.defineProperty(out, name, {
+      enumerable: true,
+      get() {
+        if (!field.settled) throw new Pending(field.promise);
+        if (field.failed) throw field.value;
+        return field.value;
+      },
+    });
+  }
+  return out;
+}
+
 /** Attaches the compiler's coercion of params and search params. */
 export function $load<T>(target: Loader<T>, meta: Pick<Loader<T>, "params" | "search">): Loader<T> {
   return Object.assign(target, meta);
@@ -319,61 +380,14 @@ export function $repeat(count: number, row: (index: number) => string, fallback?
   return out;
 }
 
-const rank = { static: 0, param: 1, optional: 2, splat: 3 };
-
-function compare(a: Route, b: Route): number {
-  for (let index = 0; index < Math.max(a.segments.length, b.segments.length); index++) {
-    const left = a.segments[index];
-    const right = b.segments[index];
-    if (!left || !right) return left ? 1 : -1;
-    const order = rank[left.kind] - rank[right.kind];
-    if (order !== 0) return order;
-  }
-  return 0;
-}
-
-/** Matches `parts` against `route`, and returns the params and the canonical path. */
-function match(route: Route, parts: string[]): [Record<string, string | undefined>, string] | null {
-  const params: Record<string, string | undefined> = {};
-  const canonical: string[] = [];
-  let index = 0;
-  for (const segment of route.segments) {
-    const part = parts[index];
-    switch (segment.kind) {
-      case "static":
-        if (part?.toLowerCase() !== segment.name) return null;
-        canonical.push(segment.name);
-        index++;
-        break;
-      case "param":
-        if (part === undefined) return null;
-        params[segment.name] = decodeURIComponent(part);
-        canonical.push(part);
-        index++;
-        break;
-      case "optional":
-        if (part !== undefined) {
-          params[segment.name] = decodeURIComponent(part);
-          canonical.push(part);
-          index++;
-        }
-        break;
-      case "splat":
-        if (index >= parts.length) return null;
-        params[segment.name] = parts.slice(index).map(decodeURIComponent).join("/");
-        canonical.push(...parts.slice(index));
-        index = parts.length;
-        break;
-    }
-  }
-  return index === parts.length ? [params, `/${canonical.join("/")}`] : null;
-}
-
 class Writer implements ResponseWriter {
-  readonly headers = new Headers();
+  /** Set once the status is decided: later writes, from deferred fields, throw. */
+  sealed = false;
+  readonly headers: Headers;
   readonly setCookies: string[] = [];
   readonly cookies = {
     set: (name: string, value: string, options: CookieOptions = {}) => {
+      this.check();
       let cookie = `${name}=${encodeURIComponent(value)}; Path=${options.path ?? "/"}`;
       if (options.domain) cookie += `; Domain=${options.domain}`;
       if (options.maxAge !== undefined) cookie += `; Max-Age=${options.maxAge}`;
@@ -387,6 +401,28 @@ class Writer implements ResponseWriter {
       this.cookies.set(name, "", { ...options, maxAge: 0 });
     },
   };
+
+  constructor() {
+    const check = () => this.check();
+    this.headers = new (class extends Headers {
+      override set(name: string, value: string) {
+        check();
+        super.set(name, value);
+      }
+      override append(name: string, value: string) {
+        check();
+        super.append(name, value);
+      }
+      override delete(name: string) {
+        check();
+        super.delete(name);
+      }
+    })();
+  }
+
+  check(): void {
+    if (this.sealed) throw new Error("The response has started: a deferred field cannot write headers or cookies");
+  }
 }
 
 /** The strictest of the segments' `Cache-Control` values. */
@@ -407,8 +443,9 @@ function cacheControl(values: string[]): string | null {
   else if (directives.some((d) => d.has("public"))) out.push("public");
   if (directives.some((d) => d.has("no-cache"))) out.push("no-cache");
   for (const name of ["max-age", "s-maxage", "stale-while-revalidate"]) {
-    const ages = directives.flatMap((d) => (d.has(name) ? [Number(d.get(name))] : []));
+    const ages = directives.flatMap((d) => (d.get(name) === undefined ? [] : [Number(d.get(name))]));
     if (ages.length > 0) out.push(`${name}=${Math.min(...ages)}`);
+    else if (directives.some((d) => d.has(name))) out.push(name);
   }
   return out.join(", ");
 }
@@ -442,7 +479,16 @@ interface Page {
   submission?: [MutationRecord, Submission];
 }
 
-function render(page: Page, assets: Assets | undefined, caught: (error: unknown) => RouteError): [string, number] {
+/**
+ * Renders the page from segment `from` down: the whole document from `0`, or for a client
+ * navigation the document whose body is that segment alone.
+ */
+function render(
+  page: Page,
+  assets: Assets | undefined,
+  caught: (error: unknown) => RouteError,
+  from = 0,
+): [string, number, AsyncGenerator<string> | undefined] {
   const { route, params, url } = page;
   const keyed = new Map<string, HeadEntry>([
     ["meta:charset", { depth: -1, html: '<meta charset="utf-8">' }],
@@ -454,6 +500,7 @@ function render(page: Page, assets: Assets | undefined, caught: (error: unknown)
   const entries: unknown[][] = [];
   const events = new Set<string>();
   let eager = false;
+  const parts: { children: Thunk; depth: number; promise: Promise<unknown> }[] = [];
   const $r: RenderContext = {
     depth: 0,
     params,
@@ -490,12 +537,63 @@ function render(page: Page, assets: Assets | undefined, caught: (error: unknown)
         for (const [key, entry] of mark[2]) keyed.set(key, entry);
         ids = mark[3];
         this.depth = mark[4];
+        if (thrown instanceof Pending) throw thrown;
         const error = caught(thrown);
         status = error.status;
         return fallback(error);
       }
     },
+    loading(children, fallback) {
+      const mark = [entries.length, ids] as const;
+      try {
+        return children();
+      } catch (thrown) {
+        if (!(thrown instanceof Pending)) throw thrown;
+        entries.length = mark[0];
+        ids = mark[1];
+        return `<!--l${parts.push({ children, depth: this.depth, promise: thrown.promise }) - 1}-->${fallback()}<!--/l-->`;
+      }
+    },
   };
+  const block = () => {
+    if (entries.length === 0 || !assets || route.chunk === null) return "";
+    const block = [[...events].join(" "), assets.chunk(route.chunk), eager ? 1 : 0, ...entries];
+    entries.length = 0;
+    events.clear();
+    eager = false;
+    return `<script type="rz">${JSON.stringify(block).replaceAll("<", "\\u003c")}</script>`;
+  };
+  async function* stream(): AsyncGenerator<string> {
+    const waiting = new Map(parts.map((part, id) => [id, part.promise.then(() => id)]));
+    while (waiting.size > 0) {
+      const id = await Promise.race(waiting.values());
+      const part = parts[id]!;
+      const before = parts.length;
+      $r.depth = part.depth;
+      let html: string | undefined;
+      try {
+        html = part.children();
+      } catch (thrown) {
+        if (thrown instanceof Pending) {
+          part.promise = thrown.promise;
+          waiting.set(
+            id,
+            thrown.promise.then(() => id),
+          );
+          continue;
+        }
+        caught(thrown);
+      }
+      waiting.delete(id);
+      for (let next = before; next < parts.length; next++)
+        waiting.set(
+          next,
+          parts[next]!.promise.then(() => next),
+        );
+      if (html !== undefined) yield `<template data-rz-s="${id}">${html}${block()}</template>\n`;
+    }
+    yield "</body></html>";
+  }
   const level = (depth: number): string => {
     if (page.error?.[0] === depth) throw page.error[1];
     const children =
@@ -504,7 +602,7 @@ function render(page: Page, assets: Assets | undefined, caught: (error: unknown)
             const previous = $r.depth;
             $r.depth = depth + 1;
             try {
-              return level(depth + 1);
+              return `<!--s${depth + 1}-->${level(depth + 1)}<!--/-->`;
             } finally {
               $r.depth = previous;
             }
@@ -512,17 +610,15 @@ function render(page: Page, assets: Assets | undefined, caught: (error: unknown)
         : undefined;
     return route.chain[depth]!.default({ params, data: page.data[depth], children }, $r);
   };
-  const root = level(0);
+  $r.depth = from;
+  const root = level(from);
   let head = "";
   for (const entry of keyed.values()) head += entry.html;
   head += unkeyed.join("");
-  let state = "";
-  if (entries.length > 0 && assets && route.chunk !== null) {
-    head += `<script type="module" async src="${assets.dispatcher.replace(attribute, replace)}"></script>`;
-    const block = [[...events].join(" "), assets.chunk(route.chunk), eager ? 1 : 0, ...entries];
-    state = `<script type="rz">${JSON.stringify(block).replaceAll("<", "\\u003c")}</script>`;
-  }
-  return [`<!doctype html><html><head>${head}</head><body>${root}${state}</body></html>`, status];
+  if (assets) head += `<script type="module" async src="${assets.dispatcher.replace(attribute, replace)}"></script>`;
+  if (assets && parts.length > 0) head += `<script type="module" async src="${assets.stream.replace(attribute, replace)}"></script>`;
+  const document = `<!doctype html><html><head>${head}</head><body>${root}${block()}`;
+  return parts.length > 0 ? [document, status, stream()] : [`${document}</body></html>`, status, undefined];
 }
 
 export interface HandlerOptions {
@@ -540,6 +636,8 @@ export interface HandlerOptions {
 export interface AppOptions extends HandlerOptions {
   assets?: Assets;
   dev?: boolean;
+  /** The id of the build, which client requests carry in `_b`. */
+  build?: string;
 }
 
 export type Handler = (request: Request) => Promise<Response>;
@@ -627,6 +725,11 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
   return async (request) => {
     options.onRequest?.(request);
     const url = new URL(request.url);
+    const build = url.searchParams.get("_b");
+    const segment = Number(url.searchParams.get("_s"));
+    url.searchParams.delete("_b");
+    url.searchParams.delete("_s");
+    if (build !== null && build !== options.build) return new Response("Conflict", { status: 409 });
     const parts = url.pathname.split("/").filter(Boolean);
     let route: Route | undefined;
     let params: Record<string, string | undefined> = {};
@@ -641,10 +744,30 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
       break;
     }
     const writers: Writer[] = [];
+    const finish = async ([document, status, rest]: [string, number, AsyncGenerator<string> | undefined], headers: Headers) => {
+      const head = request.method === "HEAD";
+      if (rest) {
+        if (head) void rest.return(undefined);
+        return new Response(head ? null : streamed(document, rest), { status, headers });
+      }
+      if (status === 200 && request.method !== "POST") {
+        const tag = `"${await digest(document)}"`;
+        headers.set("etag", tag);
+        if (
+          request.headers
+            .get("if-none-match")
+            ?.split(/\s*,\s*/)
+            .includes(tag)
+        )
+          return new Response(null, { status: 304, headers });
+      }
+      return new Response(head ? null : document, { status, headers });
+    };
     const respond = (page: Page, status = 200) => {
       try {
-        const [document, rendered] = render(page, options.assets, caught(request));
-        return new Response(document, { status: rendered === 200 ? status : rendered, headers: headersOf(writers, html) });
+        const rendered = render(page, options.assets, caught(request));
+        if (rendered[1] === 200) rendered[1] = status;
+        return finish(rendered, headersOf(writers, html));
       } catch (thrown) {
         const error = caught(request)(thrown);
         return new Response(builtIn(error.status, error.message), { status: error.status, headers: headersOf(writers, html) });
@@ -664,6 +787,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
       return respond(page);
     }
     const chain = route.chain;
+    const from = request.method === "GET" && Number.isInteger(segment) && segment < chain.length ? Math.max(segment, 0) : 0;
     if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST") {
       return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD, POST" } });
     }
@@ -733,45 +857,119 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
 
     const data: unknown[] = [];
     const typed: Record<string, unknown> = { ...params };
+    const deferred: Promise<unknown>[] = [];
     let error: Page["error"];
-    const results = await Promise.allSettled(
-      chain.map(async (module) => {
-        const load = module.load;
-        if (!load?.run) return;
-        const writer = new Writer();
-        writers.push(writer);
-        let own: Record<string, unknown> = params;
-        if (load.params) {
-          const issues: Issue[] = [];
-          own = load.params((name) => (params[name] === undefined ? [] : [params[name]!]), issues, false);
-          if (issues.length > 0) throw new RouteError(404, "Not Found");
-          Object.assign(typed, own);
+    const run = async (depths: number[]): Promise<Response | undefined> => {
+      const results = await Promise.allSettled(
+        depths.map(async (depth) => {
+          const load = chain[depth]!.load;
+          if (!load?.run) return;
+          const writer = new Writer();
+          writers.push(writer);
+          let own: Record<string, unknown> = params;
+          if (load.params) {
+            const issues: Issue[] = [];
+            own = load.params((name) => (params[name] === undefined ? [] : [params[name]!]), issues, false);
+            if (issues.length > 0) throw new RouteError(404, "Not Found");
+            Object.assign(typed, own);
+          }
+          let search: Record<string, unknown> = Object.fromEntries(url.searchParams);
+          if (load.search) {
+            const issues: Issue[] = [];
+            search = load.search((name) => url.searchParams.getAll(name), issues, true);
+            if (issues.length > 0) throw new RouteError(400, "Bad Request");
+          }
+          const value = await load.run({ params: own, search, context: context as AppContext, request, response: writer });
+          if (!load.schema) return value;
+          const result = await load.schema["~standard"].validate(value);
+          if (result.issues) throw new Error(`The loader result is invalid: ${result.issues.map((issue) => issue.message).join(", ")}`);
+          return result.value;
+        }),
+      );
+      for (const [index, result] of results.entries()) {
+        const depth = depths[index]!;
+        if (result.status === "fulfilled") {
+          data[depth] = deferrable(result.value, deferred);
+          continue;
         }
-        let search: Record<string, unknown> = Object.fromEntries(url.searchParams);
-        if (load.search) {
-          const issues: Issue[] = [];
-          search = load.search((name) => url.searchParams.getAll(name), issues, true);
-          if (issues.length > 0) throw new RouteError(400, "Bad Request");
-        }
-        const value = await load.run({ params: own, search, context: context as AppContext, request, response: writer });
-        if (!load.schema) return value;
-        const result = await load.schema["~standard"].validate(value);
-        if (result.issues) throw new Error(`The loader result is invalid: ${result.issues.map((issue) => issue.message).join(", ")}`);
-        return result.value;
-      }),
-    );
-    for (const [depth, result] of results.entries()) {
-      if (result.status === "fulfilled") {
-        data[depth] = result.value;
-        continue;
+        if (result.reason instanceof Redirect) return redirectTo(result.reason, 307);
+        if (!error || error[0] > depth) error = [depth, result.reason];
       }
-      if (result.reason instanceof Redirect) return redirectTo(result.reason, 307);
-      error ??= [depth, result.reason];
+    };
+    const depths = chain.map((_, depth) => depth);
+    const redirected = await run(depths.slice(from));
+    if (redirected) return redirected;
+    if (request.headers.has("rz-prerender")) await Promise.all(deferred);
+    for (const writer of writers) writer.sealed = true;
+    const page = (): Page => ({ route, params: typed, url, data, error, submission });
+    const revalidate = Math.min(...chain.map((module) => module.revalidate ?? Infinity));
+    if (revalidate !== Infinity && request.method !== "POST") {
+      const writer = new Writer();
+      writer.headers.set("cache-control", `s-maxage=${revalidate}, stale-while-revalidate`);
+      writers.push(writer);
     }
-    if (request.method === "HEAD") {
-      const response = respond({ route, params: typed, url, data, error, submission }, status);
-      return new Response(null, { status: response.status, headers: response.headers });
+    if (from > 0) {
+      let rendered: ReturnType<typeof render> | undefined;
+      try {
+        rendered = render(page(), options.assets, caught(request), from);
+      } catch {
+        const again = await run(depths.slice(0, from));
+        if (again) return again;
+      }
+      if (rendered) {
+        const headers = headersOf(writers, html);
+        headers.set("rz-segment", String(from));
+        return finish(rendered, headers);
+      }
     }
-    return respond({ route, params: typed, url, data, error, submission }, status);
+    return respond(page(), status);
   };
+}
+
+/** The URLs to prerender: static routes and routes whose page exports `prerender = true`, once for each of their `entries`. */
+export async function prerendered(routes: Route[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const route of routes) {
+    const page = route.chain.at(-1)!;
+    if (page.prerender === false || !(page.prerender || (route.static && !route.chain.some((module) => module.guard)))) continue;
+    const dynamic = route.segments.some((segment) => segment.kind !== "static");
+    for (const params of dynamic ? ((await page.entries?.()) ?? []) : [{}]) {
+      const parts = route.segments.flatMap((segment) => {
+        if (segment.kind === "static") return [segment.name];
+        const value = params[segment.name];
+        if (value === undefined) return [];
+        return segment.kind === "splat" ? value.split("/").map(encodeURIComponent) : [encodeURIComponent(value)];
+      });
+      out.push(`/${parts.join("/")}`);
+    }
+  }
+  return out;
+}
+
+/** The response body of a streamed page: the document up to its deferred parts, then each part. */
+function streamed(document: string, rest: AsyncGenerator<string>): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let started = false;
+  return new ReadableStream({
+    async pull(controller) {
+      if (!started) {
+        started = true;
+        controller.enqueue(encoder.encode(document));
+        return;
+      }
+      const next = await rest.next();
+      if (next.done) controller.close();
+      else controller.enqueue(encoder.encode(next.value));
+    },
+    cancel() {
+      void rest.return(undefined);
+    },
+  });
+}
+
+async function digest(text: string): Promise<string> {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text)));
+  return btoa(String.fromCharCode(...hash.subarray(0, 12)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_");
 }

@@ -142,6 +142,8 @@ pub struct ProjectResult {
     pub types: String,
     /// Source of `virtual:rz-app`.
     pub app: String,
+    /// Source of `virtual:rz-routes`.
+    pub navigation: String,
     /// Source of `virtual:rz-route/{node}`, by route node index.
     pub chunks: HashMap<String, String>,
     pub diagnostics: Vec<Diagnostic>,
@@ -191,6 +193,7 @@ fn result(output: reze_compiler::ProjectOutput) -> napi::Result<ProjectResult> {
         routes,
         types: output.types,
         app: output.app,
+        navigation: output.navigation,
         chunks: output.chunks.into_iter().map(|(node, code)| (node.to_string(), code)).collect(),
         diagnostics: output.diagnostics.into_iter().map(diagnostic).collect(),
     })

@@ -8,6 +8,7 @@ export default function Root(props: { children: JSX.Element }) {
       </head>
       <nav>
         <a href="/todos">Todos</a>
+        <a href="/stream">Stream</a>
       </nav>
       <Errored
         fallback={(error) => (

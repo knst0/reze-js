@@ -945,8 +945,10 @@ change.
 The current implementation differs from this design in these points:
 
 - A mutation's id is base-36 of the 32-bit FNV-1a hash of `path#export`.
-- The client receives no `.call` stub yet, and a mutation does not revalidate: a form post answers
-  `303` back to the page, a JSON post answers `{ result }`.
+- The client receives no `.call` stub yet, and `revalidate` does not narrow what reruns: a form post
+  answers `303` back to the page and a JSON post answers `{ result }`. With the dispatcher, the
+  client follows the `303` and morphs the whole body with the page it answers, or with the `422`
+  page.
 - A form posted to a mutation without a generated form coercer, a schema-first mutation, answers
   `415`.
 - JSON input encodes `Date` as an ISO string or a timestamp, `Map` as `[key, value]` pairs, `Set`
@@ -960,3 +962,21 @@ The current implementation differs from this design in these points:
   `createHandler({ limits })`.
 - In development, a `500` carries the error message. In production it carries
   `Internal Server Error`.
+- The dispatcher script is on every page, not only on pages with handler sites, so that links and
+  server-tier forms navigate on the client. It loads the navigation module and the morph on intent
+  over a link or a server-tier form.
+- A partial render's `<head>` holds only the entries of the segments it renders. When they set no
+  title, the page keeps the current one.
+- A prefetched response is keyed by its URL and depth. The next route's chunk is preloaded by the
+  idle preload, and only when a handler site is in the viewport.
+- A `<Loading>` boundary is marked with the comments `<!--l0-->…<!--/l-->` around its fallback,
+  not with a `data-rz-l` attribute, so it needs no wrapper element. Each streamed template holds the
+  state block of its part, which the `stream` module adds once the dispatcher has started.
+- A deferred field that rejects leaves the fallback in place and reports the error to `onError`.
+- `103 Early Hints` are not sent: a handler returns one `Response`.
+- A route is static when every loader of its chain destructures only `params` and no layout has a
+  guard. A page opts out with `prerender = false`. The build renders each static URL with the
+  request header `rz-prerender`, which awaits deferred fields, and writes a `200` page to
+  `<client outDir>/<path>/index.html` for the static host to serve.
+- `revalidate` takes the smallest value of the chain. The `ETag` is a SHA-1 of the document, sent
+  on `200` responses to `GET` and `HEAD` that do not stream.

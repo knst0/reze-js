@@ -71,7 +71,7 @@ for (const fixture of fixtures) {
     ];
     await snapshot(dir, "client.snap", client.length > 0 ? client.join("\n") : undefined);
     const app = await import(pathToFileURL(join(target, "app.ts")).href);
-    const assets = { dispatcher: "/dispatcher.js", chunk: (node: number) => `/route-${node}.js` };
+    const assets = { dispatcher: "/dispatcher.js", stream: "/stream.js", chunk: (node: number) => `/route-${node}.js` };
     const response = await createApp(app.default, app.root, { assets })(new Request("http://localhost/"));
     await snapshot(dir, "html.snap", `${await response.text()}\n`);
   });

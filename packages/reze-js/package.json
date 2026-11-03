@@ -13,7 +13,8 @@
   ],
   "type": "module",
   "sideEffects": [
-    "./dist/runtime/dispatcher.js"
+    "./dist/runtime/dispatcher.js",
+    "./dist/runtime/stream.js"
   ],
   "types": "./dist/index.d.ts",
   "exports": {
@@ -36,6 +37,14 @@
     "./runtime/dispatcher": {
       "types": "./dist/runtime/dispatcher.d.ts",
       "import": "./dist/runtime/dispatcher.js"
+    },
+    "./runtime/navigate": {
+      "types": "./dist/runtime/navigate.d.ts",
+      "import": "./dist/runtime/navigate.js"
+    },
+    "./runtime/stream": {
+      "types": "./dist/runtime/stream.d.ts",
+      "import": "./dist/runtime/stream.js"
     },
     "./runtime/server": {
       "types": "./dist/runtime/server.d.ts",

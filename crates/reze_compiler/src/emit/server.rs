@@ -246,10 +246,7 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 };
                 self.interpolate(out, &code);
             }
-            Node::Loading(boundary) => {
-                self.nodes(&boundary.children.nodes, boundary.children.span.start, out);
-            }
-            Node::Errored(boundary) => {
+            Node::Loading(boundary) | Node::Errored(boundary) => {
                 let mut children = String::from("`");
                 self.nodes(&boundary.children.nodes, boundary.children.span.start, &mut children);
                 children.push('`');
@@ -258,7 +255,8 @@ impl<'e, 'a> Emitter<'e, 'a> {
                     Some(Branch::Callback(callback)) => self.callback(callback),
                     None => "() => ''".into(),
                 };
-                self.interpolate(out, &format!("$r.boundary(() => {children}, {fallback})"));
+                let method = if matches!(node, Node::Loading(_)) { "loading" } else { "boundary" };
+                self.interpolate(out, &format!("$r.{method}(() => {children}, {fallback})"));
             }
             Node::Portal(_) => {}
         }

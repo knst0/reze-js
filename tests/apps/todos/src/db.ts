@@ -12,3 +12,10 @@ export function todosOf(user: string): Todo[] {
   if (!list) lists.set(user, (list = []));
   return list;
 }
+
+let renders = 0;
+
+/** Counts renders, so a test tells a prerendered page from one rendered on request. */
+export function render(): number {
+  return ++renders;
+}
