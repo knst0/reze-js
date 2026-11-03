@@ -175,8 +175,10 @@ The response morphs the server-rendered parts of the page. Signals stay client s
 
 ### Dispatcher
 
-The dispatcher is one external module, loaded with `async`, never render-blocking, and SHOULD
-stay under 1 KB gzip. It:
+The dispatcher is one external script, loaded with `async`, never render-blocking, and SHOULD
+stay under 1 KB gzip. When it starts, it imports its manifest, `chunks.js`, which the page
+preloads beside it: the URL of each client chunk, the idle preload, and the handling of links and
+server-tier forms. The manifest grows with the routes, so the script does not. The dispatcher:
 
 1. Listens in the capture phase on `document`, only for the event types the page uses. The server
    writes that list into the page.
@@ -520,15 +522,10 @@ The current implementation differs from this design in these points:
   `EVENT_DECISION_DEFERRED`.
 - After a chunk fails to load, the dispatcher goes inert for the rest of the page. The native
   fallback, `rz:chunkerror` on `window`, or the single reload takes over.
-- The dispatcher script is 986 B gzip, under the 1 KB budget, and holds what a handler site needs
-  at once: intent, replay, `aria-busy`, the failure ladder, and the state blocks of navigations and
-  streamed parts. It imports the rest of itself, `chunks.js`, when it starts, and the page
-  preloads that module with `modulepreload` next to the dispatcher script. `chunks.js` holds the
-  URL of each client chunk, the idle preload, and the handling of links and server-tier forms:
-  it intercepts them, sets `aria-busy` on a posting form, and loads the navigation module and the
-  morph on intent. A click on a link or a submit of a server-tier form before `chunks.js` has
-  loaded is a full page load. Client code reaches the navigation module, for `.call` and for
-  handing an error to the nearest `<Errored>`, through `window.rzNav`.
-- The state block names a chunk by its index into `chunks.js`, so that module grows with the
-  routes while the dispatcher script does not. On `shop`, the test application sized like a real
-  store, metadata is about 1.5% of the brotli HTML of the catalog and 1.8% of the product page.
+- The dispatcher script is 986 B gzip, under the 1 KB budget, and `chunks.js` about 1.1 KB. A
+  click on a link or a submit of a server-tier form before `chunks.js` has loaded is a full page
+  load. Client code reaches the navigation module, for `.call` and for handing an error to the
+  nearest `<Errored>`, through `window.rzNav`.
+- The state block names a chunk by its index into `chunks.js`. On `shop`, the test application
+  sized like a real store, metadata is about 1.5% of the brotli HTML of the catalog and 1.8% of
+  the product page.
