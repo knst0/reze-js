@@ -30,3 +30,13 @@ same cache.
 
 The size benchmark measures the effect. Mangling stays only while it saves bytes after gzip and
 brotli.
+
+## Implementation status
+
+The current implementation differs from this design in these points:
+
+- `reze-js` is the only package with a runtime. `vp pack` builds it, and `scripts/mangle.mts`
+  then runs esbuild with `mangleProps: /^_/` over `dist`, with the cache in `scripts/mangle.json`.
+- The mangled properties are the signal graph's, in `runtime/client.ts`. The size benchmark builds
+  the test applications from `dist`, and mangling saves 31 bytes of gzip and 26 of brotli on each
+  route chunk.

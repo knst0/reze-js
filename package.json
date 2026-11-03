@@ -17,6 +17,7 @@
     "@playwright/test": "1.63.0",
     "@rezejs/compiler": "workspace:*",
     "@types/node": "^26.6.2",
+    "esbuild": "^0.28.2",
     "playwright": "1.63.0",
     "turbo": "^2.11.4",
     "typescript": "^7.0.2",

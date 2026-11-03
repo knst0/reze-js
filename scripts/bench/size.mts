@@ -13,6 +13,11 @@ import { measure, readSnapshot, recordSnapshot, type Size } from "./sizes.ts";
 const root = resolve(import.meta.dirname, "..", "..");
 const apps = join(root, "tests", "apps");
 const results = join(import.meta.dirname, "size.json");
+/** The published build of each package, so the sizes include its mangled properties. */
+const distAliases = sourceAliases.map(({ find, replacement }) => ({
+  find,
+  replacement: replacement.replace(/([/\\])src([/\\])/, "$1dist$2").replace(/\.ts$/, ".js"),
+}));
 const metadata = [
   / data-rz(?:-prevent)?=(?:"[^"]*"|[^\s>]+)/g,
   /<!--[0-9a-z]+\.[0-9a-z]+-->/g,
@@ -27,7 +32,7 @@ async function build(app: string, out: string): Promise<(request: Request) => Pr
     configFile: false,
     logLevel: "warn",
     plugins: [reze()],
-    resolve: { alias: sourceAliases },
+    resolve: { alias: distAliases },
     environments: {
       client: { build: { outDir: join(out, "client"), emptyOutDir: true } },
       ssr: { build: { outDir: join(out, "server"), emptyOutDir: true } },

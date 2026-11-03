@@ -1,20 +1,20 @@
 type Entry = unknown[];
 
 class Effect {
-  readonly sources = new Set<Signal<unknown>>();
-  cleanups: (() => void)[] = [];
+  readonly _sources = new Set<Signal<unknown>>();
+  _cleanups: (() => void)[] = [];
 
-  constructor(readonly fn: () => void) {}
+  constructor(readonly _fn: () => void) {}
 }
 
 function run(effect: Effect): void {
-  for (const cleanup of effect.cleanups.splice(0)) cleanup();
-  for (const source of effect.sources) source.subscribers.delete(effect);
-  effect.sources.clear();
+  for (const cleanup of effect._cleanups.splice(0)) cleanup();
+  for (const source of effect._sources) source._subscribers.delete(effect);
+  effect._sources.clear();
   const previous = current;
   current = effect;
   try {
-    effect.fn();
+    effect._fn();
   } finally {
     current = previous;
   }
@@ -31,62 +31,62 @@ function flush(): void {
 }
 
 export class Signal<T> {
-  readonly subscribers = new Set<Effect>();
+  readonly _subscribers = new Set<Effect>();
 
-  constructor(protected value: T) {}
+  constructor(protected _value: T) {}
 
   get v(): T {
     if (current) {
-      this.subscribers.add(current);
-      current.sources.add(this as Signal<unknown>);
+      this._subscribers.add(current);
+      current._sources.add(this as Signal<unknown>);
     }
-    return this.value;
+    return this._value;
   }
 
   set v(next: T) {
-    if (Object.is(next, this.value)) return;
-    this.value = next;
-    this.notify();
+    if (Object.is(next, this._value)) return;
+    this._value = next;
+    this._notify();
   }
 
-  notify(): void {
+  _notify(): void {
     if (pending.size === 0) queueMicrotask(flush);
-    for (const subscriber of this.subscribers) pending.add(subscriber);
+    for (const subscriber of this._subscribers) pending.add(subscriber);
   }
 }
 
 export const $sig = <T>(value: T): Signal<T> => new Signal(value);
 
 class Store<T> extends Signal<T> {
-  readonly #proxies = new WeakMap<object, object>();
+  readonly _proxies = new WeakMap<object, object>();
 
   override get v(): T {
-    return this.#wrap(super.v);
+    return this._wrap(super.v);
   }
 
   override set v(next: T) {
     super.v = next;
   }
 
-  #wrap<V>(value: V): V {
+  _wrap<V>(value: V): V {
     if (typeof value !== "object" || value === null) return value;
-    let proxy = this.#proxies.get(value);
+    let proxy = this._proxies.get(value);
     if (!proxy) {
       proxy = new Proxy(value, {
-        get: (target, key) => this.#wrap(Reflect.get(target, key)),
+        get: (target, key) => this._wrap(Reflect.get(target, key)),
         set: (target, key, next) => {
           const changed = !Object.is(Reflect.get(target, key), next);
           Reflect.set(target, key, next);
-          if (changed || key === "length") this.notify();
+          if (changed || key === "length") this._notify();
           return true;
         },
         deleteProperty: (target, key) => {
           Reflect.deleteProperty(target, key);
-          this.notify();
+          this._notify();
           return true;
         },
       });
-      this.#proxies.set(value, proxy);
+      this._proxies.set(value, proxy);
     }
     return proxy as V;
   }
@@ -105,7 +105,7 @@ export function $comp<T>(fn: () => T): Signal<T> {
 }
 
 export function $cleanup(fn: () => void): void {
-  current?.cleanups.push(fn);
+  current?._cleanups.push(fn);
 }
 
 export function $untrack<T>(fn: () => T): T {
