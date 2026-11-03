@@ -46,10 +46,12 @@ const fixtures = readdirSync(root, { withFileTypes: true }).filter(
 for (const fixture of fixtures) {
   test(fixture.name, async () => {
     const dir = join(root, fixture.name);
-    const result = compileProject({ files: sources(dir) });
+    const rust = existsSync(join(dir, "rust.json")) ? JSON.parse(readFileSync(join(dir, "rust.json"), "utf8")) : undefined;
+    const result = compileProject({ files: sources(dir) }, { rust });
     const diagnostics = result.diagnostics.map(format).join("\n\n");
     await snapshot(dir, "diagnostics.snap", diagnostics ? `${diagnostics}\n` : undefined);
-    if (result.diagnostics.some((d) => d.severity === "error")) {
+    await snapshot(dir, "rust.snap", result.rust ?? undefined);
+    if (rust || result.diagnostics.some((d) => d.severity === "error")) {
       await snapshot(dir, "html.snap", undefined);
       return;
     }

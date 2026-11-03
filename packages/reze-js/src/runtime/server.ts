@@ -148,6 +148,8 @@ export interface Loader<T> {
   readonly schema?: StandardSchemaV1;
   params?: Fields;
   search?: Fields;
+  /** The route file of `loader.external()`, whose data the Rust server loads. */
+  external?: string;
 }
 
 export interface Mutation<I, R> {
@@ -308,7 +310,7 @@ function deferrable(value: unknown, pending: Promise<unknown>[]): unknown {
 }
 
 /** Attaches the compiler's coercion of params and search params. */
-export function $load<T>(target: Loader<T>, meta: Pick<Loader<T>, "params" | "search">): Loader<T> {
+export function $load<T>(target: Loader<T>, meta: Pick<Loader<T>, "params" | "search" | "external">): Loader<T> {
   return Object.assign(target, meta);
 }
 
@@ -631,6 +633,8 @@ export interface HandlerOptions {
   trustedOrigins?: string[];
   /** Byte limits of a mutation body: JSON and form fields, and files. */
   limits?: { body?: number; files?: number };
+  /** The origin of the Rust server whose `dev` feature runs the external loaders. */
+  loaders?: string;
 }
 
 export interface AppOptions extends HandlerOptions {
@@ -714,6 +718,16 @@ function keyed(issues: Issue[]): Record<string, Issue> {
 }
 
 export function createApp(routes: Route[], root: RouteModule[], options: AppOptions = {}): Handler {
+  /** The data of an external loader, from the Rust server. */
+  const external = async (file: string, params: Record<string, unknown>) => {
+    if (!options.loaders) throw new Error("`loader.external()` needs the `loaders` option: the origin of the Rust server");
+    const query = new URLSearchParams({ m: file });
+    for (const [name, value] of Object.entries(params)) if (value !== undefined) query.append(name, String(value as string));
+    const response = await fetch(`${options.loaders}/__reze/load?${query}`);
+    if (response.status >= 400 && response.status < 500) throw new RouteError(response.status, await response.text());
+    if (!response.ok) throw new Error(`The Rust loader of ${file} failed with ${response.status}`);
+    return response.json() as Promise<unknown>;
+  };
   const ordered = [...routes].sort(compare);
   const limits = { body: options.limits?.body ?? 1 << 20, files: options.limits?.files ?? 10 << 20 };
   const caught = (request: Request) => (error: unknown) => {
@@ -863,6 +877,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
       const results = await Promise.allSettled(
         depths.map(async (depth) => {
           const load = chain[depth]!.load;
+          if (load?.external !== undefined) return external(load.external, params);
           if (!load?.run) return;
           const writer = new Writer();
           writers.push(writer);

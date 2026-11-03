@@ -16,3 +16,4 @@ tests/compiler/.out
 test-results/
 playwright-report/
 tests/apps/*/src/routes.gen.d.ts
+tests/apps/*/src/reze-types.gen.d.ts

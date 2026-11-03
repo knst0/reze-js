@@ -83,6 +83,7 @@ pub enum CallTarget {
 
 pub struct Call<'a> {
     pub name: String,
+    pub span: Span,
     pub target: CallTarget,
     pub props: Vec<Prop<'a>>,
     pub children: Option<PropValue<'a>>,

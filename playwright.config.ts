@@ -7,7 +7,9 @@ const browsers = {
   firefox: devices["Desktop Firefox"],
   webkit: devices["Desktop Safari"],
 };
-const servers: ServerKind[] = ["js", "js-build"];
+const servers: ServerKind[] = ["js", "js-build", "rust"];
+/** The apps with a Rust server crate, which only the `rust` server runs. */
+const rust = "blog/**";
 
 export default defineConfig<object, { serverKind: ServerKind }>({
   testDir: "tests/apps",
@@ -19,6 +21,7 @@ export default defineConfig<object, { serverKind: ServerKind }>({
     Object.entries(browsers).map(([browser, device]) => ({
       name: `${browser}-${serverKind}`,
       use: { ...device, serverKind },
+      ...(serverKind === "rust" ? { testMatch: `${rust}/*.e2e.ts` } : { testIgnore: rust }),
     })),
   ),
 });

@@ -1,0 +1,28 @@
+[
+  {
+    "crate": "app_types",
+    "types": [
+      { "kind": "enum", "name": "Kind", "variants": ["Fruit", "Vegetable"] },
+      {
+        "kind": "struct",
+        "name": "Item",
+        "fields": [
+          { "name": "id", "type": { "kind": "bigint", "rust": "u64" } },
+          { "name": "name", "type": { "kind": "string" } },
+          { "name": "kind", "type": { "kind": "named", "name": "Kind" } },
+          { "name": "price", "type": { "kind": "number", "rust": "f64" } },
+          { "name": "note", "type": { "kind": "option", "of": { "kind": "string" } } }
+        ]
+      },
+      {
+        "kind": "struct",
+        "name": "Shop",
+        "fields": [
+          { "name": "title", "type": { "kind": "string" } },
+          { "name": "open", "type": { "kind": "boolean" } },
+          { "name": "items", "type": { "kind": "list", "of": { "kind": "named", "name": "Item" } } }
+        ]
+      }
+    ]
+  }
+]

@@ -20,6 +20,11 @@ export interface CompileOptions {
   target?: Target
   /** Default: `"route"`. */
   chunks?: Chunks
+  /**
+   * The type IR of each Rust crate, as `reze-ir` writes it; when set, the result has the Rust
+   * render.
+   */
+  rust?: Array<{ crate: string; types: unknown[] }>
 }
 
 export declare function compileProject(input: ProjectInput, options?: CompileOptions | undefined | null): ProjectResult
@@ -100,6 +105,8 @@ export interface ProjectResult {
   /** Source of `virtual:rz-route/{node}`, by route node index. */
   chunks: Record<string, string>
   diagnostics: Array<Diagnostic>
+  /** Source of `reze_routes.rs`, when the options name Rust crates. */
+  rust?: string
 }
 
 export type Target = 'server' | 'spa'

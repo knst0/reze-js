@@ -1,0 +1,9 @@
+[package]
+name = "reze"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+reze_derive = { path = "../reze_derive" }

@@ -34,6 +34,10 @@ pub struct CompileOptions {
     pub target: Option<Target>,
     /// Default: `"route"`.
     pub chunks: Option<Chunks>,
+    /// The type IR of each Rust crate, as `reze-ir` writes it; when set, the result has the Rust
+    /// render.
+    #[napi(ts_type = "Array<{ crate: string; types: unknown[] }>")]
+    pub rust: Option<serde_json::Value>,
 }
 
 #[napi(object)]
@@ -147,11 +151,13 @@ pub struct ProjectResult {
     /// Source of `virtual:rz-route/{node}`, by route node index.
     pub chunks: HashMap<String, String>,
     pub diagnostics: Vec<Diagnostic>,
+    /// Source of `reze_routes.rs`, when the options name Rust crates.
+    pub rust: Option<String>,
 }
 
-fn options(options: Option<CompileOptions>) -> reze_compiler::Options {
+fn options(options: Option<CompileOptions>) -> napi::Result<reze_compiler::Options> {
     let mut out = reze_compiler::Options::default();
-    let Some(options) = options else { return out };
+    let Some(options) = options else { return Ok(out) };
     if let Some(routes_dir) = options.routes_dir {
         out.routes_dir = routes_dir;
     }
@@ -165,7 +171,13 @@ fn options(options: Option<CompileOptions>) -> reze_compiler::Options {
         Some(Chunks::Handler) => reze_compiler::Chunks::Handler,
         Some(Chunks::Route) | None => reze_compiler::Chunks::Route,
     };
-    out
+    if let Some(rust) = options.rust {
+        out.rust = Some(
+            serde_json::from_value(rust)
+                .map_err(|error| napi::Error::from_reason(error.to_string()))?,
+        );
+    }
+    Ok(out)
 }
 
 fn run(input: &ProjectInput, options: &reze_compiler::Options) -> reze_compiler::ProjectOutput {
@@ -196,6 +208,7 @@ fn result(output: reze_compiler::ProjectOutput) -> napi::Result<ProjectResult> {
         navigation: output.navigation,
         chunks: output.chunks.into_iter().map(|(node, code)| (node.to_string(), code)).collect(),
         diagnostics: output.diagnostics.into_iter().map(diagnostic).collect(),
+        rust: output.rust,
     })
 }
 
@@ -204,7 +217,7 @@ pub fn compile_project(
     input: ProjectInput,
     options: Option<CompileOptions>,
 ) -> napi::Result<ProjectResult> {
-    let options = self::options(options);
+    let options = self::options(options)?;
     result(run(&input, &options))
 }
 
@@ -230,6 +243,6 @@ impl Task for CompileTask {
 pub fn compile_project_async(
     input: ProjectInput,
     options: Option<CompileOptions>,
-) -> AsyncTask<CompileTask> {
-    AsyncTask::new(CompileTask { input, options: self::options(options) })
+) -> napi::Result<AsyncTask<CompileTask>> {
+    Ok(AsyncTask::new(CompileTask { input, options: self::options(options)? }))
 }

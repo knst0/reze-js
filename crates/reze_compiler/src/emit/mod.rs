@@ -1,5 +1,6 @@
 mod server;
 
+pub(crate) use server::head_key;
 pub use server::server;
 
 use std::collections::BTreeMap;

@@ -55,7 +55,7 @@ fn template_escape(out: &mut String, s: &str) {
     }
 }
 
-fn head_key(element: &Element<'_>) -> Option<String> {
+pub(crate) fn head_key(element: &Element<'_>) -> Option<String> {
     let attribute = |name: &str| {
         element.attributes.iter().find_map(|item| match item {
             AttributeItem::Attribute(a) if a.name == name => Some(&a.value),

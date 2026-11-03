@@ -756,6 +756,11 @@ pub struct Endpoint {
     pub route: Option<String>,
     /// The loader arguments the function reads, `None` when it may read any of them.
     pub reads: Option<Vec<String>>,
+    /// `loader.external<T>()`: the Rust server loads the data.
+    pub external: bool,
+    /// The Rust path of an external loader's type, `crate::Name`, when it comes from
+    /// `virtual:reze-types/<crate>`.
+    pub data_type: Option<String>,
 }
 
 fn report_unlowered(reports: &mut Vec<Report>, unlowered: Unlowered, span: Span) {
@@ -792,7 +797,15 @@ pub fn endpoints<'a>(
             else {
                 continue;
             };
+            let external = match call.callee.without_parentheses() {
+                Expression::StaticMemberExpression(member) => {
+                    member.property.name == "external"
+                        && cx.api(module, &member.object) == Some(Api::Loader)
+                }
+                _ => false,
+            };
             let kind = match cx.api(module, &call.callee) {
+                _ if external => EndpointKind::Loader,
                 Some(Api::Loader) => EndpointKind::Loader,
                 Some(Api::Mutation) => EndpointKind::Mutation,
                 _ => continue,
@@ -808,8 +821,16 @@ pub fn endpoints<'a>(
                 typed: loader_result(call).is_some(),
                 route: pattern.as_ref().map(|(route, _)| route.to_string()),
                 reads: loader_reads(call),
+                external,
+                data_type: None,
             };
             match kind {
+                EndpointKind::Loader if external => {
+                    endpoint.meta = format!("{{ external: {:?} }}", cx.modules[module].path);
+                    endpoint.typed = true;
+                    endpoint.reads = None;
+                    endpoint.data_type = external_type(cx, module, call);
+                }
                 EndpointKind::Loader => {
                     endpoint.meta = loader_meta(cx, module, call, pattern.as_ref(), reports);
                 }
@@ -824,6 +845,19 @@ pub fn endpoints<'a>(
         }
     }
     out
+}
+
+/// `crate::Name` of the type argument of `loader.external<Name>()`, imported from
+/// `virtual:reze-types/<crate>`.
+fn external_type(cx: &Context<'_, '_>, module: usize, call: &CallExpression<'_>) -> Option<String> {
+    let argument = call.type_arguments.as_ref()?.params.first()?;
+    let TSType::TSTypeReference(reference) = argument else { return None };
+    let TSTypeName::IdentifierReference(id) = &reference.type_name else { return None };
+    let symbol = cx.symbol(module, id)?;
+    let import = cx.facts[module].imports.get(&symbol)?;
+    let ImportSource::Package(package) = &import.source else { return None };
+    let krate = package.strip_prefix("virtual:reze-types/")?;
+    Some(format!("{}::{}", krate.replace('-', "_"), import.name))
 }
 
 fn loader_meta<'a>(

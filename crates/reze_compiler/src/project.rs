@@ -9,7 +9,7 @@ use oxc_span::{SourceType, Span};
 use crate::diagnostic::{self, Code, Report};
 use crate::fs::{self, FileSystem};
 use crate::routes;
-use crate::{ModuleOutput, Options, ProjectOutput, analyze, client, emit};
+use crate::{ModuleOutput, Options, ProjectOutput, analyze, client, emit, rust};
 
 pub struct Module<'a> {
     pub path: String,
@@ -171,6 +171,16 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
         plan = Some(client);
     }
     let failed = reports.values().flatten().any(|r| r.code.severity().is_error());
+    if let (Some(plan), Some(crates), false) = (&plan, &options.rust, failed) {
+        let (code, rust_reports) =
+            rust::emit(&modules, &analysis, &output.routes, plan, crates, routes_dir);
+        for (module, mut module_reports) in rust_reports.into_iter().enumerate() {
+            if !module_reports.is_empty() {
+                reports.entry(module).or_default().append(&mut module_reports);
+            }
+        }
+        output.rust = Some(code);
+    }
     output.diagnostics = resolve_reports(reports, &paths, &sources);
     let Some(mut plan) = plan.filter(|_| !failed) else {
         return output;

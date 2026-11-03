@@ -9,6 +9,7 @@ mod fs;
 mod html;
 mod project;
 mod routes;
+mod rust;
 mod view;
 
 use std::collections::BTreeMap;
@@ -21,6 +22,7 @@ pub use diagnostic::{
 };
 pub use fs::{DiskFs, FileSystem, MemoryFs};
 pub use routes::{RouteNode, RouteTable, Segment};
+pub use rust::{CrateIr, FieldDef, TypeDef, TypeRef};
 
 /// The module compiled server code imports render helpers from.
 pub const SERVER_RUNTIME: &str = "reze-js/runtime/server";
@@ -47,6 +49,9 @@ pub struct Options {
     pub dev: bool,
     pub target: Target,
     pub chunks: Chunks,
+    /// The type IR of the Rust crates that `loader.external<T>()` types come from; when set, the
+    /// output has the Rust render.
+    pub rust: Option<Vec<CrateIr>>,
 }
 
 impl Default for Options {
@@ -56,6 +61,7 @@ impl Default for Options {
             dev: false,
             target: Target::Server,
             chunks: Chunks::Route,
+            rust: None,
         }
     }
 }
@@ -81,6 +87,9 @@ pub struct ProjectOutput {
     /// Source of `virtual:rz-route/{node}`: the client factories of each page route that has any.
     pub chunks: BTreeMap<usize, String>,
     pub diagnostics: Vec<Diagnostic>,
+    /// Source of `reze_routes.rs`, when the options name Rust crates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rust: Option<String>,
 }
 
 impl ProjectOutput {

@@ -980,3 +980,20 @@ The current implementation differs from this design in these points:
   `<client outDir>/<path>/index.html` for the static host to serve.
 - `revalidate` takes the smallest value of the chain. The `ETag` is a SHA-1 of the document, sent
   on `200` responses to `GET` and `HEAD` that do not stream.
+- The Rust server renders loader data only: Rust has no mutations, guards, redirects, deferred
+  fields, or streaming. A Rust loader stops a request with a `RouteError`, and a `POST` answers
+  `404`, or `403` when it is cross-site. `handle` takes any request body and returns
+  `http::Response<Bytes>`; the `tower` service answers `Full<Bytes>`.
+- The `actix` adapter is not built. `reze_server::tower::service(app, context)` takes the context
+  as an argument instead of extracting it from the framework's state.
+- The Rust loader data and the dev JSON use named fields, not the positional encoding. Params reach
+  a Rust loader as strings, in the generated `Params` of the route.
+- The IR has no `Map` or `Date`: a field of another type fails the build with "has no wire
+  encoding". The `reze-ir` binary of `reze_build` writes the IR in place of `cargo xtask reze-ir`,
+  and the Vite plugin reads it through `reze({ rust: { types } })`.
+- The generated code renders one function per route level into `Html` and a `Render` state, and
+  `reze_build::compile` runs the compiler itself in `build.rs`. The server reads the client URLs
+  from `dist/server/reze.json` at startup, through `App::manifest`.
+- Development has no Vite proxy: the JS handler fetches external loaders from the Rust `dev` server
+  at `/__reze/load`, through `createHandler({ loaders })`.
+- `Server-Timing` is not written.

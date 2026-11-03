@@ -1,0 +1,58 @@
+//! The type IR of a Rust crate's `#[derive(reze::Data)]` types, which `reze-ir` writes and the
+//! Rust target and the TS types read.
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum TypeRef {
+    String,
+    Boolean,
+    /// A Rust number type that crosses as a JS `number`: `f64`, `u32`.
+    Number {
+        rust: String,
+    },
+    /// `u64` or `i64`, which cross as a decimal string.
+    Bigint {
+        rust: String,
+    },
+    Option {
+        of: Box<TypeRef>,
+    },
+    List {
+        of: Box<TypeRef>,
+    },
+    /// A type of the same crate.
+    Named {
+        name: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FieldDef {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: TypeRef,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum TypeDef {
+    Struct { name: String, fields: Vec<FieldDef> },
+    Enum { name: String, variants: Vec<String> },
+}
+
+impl TypeDef {
+    pub fn name(&self) -> &str {
+        match self {
+            TypeDef::Struct { name, .. } | TypeDef::Enum { name, .. } => name,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CrateIr {
+    #[serde(rename = "crate")]
+    pub name: String,
+    pub types: Vec<TypeDef>,
+}

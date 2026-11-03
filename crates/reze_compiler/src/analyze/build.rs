@@ -481,7 +481,7 @@ impl<'c, 'm, 'a> Builder<'c, 'm, 'a> {
         }
         let children = self.call_children(element);
         self.path.pop();
-        Call { name, target, props, children }
+        Call { name, span: element.span, target, props, children }
     }
 
     fn call_children(&mut self, element: &'a JSXElement<'a>) -> Option<PropValue<'a>> {

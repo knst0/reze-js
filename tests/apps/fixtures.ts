@@ -1,9 +1,10 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, extname, join, normalize } from "node:path";
+import { dirname, extname, join, normalize, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 
@@ -15,15 +16,18 @@ import { sourceAliases } from "../../vitest.shared";
 
 export { expect } from "@playwright/test";
 
-/** `js` runs the Vite dev server; `js-build` serves a production build. */
+/** `js` runs the Vite dev server; `js-build` serves a production build; `rust` serves it from the Rust server. */
 export type ServerKind = "js" | "js-build" | "rust";
 
 export interface Server {
   url(path: string): string;
+  /** With `rust`: the same build on the JS server, whose external loaders run in the Rust server. */
+  js?(path: string): string;
 }
 
 interface Running {
   origin: string;
+  js?: string;
   close(): Promise<void>;
 }
 
@@ -102,7 +106,8 @@ function respond(handler: Handler, message: IncomingMessage, out: ServerResponse
 
 const types: Record<string, string> = { ".js": "text/javascript", ".css": "text/css" };
 
-async function startJsBuild(app: string): Promise<Running> {
+/** Builds `app` into a temporary directory, with the Rust types of `rust`. */
+async function build(app: string, rust?: string[]): Promise<{ out: string; client: string; handler: (options?: object) => Handler }> {
   const out = await mkdtemp(join(tmpdir(), "rz-build-"));
   await writeFile(join(out, "package.json"), '{ "type": "module" }');
   const client = join(out, "client");
@@ -110,7 +115,7 @@ async function startJsBuild(app: string): Promise<Running> {
     root: app,
     configFile: false,
     logLevel: "warn",
-    plugins: [reze()],
+    plugins: [reze(rust ? { rust: { types: rust } } : {})],
     resolve: { alias: sourceAliases },
     environments: {
       client: { build: { outDir: client, emptyOutDir: true } },
@@ -125,26 +130,74 @@ async function startJsBuild(app: string): Promise<Running> {
   }
   const entry = ["server.js", "server.mjs"].map((name) => join(out, "server", name)).find((path) => existsSync(path))!;
   const server = await import(pathToFileURL(entry).href);
-  const handler: Handler = existsSync(join(app, "src/server.ts")) ? server.default : server.createHandler();
-  return listen(
-    (message, response) => {
-      const url = new URL(message.url ?? "/", "http://localhost");
-      const path = normalize(url.pathname);
-      const file = extname(path) ? path : url.search ? "" : join(path, "index.html");
-      if (!file || (message.method !== "GET" && message.method !== "HEAD")) return respond(handler, message, response);
-      readFile(join(client, file))
-        .then((body) => {
-          response.writeHead(200, { "content-type": types[extname(file)] ?? "text/html; charset=utf-8" });
-          response.end(body);
-        })
-        .catch(() => respond(handler, message, response));
-    },
-    () => rm(out, { recursive: true, force: true }),
-  );
+  const handler = (options?: object): Handler => (existsSync(join(app, "src/server.ts")) ? server.default : server.createHandler(options));
+  return { out, client, handler };
+}
+
+/** Serves the files of `client`, and every other request with `handler`. */
+function serveBuild(client: string, handler: Handler, close: () => Promise<void>): Promise<Running> {
+  return listen((message, response) => {
+    const url = new URL(message.url ?? "/", "http://localhost");
+    const path = normalize(url.pathname);
+    const file = extname(path) ? path : url.search ? "" : join(path, "index.html");
+    if (!file || (message.method !== "GET" && message.method !== "HEAD")) return respond(handler, message, response);
+    readFile(join(client, file))
+      .then((body) => {
+        response.writeHead(200, { "content-type": types[extname(file)] ?? "text/html; charset=utf-8" });
+        response.end(body);
+      })
+      .catch(() => respond(handler, message, response));
+  }, close);
+}
+
+async function startJsBuild(app: string): Promise<Running> {
+  const { out, client, handler } = await build(app);
+  return serveBuild(client, handler(), () => rm(out, { recursive: true, force: true }));
+}
+
+const repo = resolve(import.meta.dirname, "../..");
+
+function run(command: string, args: string[], env: Record<string, string> = {}): Promise<void> {
+  return new Promise((done, fail) => {
+    const child = spawn(command, args, { cwd: repo, env: { ...process.env, ...env }, stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
+    child.on("error", fail);
+    child.on("exit", (code) => (code === 0 ? done() : fail(new Error(`${command} ${args.join(" ")} failed:\n${stderr}`))));
+  });
+}
+
+/** Builds the app's `server` crate, whose `types` crate holds the loader data types, and serves the build with it. */
+async function startRust(app: string): Promise<Running> {
+  const name = `${app.split("/").at(-1)}_server`;
+  const target = join(repo, "target/e2e");
+  const ir = join(await mkdtemp(join(tmpdir(), "rz-ir-")), "types.json");
+  await run("cargo", ["run", "-q", "-p", "reze_build", "--bin", "reze-ir", "--", join(app, "types"), ir]);
+  const { out, client, handler } = await build(app, [ir]);
+  await run("cargo", ["build", "-q", "--manifest-path", join(app, "Cargo.toml"), "-p", name], { CARGO_TARGET_DIR: target });
+  const child = spawn(join(target, "debug", name), [join(out, "server/reze.json")], { stdio: ["ignore", "pipe", "inherit"] });
+  const rust = await new Promise<string>((done, fail) => {
+    child.stdout.once("data", (chunk: Buffer) => done(chunk.toString().trim()));
+    child.on("exit", (code) => fail(new Error(`${name} exited with ${code}`)));
+  });
+  const proxy: Handler = (request) => {
+    const url = new URL(request.url);
+    const headers = new Headers(request.headers);
+    for (const name of ["host", "connection", "keep-alive", "content-length", "transfer-encoding"]) headers.delete(name);
+    return fetch(new URL(url.pathname + url.search, rust), { method: request.method, headers, redirect: "manual" });
+  };
+  const js = await serveBuild(client, handler({ loaders: rust }), async () => {});
+  const running = await serveBuild(client, proxy, async () => {
+    child.kill();
+    await js.close();
+    await rm(out, { recursive: true, force: true });
+    await rm(dirname(ir), { recursive: true, force: true });
+  });
+  return { ...running, js: js.origin };
 }
 
 function start(kind: ServerKind, app: string): Promise<Running> {
-  if (kind === "rust") throw new Error("The Rust server is not built yet");
+  if (kind === "rust") return startRust(app);
   return kind === "js-build" ? startJsBuild(app) : startJs(app);
 }
 
@@ -163,8 +216,11 @@ export const test = base.extend<{ server: Server }, { serverKind: ServerKind; se
   server: async ({ servers, serverKind }, use, testInfo) => {
     const app = dirname(testInfo.file);
     let running = servers.get(app);
-    if (!running) servers.set(app, (running = start(serverKind, app)));
-    const { origin } = await running;
-    await use({ url: (path) => new URL(path, origin).href });
+    if (!running) {
+      if (serverKind === "rust") testInfo.setTimeout(testInfo.timeout + 600_000);
+      servers.set(app, (running = start(serverKind, app)));
+    }
+    const { origin, js } = await running;
+    await use({ url: (path) => new URL(path, origin).href, js: js ? (path) => new URL(path, js).href : undefined });
   },
 });
