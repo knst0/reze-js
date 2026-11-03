@@ -72,12 +72,8 @@ async function startJs(app: string): Promise<Running> {
     resolve: { alias: sourceAliases },
     server: { middlewareMode: true, ws: false, watch: null },
   });
-  const entry = join(app, "src/server.ts");
-  const handler: Handler = existsSync(entry)
-    ? (await vite.ssrLoadModule("/src/server.ts")).default
-    : (await vite.ssrLoadModule("reze-js/server")).createHandler();
   return listen(
-    (message, out) => vite.middlewares(message, out, () => respond(handler, message, out)),
+    (message, out) => vite.middlewares(message, out),
     () => vite.close(),
   );
 }

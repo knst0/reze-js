@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, extname, join, normalize, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { type Chunks, compileProjectAsync, type ProjectResult } from "@rezejs/compiler";
 import { minify, type Plugin, transformWithOxc } from "vite";
+
+import { type Handler, middleware } from "./node.ts";
 
 export interface RezeOptions {
   /** Directory of route modules, relative to the Vite root. */
@@ -78,6 +80,17 @@ const rustTypesPrefix = "virtual:reze-types/";
 /** The URL the dev server serves a virtual module at. */
 const devUrl = (id: string) => `/@id/__x00__${id}`;
 
+/** The handler of a server module: the default export of `src/server.ts`, or `createHandler()` of `reze-js/server`. */
+const handlerOf = (module: Record<string, unknown>): Handler =>
+  "createHandler" in module ? (module.createHandler as () => Handler)() : (module.default as Handler);
+
+const types: Record<string, string> = {
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+  ".json": "application/json",
+};
+
 /** URLs of the client build, which the server build reads. */
 interface Built {
   dispatcher: string;
@@ -85,16 +98,19 @@ interface Built {
   chunks: Record<string, string>;
 }
 
+/** The client build of each Vite root: Vite creates a plugin instance for each environment when it loads a config file. */
+const builds = new Map<string, Built>();
+
 export default function reze(options: RezeOptions = {}): Plugin {
   let root = process.cwd();
   let dev = false;
   let base = "/";
   let output: Promise<ProjectResult> | undefined;
-  let built: Built | undefined;
   const refs = new Map<string, string>();
   let dispatcherCode = "";
   let streamCode = "";
   let navRef = "";
+  let devHandler: Promise<Handler> | undefined;
 
   const routesDir = options.routesDir ?? "src/routes";
   const generated = async (name: string, source: string) => {
@@ -125,10 +141,21 @@ export default function reze(options: RezeOptions = {}): Plugin {
     name: "reze",
     enforce: "pre",
     config(config, env) {
-      if (env.command !== "build") return;
+      const outDirs = {
+        client: config.environments?.client?.build?.outDir ?? "dist/client",
+        ssr: config.environments?.ssr?.build?.outDir ?? "dist/server",
+      };
+      if (env.command !== "build") {
+        return {
+          appType: "custom",
+          ssr: { noExternal: ["reze-js"] },
+          environments: { client: { build: { outDir: outDirs.client } }, ssr: { build: { outDir: outDirs.ssr } } },
+        };
+      }
       const appRoot = config.root ?? process.cwd();
       const server = existsSync(join(appRoot, "src/server.ts")) ? "/src/server.ts" : "reze-js/server";
       return {
+        ssr: { noExternal: ["reze-js"] },
         builder: {
           async buildApp(builder) {
             await builder.build(builder.environments.client!);
@@ -136,6 +163,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
             const outDir = (name: string) => resolve(appRoot, builder.environments[name]!.config.build.outDir);
             const entry = (name: string) =>
               import(pathToFileURL([".js", ".mjs"].map((ext) => join(outDir("ssr"), name + ext)).find(existsSync)!).href);
+            const built = builds.get(root);
             if (options.rust && built) {
               const manifest = { build: await buildId(), ...built };
               await writeFile(join(outDir("ssr"), "reze.json"), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -154,10 +182,10 @@ export default function reze(options: RezeOptions = {}): Plugin {
           },
         },
         environments: {
-          client: { build: { outDir: config.environments?.client?.build?.outDir ?? "dist/client", rollupOptions: { input: [] } } },
+          client: { build: { outDir: outDirs.client, rollupOptions: { input: [] } } },
           ssr: {
             build: {
-              outDir: config.environments?.ssr?.build?.outDir ?? "dist/server",
+              outDir: outDirs.ssr,
               ssr: true,
               rollupOptions: { input: { server, prerender } },
             },
@@ -173,6 +201,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
     async buildStart() {
       if (dev || this.environment.name !== "client") return;
       refs.clear();
+      builds.delete(root);
       for (const node of Object.keys((await compile()).chunks)) {
         refs.set(node, this.emitFile({ type: "chunk", id: `${route}${node}`, name: `route-${node}`, preserveSignature: "exports-only" }));
       }
@@ -194,19 +223,46 @@ export default function reze(options: RezeOptions = {}): Plugin {
         source: dispatcherCode.replace(nav, base + this.getFileName(navRef)),
       });
       const streamRef = this.emitFile({ type: "asset", name: "stream.js", source: streamCode });
-      built = {
+      builds.set(root, {
         dispatcher: base + this.getFileName(dispatcherRef),
         stream: base + this.getFileName(streamRef),
         chunks: Object.fromEntries([...refs].map(([node, ref]) => [node, base + this.getFileName(ref)])),
-      };
+      });
     },
     configureServer(server) {
       server.watcher.on("all", (_, file) => {
         if (relative(root, file).startsWith("..") || file.endsWith("routes.gen.d.ts")) return;
         output = undefined;
+        devHandler = undefined;
         for (const environment of Object.values(server.environments)) {
           environment.moduleGraph.invalidateAll();
         }
+      });
+      const entry = existsSync(join(root, "src/server.ts")) ? "/src/server.ts" : "reze-js/server";
+      return () => {
+        server.middlewares.use(middleware(() => (devHandler ??= server.ssrLoadModule(entry).then(handlerOf))));
+      };
+    },
+    configurePreviewServer(server) {
+      const outDir = (name: string) => resolve(root, server.config.environments[name]!.build.outDir);
+      const client = outDir("client");
+      const entry = [".js", ".mjs"].map((ext) => join(outDir("ssr"), `server${ext}`)).find(existsSync);
+      let handler: Promise<Handler> | undefined;
+      const answer = middleware(() => {
+        if (!entry) throw new Error("Run `vite build` before `vite preview`");
+        return (handler ??= import(pathToFileURL(entry).href).then(handlerOf));
+      });
+      server.middlewares.use((message, out, next) => {
+        const url = new URL(message.url ?? "/", "http://localhost");
+        const path = normalize(url.pathname);
+        const file = extname(path) ? path : url.search ? "" : join(path, "index.html");
+        if (!file || (message.method !== "GET" && message.method !== "HEAD")) return answer(message, out, next);
+        readFile(join(client, file))
+          .then((body) => {
+            out.writeHead(200, { "content-type": types[extname(file)] ?? "text/html; charset=utf-8" });
+            out.end(message.method === "HEAD" ? undefined : body);
+          })
+          .catch(() => answer(message, out, next));
       });
     },
     resolveId(id, importer) {
@@ -230,6 +286,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
       const errors = result.diagnostics.filter((d) => d.severity === "error");
       if (errors.length > 0) this.error(errors.map((d) => d.rendered).join("\n\n"));
       for (const diagnostic of result.diagnostics) this.warn(diagnostic.rendered);
+      const built = dev ? undefined : builds.get(root);
       const assets = built
         ? `const chunks = ${JSON.stringify(built.chunks)};\nexport const assets = { dispatcher: ${JSON.stringify(built.dispatcher)}, stream: ${JSON.stringify(built.stream)}, chunk: (node) => chunks[node] };\n`
         : `export const assets = { dispatcher: ${JSON.stringify(devUrl(dispatcher))}, stream: ${JSON.stringify(devUrl(stream))}, chunk: (node) => ${JSON.stringify(devUrl(route))} + node };\n`;
