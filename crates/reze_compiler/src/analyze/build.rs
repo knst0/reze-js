@@ -2,13 +2,15 @@ use std::collections::{HashMap, HashSet};
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
-    ArrowFunctionExpression, Expression, JSXAttribute, JSXAttributeItem, JSXAttributeValue,
-    JSXChild, JSXElement, JSXElementName, JSXMemberExpressionObject, ObjectPropertyKind,
-    PropertyKey,
+    ArrowFunctionBody, ArrowFunctionExpression, Expression, IdentifierReference, JSXAttribute,
+    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
+    JSXMemberExpressionObject, ObjectPropertyKind, PropertyKey, Statement,
 };
+use oxc_ast_visit::Visit;
 use oxc_semantic::SymbolId;
 use oxc_span::{GetSpan, Span};
 
+use super::data::{Literal, Ty, mutation_of};
 use super::holes::{self, Position};
 use super::{Api, ComponentFunction, Context, ImportSource};
 use crate::diagnostic::{Code, Report};
@@ -26,6 +28,8 @@ pub struct Builder<'c, 'm, 'a> {
     pub consumed: &'c mut HashSet<u32>,
     values: &'c mut HashMap<u32, Content<'a>>,
     path: Vec<String>,
+    /// How many ranges whose condition or source reads client state enclose the current node.
+    client: u32,
 }
 
 fn is_jsx(expression: &Expression<'_>) -> bool {
@@ -62,7 +66,16 @@ impl<'c, 'm, 'a> Builder<'c, 'm, 'a> {
         component: String,
     ) -> Self {
         let source = cx.modules[module].source;
-        Self { cx, module, source, reports, consumed, values, path: vec![format!("<{component}>")] }
+        Self {
+            cx,
+            module,
+            source,
+            reports,
+            consumed,
+            values,
+            path: vec![format!("<{component}>")],
+            client: 0,
+        }
     }
 
     fn report(&mut self, report: Report) {
@@ -178,7 +191,7 @@ impl<'c, 'm, 'a> Builder<'c, 'm, 'a> {
                     out.push(Node::Head(head));
                 } else {
                     let element = self.intrinsic(element, tag);
-                    out.push(Node::Element(element));
+                    out.push(Node::Element(self.server_tier(element)));
                 }
             }
             JSXElementName::NamespacedName(name) => {
@@ -659,6 +672,8 @@ impl<'c, 'm, 'a> Builder<'c, 'm, 'a> {
             None => None,
         };
         self.path.push(format!("<{tag}>"));
+        let client = source.is_some_and(|source| self.reads_client(source));
+        self.client += u32::from(client);
         let fallback = attributes.get("fallback").and_then(|a| self.branch_value(a, tag));
         let node = match api {
             Api::Show | Api::Match => {
@@ -754,10 +769,176 @@ impl<'c, 'm, 'a> Builder<'c, 'm, 'a> {
             }
             _ => None,
         };
+        self.client -= u32::from(client);
         self.path.pop();
         if let Some(node) = node {
             out.push(node);
         }
+    }
+
+    /// Whether `expression` reads a signal, a computed, or a store.
+    fn reads_client(&self, expression: &Expression<'a>) -> bool {
+        let mut reads = ClientReads { cx: self.cx, module: self.module, found: false };
+        reads.visit_expression(expression);
+        reads.found
+    }
+
+    /// Lowers a `<button>` whose click handler is one mutation call, with arguments the server
+    /// knows, to a form that posts them as hidden fields. The button keeps no handler.
+    fn server_tier(&mut self, element: Element<'a>) -> Element<'a> {
+        let lowered = (element.tag == "button"
+            && self.client == 0
+            && !self.path.iter().any(|tag| tag == "form")
+            && element.reference.is_none()
+            && !element.eager
+            && element.attributes.iter().all(|item| match item {
+                AttributeItem::Attribute(attribute) => !matches!(
+                    attribute.name,
+                    "type" | "form" | "formaction" | "formmethod" | "name" | "value"
+                ),
+                AttributeItem::Spread(_) => false,
+            }))
+        .then(|| match element.handlers.as_slice() {
+            [handler] if handler.event == "click" => self.mutation_call(handler.value),
+            _ => None,
+        })
+        .flatten();
+        let Some((callee, fields, at)) = lowered else { return element };
+        let mut children: Vec<Node<'a>> = fields
+            .into_iter()
+            .map(|(name, value)| {
+                Node::Element(Element {
+                    tag: "input",
+                    span: Span::empty(value.span().start),
+                    attributes: vec![
+                        AttributeItem::Attribute(Attribute {
+                            name: "type",
+                            value: Value::Static("hidden".into()),
+                        }),
+                        AttributeItem::Attribute(Attribute {
+                            name: "name",
+                            value: Value::Static(name.into()),
+                        }),
+                        AttributeItem::Attribute(Attribute {
+                            name: "value",
+                            value: Value::Expr(value),
+                        }),
+                    ],
+                    handlers: Vec::new(),
+                    reference: None,
+                    eager: false,
+                    children: Vec::new(),
+                })
+            })
+            .collect();
+        children.push(Node::Element(Element { handlers: Vec::new(), ..element }));
+        Element {
+            tag: "form",
+            span: Span::empty(at),
+            attributes: vec![AttributeItem::Attribute(Attribute {
+                name: "action",
+                value: Value::Expr(callee),
+            })],
+            handlers: Vec::new(),
+            reference: None,
+            eager: false,
+            children,
+        }
+    }
+
+    /// The mutation, the fields, and the span start of a handler that only calls a mutation whose
+    /// form fields are strings, numbers, or literals: `() => toggle({ id: props.todo.id })`.
+    #[allow(clippy::type_complexity)]
+    fn mutation_call(
+        &mut self,
+        handler: &'a Expression<'a>,
+    ) -> Option<(&'a Expression<'a>, Vec<(&'a str, &'a Expression<'a>)>, u32)> {
+        let Expression::ArrowFunctionExpression(arrow) = handler.without_parentheses() else {
+            return None;
+        };
+        if !arrow.params.items.is_empty() || arrow.params.rest.is_some() {
+            return None;
+        }
+        let body = match &arrow.body {
+            ArrowFunctionBody::FunctionBody(body) => match body.statements.as_slice() {
+                [Statement::ExpressionStatement(statement)] => &statement.expression,
+                _ => return None,
+            },
+            body => body.as_expression()?,
+        };
+        let call = match body.without_parentheses() {
+            Expression::AwaitExpression(inner) => &inner.argument,
+            other => other,
+        };
+        let Expression::CallExpression(call) = call.without_parentheses() else { return None };
+        let callee = match call.callee.without_parentheses() {
+            Expression::StaticMemberExpression(member) if member.property.name == "call" => {
+                &member.object
+            }
+            callee => callee,
+        };
+        let endpoint = mutation_of(self.cx, self.module, callee)?;
+        let Some(Ty::Object(types)) = &endpoint.input else { return None };
+        let mut fields = Vec::new();
+        match call.arguments.as_slice() {
+            [] => {}
+            [argument] => {
+                let Expression::ObjectExpression(object) =
+                    argument.as_expression()?.without_parentheses()
+                else {
+                    return None;
+                };
+                for property in &object.properties {
+                    let ObjectPropertyKind::ObjectProperty(property) = property else {
+                        return None;
+                    };
+                    if property.computed {
+                        return None;
+                    }
+                    let name = match &property.key {
+                        PropertyKey::StaticIdentifier(id) => id.name.as_str(),
+                        PropertyKey::StringLiteral(literal) => literal.value.as_str(),
+                        _ => return None,
+                    };
+                    let ty = &types.iter().find(|field| field.name == name)?.ty;
+                    if !form_scalar(ty) || self.reads_client(&property.value) {
+                        return None;
+                    }
+                    fields.push((name, &property.value));
+                }
+            }
+            _ => return None,
+        }
+        for (_, value) in &fields {
+            self.hole(value, Position::Attribute, None);
+        }
+        Some((callee, fields, handler.span().start))
+    }
+}
+
+/// A type whose hidden field round-trips through its text: a string, a number, or a literal.
+fn form_scalar(ty: &Ty) -> bool {
+    match ty {
+        Ty::String | Ty::Number | Ty::Int(_) => true,
+        Ty::Literal(literal) => !matches!(literal, Literal::Boolean(_)),
+        Ty::Union(members) => members.iter().all(form_scalar),
+        _ => false,
+    }
+}
+
+/// Finds a read of a signal, a computed, or a store.
+struct ClientReads<'c, 'm, 'a> {
+    cx: &'c Context<'m, 'a>,
+    module: usize,
+    found: bool,
+}
+
+impl<'a> Visit<'a> for ClientReads<'_, '_, 'a> {
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        self.found |= matches!(
+            self.cx.initializer_api(self.module, it),
+            Some(Api::Signal | Api::Computed | Api::Store)
+        );
     }
 }
 

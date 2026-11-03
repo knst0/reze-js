@@ -1,0 +1,13 @@
+// src/routes/index.tsx
+import { $sig } from "reze-js/runtime/client";
+export const toggleTodo = mutation(async (input: { id: number }) => input.id);
+export const rename = mutation(async (input: { id: number; title: string; urgent: boolean }) => input.id);
+export const $c0 = ($s, $i, $a) => {
+  const draft = $sig("");
+  return { 0: { click: ($r) => () => rename({ id: $r[2], title: draft.v, urgent: false }) }, 1: { click: ($r) => () => toggleTodo({ id: 1 }) }, 2: { input: ($r) => (event) => (draft.v = event.currentTarget.value) } };
+};
+
+// virtual:rz-route/0
+import { $c0 } from "/src/routes/index.tsx";
+export default { 0: $c0 };
+export const g = [];

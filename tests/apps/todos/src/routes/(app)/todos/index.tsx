@@ -29,10 +29,7 @@ export default function Todos(props: { data: Todo[] }) {
           {(todo) => (
             <li>
               <a href={`/todos/${todo.id}`}>{todo.title}</a> P{todo.priority} {todo.done ? "done" : "open"}
-              <form action={toggleTodo}>
-                <input type="hidden" name="id" value={todo.id} />
-                <button type="submit">Toggle {todo.title}</button>
-              </form>
+              <button onClick={() => toggleTodo.call({ id: todo.id })}>Toggle {todo.title}</button>
             </li>
           )}
         </For>

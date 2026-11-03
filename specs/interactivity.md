@@ -489,7 +489,12 @@ The current implementation differs from this design in these points:
   the component's props annotation gives its type, or the loader result types `props.data` in a
   route component. A value whose type no annotation gives, such as a signal initialized from a
   call, reaches client code in its encoded form.
-- Server-tier lowering of handlers into `<form>` is not implemented.
+- Server-tier lowering covers only the `onClick` of a `<button>` without `type`, `form`, `name`,
+  `value`, a ref, or spread props, outside a `<form>` and outside a range that reads client state.
+  The handler takes no parameters, and its body is one call of a mutation, `toggleTodo(…)` or
+  `toggleTodo.call(…)` since `Mutation` types only `.call`, with no argument or with
+  one object literal whose fields are strings, numbers, or literal unions of them. Any other
+  handler stays in the Client tier.
 - A prevent condition is written as `type:cond+cond`. A condition is a bare `key` value, or
   `field=value` for `code`, `button`, and the modifier flags (`ctrlKey=true`). A key value that
   contains a space, `:`, `+`, or `=` cannot be written this way and raises

@@ -1050,7 +1050,7 @@ fn mutation_meta<'a>(
 }
 
 /// The mutation an expression names, following imports between project modules.
-fn mutation_of<'e>(
+pub(super) fn mutation_of<'e>(
     cx: &'e Context<'_, '_>,
     module: usize,
     expression: &Expression<'_>,

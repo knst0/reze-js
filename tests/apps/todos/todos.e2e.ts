@@ -30,6 +30,7 @@ for (const javaScriptEnabled of [true, false]) {
       const todos = page.getByRole("list", { name: "Todos" });
       await expect(todos.getByRole("listitem")).toHaveText([/Buy milk P2 open/]);
       await expect(page).toHaveURL(server.url("/todos"));
+      await expect(todos.locator('form[method="post"][action*="_m="] > button:not([data-rz])')).toHaveText("Toggle Buy milk");
       await page.getByRole("button", { name: "Toggle Buy milk" }).click();
       await expect(todos.getByRole("listitem")).toHaveText([/Buy milk P2 done/]);
       await page.goto(server.url("/todos?filter=open"));

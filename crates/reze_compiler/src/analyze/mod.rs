@@ -413,6 +413,20 @@ pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, options: &Options) -
     let mut reports: Vec<Vec<Report>> = modules.iter().map(|_| Vec::new()).collect();
 
     for module in 0..modules.len() {
+        let route = routes.nodes.iter().find(|node| node.file == modules[module].path);
+        let pattern = route.map(|node| {
+            (node.pattern.as_str(), node.segments.iter().filter_map(|s| s.name()).collect())
+        });
+        cx.facts[module].endpoints = data::endpoints(&cx, module, pattern, &mut reports[module]);
+        if options.target == Target::Spa {
+            for endpoint in &cx.facts[module].endpoints {
+                reports[module].push(
+                    Report::new(Code::ServerInSpa, endpoint.call).arg("name", &endpoint.export),
+                );
+            }
+        }
+    }
+    for module in 0..modules.len() {
         let mut consumed = HashSet::new();
         let mut values = HashMap::new();
         let templates: Vec<_> = (0..cx.facts[module].components.len())
@@ -446,20 +460,6 @@ pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, options: &Options) -
         }
     }
 
-    for module in 0..modules.len() {
-        let route = routes.nodes.iter().find(|node| node.file == modules[module].path);
-        let pattern = route.map(|node| {
-            (node.pattern.as_str(), node.segments.iter().filter_map(|s| s.name()).collect())
-        });
-        cx.facts[module].endpoints = data::endpoints(&cx, module, pattern, &mut reports[module]);
-        if options.target == Target::Spa {
-            for endpoint in &cx.facts[module].endpoints {
-                reports[module].push(
-                    Report::new(Code::ServerInSpa, endpoint.call).arg("name", &endpoint.export),
-                );
-            }
-        }
-    }
     for module in 0..modules.len() {
         let props: Vec<_> = (0..cx.facts[module].components.len())
             .map(|index| data::props_type(&cx, module, index))
