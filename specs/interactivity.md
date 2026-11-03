@@ -522,6 +522,8 @@ The current implementation differs from this design in these points:
   fallback, `rz:chunkerror` on `window`, or the single reload takes over.
 - The dispatcher is about 2 KB gzip, above the 1 KB target: it also intercepts links,
   server-tier forms, and history navigation, accepts the state blocks of navigations and
-  streamed parts, and hands handler errors to the nearest `<Errored>`.
+  streamed parts, and hands handler errors to the nearest `<Errored>`. It stays in one module
+  because a click on a link or a submit of a server-tier form must call `preventDefault` before
+  any other module could load; split out, those clicks would become full page loads.
 - `scripts/bench/size.mts` measures only the test applications, which are too small to judge the
   2% metadata share.
