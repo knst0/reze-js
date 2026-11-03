@@ -480,7 +480,10 @@ The current implementation differs from this design in these points:
   `ref`, or an `eager` element. Their chunk loads when one of their marked elements enters the
   viewport, or when the browser is idle if they have none. An `eager` element waits for the
   viewport like an effect.
-- A store notifies on any write to the object it wraps, with no per-field tracking.
+- A store tracks each key of each object it wraps, and `Object.keys` and other enumerations
+  of an object as one more field. A write notifies the readers of that key, a change of the key
+  set notifies enumerations, and a change of an array's `length` notifies the readers of `length`
+  and of the indexes it cut off.
 - Every client range (a `Show`, `Switch`, `For`, or `Repeat` whose condition or source reads
   client state, or that sits inside one) is marked, even when its content is always one element.
   The start marker carries the scope and a mark, `<!--[0.3-->`, so client code finds it without

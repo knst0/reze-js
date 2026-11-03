@@ -48,11 +48,15 @@ export class Signal<T> {
   constructor(protected _value: T) {}
 
   get v(): T {
+    this._track();
+    return this._value;
+  }
+
+  _track(): void {
     if (current) {
       this._subscribers.add(current);
       current._sources.add(this as Signal<unknown>);
     }
-    return this._value;
   }
 
   set v(next: T) {
@@ -69,8 +73,12 @@ export class Signal<T> {
 
 export const $sig = <T>(value: T): Signal<T> => new Signal(value);
 
+/** The field of a store object that reads of its keys subscribe to. */
+const keys = Symbol();
+
 class Store<T> extends Signal<T> {
   readonly _proxies = new WeakMap<object, object>();
+  readonly _fields = new WeakMap<object, Map<PropertyKey, Signal<undefined>>>();
 
   override get v(): T {
     return this._wrap(super.v);
@@ -80,21 +88,49 @@ class Store<T> extends Signal<T> {
     super.v = next;
   }
 
+  _field(target: object, key: PropertyKey): Signal<undefined> {
+    let fields = this._fields.get(target);
+    if (!fields) this._fields.set(target, (fields = new Map()));
+    let field = fields.get(key);
+    if (!field) fields.set(key, (field = new Signal(undefined)));
+    return field;
+  }
+
+  /** Notifies the readers of `key`, and of the keys a write added, removed, or cut off by `length`. */
+  _write(target: object, key: PropertyKey, write: () => void): void {
+    const [had, previous, length] = [Object.hasOwn(target, key), Reflect.get(target, key), (target as unknown[]).length];
+    write();
+    if (!Object.is(previous, Reflect.get(target, key))) this._field(target, key)._notify();
+    if (had !== Object.hasOwn(target, key)) this._field(target, keys)._notify();
+    if (Array.isArray(target) && length !== target.length) {
+      for (const [field, signal] of this._fields.get(target) ?? [])
+        if (field === "length" || +String(field) >= target.length) signal._notify();
+    }
+  }
+
   _wrap<V>(value: V): V {
     if (typeof value !== "object" || value === null) return value;
     let proxy = this._proxies.get(value);
     if (!proxy) {
       proxy = new Proxy(value, {
-        get: (target, key) => this._wrap(Reflect.get(target, key)),
+        get: (target, key) => {
+          this._field(target, key)._track();
+          return this._wrap(Reflect.get(target, key));
+        },
+        has: (target, key) => {
+          this._field(target, key)._track();
+          return Reflect.has(target, key);
+        },
+        ownKeys: (target) => {
+          this._field(target, keys)._track();
+          return Reflect.ownKeys(target);
+        },
         set: (target, key, next) => {
-          const changed = !Object.is(Reflect.get(target, key), next);
-          Reflect.set(target, key, next);
-          if (changed || key === "length") this._notify();
+          this._write(target, key, () => Reflect.set(target, key, next));
           return true;
         },
         deleteProperty: (target, key) => {
-          Reflect.deleteProperty(target, key);
-          this._notify();
+          this._write(target, key, () => Reflect.deleteProperty(target, key));
           return true;
         },
       });

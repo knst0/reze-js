@@ -100,6 +100,29 @@ test("starts an effect when its element enters the viewport", async ({ page, ser
   expect(requested).toHaveLength(1);
 });
 
+test("writes a store field without updating the readers of another", async ({ page, server }) => {
+  await page.goto(server.url("/store"));
+  await page.getByRole("button", { name: "Pear" }).click();
+  await expect(page.getByLabel("Pears")).toHaveText("1");
+  await page.evaluate(() => {
+    const pears = document.querySelector("[aria-label=Pears]")!;
+    const records: MutationRecord[] = [];
+    new MutationObserver((list) => records.push(...list)).observe(pears, { characterData: true, childList: true, subtree: true });
+    (window as unknown as { records: MutationRecord[] }).records = records;
+  });
+  await page.getByRole("button", { name: "Apple" }).click();
+  await expect(page.getByLabel("Apples")).toHaveText("1");
+  expect(await page.evaluate(() => (window as unknown as { records: MutationRecord[] }).records.length)).toBe(0);
+  const todos = page.getByRole("list", { name: "Todos" }).getByRole("listitem");
+  await page.getByRole("button", { name: "Push" }).click();
+  await page.getByRole("button", { name: "Finish" }).click();
+  await expect(todos).toHaveText(["Milk done", "Todo 2 open"]);
+  await expect(page.getByLabel("Count")).toHaveText("2 todos");
+  await page.getByRole("button", { name: "Clear" }).click();
+  await expect(todos).toHaveCount(0);
+  await expect(page.getByLabel("Count")).toHaveText("0 todos");
+});
+
 test.describe("lists", () => {
   const todos = (page: import("@playwright/test").Page) => page.getByRole("list", { name: "Todos" }).getByRole("listitem");
 

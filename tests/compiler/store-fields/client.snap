@@ -1,0 +1,29 @@
+// src/routes/index.tsx
+import { $fx, $h, $list, $q, $rg, $store, $str, $text } from "reze-js/runtime/client";
+export const $c0 = ($s, $i, $a) => {
+  const counts = $store({ apples: 0, pears: 0 });
+  const todos = $store([{ title: "Milk", done: false }]);
+  for (const $b of $q($i, 0)) {
+    const [$t232] = $text($b.parentNode.children[0], null, 0, [$str(counts.v.apples)]);
+    $fx(() => { $t232.data = $str(counts.v.apples); });
+    const [$t280] = $text($b.previousElementSibling, null, 0, [$str(counts.v.pears)]);
+    $fx(() => { $t280.data = $str(counts.v.pears); });
+    const [$t659] = $text($b.parentNode.children[5], null, 0, [$str(todos.v.length), 6]);
+    $fx(() => { $t659.data = $str(todos.v.length); });
+  }
+  for (const $b of $rg($i, 5)) $list($b, () => (todos.v), ($n, $at, $j, todo) => {
+    $n ??= $h(`<li data-rz=${$i.toString(36)}.6> </li>`, $at);
+    for (const $b of $q($i, 6, $n)) {
+      const [$t530, $t543] = $text($b, null, 0, [$str(todo.title), 1, $str(todo.done ? "done" : "open")]);
+      $fx(() => { $t530.data = $str(todo.title); });
+      $fx(() => { $t543.data = $str(todo.done ? "done" : "open"); });
+    }
+    return $n;
+  }, 0, 0);
+  return { 0: { click: ($r) => () => counts.v.apples++ }, 1: { click: ($r) => () => counts.v.pears++ }, 2: { click: ($r) => () => todos.v.push({ title: `Todo ${todos.v.length + 1}`, done: false }) }, 3: { click: ($r) => () => (todos.v[0]!.done = true) }, 4: { click: ($r) => () => todos.v.splice(0, todos.v.length) } };
+};
+
+// virtual:rz-route/0
+import { $c0 } from "/src/routes/index.tsx";
+export default { 0: $c0 };
+export const g = [];

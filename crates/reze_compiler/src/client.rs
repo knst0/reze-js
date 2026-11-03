@@ -460,8 +460,11 @@ impl<'a> Visit<'a> for Writes<'_, '_, 'a> {
     }
 
     fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
-        if let SimpleAssignmentTarget::AssignmentTargetIdentifier(reference) = &it.argument {
-            self.target(reference);
+        match &it.argument {
+            SimpleAssignmentTarget::AssignmentTargetIdentifier(reference) => self.target(reference),
+            SimpleAssignmentTarget::StaticMemberExpression(m) => self.root(&m.object),
+            SimpleAssignmentTarget::ComputedMemberExpression(m) => self.root(&m.object),
+            _ => {}
         }
         walk::walk_update_expression(self, it);
     }
