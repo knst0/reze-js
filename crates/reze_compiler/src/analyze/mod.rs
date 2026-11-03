@@ -17,7 +17,7 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
 pub use api::Api;
-pub use data::{Endpoint, EndpointKind};
+pub use data::{Endpoint, EndpointKind, field_type, restore};
 
 use crate::diagnostic::{Code, Report};
 use crate::project::Module;
@@ -100,6 +100,8 @@ pub struct Component<'a> {
     /// The returned JSX.
     pub returned: &'a Expression<'a>,
     pub template: Option<Content<'a>>,
+    /// The type of the props, with `data` typed by the loader of a route component.
+    pub props: Option<data::Ty>,
 }
 
 #[derive(Default)]
@@ -231,7 +233,14 @@ fn component<'a>(
         return None;
     }
     let returned = returned_jsx(function)?;
-    Some(Component { name: name.to_string(), symbol, function, returned, template: None })
+    Some(Component {
+        name: name.to_string(),
+        symbol,
+        function,
+        returned,
+        template: None,
+        props: None,
+    })
 }
 
 fn collect_facts<'a>(modules: &[Module<'a>], module: usize) -> ModuleFacts<'a> {
@@ -449,6 +458,14 @@ pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, options: &Options) -
                     Report::new(Code::ServerInSpa, endpoint.call).arg("name", &endpoint.export),
                 );
             }
+        }
+    }
+    for module in 0..modules.len() {
+        let props: Vec<_> = (0..cx.facts[module].components.len())
+            .map(|index| data::props_type(&cx, module, index))
+            .collect();
+        for (component, props) in cx.facts[module].components.iter_mut().zip(props) {
+            component.props = props;
         }
     }
     check_mutation_ids(&cx, &mut reports);

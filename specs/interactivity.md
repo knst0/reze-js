@@ -484,7 +484,11 @@ The current implementation differs from this design in these points:
   attributes, computed form actions, and callback bodies with statements inside a client range
   raise `CLIENT_RANGE_UNSUPPORTED`.
 - Reactive props passed to child components are not supported.
-- The state block does not restore `Date`, `Map`, `Set`, or `bigint` yet.
+- The state block writes a `Date` as milliseconds, a `Set` as an array, a `Map` as pairs, and a
+  `bigint` as a decimal string; a `Record` stays an object. Client code converts a read back when
+  the component's props annotation gives its type, or the loader result types `props.data` in a
+  route component. A value whose type no annotation gives, such as a signal initialized from a
+  call, reaches client code in its encoded form.
 - Server-tier lowering of handlers into `<form>` is not implemented.
 - A prevent condition is written as `type:cond+cond`. A condition is a bare `key` value, or
   `field=value` for `code`, `button`, and the modifier flags (`ctrlKey=true`). A key value that

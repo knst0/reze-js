@@ -6,16 +6,17 @@ use std::fmt::Write;
 
 use oxc_ast::ast::{
     Argument, ArrowFunctionBody, ArrowFunctionExpression, AssignmentTarget, BinaryOperator,
-    BindingPattern, CallExpression, Class, Declaration, Expression, Function, IdentifierReference,
-    ImportDeclarationSpecifier, LogicalOperator, ObjectProperty, SimpleAssignmentTarget, Statement,
-    UnaryOperator, UpdateExpression, VariableDeclarationKind, VariableDeclarator,
+    BindingPattern, CallExpression, ChainElement, Class, Declaration, Expression, Function,
+    IdentifierReference, ImportDeclarationSpecifier, LogicalOperator, ObjectProperty,
+    SimpleAssignmentTarget, Statement, UnaryOperator, UpdateExpression, VariableDeclarationKind,
+    VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::SymbolId;
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
-use crate::analyze::{Analysis, Api, EndpointKind, Export, ImportSource};
+use crate::analyze::{Analysis, Api, EndpointKind, Export, ImportSource, field_type, restore};
 use crate::diagnostic::{Code, Edit, Report};
 use crate::emit::template_escape;
 use crate::html;
@@ -1103,6 +1104,66 @@ struct ComponentCx<'c> {
     params: &'c HashMap<SymbolId, bool>,
 }
 
+/// The identifier a member chain such as `props.data.at` starts from.
+fn root_symbol(
+    index: &Index<'_, '_>,
+    module: usize,
+    expression: &Expression<'_>,
+) -> Option<SymbolId> {
+    let mut current = expression.without_parentheses();
+    loop {
+        match current {
+            Expression::StaticMemberExpression(member) => {
+                current = member.object.without_parentheses()
+            }
+            Expression::ChainExpression(chain) => match &chain.expression {
+                ChainElement::StaticMemberExpression(member) => {
+                    current = member.object.without_parentheses();
+                }
+                _ => return None,
+            },
+            Expression::Identifier(reference) => return index.symbol(module, reference),
+            _ => return None,
+        }
+    }
+}
+
+/// `code`, the state slot of the read `key` from the symbol `symbol`, converted to its native
+/// form when the props type of `component` gives it a `Date`, `bigint`, `Map`, or `Set`.
+fn restore_read(
+    analysis: &Analysis<'_>,
+    component: ComponentRef,
+    symbol: SymbolId,
+    key: &str,
+    code: String,
+) -> String {
+    let facts = &analysis.facts[component.module].components[component.index];
+    let Some(props) = &facts.props else { return code };
+    if key.contains(['[', '(']) {
+        return code;
+    }
+    let mut segments: Vec<String> =
+        key.split('.').map(|s| s.trim_end_matches('?').to_string()).collect();
+    match facts.function.params().items.first().map(|p| &p.pattern) {
+        Some(BindingPattern::BindingIdentifier(id)) if id.symbol_id.get() == Some(symbol) => {
+            segments.remove(0);
+        }
+        Some(BindingPattern::ObjectPattern(object)) => {
+            let name = object.properties.iter().find_map(|property| match &property.value {
+                BindingPattern::BindingIdentifier(id) if id.symbol_id.get() == Some(symbol) => {
+                    property.key.static_name()
+                }
+                _ => None,
+            });
+            let Some(name) = name else { return code };
+            segments[0] = name.to_string();
+        }
+        _ => return code,
+    }
+    let segments: Vec<&str> = segments.iter().map(String::as_str).collect();
+    field_type(props, &segments).and_then(|ty| restore(&ty, &code, 0)).unwrap_or(code)
+}
+
 const UNSERIALIZABLE_OK: [&str; 7] = ["Date", "Map", "Set", "URL", "Array", "Object", "RegExp"];
 
 struct Rewrite<'r, 'c, 'm, 'a> {
@@ -1215,9 +1276,11 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
         let key: String = text.chars().filter(|c| !c.is_whitespace()).collect();
         self.check_loader_read(symbol, &key, span);
         let component = self.component.as_mut().expect("captures belong to a component");
-        let slot = component.captures[scope].slot(key, text);
+        let target = component.component;
+        let slot = component.captures[scope].slot(key.clone(), text);
         let offset = if scope == 0 { 1 } else { 2 };
-        format!("{}[{}]", (component.access)(scope), slot + offset)
+        let code = format!("{}[{}]", (component.access)(scope), slot + offset);
+        restore_read(self.index.analysis, target, symbol, &key, code)
     }
 
     /// The replacement of a bare reference, or `None` when it stays.
@@ -2728,9 +2791,19 @@ impl<'m, 'a> Planner<'m, 'a> {
                         init.span(),
                     ),
                     (None, _) => String::new(),
-                    (Some(_), Some(cx)) => {
+                    (Some(init), Some(cx)) => {
                         let slot = cx.captures[0].slot(format!("${name}"), name.to_string());
-                        format!("$s[{}]", slot + 1)
+                        let code = format!("$s[{}]", slot + 1);
+                        match root_symbol(&self.index, module, init) {
+                            Some(symbol) => {
+                                let text = &self.index.modules[module].source
+                                    [init.span().start as usize..init.span().end as usize];
+                                let key: String =
+                                    text.chars().filter(|c| !c.is_whitespace()).collect();
+                                restore_read(self.index.analysis, cx.component, symbol, &key, code)
+                            }
+                            None => code,
+                        }
                     }
                     (Some(init), None) => self.rewrite(
                         module,

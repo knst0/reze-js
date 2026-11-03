@@ -1,0 +1,23 @@
+// src/routes/index.tsx
+import { $fx, $q, $sig, $str, $text } from "reze-js/runtime/client";
+export const $c0 = ($s, $i, $a) => {
+  const left = $sig(0);
+  for (const $b of $q($i, 0)) {
+    const [$t567] = $text($b, null, 0, [$str(left.v)]);
+    $fx(() => { $t567.data = $str(left.v); });
+  }
+  return { 0: { click: ($r) => () => (left.v = new Date($s[1]).getTime() - Date.now()) } };
+};
+export const $c1 = ($s, $i, $a) => {
+  const seats = $sig(BigInt($s[5]));
+  for (const $b of $q($i, 0)) {
+    const [$t742] = $text($b, null, 0, [$str(`${seats.v}`)]);
+    $fx(() => { $t742.data = $str(`${seats.v}`); });
+  }
+  return { 0: { click: ($r) => () => seats.v-- }, 1: { click: ($r) => () => console.log(new Set($s[1]).has("a"), new Map($s[2]).get("adult")) }, 2: { click: ($r) => () => console.log($s[3].map(($v0) => new Date($v0))[0].getTime(), ($s[4] == null ? $s[4] : new Date($s[4]))?.getTime()) } };
+};
+
+// virtual:rz-route/0
+import { $c0, $c1 } from "/src/routes/index.tsx";
+export default { 0: $c0, 1: $c1 };
+export const g = [];

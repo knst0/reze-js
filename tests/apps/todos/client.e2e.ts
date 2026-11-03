@@ -26,3 +26,9 @@ test("renders a client-rendered route on a client navigation", async ({ page, se
   await page.getByRole("button", { name: "Words 0" }).click();
   await expect(page.getByRole("button", { name: "Words 1" })).toBeVisible();
 });
+
+test("restores dates, bigints, sets, and maps from the state block", async ({ page, server }) => {
+  await page.goto(server.url("/about"));
+  await page.getByRole("button", { name: "Facts" }).click();
+  await expect(page.locator("output")).toHaveText("2024 9007199254740994 true 2020");
+});

@@ -13,7 +13,7 @@ use oxc_span::{GetSpan, Span};
 
 use super::{Api, Context, Export, ImportSource};
 use crate::diagnostic::{Code, Report};
-use crate::view::{Attribute, AttributeItem, Branch, Node, PropValue, Value};
+use crate::view::{Attribute, AttributeItem, Branch, ComponentRef, Node, PropValue, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Int {
@@ -752,6 +752,8 @@ pub struct Endpoint {
     pub input: Option<Ty>,
     /// Whether a loader annotates its result.
     pub typed: bool,
+    /// The result type of a loader, when it lowers.
+    pub data: Option<Ty>,
     /// The pattern of the route that exports the endpoint.
     pub route: Option<String>,
     /// The loader arguments the function reads, `None` when it may read any of them.
@@ -819,6 +821,7 @@ pub fn endpoints<'a>(
                 meta: "{}".into(),
                 input: None,
                 typed: loader_result(call).is_some(),
+                data: loader_result(call).and_then(|ty| Resolver::new(cx).resolve(module, ty).ok()),
                 route: pattern.as_ref().map(|(route, _)| route.to_string()),
                 reads: loader_reads(call),
                 external,
@@ -845,6 +848,106 @@ pub fn endpoints<'a>(
         }
     }
     out
+}
+
+/// The type at `path`, a list of field names, inside `ty`.
+pub fn field_type(ty: &Ty, path: &[&str]) -> Option<Ty> {
+    let Some((first, rest)) = path.split_first() else { return Some(ty.clone()) };
+    let (base, undefined, null) = ty.strip();
+    let Ty::Object(fields) = base else { return None };
+    let field = fields.iter().find(|field| field.name == *first)?;
+    let inner = field_type(&field.ty, rest)?;
+    let nullable = undefined || null || field.optional;
+    Some(if nullable { Ty::union(vec![inner, Ty::Undefined]) } else { inner })
+}
+
+/// The JS expression that converts `code`, a value of `ty` read from the state block, into its
+/// native form: a `Date`, a `bigint`, a `Map`, or a `Set`. `None` when the value reads as it is.
+pub fn restore(ty: &Ty, code: &str, depth: usize) -> Option<String> {
+    let v = format!("$v{depth}");
+    let (base, undefined, null) = ty.strip();
+    if undefined || null {
+        let inner = restore(&base, code, depth)?;
+        return Some(format!("({code} == null ? {code} : {inner})"));
+    }
+    Some(match &base {
+        Ty::Date => format!("new Date({code})"),
+        Ty::BigInt => format!("BigInt({code})"),
+        Ty::Int(int) if int.is_big() => format!("BigInt({code})"),
+        Ty::Set(inner) => match restore(inner, &v, depth + 1) {
+            Some(inner) => format!("new Set({code}.map(({v}) => {inner}))"),
+            None => format!("new Set({code})"),
+        },
+        Ty::Map(inner) => match restore(inner, &v, depth + 1) {
+            Some(inner) => {
+                format!("new Map({code}.map(([$k{depth}, {v}]) => [$k{depth}, {inner}]))")
+            }
+            None => format!("new Map({code})"),
+        },
+        Ty::Array(inner) => format!("{code}.map(({v}) => {})", restore(inner, &v, depth + 1)?),
+        Ty::Record(inner) => format!(
+            "Object.fromEntries(Object.entries({code}).map(([$k{depth}, {v}]) => [$k{depth}, {}]))",
+            restore(inner, &v, depth + 1)?
+        ),
+        Ty::Tuple(elements) => {
+            let restored: Vec<Option<String>> = elements
+                .iter()
+                .enumerate()
+                .map(|(i, element)| restore(element, &format!("{code}[{i}]"), depth))
+                .collect();
+            if restored.iter().all(Option::is_none) {
+                return None;
+            }
+            let items: Vec<String> = restored
+                .into_iter()
+                .enumerate()
+                .map(|(i, r)| r.unwrap_or_else(|| format!("{code}[{i}]")))
+                .collect();
+            format!("[{}]", items.join(", "))
+        }
+        Ty::Object(fields) => {
+            let restored: Vec<String> = fields
+                .iter()
+                .filter_map(|field| {
+                    let ty = if field.optional {
+                        Ty::union(vec![field.ty.clone(), Ty::Undefined])
+                    } else {
+                        field.ty.clone()
+                    };
+                    let name = serde_json::to_string(&field.name).unwrap();
+                    restore(&ty, &format!("{v}[{name}]"), depth + 1).map(|r| format!("{name}: {r}"))
+                })
+                .collect();
+            if restored.is_empty() {
+                return None;
+            }
+            format!("(({v}) => ({{ ...{v}, {} }}))({code})", restored.join(", "))
+        }
+        _ => return None,
+    })
+}
+
+/// The props type of a component, from the annotation of its first parameter. The default export
+/// of a route module types `data` with the result of its `load`.
+pub fn props_type(cx: &Context<'_, '_>, module: usize, index: usize) -> Option<Ty> {
+    let component = &cx.facts[module].components[index];
+    let annotation =
+        component.function.params().items.first().and_then(|p| p.type_annotation.as_ref());
+    let props = annotation.and_then(|a| Resolver::new(cx).resolve(module, &a.type_annotation).ok());
+    let data = cx.facts[module]
+        .endpoints
+        .iter()
+        .find(|e| e.kind == EndpointKind::Loader && e.export == "load")
+        .and_then(|e| e.data.clone())
+        .filter(|_| cx.exported(module, "default") == Some(ComponentRef { module, index }));
+    let Some(data) = data else { return props };
+    let mut fields = match props {
+        Some(Ty::Object(fields)) => fields,
+        _ => Vec::new(),
+    };
+    fields.retain(|field| field.name != "data");
+    fields.push(Field { name: "data".into(), ty: data, optional: false });
+    Some(Ty::Object(fields))
 }
 
 /// `crate::Name` of the type argument of `loader.external<Name>()`, imported from

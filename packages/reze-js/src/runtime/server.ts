@@ -577,7 +577,7 @@ function render(
     entries.length = 0;
     events.clear();
     eager = false;
-    return `<script type="rz">${JSON.stringify(block).replaceAll("<", "\\u003c")}</script>`;
+    return `<script type="rz">${JSON.stringify(block, encode).replaceAll("<", "\\u003c")}</script>`;
   };
   async function* stream(): AsyncGenerator<string> {
     const waiting = new Map(parts.map((part, id) => [id, part.promise.then(() => id)]));
@@ -1029,4 +1029,12 @@ async function digest(text: string): Promise<string> {
   return btoa(String.fromCharCode(...hash.subarray(0, 12)))
     .replaceAll("+", "-")
     .replaceAll("/", "_");
+}
+
+/** Writes a value of the state block: a `Date` as milliseconds, a `Set` as an array, a `Map` as pairs, and a `bigint` as a decimal string. */
+function encode(this: Record<string, unknown>, key: string, value: unknown): unknown {
+  const raw = this[key];
+  if (raw instanceof Date) return raw.getTime();
+  if (raw instanceof Set || raw instanceof Map) return [...raw];
+  return typeof raw === "bigint" ? String(raw) : value;
 }
