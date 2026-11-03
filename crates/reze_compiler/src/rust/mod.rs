@@ -218,7 +218,7 @@ struct Emitter<'e, 'a> {
     out: String,
     indent: usize,
     counter: usize,
-    /// Labels of the enclosing `<Errored>` blocks, which an error breaks out of.
+    /// Labels of the enclosing `<Errored>` and `<Loading>` blocks, which an error breaks out of.
     labels: Vec<String>,
     /// Components being inlined, which a recursive call would repeat forever.
     inlining: Vec<ComponentRef>,
@@ -297,13 +297,23 @@ impl<'e, 'a> Emitter<'e, 'a> {
         self.indent += 1;
     }
 
-    /// A call that fails with a `RouteError`: it breaks out of the nearest `<Errored>`, or returns.
+    /// A call that fails with a `RouteError`: it breaks out of the nearest `<Errored>` or
+    /// `<Loading>`, or returns.
     fn fallible(&mut self, call: &str) {
         match self.labels.last().cloned() {
             Some(label) => {
                 self.stmt(&format!("if let Err(e) = {call} {{ break '{label} Err(e); }}"))
             }
             None => self.stmt(&format!("{call}?;")),
+        }
+    }
+
+    /// Stops with the error `error`: breaks out of the nearest `<Errored>` or `<Loading>`, or
+    /// returns.
+    fn throw(&mut self, error: &str) {
+        match self.labels.last().cloned() {
+            Some(label) => self.stmt(&format!("break '{label} Err({error});")),
+            None => self.stmt(&format!("return Err({error});")),
         }
     }
 
@@ -314,6 +324,7 @@ impl<'e, 'a> Emitter<'e, 'a> {
             TypeRef::Number { rust } | TypeRef::Bigint { rust } => Ty::Num(rust.clone()),
             TypeRef::Option { of } => Ty::Opt(Box::new(self.ty_of(of, krate))),
             TypeRef::List { of } => Ty::List(Box::new(self.ty_of(of, krate))),
+            TypeRef::Defer { of } => self.ty_of(of, krate),
             TypeRef::Named { name } => self.named(&format!("{krate}::{name}")),
         }
     }

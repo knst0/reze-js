@@ -5,8 +5,9 @@ import { expect, test } from "../fixtures";
 const paths = ["/", "/?ref=mail&_s=x", "/posts/1?ref=feed", "/posts/1", "/posts/2", "/posts/9", "/posts/abc", "/posts/members", "/missing"];
 
 test("renders the same HTML on the Rust and the JS server", async ({ request, server }) => {
+  const headers = { "rz-prerender": "1" };
   for (const path of paths) {
-    const [rust, js] = await Promise.all([request.get(server.url(path)), request.get(server.js!(path))]);
+    const [rust, js] = await Promise.all([request.get(server.url(path), { headers }), request.get(server.js!(path), { headers })]);
     expect(rust.status(), path).toBe(js.status());
     expect(await rust.text(), path).toBe(await js.text());
   }
@@ -265,3 +266,41 @@ for (const name of ["Break", "Break later"]) {
     await expect(page.getByText("Link copied")).toBeVisible();
   });
 }
+
+test("streams deferred Rust fields into their boundaries", async ({ page, server }) => {
+  const response = page.waitForResponse(server.url("/"));
+  await page.goto(server.url("/"), { waitUntil: "commit" });
+  await expect(page.getByRole("heading", { name: "Blog" })).toBeVisible();
+  expect((await response).headers().etag).toBeUndefined();
+  await expect(page.getByRole("button", { name: "Views 42" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Topics" }).getByRole("listitem")).toHaveText(["intro", "rust"]);
+  await expect(page.getByText("Loading topics…")).toHaveCount(0);
+  await expect(page.locator("template")).toHaveCount(0);
+  await page.getByRole("button", { name: "Views 42" }).click();
+  await expect(page.getByRole("button", { name: "Views 43" })).toBeVisible();
+});
+
+test("writes each deferred part after the document in resolution order", async ({ request, server }) => {
+  const html = await (await request.get(server.url("/"))).text();
+  expect(html).toContain("<!--l0--><p>Counting views…</p><!--/l-->");
+  expect(html).toContain("<!--l1--><p>Loading topics…</p><!--/l-->");
+  expect(html.indexOf('<template data-rz-s="0">')).toBeLessThan(html.indexOf('<template data-rz-s="1">'));
+  expect(html).toMatch(/<template data-rz-s="1"><ul aria-label=Topics><li>intro<\/li><li>rust<\/li><\/ul><\/template>\n<\/body><\/html>$/);
+});
+
+test("streams deferred Rust fields after a client navigation", async ({ page, server }) => {
+  await page.goto(server.url("/posts/1"));
+  await page.getByRole("link", { name: "Home" }).click();
+  await expect(page.getByRole("list", { name: "Topics" }).getByRole("listitem")).toHaveText(["intro", "rust"]);
+  await page.getByRole("button", { name: "Views 42" }).click();
+  await expect(page.getByRole("button", { name: "Views 43" })).toBeVisible();
+});
+
+test("keeps deferred Rust parts in templates without JS", async ({ browser, server }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto(server.url("/"));
+  await expect(page.getByText("Loading topics…")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Topics" })).toHaveCount(0);
+  await context.close();
+});

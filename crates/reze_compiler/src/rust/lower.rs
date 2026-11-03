@@ -6,7 +6,7 @@ use oxc_ast::ast::{
     BinaryOperator, ChainElement, Expression, LogicalOperator, ObjectPropertyKind, UnaryOperator,
 };
 
-use super::{Binding, Emitter, Frame, ISSUE, Lowered, Ty, TypeDef, Val, float, literal};
+use super::{Binding, Emitter, Frame, ISSUE, Lowered, Ty, TypeDef, TypeRef, Val, float, literal};
 use crate::analyze::{Api, Endpoint, EndpointKind, ImportSource};
 
 const JS: &str = "::reze_server::reze::js";
@@ -540,7 +540,18 @@ impl<'e, 'a> Emitter<'e, 'a> {
         };
         let krate = path.split("::").next().unwrap_or_default();
         let ty = self.ty_of(&field.ty, krate);
-        let code = view(&format!("({}).{}", object.code, super::rust_ident(name)), &ty)?;
+        let mut place = format!("({}).{}", object.code, super::rust_ident(name));
+        if matches!(field.ty, TypeRef::Defer { .. }) {
+            let pending = "Err(::reze_server::Render::pending())";
+            let stop = match self.labels.last() {
+                Some(label) => format!("break '{label} {pending}"),
+                None => format!("return {pending}"),
+            };
+            place = format!(
+                "(*match {place}.get() {{ Some(x) => x, None => {{ {place}.wait(); {stop} }} }})"
+            );
+        }
+        let code = view(&place, &ty)?;
         Ok(Val::new(code, ty))
     }
 

@@ -1,13 +1,14 @@
 use std::any::Any;
+use std::sync::Arc;
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use reze::Issue;
+use reze::defer::{Settle, take_waiting};
 
 use crate::html::{Html, escape_attr};
 use crate::{Chunk, Manifest, Params, RouteError, Table, Value};
 
 /// The state of one render: the head, ids, the client state entries, and the status.
-#[derive(Debug)]
 pub struct Render {
     depth: usize,
     /// Keyed head elements in insertion order, with the depth that wrote each.
@@ -18,9 +19,46 @@ pub struct Render {
     entries: Vec<String>,
     events: Vec<String>,
     eager: Vec<usize>,
+    /// The position of the `<Loading>` boundary being rendered: its index among the boundaries
+    /// of its parent boundary, for each level.
+    path: Vec<u32>,
+    /// The boundaries entered so far in the parent boundary of each level.
+    counters: Vec<u32>,
+    /// The boundary a render of one streamed part renders, by its path.
+    target: Option<Vec<u32>>,
+    /// The id of the first part this render adds.
+    first: usize,
+    parts: Vec<Part>,
+    captured: Option<Captured>,
+    /// The deferred field the target boundary still waits for.
+    again: Option<Arc<dyn Settle>>,
 }
 
-/// What `<Errored>` restores when its children fail.
+/// A `<Loading>` boundary whose children wait for a deferred field.
+pub(crate) struct Part {
+    pub(crate) path: Vec<u32>,
+    pub(crate) waiting: Arc<dyn Settle>,
+}
+
+/// The markup and the state entries of a streamed part.
+struct Captured {
+    html: String,
+    entries: Vec<String>,
+    events: Vec<String>,
+    eager: Vec<usize>,
+}
+
+impl std::fmt::Debug for Render {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Render")
+            .field("depth", &self.depth)
+            .field("status", &self.status)
+            .field("path", &self.path)
+            .finish_non_exhaustive()
+    }
+}
+
+/// What `<Errored>` and `<Loading>` restore when their children fail or wait.
 #[derive(Debug)]
 pub struct Mark {
     entries: usize,
@@ -28,6 +66,7 @@ pub struct Mark {
     keyed: Vec<(String, isize, String)>,
     ids: usize,
     depth: usize,
+    parts: usize,
 }
 
 impl Render {
@@ -49,6 +88,13 @@ impl Render {
             entries: Vec::new(),
             events: Vec::new(),
             eager: Vec::new(),
+            path: Vec::new(),
+            counters: vec![0],
+            target: None,
+            first: 0,
+            parts: Vec::new(),
+            captured: None,
+            again: None,
         }
     }
 
@@ -126,6 +172,7 @@ impl Render {
             keyed: self.keyed.clone(),
             ids: self.ids,
             depth: self.depth,
+            parts: self.parts.len(),
         }
     }
 
@@ -135,6 +182,75 @@ impl Render {
         self.keyed = mark.keyed;
         self.ids = mark.ids;
         self.depth = mark.depth;
+        self.parts.truncate(mark.parts);
+    }
+
+    /// The error a read of a deferred field without its value stops the render with, up to the
+    /// nearest `<Loading>`.
+    #[doc(hidden)]
+    pub fn pending() -> RouteError {
+        RouteError::new(0, "A deferred field is read outside <Loading>")
+    }
+
+    #[doc(hidden)]
+    pub fn is_pending(error: &RouteError) -> bool {
+        error.status == 0
+    }
+
+    /// Enters a `<Loading>` boundary, and returns whether to render its children: a render of
+    /// one part renders only the boundaries on the way to that part and inside it.
+    pub fn enter(&mut self) -> bool {
+        let counter = self.counters.last_mut().expect("the root level has a counter");
+        self.path.push(*counter);
+        *counter += 1;
+        self.counters.push(0);
+        let Some(target) = &self.target else { return true };
+        if *target == self.path {
+            self.entries.clear();
+            self.events.clear();
+            self.eager.clear();
+        }
+        target.starts_with(&self.path) || self.path.starts_with(target)
+    }
+
+    /// Leaves a `<Loading>` boundary: `Some` with the id of a new part when its children wait for
+    /// a deferred field, so the boundary renders its fallback.
+    pub fn leave(
+        &mut self,
+        mark: Mark,
+        result: Result<(), RouteError>,
+        html: &mut Html,
+    ) -> Result<Option<usize>, RouteError> {
+        let path = self.path.clone();
+        self.path.pop();
+        self.counters.pop();
+        let inside =
+            self.target.as_ref().is_none_or(|t| path.len() > t.len() && path.starts_with(t));
+        match result {
+            Err(error) if Self::is_pending(&error) => {
+                let waiting = take_waiting().pop();
+                self.restore(mark);
+                let Some(waiting) = waiting else { return Err(RouteError::internal()) };
+                if !inside {
+                    self.again = Some(waiting);
+                    return Ok(Some(0));
+                }
+                self.parts.push(Part { path, waiting });
+                Ok(Some(self.first + self.parts.len() - 1))
+            }
+            Err(error) => Err(error),
+            Ok(()) => {
+                if self.target.as_ref() == Some(&path) {
+                    self.captured = Some(Captured {
+                        html: std::mem::take(html).into_string(),
+                        entries: std::mem::take(&mut self.entries),
+                        events: std::mem::take(&mut self.events),
+                        eager: std::mem::take(&mut self.eager),
+                    });
+                }
+                Ok(None)
+            }
+        }
     }
 
     /// Whether the render added state entries since `mark`.
@@ -298,17 +414,88 @@ pub fn children(out: &mut Html, cx: &mut Render, page: &Page<'_>) -> Result<(), 
     Ok(())
 }
 
+/// A rendered page: the document, its status, and the parts it streams after the document.
+pub(crate) struct Rendered {
+    /// The whole document, or without `</body></html>` when parts follow.
+    pub(crate) document: String,
+    pub(crate) status: u16,
+    pub(crate) parts: Vec<Part>,
+}
+
+/// A render of one streamed part.
+pub(crate) struct Streamed {
+    /// The part's `<template data-rz-s>`, or `None` when it failed or still waits.
+    pub(crate) html: Option<String>,
+    /// The parts inside it, from the id the render started at.
+    pub(crate) parts: Vec<Part>,
+    /// The deferred field the part still waits for.
+    pub(crate) again: Option<Arc<dyn Settle>>,
+}
+
+fn root(cx: &mut Render, page: &Page<'_>, from: usize) -> Result<Html, RouteError> {
+    take_waiting();
+    let mut root = Html::new();
+    match level(&mut root, cx, page, from) {
+        Err(error) if Render::is_pending(&error) => {
+            tracing::error!("a deferred field is read outside <Loading>");
+            Err(RouteError::internal())
+        }
+        result => result.map(|()| root),
+    }
+}
+
+/// The state block of `entries`, or nothing without client code.
+fn block(
+    manifest: Option<&Manifest>,
+    chunk: Option<Chunk>,
+    entries: &[String],
+    events: &[String],
+    eager: &[usize],
+) -> String {
+    let (false, Some(manifest), Some(chunk)) = (entries.is_empty(), manifest, chunk) else {
+        return String::new();
+    };
+    let mut block = String::from("[");
+    reze::js::push_json_string(&mut block, &events.join(" "));
+    block.push(',');
+    let url = |block: &mut String, key: &str| match manifest.chunks.get(key) {
+        Some(url) => reze::js::push_json_string(block, url),
+        None => block.push_str("null"),
+    };
+    match chunk {
+        Chunk::Route(key) => url(&mut block, key),
+        Chunk::Factories(keys) => {
+            block.push('{');
+            for (index, (id, key)) in keys.iter().enumerate() {
+                if index > 0 {
+                    block.push(',');
+                }
+                block.push_str(&format!("\"{id}\":"));
+                url(&mut block, key);
+            }
+            block.push('}');
+        }
+    }
+    let eager: Vec<String> = eager.iter().map(ToString::to_string).collect();
+    block.push_str(&format!(",[{}]", eager.join(",")));
+    for entry in entries {
+        block.push(',');
+        block.push_str(entry);
+    }
+    block.push(']');
+    format!(r#"<script type="rz">{}</script>"#, block.replace('<', "\\u003c"))
+}
+
 /// Renders the page from segment `from` down: the whole document from `0`, or for a client
-/// navigation the document whose body is that segment alone. Returns the document and its status.
+/// navigation the document whose body is that segment alone.
 pub(crate) fn render(
     page: &Page<'_>,
     chunk: Option<Chunk>,
     manifest: Option<&Manifest>,
     from: usize,
-) -> Result<(String, u16), RouteError> {
+) -> Result<Rendered, RouteError> {
     let mut cx = Render::new(from);
-    let mut root = Html::new();
-    level(&mut root, &mut cx, page, from)?;
+    let root = root(&mut cx, page, from)?;
     let mut document = String::from("<!doctype html><html><head>");
     for (_, _, html) in &cx.keyed {
         document.push_str(html);
@@ -321,42 +508,44 @@ pub(crate) fn render(
             r#"<script type="module" async src="{}"></script>"#,
             escape_attr(&manifest.dispatcher)
         ));
+        if !cx.parts.is_empty() {
+            document.push_str(&format!(
+                r#"<script type="module" async src="{}"></script>"#,
+                escape_attr(&manifest.stream)
+            ));
+        }
     }
     document.push_str("</head><body>");
     document.push_str(root.as_str());
-    if let (false, Some(manifest), Some(chunk)) = (cx.entries.is_empty(), manifest, chunk) {
-        let mut block = String::from("[");
-        reze::js::push_json_string(&mut block, &cx.events.join(" "));
-        block.push(',');
-        let url = |block: &mut String, key: &str| match manifest.chunks.get(key) {
-            Some(url) => reze::js::push_json_string(block, url),
-            None => block.push_str("null"),
-        };
-        match chunk {
-            Chunk::Route(key) => url(&mut block, key),
-            Chunk::Factories(keys) => {
-                block.push('{');
-                for (index, (id, key)) in keys.iter().enumerate() {
-                    if index > 0 {
-                        block.push(',');
-                    }
-                    block.push_str(&format!("\"{id}\":"));
-                    url(&mut block, key);
-                }
-                block.push('}');
-            }
-        }
-        let eager: Vec<String> = cx.eager.iter().map(ToString::to_string).collect();
-        block.push_str(&format!(",[{}]", eager.join(",")));
-        for entry in &cx.entries {
-            block.push(',');
-            block.push_str(entry);
-        }
-        block.push(']');
-        document.push_str(r#"<script type="rz">"#);
-        document.push_str(&block.replace('<', "\\u003c"));
-        document.push_str("</script>");
+    document.push_str(&block(manifest, chunk, &cx.entries, &cx.events, &cx.eager));
+    if cx.parts.is_empty() {
+        document.push_str("</body></html>");
     }
-    document.push_str("</body></html>");
-    Ok((document, cx.status))
+    Ok(Rendered { document, status: cx.status, parts: cx.parts })
+}
+
+/// Renders the streamed part at `path` again, now that the field it waited for has its value.
+/// Parts inside it take ids from `first`.
+pub(crate) fn render_part(
+    page: &Page<'_>,
+    chunk: Option<Chunk>,
+    manifest: Option<&Manifest>,
+    from: usize,
+    (id, path): (usize, &[u32]),
+    first: usize,
+) -> Streamed {
+    let mut cx = Render::new(from);
+    cx.target = Some(path.to_vec());
+    cx.first = first;
+    if let Err(error) = root(&mut cx, page, from) {
+        tracing::error!(%error, "a streamed part failed");
+    }
+    let html = cx.captured.map(|captured| {
+        format!(
+            "<template data-rz-s=\"{id}\">{}{}</template>\n",
+            captured.html,
+            block(manifest, chunk, &captured.entries, &captured.events, &captured.eager)
+        )
+    });
+    Streamed { html, parts: cx.parts, again: cx.again }
 }

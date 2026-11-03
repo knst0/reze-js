@@ -1,11 +1,13 @@
 //! Loader data that crosses from a Rust loader to the page: `#[derive(reze::Data)]`, and the JSON
 //! it encodes to, byte for byte what `JSON.stringify` writes for the same value.
 
+pub mod defer;
 pub mod input;
 pub mod js;
 
 use std::collections::BTreeSet;
 
+pub use defer::Defer;
 pub use input::{Input, Issue, Json, Key};
 pub use reze_derive::Data;
 

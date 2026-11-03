@@ -6,11 +6,13 @@ mod generated {
 }
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use actix_web::{HttpServer, web};
 use blog_types::{Added, Comment, Home, NewComment, Post, Status, Summary};
 use generated::routes;
 use reze_server::http::request::Parts;
+use reze_server::reze::Defer;
 use reze_server::{Manifest, Result, RouteError};
 
 struct Db {
@@ -57,7 +59,15 @@ async fn home(_: routes::index::Params, db: &Db) -> Result<Home> {
         .iter()
         .map(|post| Summary { id: post.id, title: post.title.clone(), status: post.status })
         .collect();
-    Ok(Home { title: "Blog".into(), posts })
+    let views = Defer::new(async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        42
+    });
+    let topics = Defer::new(async {
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        vec!["intro".to_string(), "rust".to_string()]
+    });
+    Ok(Home { title: "Blog".into(), posts, views, topics })
 }
 
 async fn post(params: routes::posts_id::Params, db: &Db) -> Result<Post> {

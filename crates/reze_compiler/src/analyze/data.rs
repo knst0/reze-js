@@ -166,6 +166,7 @@ fn rust_ref(ir: &CrateIr, ty: &TypeRef, depth: u32) -> Option<Ty> {
         TypeRef::Named { name } => rust_type(ir, name, depth + 1),
         TypeRef::Option { of } => Some(Ty::union(vec![rust_ref(ir, of, depth)?, Ty::Null])),
         TypeRef::List { of } => Some(Ty::Array(Box::new(rust_ref(ir, of, depth)?))),
+        TypeRef::Defer { of } => rust_ref(ir, of, depth),
         TypeRef::String => Some(Ty::String),
         TypeRef::Boolean => Some(Ty::Boolean),
         TypeRef::Number { rust } => {

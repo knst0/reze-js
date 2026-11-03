@@ -1,10 +1,12 @@
 //! The `actix` adapter, for actix-web.
 
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, Route, web};
 use bytes::Bytes;
+use futures_util::StreamExt;
 use http::Request;
 
 use crate::App;
@@ -45,5 +47,8 @@ async fn respond<C: Send + Sync + 'static>(
     for (name, value) in &parts.headers {
         response.append_header((name.as_str(), value.as_bytes()));
     }
-    response.body(body)
+    match body.into_bytes() {
+        Ok(bytes) => response.body(bytes),
+        Err(body) => response.streaming(body.map(Ok::<_, Infallible>)),
+    }
 }

@@ -1,4 +1,4 @@
-import { buildPaths, For, signal } from "reze-js";
+import { buildPaths, For, Loading, signal } from "reze-js";
 import { loader } from "reze-js/server";
 import type { Home, Summary } from "virtual:reze-types/blog_types";
 
@@ -12,6 +12,11 @@ function Drafts(props: { posts: Summary[] }) {
       <output>{drafts} drafts</output>
     </p>
   );
+}
+
+function Views(props: { start: number }) {
+  let views = signal(props.start);
+  return <button onClick={() => views++}>Views {views}</button>;
 }
 
 export default function Index(props: { data: Home }) {
@@ -29,6 +34,14 @@ export default function Index(props: { data: Home }) {
       </ul>
       <p>{props.data.posts.length} posts</p>
       <Drafts posts={props.data.posts} />
+      <Loading fallback={<p>Counting views…</p>}>
+        <Views start={props.data.views} />
+      </Loading>
+      <Loading fallback={<p>Loading topics…</p>}>
+        <ul aria-label="Topics">
+          <For each={props.data.topics}>{(topic) => <li>{topic}</li>}</For>
+        </ul>
+      </Loading>
     </main>
   );
 }

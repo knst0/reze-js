@@ -1001,11 +1001,21 @@ The current implementation differs from this design in these points:
   `<client outDir>/<path>/index.html` for the static host to serve.
 - `revalidate` takes the smallest value of the chain. The `ETag` is a SHA-1 of the document, sent
   on `200` responses to `GET` and `HEAD` that do not stream.
-- The Rust server has no deferred fields or streaming. A Rust loader stops a request with a `RouteError`, and redirects with
+- A Rust loader stops a request with a `RouteError`, and redirects with
   `RouteError::redirect(location)`, a `307` whose `status` may be changed; the dev endpoint
   answers the redirect with its status and `Location`, which the JS server answers with the same redirect. `handle` takes
-  the request with its body as `Bytes` and returns `http::Response<Bytes>`; the `tower` service
-  collects the body up to the limit and answers `Full<Bytes>`.
+  the request with its body as `Bytes` and returns `http::Response<reze_server::Body>`, a
+  `Stream<Item = Bytes>` that is whole unless the page streams; the `tower` service collects the
+  request body up to the limit and answers the same `Body` as an `http_body::Body`.
+- A deferred Rust field is a struct field of type `reze::Defer<T>`, built with
+  `Defer::new(future)` from a `Send + 'static` future that cannot fail, or with
+  `Defer::ready(value)`. The IR marks it `{ "kind": "defer" }`, and its TS type is `T`. A read
+  without the value stops the render up to the nearest `<Loading>`, which writes its fallback. To
+  stream a part, the server renders the route again with only the boundaries on the way to that
+  part, found by their position among the boundaries of their parent boundary, and keeps the
+  part's markup and state entries. A read outside `<Loading>` answers `500`. The dev endpoint
+  `/__reze/load` waits for every deferred field, so the JS dev server renders them in place, and
+  `rz-prerender` makes the Rust server wait for them and render in place too.
 - A Rust mutation is `export const name = mutation.external<Input, Result>({ revalidate })`, set
   with the generated setter of the export in snake case:
   `async fn(Input, &http::request::Parts, &C) -> Result<Result>`. `#[derive(reze::Data)]` also

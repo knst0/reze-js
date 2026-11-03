@@ -141,7 +141,7 @@ fn collect(items: &[Item], file: &Path, out: &mut Vec<TypeDef>) -> Result<(), St
                 let mut fields = Vec::new();
                 for field in &named.named {
                     let ident = field.ident.as_ref().expect("a named field");
-                    let ty = type_ref(&field.ty).map_err(|ty| {
+                    let ty = field_ref(&field.ty).map_err(|ty| {
                         format!(
                             "{}: `{}.{ident}` has the type `{ty}`, which has no wire encoding",
                             file.display(),
@@ -167,21 +167,37 @@ fn collect(items: &[Item], file: &Path, out: &mut Vec<TypeDef>) -> Result<(), St
     Ok(())
 }
 
+/// The last segment of a type path and its first type argument.
+fn path_of(ty: &Type) -> Option<(String, Option<&Type>)> {
+    let Type::Path(path) = ty else { return None };
+    let last = path.path.segments.last().filter(|_| path.qself.is_none())?;
+    let argument = match &last.arguments {
+        PathArguments::AngleBracketed(args) => args.args.iter().find_map(|arg| match arg {
+            GenericArgument::Type(ty) => Some(ty),
+            _ => None,
+        }),
+        _ => None,
+    };
+    Some((last.ident.to_string(), argument))
+}
+
+/// The type of a struct field, which alone may be `reze::Defer`.
+fn field_ref(ty: &Type) -> Result<TypeRef, String> {
+    match path_of(ty) {
+        Some((name, Some(of))) if name == "Defer" => {
+            Ok(TypeRef::Defer { of: Box::new(type_ref(of)?) })
+        }
+        _ => type_ref(ty),
+    }
+}
+
 fn type_ref(ty: &Type) -> Result<TypeRef, String> {
     let unsupported = || Err(quote_type(ty));
     match ty {
         Type::Reference(reference) => type_ref(&reference.elem),
         Type::Slice(slice) => Ok(TypeRef::List { of: Box::new(type_ref(&slice.elem)?) }),
-        Type::Path(path) if path.qself.is_none() => {
-            let Some(last) = path.path.segments.last() else { return unsupported() };
-            let name = last.ident.to_string();
-            let argument = match &last.arguments {
-                PathArguments::AngleBracketed(args) => args.args.iter().find_map(|arg| match arg {
-                    GenericArgument::Type(ty) => Some(ty),
-                    _ => None,
-                }),
-                _ => None,
-            };
+        Type::Path(_) => {
+            let Some((name, argument)) = path_of(ty) else { return unsupported() };
             Ok(match (name.as_str(), argument) {
                 ("String" | "str", None) => TypeRef::String,
                 ("bool", None) => TypeRef::Boolean,

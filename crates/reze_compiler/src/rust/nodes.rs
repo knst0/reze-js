@@ -104,7 +104,41 @@ impl<'e, 'a> Emitter<'e, 'a> {
             },
             Node::For(each) => self.each(each, frame),
             Node::Repeat(each) => self.repeat(each, frame),
-            Node::Loading(boundary) => self.content(&boundary.children, frame),
+            Node::Loading(boundary) => {
+                let (mark, var, label, result) =
+                    (self.fresh("m"), self.fresh("h"), self.fresh("b"), self.fresh("r"));
+                self.stmt(&format!("let {mark} = cx.mark();"));
+                self.stmt(&format!("let mut {var} = ::reze_server::Html::new();"));
+                self.open(&format!(
+                    "let {result}: ::std::result::Result<(), ::reze_server::RouteError> = '{label}:"
+                ));
+                self.open("if cx.enter()");
+                let out = std::mem::replace(&mut self.out, var.clone());
+                self.labels.push(label);
+                self.content(&boundary.children, frame);
+                self.labels.pop();
+                self.flush();
+                self.out = out;
+                self.close();
+                self.stmt("Ok(())");
+                self.indent -= 1;
+                self.line("};");
+                let (part, error) = (self.fresh("p"), self.fresh("e"));
+                let out = self.out.clone();
+                self.open(&format!("match cx.leave({mark}, {result}, &mut {var})"));
+                self.line(&format!("Ok(None) => {out}.append({var}),"));
+                self.open(&format!("Ok(Some({part})) =>"));
+                self.raw("<!--l");
+                self.stmt(&format!("{out}.display({part});"));
+                self.raw("-->");
+                self.fallback(boundary.fallback.as_ref(), frame);
+                self.raw("<!--/l-->");
+                self.close();
+                self.open(&format!("Err({error}) =>"));
+                self.throw(&error);
+                self.close();
+                self.close();
+            }
             Node::Errored(boundary) => {
                 let (mark, var, label, result) =
                     (self.fresh("m"), self.fresh("h"), self.fresh("b"), self.fresh("r"));
@@ -136,6 +170,11 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 self.raw("</template>");
                 self.reopen("else");
                 self.stmt(&format!("{out}.append({var});"));
+                self.close();
+                self.open(&format!(
+                    "Err({error}) if ::reze_server::Render::is_pending(&{error}) =>"
+                ));
+                self.throw(&error);
                 self.close();
                 self.open(&format!("Err({error}) =>"));
                 self.line(&format!("cx.restore({mark});"));

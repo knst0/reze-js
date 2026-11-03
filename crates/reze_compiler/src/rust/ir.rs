@@ -22,6 +22,10 @@ pub enum TypeRef {
     List {
         of: Box<TypeRef>,
     },
+    /// A `reze::Defer` struct field, which streams into its `<Loading>` boundary.
+    Defer {
+        of: Box<TypeRef>,
+    },
     /// A type of the same crate.
     Named {
         name: String,

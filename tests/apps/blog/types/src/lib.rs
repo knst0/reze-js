@@ -1,4 +1,4 @@
-use reze::Data;
+use reze::{Data, Defer};
 
 #[derive(Clone, Copy, Data)]
 pub enum Status {
@@ -17,6 +17,8 @@ pub struct Summary {
 pub struct Home {
     pub title: String,
     pub posts: Vec<Summary>,
+    pub views: Defer<u32>,
+    pub topics: Defer<Vec<String>>,
 }
 
 #[derive(Clone, Data)]

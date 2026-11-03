@@ -1,18 +1,23 @@
 use std::cmp::Ordering;
 use std::fmt::Write;
+use std::future::poll_fn;
+use std::sync::Arc;
+use std::task::Poll;
 use std::time::Instant;
 
 use bytes::Bytes;
 use futures_util::future::{BoxFuture, join_all};
+use futures_util::stream::{self, StreamExt};
 use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode, header};
 use percent_encoding::percent_decode_str;
 use sha1::{Digest, Sha1};
 use tracing::{Instrument, field, info_span};
 
 use crate::html::escape_text;
-use crate::render::{Page, Submission, render};
+use crate::render::{Page, Part, Rendered, Submission, render, render_part};
 use crate::{
-    Chunk, Guard, Loader, Manifest, Mutation, Params, Route, RouteError, Segment, Table, Value,
+    Body, Chunk, Guard, Loader, Manifest, Mutation, Params, Route, RouteError, Segment, Table,
+    Value,
 };
 
 type Erased<C> = Box<
@@ -26,7 +31,7 @@ type ErasedGuard<C> = Box<
 >;
 
 /// The body of a mutation post: JSON from `.call`, or the fields of a form.
-enum Body {
+enum Posted {
     Json(reze::Json),
     Form(Vec<(String, String)>),
 }
@@ -39,7 +44,7 @@ enum Decoded<'a> {
 }
 
 type ErasedMutation<C> =
-    Box<dyn for<'a> Fn(&Body, &'a http::request::Parts, &'a C) -> Decoded<'a> + Send + Sync>;
+    Box<dyn for<'a> Fn(&Posted, &'a http::request::Parts, &'a C) -> Decoded<'a> + Send + Sync>;
 
 /// The application: the generated route table, the Rust loaders, guards, and mutations, and the
 /// client build.
@@ -51,8 +56,104 @@ pub struct App<C> {
     guards: Vec<Option<ErasedGuard<C>>>,
     mutations: Vec<Option<ErasedMutation<C>>>,
     body_limit: usize,
-    manifest: Option<Manifest>,
+    manifest: Option<Arc<Manifest>>,
     server_timing: bool,
+}
+
+/// What a page owns to render its streamed parts after the response has started.
+struct Deferred {
+    table: &'static Table,
+    chain: &'static [usize],
+    chunk: Option<Chunk>,
+    manifest: Option<Arc<Manifest>>,
+    from: usize,
+    path: String,
+    search: String,
+    query: Vec<(String, String)>,
+    params: Params,
+    data: Vec<Option<Box<dyn Value>>>,
+    error: Option<(usize, RouteError)>,
+    submission: Option<Submission>,
+}
+
+impl Deferred {
+    fn page(&self) -> Page<'_> {
+        Page {
+            table: self.table,
+            chain: self.chain,
+            path: &self.path,
+            search: &self.search,
+            query: &self.query,
+            params: &self.params,
+            data: &self.data,
+            error: self.error.clone(),
+            submission: self.submission.as_ref(),
+        }
+    }
+}
+
+/// Waits until one of `parts` has the field it waits for, and returns its id.
+async fn settled(parts: &[Option<Part>]) -> usize {
+    poll_fn(|cx| {
+        for (id, part) in parts.iter().enumerate() {
+            if let Some(part) = part
+                && part.waiting.poll_settle(cx).is_ready()
+            {
+                return Poll::Ready(id);
+            }
+        }
+        Poll::Pending
+    })
+    .await
+}
+
+/// The body of a page with deferred parts: the document, each part as its field resolves, and
+/// the end of the document.
+fn streamed(document: String, parts: Vec<Part>, deferred: Deferred) -> Body {
+    let parts: Vec<Option<Part>> = parts.into_iter().map(Some).collect();
+    let rest = stream::unfold(Some((deferred, parts)), |state| async move {
+        let (deferred, mut parts) = state?;
+        loop {
+            if parts.iter().all(Option::is_none) {
+                return Some((Bytes::from_static(b"</body></html>"), None));
+            }
+            let id = settled(&parts).await;
+            let part = parts[id].take().expect("a settled part waits");
+            let streamed = render_part(
+                &deferred.page(),
+                deferred.chunk,
+                deferred.manifest.as_deref(),
+                deferred.from,
+                (id, &part.path),
+                parts.len(),
+            );
+            parts.extend(streamed.parts.into_iter().map(Some));
+            if let Some(waiting) = streamed.again {
+                parts[id] = Some(Part { path: part.path, waiting });
+            } else if let Some(html) = streamed.html {
+                return Some((Bytes::from(html), Some((deferred, parts))));
+            }
+        }
+    });
+    Body::stream(stream::once(async move { Bytes::from(document) }).chain(rest))
+}
+
+/// Wraps the page of a `.call` with `_b` as `{ result, status, segment, html }`.
+async fn answer(called: Option<&str>, response: Response<Body>) -> Response<Body> {
+    let Some(result) = called else { return response };
+    let segment = response
+        .headers()
+        .get("rz-segment")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("0")
+        .to_string();
+    let status = response.status().as_u16();
+    let html = response.into_body().collect().await;
+    let mut body =
+        format!("{{\"result\":{result},\"status\":{status},\"segment\":{segment},\"html\":");
+    reze::js::push_json_string(&mut body, &String::from_utf8_lossy(&html));
+    body.push('}');
+    json(200, body)
 }
 
 fn compare(a: &Route, b: &Route) -> Ordering {
@@ -122,7 +223,7 @@ fn built_in(error: &RouteError) -> String {
     )
 }
 
-fn response(status: u16, headers: HeaderMap, body: impl Into<Bytes>) -> Response<Bytes> {
+fn response(status: u16, headers: HeaderMap, body: impl Into<Body>) -> Response<Body> {
     let mut response = Response::new(body.into());
     *response.status_mut() =
         StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -130,7 +231,7 @@ fn response(status: u16, headers: HeaderMap, body: impl Into<Bytes>) -> Response
     response
 }
 
-fn plain(status: u16, body: &'static str) -> Response<Bytes> {
+fn plain(status: u16, body: &'static str) -> Response<Body> {
     response(status, HeaderMap::new(), body)
 }
 
@@ -142,7 +243,7 @@ fn without(query: &[(String, String)], skip: &[&str]) -> String {
     if search.is_empty() { search } else { format!("?{search}") }
 }
 
-fn json(status: u16, body: String) -> Response<Bytes> {
+fn json(status: u16, body: String) -> Response<Body> {
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
     response(status, headers, body)
@@ -163,7 +264,11 @@ fn convert(value: serde_json::Value) -> reze::Json {
 }
 
 /// Reads a mutation body: JSON for `.call`, urlencoded form fields otherwise.
-fn read_body(headers: &HeaderMap, body: &Bytes, limit: usize) -> Result<Body, (u16, &'static str)> {
+fn read_body(
+    headers: &HeaderMap,
+    body: &Bytes,
+    limit: usize,
+) -> Result<Posted, (u16, &'static str)> {
     if body.len() > limit {
         return Err((413, "Content Too Large"));
     }
@@ -171,12 +276,12 @@ fn read_body(headers: &HeaderMap, body: &Bytes, limit: usize) -> Result<Body, (u
         headers.get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).unwrap_or("");
     if kind.contains("application/json") {
         let value = serde_json::from_slice(body).map_err(|_| (400, "Invalid JSON"))?;
-        return Ok(Body::Json(convert(value)));
+        return Ok(Posted::Json(convert(value)));
     }
     if kind.starts_with("multipart/") {
         return Err((415, "Unsupported Media Type"));
     }
-    Ok(Body::Form(form_urlencoded::parse(body).into_owned().collect()))
+    Ok(Posted::Form(form_urlencoded::parse(body).into_owned().collect()))
 }
 
 /// Whether a post comes from another site, by `Sec-Fetch-Site`, then `Origin`.
@@ -224,12 +329,12 @@ struct Run<'r> {
     timings: &'r mut String,
 }
 
-fn redirect(target: &RouteError) -> Response<Bytes> {
+fn redirect(target: &RouteError) -> Response<Body> {
     let mut headers = HeaderMap::new();
     if let Some(location) = target.location.as_deref().and_then(|l| HeaderValue::from_str(l).ok()) {
         headers.insert(header::LOCATION, location);
     }
-    response(target.status, headers, Bytes::new())
+    response(target.status, headers, Body::empty())
 }
 
 /// A redirect from a post: `303` unless it sets another status than the default `307`.
@@ -294,9 +399,9 @@ impl<C: Send + Sync + 'static> App<C> {
         self.mutations[index] = Some(Box::new(move |body, request, context| {
             let mut issues = Vec::new();
             let input = match body {
-                Body::Json(json) => I::json(Some(json), &[], &mut issues),
-                Body::Form(_) if !I::FORM => return Decoded::JsonOnly,
-                Body::Form(form) => I::form(form, &mut issues),
+                Posted::Json(json) => I::json(Some(json), &[], &mut issues),
+                Posted::Form(_) if !I::FORM => return Decoded::JsonOnly,
+                Posted::Form(form) => I::form(form, &mut issues),
             };
             match input {
                 Some(input) if issues.is_empty() => {
@@ -320,7 +425,7 @@ impl<C: Send + Sync + 'static> App<C> {
     }
 
     pub fn set_manifest(&mut self, manifest: Manifest) {
-        self.manifest = Some(manifest);
+        self.manifest = Some(Arc::new(manifest));
     }
 
     /// Writes loader and render durations into `Server-Timing`: on with the `dev` feature, and
@@ -330,7 +435,7 @@ impl<C: Send + Sync + 'static> App<C> {
     }
 
     /// Answers one request, whose body a mutation reads.
-    pub async fn handle(&self, request: Request<Bytes>, context: &C) -> Response<Bytes> {
+    pub async fn handle(&self, request: Request<Bytes>, context: &C) -> Response<Body> {
         let (parts, body) = request.into_parts();
         let span = info_span!(
             "request",
@@ -348,7 +453,7 @@ impl<C: Send + Sync + 'static> App<C> {
         request: &http::request::Parts,
         body: &Bytes,
         context: &C,
-    ) -> Response<Bytes> {
+    ) -> Response<Body> {
         let path = request.uri.path();
         let query: Vec<(String, String)> =
             form_urlencoded::parse(request.uri.query().unwrap_or("").as_bytes())
@@ -395,25 +500,28 @@ impl<C: Send + Sync + 'static> App<C> {
                 if let Ok(location) = HeaderValue::from_str(&format!("{canonical}{search}")) {
                     headers.insert(header::LOCATION, location);
                 }
-                return response(308, headers, Bytes::new());
+                return response(308, headers, Body::empty());
             }
         }
-        let head = method == Method::HEAD;
+        let prerender = request.headers.contains_key("rz-prerender");
         let mut timings = String::new();
         let Some((route, params, _)) = found else {
-            let page = Page {
+            let deferred = Deferred {
                 table: self.table,
                 chain: self.table.root,
-                path,
-                search: &search,
-                query: &query,
-                params: &Params::new(),
-                data: &[],
+                chunk: None,
+                manifest: self.manifest.clone(),
+                from: 0,
+                path: path.to_string(),
+                search,
+                query,
+                params: Params::new(),
+                data: Vec::new(),
                 error: Some((self.table.root.len(), RouteError::not_found())),
                 submission: None,
             };
-            let rendered = self.render(&page, None, 0, &mut timings);
-            return self.finish(rendered, HeaderMap::new(), &timings, head, request);
+            let rendered = self.render(&deferred, prerender, &mut timings).await;
+            return self.finish(rendered, HeaderMap::new(), &timings, request, deferred);
         };
         let chain = route.chain;
         let mut from =
@@ -478,10 +586,10 @@ impl<C: Send + Sync + 'static> App<C> {
             let span = info_span!("mutation", export = def.export, file = def.file);
             match (mutation(&input, request, context), input) {
                 (Decoded::JsonOnly, _) => return plain(415, "This mutation takes JSON input"),
-                (Decoded::Invalid(issues), Body::Json(_)) => {
+                (Decoded::Invalid(issues), Posted::Json(_)) => {
                     return json(422, format!("{{\"issues\":{}}}", reze::to_json(&issues)));
                 }
-                (Decoded::Invalid(issues), Body::Form(form)) => {
+                (Decoded::Invalid(issues), Posted::Form(form)) => {
                     submission = Some(Submission::new(def.id, &form, issues));
                     status = 422;
                 }
@@ -489,7 +597,7 @@ impl<C: Send + Sync + 'static> App<C> {
                     Err(failure) if failure.location.is_some() => {
                         return redirect(&posted(failure));
                     }
-                    Err(failure) if matches!(input, Body::Json(_)) => {
+                    Err(failure) if matches!(input, Posted::Json(_)) => {
                         let mut message = String::from("{\"message\":");
                         reze::js::push_json_string(&mut message, &failure.message);
                         message.push('}');
@@ -497,17 +605,17 @@ impl<C: Send + Sync + 'static> App<C> {
                     }
                     Err(failure) => guarded = Some((chain.len() - 1, failure)),
                     Ok(value) if build.is_none() => {
-                        if matches!(input, Body::Json(_)) {
+                        if matches!(input, Posted::Json(_)) {
                             return json(200, format!("{{\"result\":{}}}", value.json()));
                         }
                         let mut headers = HeaderMap::new();
                         if let Ok(location) = HeaderValue::from_str(&format!("{path}{search}")) {
                             headers.insert(header::LOCATION, location);
                         }
-                        return response(303, headers, Bytes::new());
+                        return response(303, headers, Body::empty());
                     }
                     Ok(value) => {
-                        if matches!(input, Body::Json(_)) {
+                        if matches!(input, Posted::Json(_)) {
                             called = Some(value.json());
                         }
                         if let Some(patterns) = def.revalidate {
@@ -523,22 +631,7 @@ impl<C: Send + Sync + 'static> App<C> {
             }
         }
         let until = guarded.as_ref().map_or(chain.len(), |(depth, _)| *depth);
-        let answer = |response: Response<Bytes>| {
-            let Some(result) = &called else { return response };
-            let segment = response
-                .headers()
-                .get("rz-segment")
-                .and_then(|value| value.to_str().ok())
-                .unwrap_or("0")
-                .to_string();
-            let mut body = format!(
-                "{{\"result\":{result},\"status\":{},\"segment\":{segment},\"html\":",
-                response.status().as_u16()
-            );
-            reze::js::push_json_string(&mut body, &String::from_utf8_lossy(response.body()));
-            body.push('}');
-            json(200, body)
-        };
+        let called = called.as_deref();
 
         let mut data: Vec<Option<Box<dyn Value>>> = chain.iter().map(|_| None).collect();
         let (mut error, mut stop) = (guarded, None);
@@ -561,51 +654,48 @@ impl<C: Send + Sync + 'static> App<C> {
             headers
                 .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
             headers.insert("rz-segment", HeaderValue::from_static("-1"));
-            return answer(response(200, headers, Bytes::new()));
+            return answer(called, response(200, headers, Body::empty())).await;
         }
+        let mut deferred = Deferred {
+            table: self.table,
+            chain,
+            chunk: route.chunk,
+            manifest: self.manifest.clone(),
+            from,
+            path: path.to_string(),
+            search,
+            query,
+            params,
+            data,
+            error,
+            submission,
+        };
         if from > 0 {
-            let page = Page {
-                table: self.table,
-                chain,
-                path,
-                search: &search,
-                query: &query,
-                params: &params,
-                data: &data,
-                error: error.clone(),
-                submission: submission.as_ref(),
-            };
-            let rendered = self.render(&page, route.chunk, from, &mut timings);
+            let rendered = self.render(&deferred, prerender, &mut timings).await;
             if rendered.is_ok() {
                 headers.insert("rz-segment", HeaderValue::from(from));
-                return answer(self.finish(rendered, headers, &timings, head, request));
+                let response = self.finish(rendered, headers, &timings, request, deferred);
+                return answer(called, response).await;
             }
             let mut state = Run {
-                data: &mut data,
-                error: &mut error,
+                data: &mut deferred.data,
+                error: &mut deferred.error,
                 redirect: &mut stop,
                 timings: &mut timings,
             };
-            self.run(route, (0..from).collect(), &params, context, &mut state).await;
+            self.run(route, (0..from).collect(), &deferred.params, context, &mut state).await;
             if let Some(target) = &stop {
                 return redirect(target);
             }
+            deferred.from = 0;
         }
-        let page = Page {
-            table: self.table,
-            chain,
-            path,
-            search: &search,
-            query: &query,
-            params: &params,
-            data: &data,
-            error,
-            submission: submission.as_ref(),
-        };
-        let rendered = self
-            .render(&page, route.chunk, 0, &mut timings)
-            .map(|(document, code)| (document, if code == 200 { status } else { code }));
-        answer(self.finish(rendered, headers, &timings, head, request))
+        let rendered = self.render(&deferred, prerender, &mut timings).await.map(|mut rendered| {
+            if rendered.status == 200 {
+                rendered.status = status;
+            }
+            rendered
+        });
+        answer(called, self.finish(rendered, headers, &timings, request, deferred)).await
     }
 
     /// Runs the loaders of `depths` together, and keeps the error of the shallowest that fails.
@@ -657,43 +747,62 @@ impl<C: Send + Sync + 'static> App<C> {
         }
     }
 
-    fn render(
+    /// Renders the page of `deferred`, and for a prerender waits for its deferred fields and
+    /// renders again until it streams nothing.
+    async fn render(
         &self,
-        page: &Page<'_>,
-        chunk: Option<Chunk>,
-        from: usize,
+        deferred: &Deferred,
+        prerender: bool,
         timings: &mut String,
-    ) -> crate::Result<(String, u16)> {
-        let span = info_span!("render", bytes = field::Empty);
-        let start = Instant::now();
-        let rendered = span.in_scope(|| render(page, chunk, self.manifest.as_ref(), from));
-        if self.server_timing {
-            timing(timings, "render", start.elapsed().as_secs_f64());
+    ) -> crate::Result<Rendered> {
+        loop {
+            let span = info_span!("render", bytes = field::Empty);
+            let start = Instant::now();
+            let page = deferred.page();
+            let rendered = span.in_scope(|| {
+                render(&page, deferred.chunk, deferred.manifest.as_deref(), deferred.from)
+            });
+            if self.server_timing {
+                timing(timings, "render", start.elapsed().as_secs_f64());
+            }
+            if let Ok(rendered) = &rendered {
+                span.record("bytes", rendered.document.len());
+                if prerender && !rendered.parts.is_empty() {
+                    let parts = &rendered.parts;
+                    join_all(parts.iter().map(|part| poll_fn(|cx| part.waiting.poll_settle(cx))))
+                        .await;
+                    continue;
+                }
+            }
+            return rendered;
         }
-        if let Ok((document, _)) = &rendered {
-            span.record("bytes", document.len());
-        }
-        rendered
     }
 
     fn finish(
         &self,
-        rendered: crate::Result<(String, u16)>,
+        rendered: crate::Result<Rendered>,
         mut headers: HeaderMap,
         timings: &str,
-        head: bool,
         request: &http::request::Parts,
-    ) -> Response<Bytes> {
+        deferred: Deferred,
+    ) -> Response<Body> {
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
         if !timings.is_empty()
             && let Ok(value) = HeaderValue::from_str(timings)
         {
             headers.insert("server-timing", value);
         }
-        let (document, status) = match rendered {
+        let head = request.method == Method::HEAD;
+        let Rendered { document, status, parts } = match rendered {
             Ok(rendered) => rendered,
-            Err(error) => (built_in(&error), error.status),
+            Err(error) => {
+                Rendered { document: built_in(&error), status: error.status, parts: Vec::new() }
+            }
         };
+        if !parts.is_empty() {
+            let body = if head { Body::empty() } else { streamed(document, parts, deferred) };
+            return response(status, headers, body);
+        }
         if status == 200 && request.method != Method::POST {
             let tag = etag(&document);
             let matched = request
@@ -705,10 +814,10 @@ impl<C: Send + Sync + 'static> App<C> {
                 headers.insert(header::ETAG, value);
             }
             if matched {
-                return response(304, headers, Bytes::new());
+                return response(304, headers, Body::empty());
             }
         }
-        response(status, headers, if head { Bytes::new() } else { Bytes::from(document) })
+        response(status, headers, if head { Body::empty() } else { Body::from(document) })
     }
 
     /// The `dev` endpoint `GET /__reze/guard?m=<file>&u=<url>&<params>`: runs one guard over the
@@ -720,7 +829,7 @@ impl<C: Send + Sync + 'static> App<C> {
         request: &http::request::Parts,
         query: &[(String, String)],
         context: &C,
-    ) -> Response<Bytes> {
+    ) -> Response<Body> {
         let (mut file, mut url) = (None, "/");
         let mut params = Params::new();
         for (name, value) in query {
@@ -738,7 +847,7 @@ impl<C: Send + Sync + 'static> App<C> {
         let (mut page, _) = page.into_parts();
         page.headers = request.headers.clone();
         match guard(&params, &page, context).await {
-            Ok(()) => response(204, HeaderMap::new(), Bytes::new()),
+            Ok(()) => response(204, HeaderMap::new(), Body::empty()),
             Err(error) if error.location.is_some() => redirect(&error),
             Err(error) => response(error.status, HeaderMap::new(), error.message),
         }
@@ -753,7 +862,7 @@ impl<C: Send + Sync + 'static> App<C> {
         body: &Bytes,
         query: &[(String, String)],
         context: &C,
-    ) -> Response<Bytes> {
+    ) -> Response<Body> {
         let id = query.iter().find(|(name, _)| name == "m").map(|(_, value)| value.as_str());
         let index = self.table.mutations.iter().position(|m| Some(m.id) == id);
         let Some(mutation) = index.and_then(|index| self.mutations[index].as_ref()) else {
@@ -779,7 +888,7 @@ impl<C: Send + Sync + 'static> App<C> {
     /// The `dev` endpoint `GET /__reze/load?m=<file>&<params>`: the data of one loader as JSON,
     /// for the JS dev server.
     #[cfg(feature = "dev")]
-    async fn load_json(&self, query: &[(String, String)], context: &C) -> Response<Bytes> {
+    async fn load_json(&self, query: &[(String, String)], context: &C) -> Response<Body> {
         let mut file = None;
         let mut params = Params::new();
         for (name, value) in query {
@@ -794,11 +903,18 @@ impl<C: Send + Sync + 'static> App<C> {
             return plain(404, "Not Found");
         };
         match loader(&params, context).await {
-            Ok(value) => {
-                let mut headers = HeaderMap::new();
-                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
-                response(200, headers, value.json())
-            }
+            Ok(value) => loop {
+                reze::defer::take_waiting();
+                let json = value.json();
+                let waiting = reze::defer::take_waiting();
+                if waiting.is_empty() {
+                    let mut headers = HeaderMap::new();
+                    headers
+                        .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                    break response(200, headers, json);
+                }
+                join_all(waiting.iter().map(|field| poll_fn(|cx| field.poll_settle(cx)))).await;
+            },
             Err(error) if error.location.is_some() => redirect(&error),
             Err(error) => response(error.status, HeaderMap::new(), error.message),
         }
