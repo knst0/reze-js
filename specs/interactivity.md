@@ -492,6 +492,9 @@ The current implementation differs from this design in these points:
   handlers, and nested ranges. Components, boundaries, `<head>`, `<Portal>`, `children`, spread
   attributes, computed form actions, and callback bodies with statements inside a client range
   raise `CLIENT_RANGE_UNSUPPORTED`.
+- `MODULE_STATE_SERVER_WRITE` covers assignments and updates of module state and its fields, and
+  calls of the mutating `Array`, `Map`, and `Set` methods on it, outside nested functions of the
+  component body.
 - A prop is live when a call passes it an expression that reads client state or a live prop of
   the caller, or a function that the child's handlers, effects, or locals call. The parent
   instance gives each live prop as a getter for the call's site, and the child entry ends with

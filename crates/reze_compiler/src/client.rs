@@ -3689,23 +3689,77 @@ struct ServerWrites<'i, 'm, 'a> {
     out: Vec<(Sym, Span)>,
 }
 
+const MUTATING_METHODS: [&str; 13] = [
+    "push",
+    "pop",
+    "shift",
+    "unshift",
+    "splice",
+    "sort",
+    "reverse",
+    "fill",
+    "copyWithin",
+    "set",
+    "add",
+    "delete",
+    "clear",
+];
+
+impl ServerWrites<'_, '_, '_> {
+    /// Records a write of the binding `a.b[c]` starts from.
+    fn root(&mut self, mut expression: &Expression<'_>, span: Span) {
+        loop {
+            match expression.without_parentheses() {
+                Expression::Identifier(reference) => {
+                    if let Some(symbol) = self.index.symbol(self.module, reference) {
+                        self.out.push((self.index.origin(self.module, symbol), span));
+                    }
+                    return;
+                }
+                Expression::StaticMemberExpression(m) => expression = &m.object,
+                Expression::ComputedMemberExpression(m) => expression = &m.object,
+                _ => return,
+            }
+        }
+    }
+}
+
 impl<'a> Visit<'a> for ServerWrites<'_, '_, 'a> {
     fn visit_assignment_expression(&mut self, it: &oxc_ast::ast::AssignmentExpression<'a>) {
-        if let AssignmentTarget::AssignmentTargetIdentifier(reference) = &it.left
-            && let Some(symbol) = self.index.symbol(self.module, reference)
-        {
-            self.out.push((self.index.origin(self.module, symbol), it.span));
+        match &it.left {
+            AssignmentTarget::AssignmentTargetIdentifier(reference) => {
+                if let Some(symbol) = self.index.symbol(self.module, reference) {
+                    self.out.push((self.index.origin(self.module, symbol), it.span));
+                }
+            }
+            AssignmentTarget::StaticMemberExpression(m) => self.root(&m.object, it.span),
+            AssignmentTarget::ComputedMemberExpression(m) => self.root(&m.object, it.span),
+            _ => {}
         }
         walk::walk_assignment_expression(self, it);
     }
 
     fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
-        if let SimpleAssignmentTarget::AssignmentTargetIdentifier(reference) = &it.argument
-            && let Some(symbol) = self.index.symbol(self.module, reference)
-        {
-            self.out.push((self.index.origin(self.module, symbol), it.span));
+        match &it.argument {
+            SimpleAssignmentTarget::AssignmentTargetIdentifier(reference) => {
+                if let Some(symbol) = self.index.symbol(self.module, reference) {
+                    self.out.push((self.index.origin(self.module, symbol), it.span));
+                }
+            }
+            SimpleAssignmentTarget::StaticMemberExpression(m) => self.root(&m.object, it.span),
+            SimpleAssignmentTarget::ComputedMemberExpression(m) => self.root(&m.object, it.span),
+            _ => {}
         }
         walk::walk_update_expression(self, it);
+    }
+
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if let Expression::StaticMemberExpression(m) = it.callee.without_parentheses()
+            && MUTATING_METHODS.contains(&m.property.name.as_str())
+        {
+            self.root(&m.object, it.span);
+        }
+        walk::walk_call_expression(self, it);
     }
 
     fn visit_function(&mut self, _: &Function<'a>, _: ScopeFlags) {}

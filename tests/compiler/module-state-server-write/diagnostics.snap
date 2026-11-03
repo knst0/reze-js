@@ -3,4 +3,18 @@
   3 | export default function Home() {
 > 4 |   count++;
     |   ^^^^^^^
-  5 |   return (
+  5 |   cart.total = 1;
+
+[MODULE_STATE_SERVER_WRITE] `cart` is module state, and the server render writes it here. Write it from a handler or an `effect`.
+  at src/routes/index.tsx:5:3
+  4 |   count++;
+> 5 |   cart.total = 1;
+    |   ^^^^^^^^^^^^^^
+  6 |   cart.items.push("pear");
+
+[MODULE_STATE_SERVER_WRITE] `cart` is module state, and the server render writes it here. Write it from a handler or an `effect`.
+  at src/routes/index.tsx:6:3
+  5 |   cart.total = 1;
+> 6 |   cart.items.push("pear");
+    |   ^^^^^^^^^^^^^^^^^^^^^^^
+  7 |   const names = cart.items.map((item) => item.toUpperCase());
