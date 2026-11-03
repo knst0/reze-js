@@ -520,7 +520,7 @@ The current implementation differs from this design in these points:
   `EVENT_DECISION_DEFERRED`.
 - After a chunk fails to load, the dispatcher goes inert for the rest of the page. The native
   fallback, `rz:chunkerror` on `window`, or the single reload takes over.
-- The dispatcher is about 1 KB gzip and handles only handler sites: intent, replay, `aria-busy`,
+- The dispatcher is 990 B gzip, under the 1 KB budget, and handles only handler sites: intent, replay, `aria-busy`,
   the failure ladder, and the state blocks of navigations and streamed parts. Two more modules
   load beside it. `links`, under 700 B and on every page next to the dispatcher, intercepts links
   and server-tier forms, sets `aria-busy` on a posting form, and loads the navigation module and
