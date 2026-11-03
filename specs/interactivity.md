@@ -463,6 +463,7 @@ each page's compressed HTML on realistic applications. The share SHOULD stay und
 | --------------------------- | --------------------------------------------------------------------------------- |
 | `MODULE_STATE_SERVER_WRITE` | The server render writes state declared at module level                           |
 | `EVENT_DECISION_DEFERRED`   | `preventDefault` or `stopPropagation` depends on a condition markup can't express |
+| `CLIENT_RANGE_UNSUPPORTED`  | A range client code updates contains content it cannot create                     |
 
 ## Implementation status
 
@@ -474,8 +475,15 @@ The current implementation differs from this design in these points:
 - The idle preload checks once, at idle time, whether any handler site is above the fold. It does
   not observe scrolling.
 - A store notifies on any write to the object it wraps, with no per-field tracking.
-- Client ranges (`Show`, `For` with reactive sources) are not updated in the browser. Reactive
-  props passed to child components are not supported either.
+- Every client range (a `Show`, `Switch`, `For`, or `Repeat` whose condition or source reads
+  client state, or that sits inside one) is marked, even when its content is always one element.
+  The start marker carries the scope and a mark, `<!--[0.3-->`, so client code finds it without
+  a path. Rows that are not exactly one element open with `<!--,-->`.
+- Client code creates the content of a client range from a template: elements, text, bindings,
+  handlers, and nested ranges. Components, boundaries, `<head>`, `<Portal>`, `children`, spread
+  attributes, computed form actions, and callback bodies with statements inside a client range
+  raise `CLIENT_RANGE_UNSUPPORTED`.
+- Reactive props passed to child components are not supported.
 - The state block does not restore `Date`, `Map`, `Set`, or `bigint` yet.
 - Server-tier lowering of handlers into `<form>` is not implemented.
 - A prevent condition is written as `type:cond+cond`. A condition is a bare `key` value, or

@@ -1,0 +1,13 @@
+[CLIENT_RANGE_UNSUPPORTED] Client code cannot create a component inside a range it updates.
+  at src/routes/index.tsx:10:38
+   9 |       <ul>
+> 10 |         <For each={items}>{(item) => <Item name={item} />}</For>
+     |                                      ^^^^^^^^^^^^^^^^^^^^
+  11 |       </ul>
+
+[CLIENT_RANGE_UNSUPPORTED] Client code cannot create statements in a callback body inside a range it updates.
+  at src/routes/index.tsx:13:16
+  12 |       <Show when={items.length > 1}>
+> 13 |         {() => {
+     |                ^
+  14 |           const last = items[items.length - 1];

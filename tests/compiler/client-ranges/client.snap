@@ -1,0 +1,50 @@
+// src/routes/index.tsx
+import { $cm, $fx, $h, $list, $q, $range, $rg, $sig, $str, $text } from "reze-js/runtime/client";
+export const $c0 = ($s, $i, $a) => {
+  const open = $sig(false);
+  const items = $sig(["a", "b"]);
+  const count = $sig(2);
+  for (const $b of $rg($i, 3)) $range($b, [() => (open.v)], 0, ($n, $at, $k, $v) => {
+    if ($k === 0) {
+      $n ??= $h(`<p data-rz=${$i.toString(36)}.7>Open with  items</p>`, $at);
+      for (const $b of $q($i, 7, $n)) {
+        const [$t329] = $text($b, null, 0, [10, $str(items.v.length), 6]);
+        $fx(() => { $t329.data = $str(items.v.length); });
+      }
+    }
+    if ($k === 1) {
+      $n ??= $h(`<p>Closed</p>`, $at);
+    }
+    return $n;
+  });
+  for (const $b of $rg($i, 4)) $list($b, () => (items.v), ($n, $at, $j1, item, index) => {
+    $n ??= $h(`<li>. <button data-rz=${$j1.toString(36)}.1>Drop</button></li>`, $at);
+    for (const $b of $q($j1, 1, $n)) {
+      const [$t493, $t506] = $text($b.parentNode, null, 0, [$str(index.v + 1), 2, $str(item)]);
+      $fx(() => { $t493.data = $str(index.v + 1); });
+      $fx(() => { $t506.data = $str(item); });
+    }
+    return $n;
+  }, 0, ($n, $at) => {
+    $n ??= $h(`<li>Empty</li>`, $at);
+    return $n;
+  }, [$a, $i, 1]);
+  for (const $b of $rg($i, 5)) $list($b, () => (items.v), ($n, $at, $j, item) => {
+    $n ??= $h(`<!--,--><!--${$i.toString(36)}.8-->`, $at);
+    for (const $b of $cm($i, 8, $n)) {
+      const [$t717] = $text($b.parentNode, $b, 0, [$str(item)]);
+      $fx(() => { $t717.data = $str(item); });
+    }
+    return $n;
+  }, 1, 0);
+  for (const $b of $rg($i, 6)) $list($b, () => (count.v), ($n, $at, $j) => {
+    $n ??= $h(`<span>*</span>`, $at);
+    return $n;
+  }, 0, 0);
+  return { 0: { click: ($r) => () => (open.v = !open.v) }, 1: { click: ($r) => ((item, index) => (() => (items.v = items.v.filter((_, at) => at !== index.v))))($r[2], $r[3]) }, 2: { click: ($r) => () => count.v++ } };
+};
+
+// virtual:rz-route/0
+import { $c0 } from "/src/routes/index.tsx";
+export default { 0: $c0 };
+export const g = [];

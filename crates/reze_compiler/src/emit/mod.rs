@@ -1,7 +1,7 @@
 mod server;
 
-pub(crate) use server::head_key;
 pub use server::server;
+pub(crate) use server::{head_key, template_escape};
 
 use std::collections::{BTreeMap, HashSet};
 

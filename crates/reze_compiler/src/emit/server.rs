@@ -41,7 +41,7 @@ struct Emitter<'e, 'a> {
     plan: &'e ModulePlan,
 }
 
-fn template_escape(out: &mut String, s: &str) {
+pub(crate) fn template_escape(out: &mut String, s: &str) {
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
@@ -100,7 +100,10 @@ impl<'e, 'a> Emitter<'e, 'a> {
             if region.span.start >= span.end && !at_end {
                 break;
             }
-            if region.span.start < position || region.span.end > span.end {
+            if region.span.start < position
+                || region.span.end > span.end
+                || (region.span == span && matches!(region.event, Event::Jsx(_, Wrap::Template)))
+            {
                 continue;
             }
             let region_span = region.span;
@@ -126,6 +129,9 @@ impl<'e, 'a> Emitter<'e, 'a> {
 
     fn template(&mut self, content: &Content<'a>) -> String {
         let mut out = String::from("`");
+        if self.plan.separated.contains(&content.span.start) {
+            out.push_str("<!--,-->");
+        }
         self.nodes(&content.nodes, content.span.start, &mut out);
         out.push('`');
         let key = content.span.start;
@@ -174,6 +180,17 @@ impl<'e, 'a> Emitter<'e, 'a> {
     }
 
     fn node(&mut self, node: &Node<'a>, out: &mut String) {
+        if let Some(&(scope, mark)) = client::range_key(node).and_then(|k| self.plan.ranges.get(&k))
+        {
+            out.push_str(&format!("<!--[${{{}}}.{}-->", scope_var(scope), base36(mark)));
+            self.control(node, out);
+            out.push_str("<!--]-->");
+            return;
+        }
+        self.control(node, out);
+    }
+
+    fn control(&mut self, node: &Node<'a>, out: &mut String) {
         match node {
             Node::Text(text) => {
                 let mut escaped = String::new();
@@ -550,12 +567,12 @@ pub fn server(
                 span: component.returned.without_parentheses().span(),
                 event: Event::Jsx(template, Wrap::Template),
             });
-            collect_callbacks(&template.nodes, &mut regions);
+            collect_callbacks(&template.nodes, plan, &mut regions);
         }
     }
     for content in facts.values.values() {
         regions.push(Region { span: content.span, event: Event::Jsx(content, Wrap::Raw) });
-        collect_callbacks(&content.nodes, &mut regions);
+        collect_callbacks(&content.nodes, plan, &mut regions);
     }
     let mut helpers = BTreeSet::new();
     for endpoint in &facts.endpoints {
@@ -592,57 +609,73 @@ pub fn server(
 }
 
 /// Regions for the returns of control-flow callbacks, which render to strings.
-fn collect_callbacks<'e, 'a>(nodes: &'e [Node<'a>], regions: &mut Vec<Region<'e, 'a>>) {
+fn collect_callbacks<'e, 'a>(
+    nodes: &'e [Node<'a>],
+    plan: &ModulePlan,
+    regions: &mut Vec<Region<'e, 'a>>,
+) {
     for node in nodes {
         match node {
-            Node::Element(element) => collect_callbacks(&element.children, regions),
+            Node::Element(element) => collect_callbacks(&element.children, plan, regions),
             Node::Head(elements) => {
                 for element in elements {
-                    collect_callbacks(&element.children, regions);
+                    collect_callbacks(&element.children, plan, regions);
                 }
             }
             Node::Component(call) => {
                 let children = call.children.iter();
                 for value in call.props.iter().map(|p| &p.value).chain(children) {
                     if let PropValue::Content(content) = value {
-                        collect_callbacks(&content.nodes, regions);
+                        collect_callbacks(&content.nodes, plan, regions);
                     }
                 }
             }
             Node::Show(show) => {
-                collect_branch(&show.children, regions);
-                show.fallback.iter().for_each(|b| collect_branch(b, regions));
+                collect_branch(&show.children, plan, regions);
+                show.fallback.iter().for_each(|b| collect_branch(b, plan, regions));
             }
             Node::Switch(switch) => {
                 for matched in &switch.matches {
-                    collect_branch(&matched.children, regions);
+                    collect_branch(&matched.children, plan, regions);
                 }
-                switch.fallback.iter().for_each(|b| collect_branch(b, regions));
+                switch.fallback.iter().for_each(|b| collect_branch(b, plan, regions));
             }
             Node::For(each) | Node::Repeat(each) => {
-                collect_callback(&each.children, regions);
-                each.fallback.iter().for_each(|b| collect_branch(b, regions));
+                collect_callback(&each.children, plan, regions);
+                each.fallback.iter().for_each(|b| collect_branch(b, plan, regions));
             }
             Node::Loading(boundary) | Node::Errored(boundary) | Node::Portal(boundary) => {
-                collect_callbacks(&boundary.children.nodes, regions);
-                boundary.fallback.iter().for_each(|b| collect_branch(b, regions));
+                collect_callbacks(&boundary.children.nodes, plan, regions);
+                boundary.fallback.iter().for_each(|b| collect_branch(b, plan, regions));
             }
             Node::Text(_) | Node::Expr(_) => {}
         }
     }
 }
 
-fn collect_branch<'e, 'a>(branch: &'e Branch<'a>, regions: &mut Vec<Region<'e, 'a>>) {
+fn collect_branch<'e, 'a>(
+    branch: &'e Branch<'a>,
+    plan: &ModulePlan,
+    regions: &mut Vec<Region<'e, 'a>>,
+) {
     match branch {
-        Branch::Content(content) => collect_callbacks(&content.nodes, regions),
-        Branch::Callback(callback) => collect_callback(callback, regions),
+        Branch::Content(content) => collect_callbacks(&content.nodes, plan, regions),
+        Branch::Callback(callback) => collect_callback(callback, plan, regions),
     }
 }
 
-fn collect_callback<'e, 'a>(callback: &'e Callback<'a>, regions: &mut Vec<Region<'e, 'a>>) {
+fn collect_callback<'e, 'a>(
+    callback: &'e Callback<'a>,
+    plan: &ModulePlan,
+    regions: &mut Vec<Region<'e, 'a>>,
+) {
     let content = &callback.content;
     match content.nodes.as_slice() {
-        [Node::Expr(expression)] if expression.span() == content.span => {
+        [Node::Expr(expression)]
+            if expression.span() == content.span
+                && !plan.bindings.contains(&expression.span().start)
+                && !plan.separated.contains(&content.span.start) =>
+        {
             regions.push(Region {
                 span: Span::empty(content.span.start),
                 event: Event::Edit("`${$t(".into()),
@@ -654,7 +687,7 @@ fn collect_callback<'e, 'a>(callback: &'e Callback<'a>, regions: &mut Vec<Region
         }
         _ => {
             regions.push(Region { span: content.span, event: Event::Jsx(content, Wrap::Template) });
-            collect_callbacks(&content.nodes, regions);
+            collect_callbacks(&content.nodes, plan, regions);
         }
     }
 }

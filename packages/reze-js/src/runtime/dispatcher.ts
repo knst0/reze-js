@@ -119,8 +119,7 @@ const add = ([events, url, isEager, ...block]: [string, string, number, ...Entry
   const base = entries.length;
   for (const entry of block) {
     if ((entry[0] as number) < 0) entry[0] = ~(~(entry[0] as number) + base);
-    entries.push(entry);
-    urls.push(url);
+    urls[entries.push(entry) - 1] = url;
   }
   if (isEager) eager[url] = 1;
   for (const type of events.split(" ")) {

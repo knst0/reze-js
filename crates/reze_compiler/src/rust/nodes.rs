@@ -56,6 +56,19 @@ impl<'e, 'a> Emitter<'e, 'a> {
     }
 
     fn node(&mut self, node: &'e Node<'a>, frame: &Rc<Frame<'e, 'a>>) {
+        let plan = &self.plan.modules[frame.module];
+        if let Some(&(scope, mark)) = client::range_key(node).and_then(|k| plan.ranges.get(&k)) {
+            self.raw("<!--[");
+            self.scope_id(scope, frame);
+            self.raw(&format!(".{}-->", base36(mark)));
+            self.control(node, frame);
+            self.raw("<!--]-->");
+            return;
+        }
+        self.control(node, frame);
+    }
+
+    fn control(&mut self, node: &'e Node<'a>, frame: &Rc<Frame<'e, 'a>>) {
         match node {
             Node::Text(text) => {
                 let mut escaped = String::new();
@@ -445,6 +458,9 @@ impl<'e, 'a> Emitter<'e, 'a> {
             scopes.insert(row.scope, var);
         }
         let inner = Frame::child(&inner, Names::new(), scopes);
+        if self.plan.modules[frame.module].separated.contains(&key) {
+            self.raw("<!--,-->");
+        }
         self.content(&callback.content, &inner);
     }
 

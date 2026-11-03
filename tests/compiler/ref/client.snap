@@ -1,12 +1,12 @@
 // src/routes/index.tsx
 import { $q } from "reze-js/runtime/client";
-export const $c0 = (s, i, a) => {
+export const $c0 = ($s, $i, $a) => {
   const label = "Sketch";
-  for (const b of $q(i, 0)) {
+  for (const $b of $q($i, 0)) {
     ((canvas) => {
           const context = canvas.getContext("2d");
           if (context) context.fillText(label, 0, 10);
-        })(b);
+        })($b);
   }
   return {};
 };

@@ -85,3 +85,49 @@ test("reloads once when a chunk fails without a native action", async ({ page, s
   await expect(page.getByText("Clicked 0 times")).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem("rz:reload"))).toBe("1");
 });
+
+test.describe("lists", () => {
+  const todos = (page: import("@playwright/test").Page) => page.getByRole("list", { name: "Todos" }).getByRole("listitem");
+
+  test("toggles a client range", async ({ page, server }) => {
+    await page.goto(server.url("/lists"));
+    await expect(page.getByText("Hidden details")).toBeVisible();
+    await page.getByRole("button", { name: "Details" }).click();
+    await expect(page.getByText("Shown with 2 todos")).toBeVisible();
+    await expect(page.getByText("Hidden details")).toBeHidden();
+    await page.getByRole("button", { name: "Star" }).click();
+    await expect(page.getByLabel("Stars").locator("span")).toHaveCount(2);
+    await page.getByRole("button", { name: "Push" }).click();
+    await expect(page.getByText("Shown with 3 todos")).toBeVisible();
+    await page.getByRole("button", { name: "Details" }).click();
+    await expect(page.getByText("Hidden details")).toBeVisible();
+  });
+
+  test("updates the rows of a list", async ({ page, server }) => {
+    await page.goto(server.url("/lists"));
+    await page.getByRole("button", { name: "Push" }).click();
+    await expect(todos(page)).toHaveCount(3);
+    await expect(todos(page).nth(2)).toContainText("3. Item 3");
+    await expect(page.getByLabel("Tags")).toHaveText("MilkBreadItem 3");
+    await page.getByRole("button", { name: "Reverse" }).click();
+    await expect(todos(page).nth(0)).toContainText("1. Item 3");
+    await expect(todos(page).nth(2)).toContainText("3. Milk");
+    await expect(page.getByLabel("Tags")).toHaveText("Item 3BreadMilk");
+    await page.getByRole("button", { name: "Pick Bread" }).click();
+    const bread = todos(page).filter({ hasText: "Bread" });
+    await expect(bread).toHaveAttribute("aria-selected", "true");
+    await expect(bread.getByText("picked")).toBeVisible();
+    await page.getByRole("button", { name: "Pick Item 3" }).click();
+    await expect(bread).toHaveAttribute("aria-selected", "false");
+    await expect(page.getByText("picked")).toHaveCount(1);
+    await page.getByRole("button", { name: "Drop Item 3" }).click();
+    await expect(todos(page).nth(0)).toContainText("1. Bread");
+    await page.getByRole("button", { name: "Drop Bread" }).click();
+    await page.getByRole("button", { name: "Drop Milk" }).click();
+    await expect(todos(page)).toHaveText(["Nothing to do"]);
+    await expect(page.getByLabel("Tags")).toHaveText("");
+    await page.getByRole("button", { name: "Push" }).click();
+    await expect(todos(page)).toHaveCount(1);
+    await expect(todos(page).nth(0)).toContainText("1. Item 1");
+  });
+});

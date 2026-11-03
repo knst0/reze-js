@@ -1,33 +1,33 @@
 // src/routes/index.tsx
 import { $attr, $cm, $fx, $prop, $q, $rows, $sig, $str, $text } from "reze-js/runtime/client";
-export const $c0 = (s, i, a) => {
+export const $c0 = ($s, $i, $a) => {
   const open = $sig(false);
   const name = $sig("Ada");
   const picked = $sig(0);
-  for (const b of $q(i, 0)) {
-    $fx(() => $attr(b, "aria-expanded", open.v));
-    $fx(() => $attr(b.nextElementSibling, "hidden", !open.v));
-    $fx(() => $attr(b.nextElementSibling, "class", open.v ? "open" : "closed"));
-    const [t536] = $text(b.nextElementSibling.children[0], null, 0, [$str(name.v)]);
-    $fx(() => { t536.data = $str(name.v); });
-    const [t548] = $text(b.nextElementSibling, b.nextElementSibling.children[0], 0, [2, $str(name.v), 2]);
-    $fx(() => { t548.data = $str(name.v); });
-    const [t574] = $text(b.nextElementSibling, b.nextElementSibling.children[1], 0, [5, $str(picked.v)]);
-    $fx(() => { t574.data = $str(picked.v); });
+  for (const $b of $q($i, 0)) {
+    $fx(() => $attr($b, "aria-expanded", open.v));
+    $fx(() => $attr($b.nextElementSibling, "hidden", !open.v));
+    $fx(() => $attr($b.nextElementSibling, "class", open.v ? "open" : "closed"));
+    const [$t536] = $text($b.nextElementSibling.children[0], null, 0, [$str(name.v)]);
+    $fx(() => { $t536.data = $str(name.v); });
+    const [$t548] = $text($b.nextElementSibling, $b.nextElementSibling.children[0], 0, [2, $str(name.v), 2]);
+    $fx(() => { $t548.data = $str(name.v); });
+    const [$t574] = $text($b.nextElementSibling, $b.nextElementSibling.children[1], 0, [5, $str(picked.v)]);
+    $fx(() => { $t574.data = $str(picked.v); });
   }
-  for (const b of $q(i, 1)) {
-    $fx(() => $prop(b, "value", name.v));
+  for (const $b of $q($i, 1)) {
+    $fx(() => $prop($b, "value", name.v));
   }
-  for (const b of $cm(i, 3)) {
-    const [t1189] = $text(b.parentNode, b, 0, [8, $str(picked.v)]);
-    $fx(() => { t1189.data = $str(picked.v); });
+  for (const $b of $cm($i, 3)) {
+    const [$t1189] = $text($b.parentNode, $b, 0, [8, $str(picked.v)]);
+    $fx(() => { $t1189.data = $str(picked.v); });
   }
-  for (const [j1, r1] of $rows(a, i, 1)) {
-    for (const b of $q(j1, 2)) {
-      $fx(() => $attr(b, "aria-selected", picked.v === r1[2]));
+  for (const [$j1, $r1] of $rows($a, $i, 1)) {
+    for (const $b of $q($j1, 2)) {
+      $fx(() => $attr($b, "aria-selected", picked.v === $r1[2]));
     }
   }
-  return { 0: { click: (r) => () => (open.v = !open.v) }, 1: { input: (r) => (event) => (name.v = event.currentTarget.value) }, 2: { click: (r) => () => (picked.v = r[2]) } };
+  return { 0: { click: ($r) => () => (open.v = !open.v) }, 1: { input: ($r) => (event) => (name.v = event.currentTarget.value) }, 2: { click: ($r) => () => (picked.v = $r[2]) } };
 };
 
 // virtual:rz-route/0

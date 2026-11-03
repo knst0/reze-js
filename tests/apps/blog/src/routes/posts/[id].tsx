@@ -14,6 +14,7 @@ function Rating(props: { value: number; views: bigint }) {
 
 export default function PostPage(props: { data: Post }) {
   let likes = signal(props.data.likes);
+  let notes = signal(props.data.tags);
   return (
     <main>
       <head>
@@ -32,6 +33,23 @@ export default function PostPage(props: { data: Post }) {
       <p>{props.data.tags.length > 0 && "Tagged"}</p>
       <button onClick={() => likes++}>Like</button>
       <output>{likes} likes</output>
+      <Show when={likes > 2} fallback={<p>Few likes</p>}>
+        <p>Popular with {likes} likes</p>
+      </Show>
+      <ol aria-label="Notes">
+        <For each={notes}>
+          {(note, index) => (
+            <li>
+              {index + 1}: {note}
+              <button onClick={() => (notes = notes.filter((_, at) => at !== index))}>Drop {note}</button>
+            </li>
+          )}
+        </For>
+      </ol>
+      <p aria-label="Words">
+        <For each={notes}>{(note) => note}</For>
+      </p>
+      <button onClick={() => (notes = [...notes, `note ${notes.length + 1}`])}>Note</button>
     </main>
   );
 }

@@ -17,6 +17,7 @@ use oxc_syntax::scope::ScopeFlags;
 
 use crate::analyze::{Analysis, Api, EndpointKind, Export, ImportSource};
 use crate::diagnostic::{Code, Edit, Report};
+use crate::emit::template_escape;
 use crate::html;
 use crate::project::Module;
 use crate::routes::RouteTable;
@@ -66,6 +67,10 @@ pub struct ModulePlan {
     pub components: HashMap<u32, ComponentScope>,
     /// By callback content span start.
     pub rows: HashMap<u32, RowScope>,
+    /// Ranges that client code updates, by [`range_key`]: `<!--[scope.mark-->` … `<!--]-->`.
+    pub ranges: HashMap<u32, (usize, usize)>,
+    /// Callback content span starts of rows that open with `<!--,-->`.
+    pub separated: HashSet<u32>,
     pub client: Option<String>,
 }
 
@@ -99,6 +104,21 @@ pub fn is_slot(expression: &Expression<'_>) -> bool {
         Expression::Identifier(id) => id.name == "children",
         Expression::StaticMemberExpression(member) => member.property.name == "children",
         _ => false,
+    }
+}
+
+/// The key of a control-flow node in [`ModulePlan::ranges`].
+pub fn range_key(node: &Node<'_>) -> Option<u32> {
+    match node {
+        Node::Show(show) => Some(show.when.span().start),
+        Node::Switch(switch) => match (switch.matches.first(), &switch.fallback) {
+            (Some(first), _) => Some(first.when.span().start),
+            (None, Some(Branch::Content(content))) => Some(content.span.start),
+            (None, Some(Branch::Callback(callback))) => Some(callback.function.span.start),
+            (None, None) => None,
+        },
+        Node::For(each) | Node::Repeat(each) => Some(each.source.span().start),
+        _ => None,
     }
 }
 
@@ -489,10 +509,35 @@ struct LNode<'a> {
     children: Vec<usize>,
 }
 
-struct Region {
+struct Region<'e, 'a> {
     parent: Option<usize>,
     callback: Option<usize>,
     roots: Vec<usize>,
+    /// The range this region is a branch of.
+    range: Option<usize>,
+    nodes: &'e [Node<'a>],
+    /// The span start that keys `nodes`.
+    key: u32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RangeKind {
+    Show,
+    For,
+    Repeat,
+}
+
+/// A `<Show>`, `<Switch>`, `<For>`, or `<Repeat>`.
+struct RangeInfo<'a> {
+    region: usize,
+    key: u32,
+    kind: RangeKind,
+    /// The conditions of each branch, or the source of a list.
+    sources: Vec<&'a Expression<'a>>,
+    /// One region per condition, or the row.
+    branches: Vec<usize>,
+    fallback: Option<usize>,
+    svg: bool,
 }
 
 struct CallbackInfo<'a> {
@@ -527,13 +572,19 @@ struct Attr<'a> {
 #[derive(Default)]
 struct Layout<'e, 'a> {
     nodes: Vec<LNode<'a>>,
-    regions: Vec<Region>,
+    regions: Vec<Region<'e, 'a>>,
     callbacks: Vec<CallbackInfo<'a>>,
     containers: Vec<Container<'e, 'a>>,
     sites: Vec<Site<'e, 'a>>,
     attrs: Vec<Attr<'a>>,
     /// `ref` callbacks, by element node.
     refs: Vec<(usize, usize, &'a Expression<'a>)>,
+    ranges: Vec<RangeInfo<'a>>,
+    /// Anchors whose `aria-current` follows their `href`, by element node.
+    actives: Vec<(usize, usize, &'e Value<'a>)>,
+    /// Nodes client code cannot create, by region.
+    unsupported: Vec<(usize, Span, &'static str)>,
+    svg: bool,
 }
 
 impl<'e, 'a> Layout<'e, 'a> {
@@ -542,35 +593,62 @@ impl<'e, 'a> Layout<'e, 'a> {
         self.nodes.len() - 1
     }
 
-    fn region(&mut self, parent: Option<usize>, callback: Option<usize>) -> usize {
-        self.regions.push(Region { parent, callback, roots: Vec::new() });
+    fn region(
+        &mut self,
+        parent: Option<usize>,
+        callback: Option<usize>,
+        nodes: &'e [Node<'a>],
+        key: u32,
+    ) -> usize {
+        self.regions.push(Region { parent, callback, roots: Vec::new(), range: None, nodes, key });
         self.regions.len() - 1
     }
 
-    fn content(&mut self, content: &'e Content<'a>, parent: Option<usize>) {
-        let region = self.region(parent, None);
+    fn content(&mut self, content: &'e Content<'a>, parent: Option<usize>) -> usize {
+        let region = self.region(parent, None, &content.nodes, content.span.start);
         let roots = self.nodes_in(&content.nodes, None, region, content.span.start);
         self.regions[region].roots = roots;
+        region
     }
 
-    fn callback(&mut self, callback: &'e Callback<'a>, parent: usize) {
+    fn callback(&mut self, callback: &'e Callback<'a>, parent: usize) -> usize {
         let index = self.callbacks.len();
-        let region = self.region(Some(parent), Some(index));
+        let content = &callback.content;
+        let region = self.region(Some(parent), Some(index), &content.nodes, content.span.start);
         self.callbacks.push(CallbackInfo {
             function: callback.function,
             content: callback.content.span.start,
             region,
         });
-        let content = &callback.content;
         let roots = self.nodes_in(&content.nodes, None, region, content.span.start);
         self.regions[region].roots = roots;
+        region
     }
 
-    fn branch(&mut self, branch: &'e Branch<'a>, parent: usize) {
+    fn branch(&mut self, branch: &'e Branch<'a>, parent: usize) -> usize {
         match branch {
             Branch::Content(content) => self.content(content, Some(parent)),
             Branch::Callback(callback) => self.callback(callback, parent),
         }
+    }
+
+    /// Records a range over `branches`, the regions of its conditions or its row, and `fallback`.
+    fn range(
+        &mut self,
+        node: &Node<'a>,
+        region: usize,
+        kind: RangeKind,
+        sources: Vec<&'a Expression<'a>>,
+        branches: Vec<usize>,
+        fallback: Option<usize>,
+    ) {
+        let index = self.ranges.len();
+        for &branch in branches.iter().chain(&fallback) {
+            self.regions[branch].range = Some(index);
+        }
+        let key = range_key(node).unwrap_or_default();
+        let svg = self.svg;
+        self.ranges.push(RangeInfo { region, key, kind, sources, branches, fallback, svg });
     }
 
     fn nodes_in(
@@ -587,17 +665,35 @@ impl<'e, 'a> Layout<'e, 'a> {
                     let id = self
                         .push(LKind::Element { tag: child.tag, span: child.span.start }, element);
                     for item in &child.attributes {
-                        if let AttributeItem::Attribute(attribute) = item
-                            && let Value::Expr(expression) = &attribute.value
-                        {
-                            self.attrs.push(Attr {
-                                node: id,
-                                region,
-                                name: attribute.name,
-                                tag: child.tag,
-                                expression,
-                            });
+                        match item {
+                            AttributeItem::Attribute(attribute) => {
+                                let Value::Expr(expression) = &attribute.value else { continue };
+                                if child.tag == "form" && attribute.name == "action" {
+                                    self.unsupported.push((
+                                        region,
+                                        expression.span(),
+                                        "a computed form `action`",
+                                    ));
+                                }
+                                self.attrs.push(Attr {
+                                    node: id,
+                                    region,
+                                    name: attribute.name,
+                                    tag: child.tag,
+                                    expression,
+                                });
+                            }
+                            AttributeItem::Spread(expression) => {
+                                self.unsupported.push((
+                                    region,
+                                    expression.span(),
+                                    "a spread attribute",
+                                ));
+                            }
                         }
+                    }
+                    if let Some(href) = child.active_href() {
+                        self.actives.push((id, region, href));
                     }
                     if !child.handlers.is_empty() {
                         self.sites.push(Site { node: id, region, element: child });
@@ -605,17 +701,36 @@ impl<'e, 'a> Layout<'e, 'a> {
                     if let Some(reference) = child.reference {
                         self.refs.push((id, region, reference));
                     }
+                    let svg = self.svg;
+                    self.svg = match child.tag {
+                        "svg" => true,
+                        "foreignObject" => false,
+                        _ => svg,
+                    };
                     let children =
                         self.nodes_in(&child.children, Some(id), region, child.span.start);
+                    self.svg = svg;
                     self.nodes[id].children = children;
                     id
                 }
-                Node::Text(_) | Node::Head(_) | Node::Portal(_) => self.push(LKind::Fixed, element),
+                Node::Text(_) => self.push(LKind::Fixed, element),
+                Node::Head(elements) => {
+                    if let Some(first) = elements.first() {
+                        self.unsupported.push((region, first.span, "`<head>`"));
+                    }
+                    self.push(LKind::Fixed, element)
+                }
+                Node::Portal(boundary) => {
+                    self.unsupported.push((region, boundary.children.span, "`<Portal>`"));
+                    self.push(LKind::Fixed, element)
+                }
                 Node::Expr(expression) if is_slot(expression) => {
+                    self.unsupported.push((region, expression.span(), "`children`"));
                     self.push(LKind::Variable, element)
                 }
                 Node::Expr(_) => self.push(LKind::Fixed, element),
                 Node::Component(call) => {
+                    self.unsupported.push((region, call.span, "a component"));
                     let values = call.props.iter().map(|p| &p.value).chain(call.children.iter());
                     for value in values {
                         if let PropValue::Content(content) = value {
@@ -625,29 +740,37 @@ impl<'e, 'a> Layout<'e, 'a> {
                     self.push(LKind::Variable, element)
                 }
                 Node::Show(show) => {
-                    self.branch(&show.children, region);
-                    if let Some(fallback) = &show.fallback {
-                        self.branch(fallback, region);
-                    }
+                    let branches = vec![self.branch(&show.children, region)];
+                    let fallback = show.fallback.as_ref().map(|f| self.branch(f, region));
+                    self.range(node, region, RangeKind::Show, vec![show.when], branches, fallback);
                     self.push(LKind::Variable, element)
                 }
                 Node::Switch(switch) => {
-                    for matched in &switch.matches {
-                        self.branch(&matched.children, region);
-                    }
-                    if let Some(fallback) = &switch.fallback {
-                        self.branch(fallback, region);
-                    }
+                    let branches =
+                        switch.matches.iter().map(|m| self.branch(&m.children, region)).collect();
+                    let fallback = switch.fallback.as_ref().map(|f| self.branch(f, region));
+                    let sources = switch.matches.iter().map(|m| m.when).collect();
+                    self.range(node, region, RangeKind::Show, sources, branches, fallback);
                     self.push(LKind::Variable, element)
                 }
                 Node::For(each) | Node::Repeat(each) => {
-                    self.callback(&each.children, region);
-                    if let Some(fallback) = &each.fallback {
-                        self.branch(fallback, region);
-                    }
+                    let row = self.callback(&each.children, region);
+                    let fallback = each.fallback.as_ref().map(|f| self.branch(f, region));
+                    let kind = if matches!(node, Node::For(_)) {
+                        RangeKind::For
+                    } else {
+                        RangeKind::Repeat
+                    };
+                    self.range(node, region, kind, vec![each.source], vec![row], fallback);
                     self.push(LKind::Variable, element)
                 }
                 Node::Loading(boundary) | Node::Errored(boundary) => {
+                    let what = if matches!(node, Node::Loading(_)) {
+                        "`<Loading>`"
+                    } else {
+                        "`<Errored>`"
+                    };
+                    self.unsupported.push((region, boundary.children.span, what));
                     self.content(&boundary.children, Some(region));
                     if let Some(fallback) = &boundary.fallback {
                         self.branch(fallback, region);
@@ -975,6 +1098,9 @@ struct ComponentCx<'c> {
     captures: &'c mut Vec<Captures>,
     /// Offset of the first capture in a state entry, by scope.
     access: &'c dyn Fn(usize) -> String,
+    /// Parameters of the callbacks client code calls, which are never captured; `true` for an
+    /// index that is a signal.
+    params: &'c HashMap<SymbolId, bool>,
 }
 
 const UNSERIALIZABLE_OK: [&str; 7] = ["Date", "Map", "Set", "URL", "Array", "Object", "RegExp"];
@@ -1000,6 +1126,9 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
     /// The scope of a component-level value, when `symbol` is one.
     fn capture_scope(&self, symbol: SymbolId) -> Option<usize> {
         let component = self.component.as_ref()?;
+        if component.params.contains_key(&symbol) {
+            return None;
+        }
         let scoping = self.index.modules[self.module].semantic.scoping();
         let declared = scoping.symbol_span(symbol);
         if !component.span.contains_inclusive(declared) || self.root.contains_inclusive(declared) {
@@ -1094,6 +1223,9 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
     /// The replacement of a bare reference, or `None` when it stays.
     fn reference(&mut self, it: &IdentifierReference<'a>) -> Option<String> {
         let symbol = self.index.symbol(self.module, it)?;
+        if let Some(&signal) = self.component.as_ref().and_then(|c| c.params.get(&symbol)) {
+            return signal.then(|| format!("{}.v", it.name));
+        }
         let component = self.component.as_ref().map(|c| c.component);
         if let Some(component) = component
             && let Some(decl) = self.index.decl((self.module, symbol), Some(component))
@@ -1489,11 +1621,321 @@ struct TextBinding<'a> {
     expression: &'a Expression<'a>,
 }
 
+/// How client code finds the node a binding starts from.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Finder {
+    Element,
+    Comment,
+}
+
+/// A client range, with its code rewritten.
+struct RangeCode {
+    range: usize,
+    scope: usize,
+    mark: usize,
+    /// The conditions, or the source of a list.
+    sources: Vec<String>,
+    /// Each branch region, with the parameters of a callback.
+    branches: Vec<(usize, Option<String>)>,
+    row_scope: Option<usize>,
+    separated: bool,
+}
+
+fn index_var(scope: usize) -> String {
+    if scope == 0 { "$i".to_string() } else { format!("$j{scope}") }
+}
+
+/// A scope id in a client template.
+fn id_of(scope: usize) -> String {
+    format!("${{{}.toString(36)}}", index_var(scope))
+}
+
+/// Whether `region` is `ancestor` or inside it.
+fn within(layout: &Layout<'_, '_>, region: usize, ancestor: usize) -> bool {
+    let mut current = Some(region);
+    while let Some(r) = current {
+        if r == ancestor {
+            return true;
+        }
+        current = layout.regions[r].parent;
+    }
+    false
+}
+
+/// The parameter list of `function`, without parentheses.
+fn params_text(source: &str, function: &ArrowFunctionExpression<'_>) -> String {
+    let params = &function.params;
+    let start =
+        params.items.first().map(|p| p.span.start).or(params.rest.as_ref().map(|r| r.span.start));
+    let end = params.rest.as_ref().map(|r| r.span.end).or(params.items.last().map(|p| p.span.end));
+    match (start, end) {
+        (Some(start), Some(end)) => source[start as usize..end as usize].to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Writes the binding code of each unit: the document, a server row, or the content of a client
+/// range, which client code finds under its nodes `$n`.
+struct Emission<'x, 'e, 'a> {
+    layout: &'x Layout<'e, 'a>,
+    code: &'x BTreeMap<usize, BTreeMap<(Finder, usize), Vec<String>>>,
+    ranges: &'x BTreeMap<usize, Vec<RangeCode>>,
+    /// Server rows with a scope, by the unit they are in.
+    rows: &'x BTreeMap<usize, Vec<(usize, usize)>>,
+    scope_of: &'x dyn Fn(usize) -> usize,
+    marks: &'x HashMap<u32, &'x Mark>,
+    anchors: &'x HashMap<(u32, usize), (usize, usize)>,
+    holes: &'x HashSet<u32>,
+    range_keys: &'x HashMap<u32, (usize, usize)>,
+}
+
+impl Emission<'_, '_, '_> {
+    fn has_code(&self, unit: usize) -> bool {
+        self.code.get(&unit).is_some_and(|g| g.values().any(|l| !l.is_empty()))
+            || self.ranges.contains_key(&unit)
+            || self.rows.get(&unit).is_some_and(|rows| rows.iter().any(|&(r, _)| self.has_code(r)))
+    }
+
+    fn unit(&self, out: &mut String, unit: usize, depth: usize, rooted: bool, needs: &mut Needs) {
+        let pad = "  ".repeat(depth);
+        let index = index_var((self.scope_of)(unit));
+        let root = if rooted { ", $n" } else { "" };
+        for ((finder, mark), lines) in self.code.get(&unit).into_iter().flatten() {
+            if lines.is_empty() {
+                continue;
+            }
+            let helper = match finder {
+                Finder::Element => "$q",
+                Finder::Comment => "$cm",
+            };
+            needs.helpers.insert(helper);
+            writeln!(out, "{pad}for (const $b of {helper}({index}, {mark}{root})) {{").unwrap();
+            for line in lines {
+                writeln!(out, "{pad}  {line}").unwrap();
+            }
+            writeln!(out, "{pad}}}").unwrap();
+        }
+        for range in self.ranges.get(&unit).into_iter().flatten() {
+            self.range(out, range, depth, rooted, needs);
+        }
+        for &(region, scope) in self.rows.get(&unit).into_iter().flatten() {
+            if !self.has_code(region) {
+                continue;
+            }
+            needs.helpers.insert("$rows");
+            writeln!(
+                out,
+                "{pad}for (const [$j{scope}, $r{scope}] of $rows($a, {index}, {scope})) {{"
+            )
+            .unwrap();
+            self.unit(out, region, depth + 1, false, needs);
+            writeln!(out, "{pad}}}").unwrap();
+        }
+    }
+
+    fn range(
+        &self,
+        out: &mut String,
+        range: &RangeCode,
+        depth: usize,
+        rooted: bool,
+        needs: &mut Needs,
+    ) {
+        let pad = "  ".repeat(depth);
+        let info = &self.layout.ranges[range.range];
+        let index = index_var(range.scope);
+        let root = if rooted { ", $n" } else { "" };
+        let mark = range.mark;
+        if info.kind == RangeKind::Show {
+            let conditions: Vec<String> =
+                range.sources.iter().map(|c| format!("() => ({c})")).collect();
+            let keyed: usize = range
+                .branches
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, params))| params.is_some())
+                .map(|(x, _)| 1 << x)
+                .sum();
+            writeln!(
+                out,
+                "{pad}for (const $b of $rg({index}, {mark}{root})) $range($b, [{}], {keyed}, ($n, $at, $k, $v) => {{",
+                conditions.join(", ")
+            )
+            .unwrap();
+            for (x, (region, params)) in range.branches.iter().enumerate() {
+                writeln!(out, "{pad}  if ($k === {x}) {{").unwrap();
+                self.content(out, *region, "", params.as_deref(), info.svg, depth + 2, needs);
+                writeln!(out, "{pad}  }}").unwrap();
+            }
+            if let Some(fallback) = info.fallback {
+                writeln!(out, "{pad}  if ($k === {}) {{", range.branches.len()).unwrap();
+                self.content(out, fallback, "", None, info.svg, depth + 2, needs);
+                writeln!(out, "{pad}  }}").unwrap();
+            }
+            writeln!(out, "{pad}  return $n;\n{pad}}});").unwrap();
+            return;
+        }
+        let (row, params) = &range.branches[0];
+        let j = range.row_scope.map_or_else(|| "$j".to_string(), |s| format!("$j{s}"));
+        let params = match params.as_deref() {
+            Some(params) if !params.is_empty() => format!(", {params}"),
+            _ => String::new(),
+        };
+        writeln!(
+            out,
+            "{pad}for (const $b of $rg({index}, {mark}{root})) $list($b, () => ({}), ($n, $at, {j}{params}) => {{",
+            range.sources[0]
+        )
+        .unwrap();
+        let prefix = if range.separated { "<!--,-->" } else { "" };
+        self.content(out, *row, prefix, None, info.svg, depth + 1, needs);
+        write!(out, "{pad}  return $n;\n{pad}}}, {}, ", u8::from(range.separated)).unwrap();
+        match info.fallback {
+            Some(fallback) => {
+                out.push_str("($n, $at) => {\n");
+                self.content(out, fallback, "", None, info.svg, depth + 1, needs);
+                write!(out, "{pad}  return $n;\n{pad}}}").unwrap();
+            }
+            None => out.push('0'),
+        }
+        if let Some(scope) = range.row_scope {
+            write!(out, ", [$a, {index}, {scope}]").unwrap();
+        }
+        out.push_str(");\n");
+    }
+
+    /// Creates the nodes of `region` when there are none to adopt, then binds them.
+    #[allow(clippy::too_many_arguments)]
+    fn content(
+        &self,
+        out: &mut String,
+        region: usize,
+        prefix: &str,
+        params: Option<&str>,
+        svg: bool,
+        depth: usize,
+        needs: &mut Needs,
+    ) {
+        let pad = "  ".repeat(depth);
+        let mut html = String::from(prefix);
+        let current = &self.layout.regions[region];
+        self.html(current.nodes, current.key, &mut html);
+        let svg = if svg { ", 1" } else { "" };
+        writeln!(out, "{pad}$n ??= $h(`{html}`, $at{svg});").unwrap();
+        match params {
+            Some(params) => {
+                writeln!(out, "{pad}(({params}) => {{").unwrap();
+                self.unit(out, region, depth + 1, true, needs);
+                writeln!(out, "{pad}}})($v);").unwrap();
+            }
+            None => self.unit(out, region, depth, true, needs),
+        }
+    }
+
+    /// The HTML client code creates for `nodes`: static content, marks, anchors, and empty ranges.
+    fn html(&self, nodes: &[Node<'_>], key: u32, out: &mut String) {
+        let pieces: Vec<Piece> = nodes.iter().map(|n| piece(n, self.holes)).collect();
+        let separators = separators(&pieces);
+        for (index, node) in nodes.iter().enumerate() {
+            if let Some(&(scope, mark)) = self.anchors.get(&(key, index)) {
+                write!(out, "<!--{}.{}-->", id_of(scope), base36(mark)).unwrap();
+            }
+            if separators[index] {
+                out.push_str("<!>");
+            }
+            match node {
+                Node::Text(text) => {
+                    let mut escaped = String::new();
+                    html::escape_text(&mut escaped, text);
+                    template_escape(out, &escaped);
+                }
+                Node::Element(element) => self.element(element, out),
+                Node::Show(_) | Node::Switch(_) | Node::For(_) | Node::Repeat(_) => {
+                    if let Some(&(scope, mark)) =
+                        range_key(node).and_then(|k| self.range_keys.get(&k))
+                    {
+                        write!(out, "<!--[{}.{}--><!--]-->", id_of(scope), base36(mark)).unwrap();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn element(&self, element: &Element<'_>, out: &mut String) {
+        out.push('<');
+        out.push_str(element.tag);
+        for item in &element.attributes {
+            let AttributeItem::Attribute(attribute) = item else { continue };
+            match &attribute.value {
+                Value::Static(value) => {
+                    let mut html = format!(" {}", attribute.name);
+                    html::push_attribute_value(&mut html, value);
+                    template_escape(out, &html);
+                }
+                Value::True => {
+                    out.push(' ');
+                    out.push_str(attribute.name);
+                }
+                Value::Expr(_) => {}
+            }
+        }
+        if let Some(mark) = self.marks.get(&element.span.start) {
+            write!(out, " data-rz={}.{}", id_of(mark.scope), base36(mark.index)).unwrap();
+            if let Some(prevent) = &mark.prevent {
+                let mut html = String::from(" data-rz-prevent");
+                html::push_attribute_value(&mut html, prevent);
+                template_escape(out, &html);
+            }
+        }
+        out.push('>');
+        if html::is_void(element.tag) {
+            return;
+        }
+        self.html(&element.children, element.span.start, out);
+        out.push_str("</");
+        out.push_str(element.tag);
+        out.push('>');
+    }
+}
+
 impl<'m, 'a> Planner<'m, 'a> {
     fn reads_reactive(&self, module: usize, expression: &Expression<'a>) -> bool {
         refs_of(&self.index, module, |r| r.visit_expression(expression))
             .iter()
             .any(|sym| self.index.reactive.contains(sym))
+    }
+
+    /// Ranges whose content client code creates, and the regions inside them: a range is a
+    /// client range when its source reads client state or it sits in a client region.
+    fn client_ranges(&self, module: usize, layout: &Layout<'_, 'a>) -> (Vec<bool>, Vec<bool>) {
+        let mut ranges = vec![false; layout.ranges.len()];
+        let mut regions = vec![false; layout.regions.len()];
+        loop {
+            let mut changed = false;
+            for (r, range) in layout.ranges.iter().enumerate() {
+                if !ranges[r]
+                    && (regions[range.region]
+                        || range.sources.iter().any(|e| self.reads_reactive(module, e)))
+                {
+                    ranges[r] = true;
+                    changed = true;
+                }
+            }
+            for region in 0..layout.regions.len() {
+                let current = &layout.regions[region];
+                if !regions[region]
+                    && (current.range.is_some_and(|r| ranges[r])
+                        || current.parent.is_some_and(|p| regions[p]))
+                {
+                    regions[region] = true;
+                    changed = true;
+                }
+            }
+            if !changed {
+                return (ranges, regions);
+            }
+        }
     }
 
     /// Plans one component; `false` when it has no client code.
@@ -1505,59 +1947,107 @@ impl<'m, 'a> Planner<'m, 'a> {
         let source = self.index.modules[module].source;
 
         let mut layout = Layout::default();
-        let root = layout.region(None, None);
+        let root = layout.region(None, None, &template.nodes, template.span.start);
         let roots = layout.nodes_in(&template.nodes, None, root, template.span.start);
         layout.regions[root].roots = roots;
 
+        let (client_range, client_region) = self.client_ranges(module, &layout);
+        let mut reports = Vec::new();
+        let mut reported = HashSet::new();
+        for &(region, span, what) in &layout.unsupported {
+            if client_region[region] && reported.insert(span.start) {
+                reports.push(Report::new(Code::ClientRangeUnsupported, span).arg("what", what));
+            }
+        }
+        let mut client_params: HashMap<SymbolId, bool> = HashMap::new();
+        for (r, range) in layout.ranges.iter().enumerate() {
+            if !client_range[r] {
+                continue;
+            }
+            for &branch in &range.branches {
+                let Some(c) = layout.regions[branch].callback else { continue };
+                let function = layout.callbacks[c].function;
+                if let ArrowFunctionBody::FunctionBody(body) = &function.body
+                    && body.statements.len() > 1
+                {
+                    reports.push(
+                        Report::new(Code::ClientRangeUnsupported, body.span)
+                            .arg("what", "statements in a callback body"),
+                    );
+                }
+                for (p, param) in function.params.items.iter().enumerate() {
+                    let signal = range.kind == RangeKind::For
+                        && p == 1
+                        && matches!(param.pattern, BindingPattern::BindingIdentifier(_));
+                    for id in param.pattern.get_binding_identifiers() {
+                        if let Some(symbol) = id.symbol_id.get() {
+                            client_params.insert(symbol, signal);
+                        }
+                    }
+                }
+            }
+        }
+
         let attrs: Vec<usize> = (0..layout.attrs.len())
-            .filter(|&i| self.reads_reactive(module, layout.attrs[i].expression))
+            .filter(|&i| {
+                client_region[layout.attrs[i].region]
+                    || self.reads_reactive(module, layout.attrs[i].expression)
+            })
             .collect();
         let mut texts = Vec::new();
         for (c, container) in layout.containers.iter().enumerate() {
             for (position, node) in container.nodes.iter().enumerate() {
                 if let Node::Expr(expression) = node
                     && !is_slot(expression)
-                    && self.reads_reactive(module, expression)
+                    && (client_region[container.region] || self.reads_reactive(module, expression))
                 {
                     texts.push(TextBinding { container: c, position, expression });
                 }
             }
         }
+        let actives: Vec<usize> =
+            (0..layout.actives.len()).filter(|&i| client_region[layout.actives[i].1]).collect();
         let effects = effects(&self.index, component);
         if layout.sites.is_empty()
             && attrs.is_empty()
             && texts.is_empty()
             && effects.is_empty()
             && layout.refs.is_empty()
+            && !client_range.contains(&true)
         {
             return false;
         }
 
         let scoping = self.index.modules[module].semantic.scoping();
-        let mut client_exprs: Vec<(usize, &'a Expression<'a>)> = Vec::new();
+        let mut client_exprs: Vec<&'a Expression<'a>> = Vec::new();
         for site in &layout.sites {
-            for handler in &site.element.handlers {
-                client_exprs.push((site.region, handler.value));
+            client_exprs.extend(site.element.handlers.iter().map(|h| h.value));
+        }
+        client_exprs.extend(attrs.iter().map(|&a| layout.attrs[a].expression));
+        client_exprs.extend(texts.iter().map(|t| t.expression));
+        client_exprs.extend(layout.refs.iter().map(|&(_, _, reference)| reference));
+        for &a in &actives {
+            if let Value::Expr(expression) = layout.actives[a].2 {
+                client_exprs.push(expression);
             }
         }
-        for &a in &attrs {
-            client_exprs.push((layout.attrs[a].region, layout.attrs[a].expression));
-        }
-        for text in &texts {
-            client_exprs.push((layout.containers[text.container].region, text.expression));
-        }
-        for &(_, region, reference) in &layout.refs {
-            client_exprs.push((region, reference));
+        for (r, range) in layout.ranges.iter().enumerate() {
+            if client_range[r] {
+                client_exprs.extend(range.sources.iter().copied());
+            }
         }
         let mut scoped_callbacks: BTreeSet<usize> = BTreeSet::new();
-        for (_, expression) in &client_exprs {
+        for expression in &client_exprs {
             let mut refs = Refs { index: &self.index, module, out: Vec::new() };
             refs.visit_expression(expression);
             for (m, symbol) in refs.out {
-                if m != module {
+                let declared = scoping.symbol_span(symbol);
+                if m != module
+                    || client_params.contains_key(&symbol)
+                    || expression.span().contains_inclusive(declared)
+                {
                     continue;
                 }
-                let declared = scoping.symbol_span(symbol);
                 if let Some((c, _)) = layout
                     .callbacks
                     .iter()
@@ -1567,6 +2057,17 @@ impl<'m, 'a> Planner<'m, 'a> {
                 {
                     scoped_callbacks.insert(c);
                 }
+            }
+        }
+        for (r, range) in layout.ranges.iter().enumerate() {
+            if !client_range[r] || range.kind == RangeKind::Show {
+                continue;
+            }
+            let row = range.branches[0];
+            if layout.sites.iter().any(|site| within(&layout, site.region, row))
+                && let Some(c) = layout.regions[row].callback
+            {
+                scoped_callbacks.insert(c);
             }
         }
         let scope_of_callback: HashMap<usize, usize> =
@@ -1582,6 +2083,21 @@ impl<'m, 'a> Planner<'m, 'a> {
                 current = layout.regions[r].parent;
             }
             0
+        };
+        let unit_of = |region: usize| {
+            let mut r = region;
+            loop {
+                let current = &layout.regions[r];
+                if current.range.is_some_and(|x| client_range[x])
+                    || current.callback.is_some_and(|c| scope_of_callback.contains_key(&c))
+                {
+                    return r;
+                }
+                match current.parent {
+                    Some(parent) => r = parent,
+                    None => return r,
+                }
+            }
         };
         let scope_count = scoped_callbacks.len() + 1;
         let mut scope_parent = vec![0usize; scope_count];
@@ -1625,9 +2141,22 @@ impl<'m, 'a> Planner<'m, 'a> {
             );
             next_mark += 1;
         }
+        let mut range_marks: HashMap<usize, (usize, usize)> = HashMap::new();
+        let mut separated = HashSet::new();
+        for (r, range) in layout.ranges.iter().enumerate() {
+            if !client_range[r] {
+                continue;
+            }
+            range_marks.insert(r, (region_scope(range.region), next_mark));
+            next_mark += 1;
+            if range.kind != RangeKind::Show {
+                let row = &layout.regions[range.branches[0]];
+                if !matches!(row.nodes, [Node::Element(_)]) {
+                    separated.insert(row.key);
+                }
+            }
+        }
 
-        let mut bases: BTreeMap<(usize, usize), Vec<String>> = BTreeMap::new();
-        let mut comment_bases: BTreeSet<(usize, usize)> = BTreeSet::new();
         let mut anchors: HashMap<(u32, usize), (usize, usize)> = HashMap::new();
         let locate = |target: usize,
                       region: usize,
@@ -1662,23 +2191,22 @@ impl<'m, 'a> Planner<'m, 'a> {
             .map(|(&c, &scope)| (layout.callbacks[c].function.span, scope))
             .collect();
         let binding_access =
-            |scope: usize| if scope == 0 { "s".to_string() } else { format!("r{scope}") };
-        let mut reports = Vec::new();
+            |scope: usize| if scope == 0 { "$s".to_string() } else { format!("$r{scope}") };
 
-        let mut binding_code: BTreeMap<usize, BTreeMap<(bool, usize), Vec<String>>> =
+        let mut binding_code: BTreeMap<usize, BTreeMap<(Finder, usize), Vec<String>>> =
             BTreeMap::new();
         let mut text_holes = HashSet::new();
 
         for &a in &attrs {
             let attr = &layout.attrs[a];
             let (mark, path) = locate(attr.node, attr.region, &mut marks, &mut next_mark);
-            let scope = region_scope(attr.region);
             let mut cx = ComponentCx {
                 component,
                 span: function_span,
                 scoped: &scoped,
                 captures: &mut captures,
                 access: &binding_access,
+                params: &client_params,
             };
             let code = self.rewrite(
                 module,
@@ -1697,24 +2225,57 @@ impl<'m, 'a> Planner<'m, 'a> {
             };
             needs.helpers.insert(helper);
             needs.helpers.insert("$fx");
-            let _ = bases.entry((scope, mark)).or_default();
             binding_code
-                .entry(scope)
+                .entry(unit_of(attr.region))
                 .or_default()
-                .entry((false, mark))
+                .entry((Finder::Element, mark))
                 .or_default()
-                .push(format!("$fx(() => {helper}(b{path}, {:?}, {code}));", attr.name));
+                .push(format!("$fx(() => {helper}($b{path}, {:?}, {code}));", attr.name));
+        }
+
+        for &a in &actives {
+            let (node, region, href) = layout.actives[a];
+            let (mark, path) = locate(node, region, &mut marks, &mut next_mark);
+            let code = match href {
+                Value::Static(href) => serde_json::to_string(href).unwrap(),
+                Value::Expr(expression) => {
+                    let mut cx = ComponentCx {
+                        component,
+                        span: function_span,
+                        scoped: &scoped,
+                        captures: &mut captures,
+                        access: &binding_access,
+                        params: &client_params,
+                    };
+                    self.rewrite(
+                        module,
+                        Some(&mut cx),
+                        &mut needs,
+                        &mut reports,
+                        |r| r.visit_expression(expression),
+                        expression.span(),
+                    )
+                }
+                Value::True => continue,
+            };
+            needs.helpers.extend(["$ac", "$fx"]);
+            binding_code
+                .entry(unit_of(region))
+                .or_default()
+                .entry((Finder::Element, mark))
+                .or_default()
+                .push(format!("$fx(() => $ac($b{path}, {code}));"));
         }
 
         for &(node, region, reference) in &layout.refs {
             let (mark, path) = locate(node, region, &mut marks, &mut next_mark);
-            let scope = region_scope(region);
             let mut cx = ComponentCx {
                 component,
                 span: function_span,
                 scoped: &scoped,
                 captures: &mut captures,
                 access: &binding_access,
+                params: &client_params,
             };
             let code = self.rewrite(
                 module,
@@ -1724,13 +2285,12 @@ impl<'m, 'a> Planner<'m, 'a> {
                 |r| r.visit_expression(reference),
                 reference.span(),
             );
-            let _ = bases.entry((scope, mark)).or_default();
             binding_code
-                .entry(scope)
+                .entry(unit_of(region))
                 .or_default()
-                .entry((false, mark))
+                .entry((Finder::Element, mark))
                 .or_default()
-                .push(format!("({code})(b{path});"));
+                .push(format!("({code})($b{path});"));
         }
 
         let mut runs: BTreeMap<(usize, usize), Vec<&TextBinding<'a>>> = BTreeMap::new();
@@ -1764,24 +2324,23 @@ impl<'m, 'a> Planner<'m, 'a> {
             let pieces: Vec<Piece> =
                 container.nodes.iter().map(|n| piece(n, &text_holes)).collect();
             let seps = separators(&pieces);
-            let (mark, parent, prev, comment) = match target {
+            let (mark, parent, prev, finder) = match target {
                 Target::Element(node) => {
                     let (mark, path) = locate(node, region, &mut marks, &mut next_mark);
                     if start == 0 {
-                        (mark, format!("b{path}"), "null".to_string(), false)
+                        (mark, format!("$b{path}"), "null".to_string(), Finder::Element)
                     } else {
-                        (mark, parent_path(&format!("b{path}")), format!("b{path}"), false)
+                        let parent = parent_path(&format!("$b{path}"));
+                        (mark, parent, format!("$b{path}"), Finder::Element)
                     }
                 }
                 Target::Run { start } => {
                     let mark = next_mark;
                     next_mark += 1;
                     anchors.insert((container.key, start), (scope, mark));
-                    comment_bases.insert((scope, mark));
-                    (mark, "b.parentNode".to_string(), "b".to_string(), true)
+                    (mark, "$b.parentNode".to_string(), "$b".to_string(), Finder::Comment)
                 }
             };
-            let _ = bases.entry((scope, mark)).or_default();
             let mut end = start;
             while end < pieces.len() && pieces[end] != Piece::Break {
                 end += 1;
@@ -1822,6 +2381,7 @@ impl<'m, 'a> Planner<'m, 'a> {
                             scoped: &scoped,
                             captures: &mut captures,
                             access: &binding_access,
+                            params: &client_params,
                         };
                         let code = self.rewrite(
                             module,
@@ -1831,7 +2391,7 @@ impl<'m, 'a> Planner<'m, 'a> {
                             |r| r.visit_expression(expression),
                             expression.span(),
                         );
-                        let name = format!("t{}", expression.span().start);
+                        let name = format!("$t{}", expression.span().start);
                         segment.push(format!("$str({code})"));
                         updates.push(format!("$fx(() => {{ {name}.data = $str({code}); }});"));
                         names.push(name);
@@ -1841,7 +2401,57 @@ impl<'m, 'a> Planner<'m, 'a> {
             }
             flush(skip, &mut segment, &mut names, &mut updates, &mut out);
             needs.helpers.extend(["$text", "$str", "$fx"]);
-            binding_code.entry(scope).or_default().entry((comment, mark)).or_default().extend(out);
+            binding_code
+                .entry(unit_of(region))
+                .or_default()
+                .entry((finder, mark))
+                .or_default()
+                .extend(out);
+        }
+
+        let mut range_code: BTreeMap<usize, Vec<RangeCode>> = BTreeMap::new();
+        for (r, range) in layout.ranges.iter().enumerate() {
+            let Some(&(scope, mark)) = range_marks.get(&r) else { continue };
+            let mut sources = Vec::new();
+            for expression in &range.sources {
+                let mut cx = ComponentCx {
+                    component,
+                    span: function_span,
+                    scoped: &scoped,
+                    captures: &mut captures,
+                    access: &binding_access,
+                    params: &client_params,
+                };
+                sources.push(self.rewrite(
+                    module,
+                    Some(&mut cx),
+                    &mut needs,
+                    &mut reports,
+                    |r| r.visit_expression(expression),
+                    expression.span(),
+                ));
+            }
+            let params = |region: usize| {
+                layout.regions[region]
+                    .callback
+                    .map(|c| params_text(source, layout.callbacks[c].function))
+            };
+            let row = range.branches[0];
+            let row_scope = layout.regions[row]
+                .callback
+                .and_then(|c| scope_of_callback.get(&c).copied())
+                .filter(|_| range.kind != RangeKind::Show);
+            needs.helpers.insert(if range.kind == RangeKind::Show { "$range" } else { "$list" });
+            needs.helpers.extend(["$rg", "$h"]);
+            range_code.entry(unit_of(range.region)).or_default().push(RangeCode {
+                range: r,
+                scope,
+                mark,
+                sources,
+                branches: range.branches.iter().map(|&b| (b, params(b))).collect(),
+                row_scope,
+                separated: separated.contains(&layout.regions[row].key),
+            });
         }
 
         let mut handler_code: BTreeMap<usize, Vec<String>> = BTreeMap::new();
@@ -1850,16 +2460,28 @@ impl<'m, 'a> Planner<'m, 'a> {
             let scope = region_scope(site.region);
             let handler_access = |target: usize| -> String {
                 if target == 0 {
-                    return "s".into();
+                    return "$s".into();
                 }
-                let mut expression = "r".to_string();
+                let mut expression = "$r".to_string();
                 let mut current = scope;
                 while current != target && current != 0 {
-                    expression = format!("a[~{expression}[0]]");
+                    expression = format!("$a[~{expression}[0]]");
                     current = scope_parent[current];
                 }
                 expression
             };
+            let mut wraps = Vec::new();
+            let mut current = Some(site.region);
+            while let Some(region) = current {
+                let r = &layout.regions[region];
+                if let (Some(x), Some(c)) = (r.range, r.callback)
+                    && client_range[x]
+                    && layout.ranges[x].branches.contains(&region)
+                {
+                    wraps.push((x, region, c));
+                }
+                current = r.parent;
+            }
             for handler in &site.element.handlers {
                 let mut cx = ComponentCx {
                     component,
@@ -1867,8 +2489,9 @@ impl<'m, 'a> Planner<'m, 'a> {
                     scoped: &scoped,
                     captures: &mut captures,
                     access: &handler_access,
+                    params: &client_params,
                 };
-                let code = self.rewrite(
+                let mut code = self.rewrite(
                     module,
                     Some(&mut cx),
                     &mut needs,
@@ -1876,12 +2499,44 @@ impl<'m, 'a> Planner<'m, 'a> {
                     |r| r.visit_expression(handler.value),
                     handler.value.span(),
                 );
+                for &(x, region, c) in &wraps {
+                    let range = &layout.ranges[x];
+                    let args = match range.kind {
+                        RangeKind::For => {
+                            let entry = handler_access(region_scope(region));
+                            format!("{entry}[2], {entry}[3]")
+                        }
+                        RangeKind::Repeat => format!("{}[2]", handler_access(region_scope(region))),
+                        RangeKind::Show => {
+                            let at = range.branches.iter().position(|&b| b == region).unwrap_or(0);
+                            let when = range.sources[at];
+                            let mut cx = ComponentCx {
+                                component,
+                                span: function_span,
+                                scoped: &scoped,
+                                captures: &mut captures,
+                                access: &handler_access,
+                                params: &client_params,
+                            };
+                            self.rewrite(
+                                module,
+                                Some(&mut cx),
+                                &mut needs,
+                                &mut reports,
+                                |r| r.visit_expression(when),
+                                when.span(),
+                            )
+                        }
+                    };
+                    let params = params_text(source, layout.callbacks[c].function);
+                    code = format!("(({params}) => ({code}))({args})");
+                }
                 let key = if html::is_identifier_name(&handler.event) {
                     handler.event.clone()
                 } else {
                     format!("{:?}", handler.event)
                 };
-                handler_code.entry(mark).or_default().push(format!("{key}: (r) => {code}"));
+                handler_code.entry(mark).or_default().push(format!("{key}: ($r) => {code}"));
             }
         }
 
@@ -1893,6 +2548,7 @@ impl<'m, 'a> Planner<'m, 'a> {
                 scoped: &scoped,
                 captures: &mut captures,
                 access: &binding_access,
+                params: &client_params,
             };
             let code = self.rewrite(
                 module,
@@ -1920,6 +2576,7 @@ impl<'m, 'a> Planner<'m, 'a> {
                     scoped: &scoped,
                     captures: &mut captures,
                     access: &binding_access,
+                    params: &client_params,
                 };
                 let name = scoping.symbol_name(symbol).to_string();
                 let code =
@@ -1929,12 +2586,45 @@ impl<'m, 'a> Planner<'m, 'a> {
         }
         self.reports[module].extend(reports);
 
+        let mut server_rows: BTreeMap<usize, Vec<(usize, usize)>> = BTreeMap::new();
+        for (&c, &scope) in &scope_of_callback {
+            let region = layout.callbacks[c].region;
+            if !client_region[region] {
+                let parent = layout.regions[region].parent.map_or(0, unit_of);
+                server_rows.entry(parent).or_default().push((region, scope));
+            }
+        }
+        for rows in server_rows.values_mut() {
+            rows.sort_by_key(|&(_, scope)| scope);
+        }
+        let mut range_keys = HashMap::new();
+        for (&r, &at) in &range_marks {
+            range_keys.insert(layout.ranges[r].key, at);
+        }
+        let mut element_marks = HashMap::new();
+        for (node, mark) in &marks {
+            if let LKind::Element { span, .. } = layout.nodes[*node].kind {
+                element_marks.insert(span, mark);
+            }
+        }
+        let emission = Emission {
+            layout: &layout,
+            code: &binding_code,
+            ranges: &range_code,
+            rows: &server_rows,
+            scope_of: &region_scope,
+            marks: &element_marks,
+            anchors: &anchors,
+            holes: &text_holes,
+            range_keys: &range_keys,
+        };
+
         let mut code = String::new();
-        writeln!(code, "export const $c{id} = (s, i, a) => {{").unwrap();
+        writeln!(code, "export const $c{id} = ($s, $i, $a) => {{").unwrap();
         for line in local_code.values() {
             writeln!(code, "  {line}").unwrap();
         }
-        emit_bindings(&mut code, 0, &scope_parent, &binding_code, &comment_bases, &mut needs, 1);
+        emission.unit(&mut code, root, 1, false, &mut needs);
         let handlers: Vec<String> = handler_code
             .iter()
             .map(|(mark, handlers)| format!("{mark}: {{ {} }}", handlers.join(", ")))
@@ -1956,6 +2646,8 @@ impl<'m, 'a> Planner<'m, 'a> {
         }
         plan.bindings.extend(text_holes);
         plan.anchors.extend(anchors);
+        plan.ranges.extend(range_keys);
+        plan.separated.extend(separated);
         plan.components.insert(
             template.span.start,
             ComponentScope {
@@ -2038,7 +2730,7 @@ impl<'m, 'a> Planner<'m, 'a> {
                     (None, _) => String::new(),
                     (Some(_), Some(cx)) => {
                         let slot = cx.captures[0].slot(format!("${name}"), name.to_string());
-                        format!("s[{}]", slot + 1)
+                        format!("$s[{}]", slot + 1)
                     }
                     (Some(init), None) => self.rewrite(
                         module,
@@ -2268,55 +2960,6 @@ fn parent_path(path: &str) -> String {
 fn node_region(layout: &Layout<'_, '_>, node: usize, region: usize) -> bool {
     let root = layout.chain(node)[0];
     layout.regions[region].roots.contains(&root)
-}
-
-fn emit_bindings(
-    out: &mut String,
-    scope: usize,
-    parents: &[usize],
-    code: &BTreeMap<usize, BTreeMap<(bool, usize), Vec<String>>>,
-    comments: &BTreeSet<(usize, usize)>,
-    needs: &mut Needs,
-    depth: usize,
-) {
-    let pad = "  ".repeat(depth);
-    let index = if scope == 0 { "i".to_string() } else { format!("j{scope}") };
-    if let Some(groups) = code.get(&scope) {
-        for ((comment, mark), lines) in groups {
-            if lines.is_empty() {
-                continue;
-            }
-            let finder = if *comment || comments.contains(&(scope, *mark)) { "$cm" } else { "$q" };
-            needs.helpers.insert(finder);
-            writeln!(out, "{pad}for (const b of {finder}({index}, {mark})) {{").unwrap();
-            for line in lines {
-                writeln!(out, "{pad}  {line}").unwrap();
-            }
-            writeln!(out, "{pad}}}").unwrap();
-        }
-    }
-    for (child, &parent) in parents.iter().enumerate() {
-        if child == 0 || parent != scope || !has_bindings(child, parents, code) {
-            continue;
-        }
-        needs.helpers.insert("$rows");
-        writeln!(out, "{pad}for (const [j{child}, r{child}] of $rows(a, {index}, {child})) {{")
-            .unwrap();
-        emit_bindings(out, child, parents, code, comments, needs, depth + 1);
-        writeln!(out, "{pad}}}").unwrap();
-    }
-}
-
-fn has_bindings(
-    scope: usize,
-    parents: &[usize],
-    code: &BTreeMap<usize, BTreeMap<(bool, usize), Vec<String>>>,
-) -> bool {
-    code.get(&scope).is_some_and(|g| g.values().any(|l| !l.is_empty()))
-        || parents
-            .iter()
-            .enumerate()
-            .any(|(c, &p)| c != 0 && p == scope && has_bindings(c, parents, code))
 }
 
 fn default_component(index: &Index<'_, '_>, module: usize) -> Option<ComponentRef> {

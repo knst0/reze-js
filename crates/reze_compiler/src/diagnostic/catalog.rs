@@ -459,6 +459,19 @@ catalog! {
         fix: None,
         example: Prose("`export const load = loader(…)` in an application built with `reze({ target: \"spa\" })`."),
     }
+    ClientRangeUnsupported {
+        name: "CLIENT_RANGE_UNSUPPORTED",
+        severity: Error,
+        title: "Content client code cannot create",
+        message: "Client code cannot create {what} inside a range it updates.",
+        explanation: "A `<Show>`, `<Switch>`, `<For>`, or `<Repeat>` whose condition or source reads client state is rendered again in the browser. Client code creates its content from the template: elements, text, bindings, handlers, and nested ranges. Components, boundaries, `<head>`, `<Portal>`, `children`, spread attributes, computed form actions, and callback bodies with statements are rendered only on the server. `data.what` names the construct.",
+        repair: "Move the construct outside the range, or inline the component's markup into the range.",
+        fix: None,
+        example: Pair {
+            bad: "import { signal, For } from \"reze-js\";\nimport { Item } from \"./item\";\n\nexport default function Page() {\n  let items = signal([\"a\"]);\n  return (\n    <ul onClick={() => (items = [...items, \"b\"])}>\n      <For each={items}>{(item) => <Item name={item} />}</For>\n    </ul>\n  );\n}\n",
+            good: "import { signal, For } from \"reze-js\";\n\nexport default function Page() {\n  let items = signal([\"a\"]);\n  return (\n    <ul onClick={() => (items = [...items, \"b\"])}>\n      <For each={items}>{(item) => <li>{item}</li>}</For>\n    </ul>\n  );\n}\n",
+        },
+    }
     UntrackRedundant {
         name: "UNTRACK_REDUNDANT",
         severity: Warn,

@@ -91,3 +91,18 @@ test("reads the location through router hooks", async ({ page, server }) => {
   await expect(where).toHaveText("At /posts/1");
   await expect(where).not.toHaveAttribute("data-home");
 });
+
+test("updates client ranges over Rust data", async ({ page, server }) => {
+  await page.goto(server.url("/posts/1"));
+  const notes = page.getByRole("list", { name: "Notes" }).getByRole("listitem");
+  await expect(page.getByText("Few likes")).toBeVisible();
+  await page.getByRole("button", { name: "Like" }).click();
+  await expect(page.getByText("Popular with 3 likes")).toBeVisible();
+  await page.getByRole("button", { name: "Like" }).click();
+  await expect(page.getByText("Popular with 4 likes")).toBeVisible();
+  await page.getByRole("button", { name: "Note" }).click();
+  await expect(notes).toHaveText(["1: introDrop intro", "2: rustDrop rust", "3: note 3Drop note 3"]);
+  await page.getByRole("button", { name: "Drop intro" }).click();
+  await expect(notes).toHaveText(["1: rustDrop rust", "2: note 3Drop note 3"]);
+  await expect(page.getByLabel("Words")).toHaveText("rustnote 3");
+});
