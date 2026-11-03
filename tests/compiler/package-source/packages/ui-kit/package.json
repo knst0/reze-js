@@ -1,0 +1,6 @@
+{
+  "name": "ui-kit",
+  "exports": {
+    ".": { "reze": "./src/index.tsx", "default": "./dist/index.js" }
+  }
+}

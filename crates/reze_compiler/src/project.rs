@@ -16,7 +16,8 @@ pub struct Module<'a> {
     pub source: &'a str,
     pub program: &'a Program<'a>,
     pub semantic: Semantic<'a>,
-    /// Relative import specifiers as written, to the index of the module they resolve to.
+    /// Relative specifiers, and package specifiers with a `reze` export, as written, to the index of
+    /// the module they resolve to.
     pub resolved: HashMap<String, usize>,
 }
 
@@ -56,6 +57,32 @@ fn resolve(fs: &dyn FileSystem, from: &str, specifier: &str) -> Option<(String, 
     candidates.extend(EXTENSIONS.iter().map(|ext| format!("{joined}.{ext}")));
     candidates.extend(EXTENSIONS.iter().map(|ext| format!("{joined}/index.{ext}")));
     candidates.into_iter().find_map(|path| fs.read(&path).map(|source| (path, source)))
+}
+
+/// The `reze` export of a package specifier: `node_modules/<package>/<path>` and its source.
+fn resolve_package(fs: &dyn FileSystem, specifier: &str) -> Option<(String, String)> {
+    let mut parts = specifier.splitn(if specifier.starts_with('@') { 3 } else { 2 }, '/');
+    let name = match (specifier.starts_with('@'), parts.next(), parts.next()) {
+        (true, Some(scope), Some(name)) => format!("{scope}/{name}"),
+        (false, Some(name), _) => name.to_string(),
+        _ => return None,
+    };
+    let subpath = match specifier[name.len()..].strip_prefix('/') {
+        Some(rest) => format!("./{rest}"),
+        None => ".".to_string(),
+    };
+    let dir = format!("node_modules/{name}");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs.read(&format!("{dir}/package.json"))?).ok()?;
+    let exports = manifest.get("exports")?;
+    let conditions = match exports.get(&subpath) {
+        Some(entry) => entry,
+        None if subpath == "." && exports.get("reze").is_some() => exports,
+        None => return None,
+    };
+    let target = conditions.get("reze")?.as_str()?;
+    let path = fs::join(&format!("{dir}/package.json"), target);
+    fs.read(&path).map(|source| (path, source))
 }
 
 pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
@@ -103,10 +130,12 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
         }
         let mut resolved = HashMap::new();
         for (specifier, span) in specifiers(&parsed.program) {
-            if !is_relative(specifier) {
-                continue;
-            }
-            match resolve(fs, &paths[module], specifier) {
+            let found = if is_relative(specifier) {
+                resolve(fs, &paths[module], specifier)
+            } else {
+                resolve_package(fs, specifier)
+            };
+            match found {
                 Some((path, source)) => {
                     let target = *index.entry(path.clone()).or_insert_with(|| {
                         queue.push_back(paths.len());
@@ -116,10 +145,11 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
                     });
                     resolved.insert(specifier.to_string(), target);
                 }
-                None => reports
+                None if is_relative(specifier) => reports
                     .entry(module)
                     .or_default()
                     .push(Report::new(Code::ImportUnresolved, span).arg("specifier", specifier)),
+                None => {}
             }
         }
         if edges.len() <= module {

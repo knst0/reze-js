@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { type Chunks, compileProjectAsync, type ProjectResult } from "@rezejs/compiler";
-import { minify, type Plugin, transformWithOxc } from "vite";
+import { defaultClientConditions, defaultServerConditions, minify, type Plugin, transformWithOxc } from "vite";
 
 import { type Handler, middleware } from "./node.ts";
 
@@ -98,6 +98,25 @@ interface Built {
   chunks: Record<string, string>;
 }
 
+function readJson(file: string): Record<string, unknown> | undefined {
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The dependencies of the app at `root` that publish source through the `reze` export condition. */
+function sourcePackages(root: string): string[] {
+  const manifest = readJson(join(root, "package.json"));
+  const names = Object.keys({ ...(manifest?.dependencies as object), ...(manifest?.devDependencies as object) });
+  return names.filter((name) => {
+    const exports = readJson(join(root, "node_modules", name, "package.json"))?.exports;
+    if (!exports || typeof exports !== "object") return false;
+    return "reze" in exports || Object.values(exports).some((entry) => entry && typeof entry === "object" && "reze" in entry);
+  });
+}
+
 /** The client build of each Vite root: Vite creates a plugin instance for each environment when it loads a config file. */
 const builds = new Map<string, Built>();
 
@@ -106,6 +125,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
   let dev = false;
   let base = "/";
   let output: Promise<ProjectResult> | undefined;
+  let packageFiles: Map<string, string> | undefined;
   const refs = new Map<string, string>();
   let dispatcherCode = "";
   let streamCode = "";
@@ -145,17 +165,21 @@ export default function reze(options: RezeOptions = {}): Plugin {
         client: config.environments?.client?.build?.outDir ?? "dist/client",
         ssr: config.environments?.ssr?.build?.outDir ?? "dist/server",
       };
+      const appRoot = resolve(config.root ?? process.cwd());
+      const shared = {
+        resolve: { conditions: ["reze", ...defaultClientConditions], dedupe: ["reze-js"] },
+        ssr: { noExternal: ["reze-js", ...sourcePackages(appRoot)], resolve: { conditions: ["reze", ...defaultServerConditions] } },
+      };
       if (env.command !== "build") {
         return {
+          ...shared,
           appType: "custom",
-          ssr: { noExternal: ["reze-js"] },
           environments: { client: { build: { outDir: outDirs.client } }, ssr: { build: { outDir: outDirs.ssr } } },
         };
       }
-      const appRoot = config.root ?? process.cwd();
       const server = existsSync(join(appRoot, "src/server.ts")) ? "/src/server.ts" : "reze-js/server";
       return {
-        ssr: { noExternal: ["reze-js"] },
+        ...shared,
         builder: {
           async buildApp(builder) {
             await builder.build(builder.environments.client!);
@@ -233,6 +257,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
       server.watcher.on("all", (_, file) => {
         if (relative(root, file).startsWith("..") || file.endsWith("routes.gen.d.ts")) return;
         output = undefined;
+        packageFiles = undefined;
         devHandler = undefined;
         for (const environment of Object.values(server.environments)) {
           environment.moduleGraph.invalidateAll();
@@ -293,9 +318,16 @@ export default function reze(options: RezeOptions = {}): Plugin {
       return `${result.app}${assets}export const build = ${JSON.stringify(await buildId())};\nexport const dev = ${dev};\n`;
     },
     async transform(_, id, transformOptions) {
-      const file = relative(root, id.split("?")[0]!).replaceAll("\\", "/");
+      const result = await compile();
+      packageFiles ??= new Map(
+        Object.keys(result.modules)
+          .filter((key) => key.startsWith("node_modules/"))
+          .map((key) => [realpathSync(join(root, key)), key]),
+      );
+      const path = id.split("?")[0]!;
+      const file = packageFiles.get(path) ?? relative(root, path).replaceAll("\\", "/");
       if (file.startsWith("..")) return;
-      const module = (await compile()).modules[file];
+      const module = result.modules[file];
       const code = transformOptions?.ssr ? module?.server : module?.client;
       if (code === undefined) return;
       return { code, map: null };

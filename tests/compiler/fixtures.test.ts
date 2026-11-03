@@ -9,15 +9,17 @@ import { expect, test } from "vite-plus/test";
 const root = import.meta.dirname;
 const out = join(root, ".out");
 
+function project(name: string): string {
+  if (name === "input.tsx") return "src/routes/index.tsx";
+  return name.startsWith("packages/") ? `node_modules/${name.slice("packages/".length)}` : `src/${name}`;
+}
+
 function sources(dir: string, base = dir): Record<string, string> {
   const files: Record<string, string> = {};
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) Object.assign(files, sources(path, base));
-    else if (/\.tsx?$/.test(entry.name)) {
-      const name = relative(base, path);
-      files[name === "input.tsx" ? "src/routes/index.tsx" : `src/${name}`] = readFileSync(path, "utf8");
-    }
+    else if (/\.tsx?$|^package\.json$/.test(entry.name)) files[project(relative(base, path))] = readFileSync(path, "utf8");
   }
   return files;
 }
@@ -61,6 +63,11 @@ for (const fixture of fixtures) {
       if (module.server === undefined || module.server === null) continue;
       mkdirSync(dirname(join(target, path)), { recursive: true });
       writeFileSync(join(target, path), module.server);
+    }
+    for (const [path, source] of Object.entries(sources(dir))) {
+      if (!path.endsWith("package.json")) continue;
+      mkdirSync(dirname(join(target, path)), { recursive: true });
+      writeFileSync(join(target, path), source);
     }
     writeFileSync(join(target, "app.ts"), result.app);
     const client = [

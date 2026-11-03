@@ -409,3 +409,17 @@ A package exposes TSX through the `reze` export condition:
 | `UNTRACK_REDUNDANT`              | An `untrack` wraps a read the compiler already leaves untracked     |
 | `PACKAGE_SOURCE_MISSING`         | A component comes from a package without a `reze` export            |
 | `DYNAMIC_COMPONENT_UNBOUNDED`    | The candidates of `dynamic` are not known at build time             |
+
+## Implementation status
+
+The current implementation differs from this design in these points:
+
+- The compiler reads a package's `reze` source from `node_modules/<package>` under the project
+  root, through the `.` or subpath entry of `exports`. The build compiles it each time instead
+  of caching it by package version.
+- The Vite plugin adds the `reze` condition to both environments, bundles the app's
+  dependencies that declare it into the server build, and dedupes `reze-js`, so a package's
+  compiled code imports the app's runtime.
+- The quick fix rewrites a ternary and `&&` into `<Show>`, and `.map` with one arrow function into
+  `<For>`, and adds the missing import. `||` and the other array methods get the diagnostic
+  without a fix.
