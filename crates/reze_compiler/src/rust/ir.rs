@@ -22,6 +22,16 @@ pub enum TypeRef {
     List {
         of: Box<TypeRef>,
     },
+    /// A `BTreeSet` or `HashSet`, a JS `Set`.
+    Set {
+        of: Box<TypeRef>,
+    },
+    /// A `BTreeMap` or `HashMap` with `String` keys, a JS `Map`.
+    Map {
+        value: Box<TypeRef>,
+    },
+    /// `std::time::SystemTime`, a JS `Date`.
+    Date,
     /// A `reze::Defer` struct field, which streams into its `<Loading>` boundary.
     Defer {
         of: Box<TypeRef>,

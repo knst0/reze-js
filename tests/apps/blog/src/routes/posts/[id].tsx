@@ -29,6 +29,22 @@ function Hearts(props: { likes: number }) {
   return <p aria-label="Hearts">{props.likes > 2 ? "Loved" : "Liked"}</p>;
 }
 
+function Facts(props: { published: Date; reactions: Map<string, number>; editors: Set<string> }) {
+  let facts = signal("");
+  return (
+    <p>
+      <button
+        onClick={() =>
+          (facts = `${props.published.toISOString()}, ${props.reactions.get("like")} likes, ${props.editors.has("ann") ? "edited by ann" : "unedited"}`)
+        }
+      >
+        Facts
+      </button>{" "}
+      <span aria-label="Facts">{facts}</span>
+    </p>
+  );
+}
+
 function Report() {
   let reports = signal(0);
   return (
@@ -97,6 +113,7 @@ export default function PostPage(props: { data: Post }) {
       <p>{props.data.status === "Draft" ? "Draft" : "Published"}</p>
       <p>{props.data.tags.length > 0 && "Tagged"}</p>
       <Share />
+      <Facts published={props.data.published} reactions={props.data.reactions} editors={props.data.editors} />
       <Errored fallback={(error) => <p role="alert">Report failed with {error.status}</p>}>
         <Report />
       </Errored>

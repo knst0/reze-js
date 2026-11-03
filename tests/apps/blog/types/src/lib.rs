@@ -1,3 +1,6 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::SystemTime;
+
 use reze::{Data, Defer};
 
 #[derive(Clone, Copy, Data)]
@@ -32,6 +35,9 @@ pub struct Post {
     pub likes: u32,
     pub views: u64,
     pub rating: f64,
+    pub published: SystemTime,
+    pub reactions: BTreeMap<String, u32>,
+    pub editors: BTreeSet<String>,
     pub comments: Vec<Comment>,
 }
 

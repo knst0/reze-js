@@ -23,7 +23,9 @@ export interface RezeOptions {
 type RustType =
   | { kind: "string" | "boolean" }
   | { kind: "number" | "bigint"; rust: string }
-  | { kind: "option" | "list" | "defer"; of: RustType }
+  | { kind: "date" }
+  | { kind: "option" | "list" | "set" | "defer"; of: RustType }
+  | { kind: "map"; value: RustType }
   | { kind: "named"; name: string };
 
 interface CrateIr {
@@ -46,6 +48,12 @@ function tsType(type: RustType): string {
       return `${tsType(type.of)} | null`;
     case "list":
       return type.of.kind === "option" ? `(${tsType(type.of)})[]` : `${tsType(type.of)}[]`;
+    case "date":
+      return "Date";
+    case "set":
+      return `Set<${tsType(type.of)}>`;
+    case "map":
+      return `Map<string, ${tsType(type.value)}>`;
     case "defer":
       return tsType(type.of);
     case "named":

@@ -1,18 +1,22 @@
 //! Loader data that crosses from a Rust loader to the page: `#[derive(reze::Data)]`, and the JSON
 //! it encodes to, byte for byte what `JSON.stringify` writes for the same value.
 
+pub mod date;
 pub mod defer;
 pub mod input;
 pub mod js;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::hash::BuildHasher;
+use std::time::SystemTime;
 
 pub use defer::Defer;
 pub use input::{Input, Issue, Json, Key};
 pub use reze_derive::Data;
 
 /// A value a Rust loader returns: a struct with named fields, a unit enum, or one of the scalars
-/// and containers this crate implements it for.
+/// and containers this crate implements it for. A `SystemTime` is a JS `Date`, a set a `Set`, and
+/// a map with `String` keys a `Map`.
 pub trait Data {
     /// Appends the value as JSON, as `JSON.stringify` writes it.
     fn write(&self, out: &mut String);
@@ -185,5 +189,72 @@ impl<T: Data> Data for BTreeSet<T> {
 
     fn wire(&self, out: &mut String) {
         list(self.iter(), out, true);
+    }
+}
+
+impl<T: Data, S: BuildHasher> Data for HashSet<T, S> {
+    fn write(&self, out: &mut String) {
+        list(self.iter(), out, false);
+    }
+
+    fn wire(&self, out: &mut String) {
+        list(self.iter(), out, true);
+    }
+}
+
+fn pairs<'a, K: Data + 'a, V: Data + 'a>(
+    entries: impl Iterator<Item = (&'a K, &'a V)>,
+    out: &mut String,
+    wire: bool,
+) {
+    out.push('[');
+    for (index, (key, value)) in entries.enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push('[');
+        key.write(out);
+        out.push(',');
+        if wire {
+            value.wire(out)
+        } else {
+            value.write(out)
+        }
+        out.push(']');
+    }
+    out.push(']');
+}
+
+/// A map crosses as its `[key, value]` pairs, the input of `new Map(pairs)`.
+impl<K: Data, V: Data> Data for BTreeMap<K, V> {
+    fn write(&self, out: &mut String) {
+        pairs(self.iter(), out, false);
+    }
+
+    fn wire(&self, out: &mut String) {
+        pairs(self.iter(), out, true);
+    }
+}
+
+impl<K: Data, V: Data, S: BuildHasher> Data for HashMap<K, V, S> {
+    fn write(&self, out: &mut String) {
+        pairs(self.iter(), out, false);
+    }
+
+    fn wire(&self, out: &mut String) {
+        pairs(self.iter(), out, true);
+    }
+}
+
+/// A time writes the ISO string of `JSON.stringify`, and crosses to the page as milliseconds.
+impl Data for SystemTime {
+    fn write(&self, out: &mut String) {
+        out.push('"');
+        out.push_str(&date::iso(*self));
+        out.push('"');
+    }
+
+    fn wire(&self, out: &mut String) {
+        out.push_str(&date::millis(*self).to_string());
     }
 }

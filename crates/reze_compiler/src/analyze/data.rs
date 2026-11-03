@@ -166,6 +166,9 @@ fn rust_ref(ir: &CrateIr, ty: &TypeRef, depth: u32) -> Option<Ty> {
         TypeRef::Named { name } => rust_type(ir, name, depth + 1),
         TypeRef::Option { of } => Some(Ty::union(vec![rust_ref(ir, of, depth)?, Ty::Null])),
         TypeRef::List { of } => Some(Ty::Array(Box::new(rust_ref(ir, of, depth)?))),
+        TypeRef::Set { of } => Some(Ty::Set(Box::new(rust_ref(ir, of, depth)?))),
+        TypeRef::Map { value } => Some(Ty::Map(Box::new(rust_ref(ir, value, depth)?))),
+        TypeRef::Date => Some(Ty::Date),
         TypeRef::Defer { of } => rust_ref(ir, of, depth),
         TypeRef::String => Some(Ty::String),
         TypeRef::Boolean => Some(Ty::Boolean),
@@ -898,7 +901,11 @@ pub fn endpoints<'a>(
             };
             match kind {
                 EndpointKind::Loader if external => {
-                    endpoint.meta = format!("{{ external: {:?} }}", cx.modules[module].path);
+                    let path = &cx.modules[module].path;
+                    endpoint.meta = match &endpoint.data {
+                        Some(ty) => format!("{{ external: {path:?}, json: {} }}", json_parser(ty)),
+                        None => format!("{{ external: {path:?} }}"),
+                    };
                     endpoint.typed = true;
                     endpoint.reads = None;
                     endpoint.unsupported = None;

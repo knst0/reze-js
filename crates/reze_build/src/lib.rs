@@ -167,25 +167,29 @@ fn collect(items: &[Item], file: &Path, out: &mut Vec<TypeDef>) -> Result<(), St
     Ok(())
 }
 
-/// The last segment of a type path and its first type argument.
-fn path_of(ty: &Type) -> Option<(String, Option<&Type>)> {
+/// The last segment of a type path and its type arguments.
+fn path_of(ty: &Type) -> Option<(String, Vec<&Type>)> {
     let Type::Path(path) = ty else { return None };
     let last = path.path.segments.last().filter(|_| path.qself.is_none())?;
-    let argument = match &last.arguments {
-        PathArguments::AngleBracketed(args) => args.args.iter().find_map(|arg| match arg {
-            GenericArgument::Type(ty) => Some(ty),
-            _ => None,
-        }),
-        _ => None,
+    let arguments = match &last.arguments {
+        PathArguments::AngleBracketed(args) => args
+            .args
+            .iter()
+            .filter_map(|arg| match arg {
+                GenericArgument::Type(ty) => Some(ty),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
     };
-    Some((last.ident.to_string(), argument))
+    Some((last.ident.to_string(), arguments))
 }
 
 /// The type of a struct field, which alone may be `reze::Defer`.
 fn field_ref(ty: &Type) -> Result<TypeRef, String> {
     match path_of(ty) {
-        Some((name, Some(of))) if name == "Defer" => {
-            Ok(TypeRef::Defer { of: Box::new(type_ref(of)?) })
+        Some((name, arguments)) if name == "Defer" && arguments.len() == 1 => {
+            Ok(TypeRef::Defer { of: Box::new(type_ref(arguments[0])?) })
         }
         _ => type_ref(ty),
     }
@@ -197,18 +201,27 @@ fn type_ref(ty: &Type) -> Result<TypeRef, String> {
         Type::Reference(reference) => type_ref(&reference.elem),
         Type::Slice(slice) => Ok(TypeRef::List { of: Box::new(type_ref(&slice.elem)?) }),
         Type::Path(_) => {
-            let Some((name, argument)) = path_of(ty) else { return unsupported() };
-            Ok(match (name.as_str(), argument) {
-                ("String" | "str", None) => TypeRef::String,
-                ("bool", None) => TypeRef::Boolean,
-                ("f64" | "f32" | "u8" | "u16" | "u32" | "i8" | "i16" | "i32", None) => {
+            let Some((name, arguments)) = path_of(ty) else { return unsupported() };
+            Ok(match (name.as_str(), arguments.as_slice()) {
+                ("String" | "str", []) => TypeRef::String,
+                ("bool", []) => TypeRef::Boolean,
+                ("f64" | "f32" | "u8" | "u16" | "u32" | "i8" | "i16" | "i32", []) => {
                     TypeRef::Number { rust: name }
                 }
-                ("u64" | "i64", None) => TypeRef::Bigint { rust: name },
-                ("Option", Some(of)) => TypeRef::Option { of: Box::new(type_ref(of)?) },
-                ("Vec" | "BTreeSet", Some(of)) => TypeRef::List { of: Box::new(type_ref(of)?) },
-                ("Box", Some(of)) => type_ref(of)?,
-                (_, None) if name.starts_with(char::is_uppercase) => TypeRef::Named { name },
+                ("u64" | "i64", []) => TypeRef::Bigint { rust: name },
+                ("SystemTime", []) => TypeRef::Date,
+                ("Option", [of]) => TypeRef::Option { of: Box::new(type_ref(of)?) },
+                ("Vec", [of]) => TypeRef::List { of: Box::new(type_ref(of)?) },
+                ("BTreeSet", [of]) | ("HashSet", [of, ..]) => {
+                    TypeRef::Set { of: Box::new(type_ref(of)?) }
+                }
+                ("BTreeMap", [key, value]) | ("HashMap", [key, value, ..])
+                    if type_ref(key) == Ok(TypeRef::String) =>
+                {
+                    TypeRef::Map { value: Box::new(type_ref(value)?) }
+                }
+                ("Box", [of]) => type_ref(of)?,
+                (_, []) if name.starts_with(char::is_uppercase) => TypeRef::Named { name },
                 _ => return unsupported(),
             })
         }

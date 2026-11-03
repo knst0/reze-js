@@ -28,7 +28,7 @@ enum Ty {
     Num(String),
     Bool,
     Null,
-    /// `crate::Name`.
+    /// `crate::Name`, or `Date`, `Set`, and `Map`, which only client code reads.
     Struct(String),
     Enum(String),
     Opt(Box<Ty>),
@@ -324,6 +324,9 @@ impl<'e, 'a> Emitter<'e, 'a> {
             TypeRef::Number { rust } | TypeRef::Bigint { rust } => Ty::Num(rust.clone()),
             TypeRef::Option { of } => Ty::Opt(Box::new(self.ty_of(of, krate))),
             TypeRef::List { of } => Ty::List(Box::new(self.ty_of(of, krate))),
+            TypeRef::Set { .. } => Ty::Struct("Set".into()),
+            TypeRef::Map { .. } => Ty::Struct("Map".into()),
+            TypeRef::Date => Ty::Struct("Date".into()),
             TypeRef::Defer { of } => self.ty_of(of, krate),
             TypeRef::Named { name } => self.named(&format!("{krate}::{name}")),
         }

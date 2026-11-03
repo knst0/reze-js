@@ -1,7 +1,9 @@
 //! Mutation input: a JSON body or form fields, checked against the input type with the issues the
 //! JS validators report for the same type.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::hash::{BuildHasher, Hash};
+use std::time::SystemTime;
 
 /// A parsed JSON value.
 #[derive(Clone, Debug, PartialEq)]
@@ -375,6 +377,99 @@ impl<T: Input + Ord> Input for BTreeSet<T> {
 
     fn field(values: &[&str], name: &str, issues: &mut Vec<Issue>) -> Option<Self> {
         list_field(values, name, issues).map(|items: Vec<T>| items.into_iter().collect())
+    }
+}
+
+impl<T: Input + Eq + Hash, S: BuildHasher + Default> Input for HashSet<T, S> {
+    const FIELD: bool = T::SCALAR;
+
+    fn describe() -> String {
+        "an array".into()
+    }
+
+    fn json(value: Option<&Json>, path: &[Key], issues: &mut Vec<Issue>) -> Option<Self> {
+        list(value, path, issues).map(|items: Vec<T>| items.into_iter().collect())
+    }
+
+    fn field(values: &[&str], name: &str, issues: &mut Vec<Issue>) -> Option<Self> {
+        list_field(values, name, issues).map(|items: Vec<T>| items.into_iter().collect())
+    }
+}
+
+fn pairs<V: Input, M: FromIterator<(String, V)>>(
+    value: Option<&Json>,
+    path: &[Key],
+    issues: &mut Vec<Issue>,
+) -> Option<M> {
+    let entries = match value {
+        Some(Json::Array(items)) => items
+            .iter()
+            .map(|item| match item {
+                Json::Array(pair) => match pair.as_slice() {
+                    [Json::String(key), value] => Some((key, value)),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>(),
+        _ => None,
+    };
+    let Some(entries) = entries else {
+        issues.push(Issue {
+            message: "Expected an array of [key, value] pairs".into(),
+            path: path.to_vec(),
+        });
+        return None;
+    };
+    let read: Vec<Option<(String, V)>> = entries
+        .into_iter()
+        .map(|(key, value)| {
+            V::json(Some(value), &child(path, Key::Field(key.clone())), issues)
+                .map(|value| (key.clone(), value))
+        })
+        .collect();
+    read.into_iter().collect()
+}
+
+impl<V: Input> Input for BTreeMap<String, V> {
+    fn describe() -> String {
+        "an array of [key, value] pairs".into()
+    }
+
+    fn json(value: Option<&Json>, path: &[Key], issues: &mut Vec<Issue>) -> Option<Self> {
+        pairs(value, path, issues)
+    }
+}
+
+impl<V: Input, S: BuildHasher + Default> Input for HashMap<String, V, S> {
+    fn describe() -> String {
+        "an array of [key, value] pairs".into()
+    }
+
+    fn json(value: Option<&Json>, path: &[Key], issues: &mut Vec<Issue>) -> Option<Self> {
+        pairs(value, path, issues)
+    }
+}
+
+/// A `Date`: an ISO 8601 string, or milliseconds since the epoch in JSON.
+impl Input for SystemTime {
+    const SCALAR: bool = true;
+
+    fn describe() -> String {
+        "a date".into()
+    }
+
+    fn json(value: Option<&Json>, path: &[Key], issues: &mut Vec<Issue>) -> Option<Self> {
+        let time = match value {
+            Some(Json::String(text)) => crate::date::parse(text),
+            Some(Json::Number(ms)) => crate::date::from_millis(*ms),
+            _ => None,
+        };
+        time.or_else(|| expected(path, issues))
+    }
+
+    fn scalar(value: &str, path: &[Key], issues: &mut Vec<Issue>) -> Option<Self> {
+        crate::date::parse(value).or_else(|| expected(path, issues))
     }
 }
 

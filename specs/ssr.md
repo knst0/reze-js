@@ -1042,8 +1042,14 @@ The current implementation differs from this design in these points:
   with `reze::Data::wire`, positionally, and the compiler reads the types of
   `virtual:reze-types/<crate>` from the IR. Params reach
   a Rust loader as strings, in the generated `Params` of the route.
-- The IR has no `Map` or `Date`: a field of another type fails the build with "has no wire
-  encoding". The `reze-ir` binary of `reze_build` writes the IR in place of `cargo xtask reze-ir`,
+- A `SystemTime` field is a `Date`, a `BTreeSet` or `HashSet` a `Set`, and a `BTreeMap` or
+  `HashMap` with `String` keys a `Map<string, V>`. The IR has no tuples, no enums with fields, no
+  `Uint8Array`, and no `Record`: a field of another type fails the build with "has no wire
+  encoding". Only client code reads a `Date`, `Set`, or `Map`: the Rust render has no lowering for
+  them. A date string of mutation input is read as UTC when it has no offset, and only in the ISO
+  8601 formats of `toISOString`. The JS dev server checks the JSON of `/__reze/load` against the
+  loader's type with the validators of mutation input, so its render reads the same `Date`, `Set`,
+  `Map`, and `bigint` values as with a JS loader. The `reze-ir` binary of `reze_build` writes the IR in place of `cargo xtask reze-ir`,
   and the Vite plugin reads it through `reze({ rust: { types } })`.
 - The generated code renders one function per route level into `Html` and a `Render` state, and
   `reze_build::compile` runs the compiler itself in `build.rs`. The server reads the client URLs

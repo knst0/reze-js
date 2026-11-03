@@ -6,7 +6,7 @@ mod generated {
 }
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use actix_web::{HttpServer, web};
 use blog_types::{Added, Comment, Home, NewComment, Post, Status, Summary};
@@ -32,6 +32,9 @@ impl Db {
                 likes: id * 2,
                 views,
                 rating,
+                published: UNIX_EPOCH + Duration::from_millis(1_714_564_800_000 + u64::from(id)),
+                reactions: [("like".to_string(), id * 3), ("wow".to_string(), 1)].into(),
+                editors: ["ann".to_string(), "bo".to_string()].into(),
                 comments: Vec::new(),
             };
         Self {

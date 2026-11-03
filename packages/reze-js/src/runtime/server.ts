@@ -160,6 +160,8 @@ export interface Loader<T> {
   search?: Fields;
   /** The route file of `loader.external()`, whose data the Rust server loads. */
   external?: string;
+  /** Restores the values of an external loader's JSON that JSON cannot carry: `Date`, `Set`, `Map`, `bigint`. */
+  json?: Parse;
 }
 
 export interface Mutation<I, R> {
@@ -332,7 +334,7 @@ function deferrable(value: unknown, pending: Promise<unknown>[]): unknown {
 }
 
 /** Attaches the compiler's coercion of params and search params. */
-export function $load<T>(target: Loader<T>, meta: Pick<Loader<T>, "params" | "search" | "external">): Loader<T> {
+export function $load<T>(target: Loader<T>, meta: Pick<Loader<T>, "params" | "search" | "external" | "json">): Loader<T> {
   return Object.assign(target, meta);
 }
 
@@ -793,12 +795,19 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     return response;
   };
   /** The data of an external loader, or the check of an external guard, from the Rust server. */
-  const external = async (file: string, params: Record<string, unknown>, guard?: [URL, Request]) => {
+  const external = async (file: string, params: Record<string, unknown>, guard?: [URL, Request], parse?: Parse) => {
     const query = new URLSearchParams({ m: file });
     if (guard) query.set("u", guard[0].pathname + guard[0].search);
     for (const [name, value] of Object.entries(params)) if (value !== undefined) query.append(name, String(value as string));
     const response = await rust(guard ? "guard" : "load", query, guard?.[1]);
-    return guard ? undefined : (response.json() as Promise<unknown>);
+    if (guard) return undefined;
+    const data = await response.json();
+    if (!parse) return data;
+    const issues: Issue[] = [];
+    const value = parse(data, issues);
+    if (issues.length > 0)
+      throw new Error(`The Rust loader of ${file} answered ${issues[0]!.message.toLowerCase()} at \`${issues[0]!.path.join(".")}\``);
+    return value;
   };
   /** The result of an external mutation, from the Rust server. */
   const mutate = async (record: MutationRecord, request: Request, input: { json: unknown } | { form: FormData }) => {
@@ -983,7 +992,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     const deferred: Promise<unknown>[] = [];
     let error: Page["error"] = guarded;
     const runLoader = async (load: NonNullable<RouteModule["load"]>) => {
-      if (load.external !== undefined) return external(load.external, params);
+      if (load.external !== undefined) return external(load.external, params, undefined, load.json);
       if (!load.run) return;
       const writer = new Writer();
       writers.push(writer);
