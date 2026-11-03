@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recordedAt": "2026-11-03T15:00:16.505Z",
+  "recordedAt": "2026-11-03T15:06:29.214Z",
   "sizes": {
     "menu: client.js": {
       "raw": 5239,
@@ -9,18 +9,18 @@
     },
     "menu: dispatcher.js": {
       "raw": 4199,
-      "gzip": 1957,
+      "gzip": 1958,
       "brotli": 1734
     },
     "menu: html": {
       "raw": 789,
-      "gzip": 442,
-      "brotli": 297
+      "gzip": 443,
+      "brotli": 299
     },
     "menu: navigate.js": {
-      "raw": 8165,
-      "gzip": 3518,
-      "brotli": 3115
+      "raw": 8173,
+      "gzip": 3522,
+      "brotli": 3118
     },
     "menu: route-1.js": {
       "raw": 699,
@@ -54,17 +54,17 @@
     },
     "static: dispatcher.js": {
       "raw": 4199,
-      "gzip": 1956,
-      "brotli": 1731
+      "gzip": 1960,
+      "brotli": 1734
     },
     "static: html": {
       "raw": 505,
-      "gzip": 330,
-      "brotli": 224
+      "gzip": 331,
+      "brotli": 220
     },
     "static: navigate.js": {
-      "raw": 7946,
-      "gzip": 3484,
+      "raw": 7954,
+      "gzip": 3487,
       "brotli": 3093
     },
     "static: stream.js": {
@@ -79,7 +79,7 @@
     },
     "todos: dispatcher.js": {
       "raw": 4199,
-      "gzip": 1958,
+      "gzip": 1960,
       "brotli": 1734
     },
     "todos: errors.js": {
@@ -89,13 +89,13 @@
     },
     "todos: html": {
       "raw": 341,
-      "gzip": 248,
-      "brotli": 165
+      "gzip": 244,
+      "brotli": 157
     },
     "todos: navigate.js": {
-      "raw": 8378,
-      "gzip": 3554,
-      "brotli": 3157
+      "raw": 8386,
+      "gzip": 3557,
+      "brotli": 3160
     },
     "todos: route-2.js": {
       "raw": 704,

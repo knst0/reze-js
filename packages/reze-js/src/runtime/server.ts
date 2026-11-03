@@ -1,4 +1,4 @@
-import type { Href } from "../index";
+import type { Href, RoutePattern } from "../index";
 import type { Issue } from "./errors";
 import { compare, match, type Segment } from "./match";
 
@@ -63,6 +63,8 @@ export interface Route {
   pattern: string;
   segments: Segment[];
   chain: RouteModule[];
+  /** The pattern of each module of the chain. */
+  patterns: string[];
   /** The key of the client chunk, or of each factory's chunk by factory id, when the page has client code. */
   chunk: string | Record<number, string> | null;
   /** Whether no loader of the route reads more than its params. */
@@ -197,17 +199,17 @@ const mutations = new Map<string, MutationRecord>();
 /** Declares a server write, a public POST endpoint whose input is validated. */
 export function mutation<I, R>(
   run: (input: I, args: MutationArgs) => R | Promise<R>,
-  options?: { revalidate?: string[] },
+  options?: { revalidate?: RoutePattern[] },
 ): Mutation<I, Awaited<R>>;
 export function mutation<I, R>(
   schema: StandardSchemaV1<unknown, I>,
   run: (input: I, args: MutationArgs) => R | Promise<R>,
-  options?: { revalidate?: string[] },
+  options?: { revalidate?: RoutePattern[] },
 ): Mutation<I, Awaited<R>>;
 export function mutation(
   first: StandardSchemaV1 | ((input: never, args: MutationArgs) => unknown),
-  second?: ((input: never, args: MutationArgs) => unknown) | { revalidate?: string[] },
-  third?: { revalidate?: string[] },
+  second?: ((input: never, args: MutationArgs) => unknown) | { revalidate?: RoutePattern[] },
+  third?: { revalidate?: RoutePattern[] },
 ): Mutation<never, unknown> {
   const [schema, run, options] = isSchema(first)
     ? [first, second as MutationRecord["run"], third]
@@ -843,7 +845,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
       return respond(page);
     }
     const chain = route.chain;
-    const from = request.method === "GET" && Number.isInteger(segment) && segment < chain.length ? Math.max(segment, 0) : 0;
+    let from = request.method === "GET" && Number.isInteger(segment) && segment < chain.length ? Math.max(segment, 0) : 0;
     if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST") {
       return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD, POST" } });
     }
@@ -873,6 +875,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     if (request.method === "POST") {
       const record = mutations.get(url.searchParams.get("_m") ?? "");
       if (!record) return new Response("Not Found", { status: 404 });
+      url.searchParams.delete("_m");
       const writer = new Writer();
       writers.push(writer);
       let input: { json: unknown } | { form: FormData };
@@ -904,14 +907,14 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
           if ("json" in input) return Response.json({ message: error.message }, { status: error.status, headers: headersOf(writers) });
           return respond({ route, params, url, data: [], error: [chain.length - 1, error] });
         }
-        if ("json" in input) {
-          if (build === null) return Response.json({ result: result ?? null }, { headers: headersOf(writers) });
-          called = { result: result ?? null };
-        } else {
-          const search = new URLSearchParams(url.search);
-          search.delete("_m");
-          const location = url.pathname + (search.size > 0 ? `?${search}` : "");
-          return new Response(null, { status: 303, headers: headersOf(writers, { location }) });
+        if (build === null) {
+          if ("json" in input) return Response.json({ result: result ?? null }, { headers: headersOf(writers) });
+          return new Response(null, { status: 303, headers: headersOf(writers, { location: url.pathname + url.search }) });
+        }
+        if ("json" in input) called = { result: result ?? null };
+        if (record.revalidate) {
+          const depth = route.patterns.findIndex((pattern) => record.revalidate!.includes(pattern));
+          from = depth < 0 ? chain.length : depth;
         }
       }
     }
@@ -980,6 +983,12 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
       writer.headers.set("cache-control", `s-maxage=${revalidate}, stale-while-revalidate`);
       writers.push(writer);
     }
+    const answer = async (response: Response) => {
+      if (!called) return response;
+      const segment = Number(response.headers.get("rz-segment") ?? 0);
+      return Response.json({ ...called, status: response.status, segment, html: await response.text() }, { headers: headersOf(writers) });
+    };
+    if (from === chain.length) return answer(new Response("", { headers: headersOf(writers, { ...html, "rz-segment": "-1" }) }));
     if (from > 0) {
       let rendered: ReturnType<typeof render> | undefined;
       try {
@@ -991,12 +1000,10 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
       if (rendered) {
         const headers = headersOf(writers, html);
         headers.set("rz-segment", String(from));
-        return finish(rendered, headers);
+        return answer(await finish(rendered, headers));
       }
     }
-    if (!called) return respond(page(), status);
-    const response = await respond(page(), status);
-    return Response.json({ ...called, status: response.status, html: await response.text() }, { headers: headersOf(writers) });
+    return answer(await respond(page(), status));
   };
 }
 

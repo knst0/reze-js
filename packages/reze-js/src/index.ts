@@ -16,6 +16,8 @@ interface RouteEntry {
 type Routes = Register extends { routes: infer R } ? R : Record<string, RouteEntry>;
 type Layouts = Register extends { layouts: infer L } ? L : Record<string, RouteEntry>;
 
+/** The pattern of a page or a layout of the app. */
+export type RoutePattern = Register extends { routes: infer R; layouts: infer L } ? Extract<keyof R | keyof L, string> : string;
 /** The data of a route module's `load`. */
 export type RouteData<M> = M extends { load: Loader<infer T> } ? T : undefined;
 /** Props of the page at `pattern`: `params` and `data`. */

@@ -82,6 +82,21 @@ test("answers with typed params, headers, and cookies", async ({ page, server })
   expect(await response!.headerValue("set-cookie")).toContain("last=1");
 });
 
+test("renders only the segments a mutation revalidates", async ({ page, server }) => {
+  const name = await signIn(page, server);
+  await add(page, "Water plants");
+  const layout = page.getByText(`Signed in as ${name}`);
+  await layout.evaluate((node) => node.setAttribute("data-kept", ""));
+  const response = page.waitForResponse((response) => response.request().method() === "POST");
+  await page.getByRole("button", { name: "Toggle Water plants" }).click();
+  expect((await response).headers()["rz-segment"]).toBe("2");
+  await expect(page.getByRole("list", { name: "Todos" }).getByRole("listitem")).toHaveText([/Water plants P2 done/]);
+  await expect(layout).toHaveAttribute("data-kept", "");
+  await add(page, "Feed the cat");
+  await expect(page.getByRole("list", { name: "Todos" }).getByRole("listitem")).toHaveCount(2);
+  await expect(layout).not.toHaveAttribute("data-kept");
+});
+
 test("calls a mutation from a handler and morphs the page", async ({ page, server }) => {
   await signIn(page, server);
   await add(page, "Read a book");

@@ -236,9 +236,16 @@ export async function call(id: string, input: unknown): Promise<unknown> {
     location.reload();
     return new Promise(() => {});
   }
-  const body = (await response.json()) as { result?: unknown; status?: number; html?: string; issues?: Issue[]; message?: string };
+  const body = (await response.json()) as {
+    result?: unknown;
+    status?: number;
+    segment?: number;
+    html?: string;
+    issues?: Issue[];
+    message?: string;
+  };
   if (body.issues) throw new MutationInputError(body.issues);
   if (!response.ok) throw new Error(body.message);
-  swap({ status: body.status!, depth: 0, url: current.href, redirected: false, text: body.html! }, "mutation", () => {});
+  swap({ status: body.status!, depth: body.segment!, url: current.href, redirected: false, text: body.html! }, "mutation", () => {});
   return body.result;
 }

@@ -116,10 +116,16 @@ pub fn app(
             .chain(index)
             .iter()
             .all(|&level| reads_only_params(modules, analysis, &routes.nodes[level].file));
+        let patterns: Vec<String> = routes
+            .chain(index)
+            .iter()
+            .map(|&level| format!("{:?}", routes.nodes[level].pattern))
+            .collect();
         out.push_str(&format!(
-            "  {{ pattern: {:?}, segments: {segments}, chain: [{}], chunk: {chunk}, static: {fixed} }},\n",
+            "  {{ pattern: {:?}, segments: {segments}, chain: [{}], patterns: [{}], chunk: {chunk}, static: {fixed} }},\n",
             node.pattern,
-            chain.join(", ")
+            chain.join(", "),
+            patterns.join(", ")
         ));
     }
     out.push_str("];\n");

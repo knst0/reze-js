@@ -945,12 +945,15 @@ change.
 The current implementation differs from this design in these points:
 
 - A mutation's id is base-36 of the 32-bit FNV-1a hash of `path#export`.
-- `revalidate` does not narrow what reruns. A form post answers `303` back to the page; with the
-  dispatcher, the client follows it and morphs the whole body with the page it answers, or with the
-  `422` page.
+- A form post without `_b` answers `303` back to the page. With the dispatcher the post carries
+  `_b`, and the server answers with the HTML directly: the whole page, the `422` page, or, for a
+  mutation with `revalidate`, the segment of the shallowest module of the chain whose pattern is in
+  the list, with `rz-segment`. A layout's pattern is its prefix, so `"/"` names the root layout.
+  When no module of the chain is listed, the answer is empty with `rz-segment: -1`, and the page
+  keeps its HTML. `revalidate` takes the patterns of `routes.gen.d.ts`.
 - In the client bundle a mutation is a stub whose `.call`, or a direct call, posts JSON with `_b`.
-  The server answers `{ result, status, html }` with the whole page, and the client morphs the body
-  before `.call` resolves. Client state in the morphed body starts again from the new state block,
+  The server answers `{ result, status, segment, html }`, narrowed like a form post, and the
+  client morphs that segment before `.call` resolves. Client state in the morphed body starts again from the new state block,
   so a value a handler sets after `await` on that state is lost. A JSON post without `_b` answers
   `{ result }`. The result uses named JSON, and `MutationInputError` comes from
   `reze-js/server`, which client code imports from the client runtime.

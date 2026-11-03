@@ -14,10 +14,13 @@ export const createTodo = mutation(async (input: { title: string; priority: 1 | 
   return todo;
 });
 
-export const toggleTodo = mutation(async (input: { id: number }, { context }) => {
-  const todo = todosOf(context.user!).find((todo) => todo.id === input.id);
-  if (todo) todo.done = !todo.done;
-});
+export const toggleTodo = mutation(
+  async (input: { id: number }, { context }) => {
+    const todo = todosOf(context.user!).find((todo) => todo.id === input.id);
+    if (todo) todo.done = !todo.done;
+  },
+  { revalidate: ["/todos"] },
+);
 
 export default function Todos(props: { data: Todo[] }) {
   const submission = useSubmission(createTodo);
