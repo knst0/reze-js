@@ -1,0 +1,13 @@
+[JSX_OUTSIDE_TEMPLATE] JSX is written only in the template a component returns, in props of components, and in control-flow callbacks.
+  at src/routes/index.tsx:2:10
+  1 | function title() {
+> 2 |   return <h1>Hi</h1>;
+    |          ^^^^^^^^^^^
+  3 | }
+
+[JSX_OUTSIDE_TEMPLATE] JSX is written only in the template a component returns, in props of components, and in control-flow callbacks.
+  at src/routes/index.tsx:6:19
+  5 | export default function Page() {
+> 6 |   const heading = <h2>Sub</h2>;
+    |                   ^^^^^^^^^^^^
+  7 |   return <main>{heading}</main>;

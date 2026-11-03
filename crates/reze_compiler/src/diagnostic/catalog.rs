@@ -1,12 +1,14 @@
 use super::Severity;
-use Example::{Pair, Shows};
-use Severity::{Error, Info, Warn};
+use Example::{Pair, Prose, Shows};
+use Severity::{Error, Warn};
 
 pub enum Example {
     /// Full modules: `bad` reports the code, `good` does not.
     Pair { bad: &'static str, good: &'static str },
     /// A full module that reports the code.
     Shows(&'static str),
+    /// The code needs several files or build options; the text describes the case.
+    Prose(&'static str),
 }
 
 pub struct Entry {
@@ -89,661 +91,385 @@ catalog! {
         name: "PARSE_ERROR",
         severity: Error,
         title: "The file does not parse",
-        message: "The parser rejected this file ({detail}), so nothing was compiled. Fix the syntax at this position.",
-        explanation: "The parser reported a syntax error. `data.detail` is the parser's own message. Nothing of the file was compiled.",
-        repair: "Fix the syntax at the reported position. JSX-specific causes: an unclosed tag, `{` without `}`, or JSX in a `.ts` file (rename it to `.tsx`).",
+        message: "The parser rejected this file ({detail}). Fix the syntax at this position.",
+        explanation: "The parser reported a syntax error. `data.detail` is the parser's own message. Nothing of the project was compiled.",
+        repair: "Fix the syntax at the reported position. JSX in a `.ts` file needs the `.tsx` extension.",
         fix: None,
         example: Pair {
-            bad: "export const view = <div>;\n",
-            good: "export const view = <div />;\n",
+            bad: "export default function Page() {\n  return <main>;\n}\n",
+            good: "export default function Page() {\n  return <main />;\n}\n",
         },
     }
-    ParserRelocation {
-        name: "PARSER_RELOCATION",
+    RouteInvalid {
+        name: "ROUTE_INVALID",
         severity: Error,
-        title: "Markup the HTML parser moves or rewrites",
-        message: "The browser parses this markup differently ({detail}), so the template would not match the rendered DOM. {hint}.",
-        explanation: "Templates pass through the HTML parser before bindings run. Table rows and columns may acquire implied containers; stray table text is foster-parented out; raw text ends at its matching end tag; foreign elements retain their parser-selected namespace. `data.detail` identifies the mismatch and `data.hint` describes a representable structure.",
-        repair: "{hint}.",
+        title: "The route file does not map to a URL",
+        message: "This route file cannot be served: {detail}.",
+        explanation: "Route files map to URL patterns by their names: `index`, `[id]`, `[[opt]]`, `[...rest]`, and `(group)` folders. Two files that match the same URL, a catch-all that is not last, or a param name that is not an identifier make the route table ambiguous. `data.detail` names the problem.",
+        repair: "Rename or move the file so every URL has exactly one route.",
+        fix: None,
+        example: Prose("`src/routes/blog/index.tsx` and `src/routes/blog.tsx` without children both match `/blog`."),
+    }
+    ImportUnresolved {
+        name: "IMPORT_UNRESOLVED",
+        severity: Error,
+        title: "A relative import names no file",
+        message: "`{specifier}` does not resolve to a file of the project.",
+        explanation: "The compiler follows every relative import from the route modules to analyze the whole application. It tries the path as written, with `.tsx`, `.ts`, `.jsx`, and `.js`, and as a folder with an `index` file. `data.specifier` is the import as written.",
+        repair: "Fix the path, or create the module.",
+        fix: None,
+        example: Shows("import { Card } from \"./missing\";\n\nexport default function Page() {\n  return <Card />;\n}\n"),
+    }
+    RouteDefaultExport {
+        name: "ROUTE_DEFAULT_EXPORT",
+        severity: Error,
+        title: "A route module exports no component",
+        message: "This route module has no default export component, so the route renders nothing. Export the page component as `default`.",
+        explanation: "Every file under the routes directory is a route module. The server renders its default export: the page, or the layout for files with nested routes.",
+        repair: "Add `export default function Page() { … }`, or move the file out of the routes directory, or prefix its name with `_`.",
         fix: None,
         example: Pair {
-            bad: "export const view = <table>oops<tr><td>cell</td></tr></table>;\n",
-            good: "export const view = <table><tbody><tr><td>cell</td></tr></tbody></table>;\n",
+            bad: "export function Page() {\n  return <main />;\n}\n",
+            good: "export default function Page() {\n  return <main />;\n}\n",
         },
     }
-    ControlFlowAsValue {
-        name: "CONTROL_FLOW_AS_VALUE",
+    JsxConditionalExpression {
+        name: "JSX_CONDITIONAL_EXPRESSION",
         severity: Error,
-        title: "Control-flow tag used as a value",
-        message: "`{name}` is compiled away and has no runtime value, so this reference would throw. Use `{name}` only as a JSX tag.",
-        explanation: "`Show`, `For`, `Repeat`, `Switch`, `Match`, `Portal`, `Head`, `Loading` and `Errored` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.",
-        repair: "Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and select that with `dynamic(() => …)`.",
+        title: "A condition renders JSX",
+        message: "A condition that renders JSX uses `<Show>` or `<Switch>`, not `{operator}`.",
+        explanation: "Conditions that produce JSX are written with the control-flow components, so every target lowers them the same way, the callback narrows the value, and `&&` cannot render a stray `0`. `data.operator` is the operator found.",
+        repair: "Apply the fix, or rewrite the expression as `<Show when={…} fallback={…}>…</Show>`.",
+        fix: Some("rewrite with `<Show>`"),
+        example: Pair {
+            bad: "export default function Page(props: { user?: string }) {\n  return <main>{props.user ? <p>{props.user}</p> : <p>Guest</p>}</main>;\n}\n",
+            good: "import { Show } from \"reze-js\";\n\nexport default function Page(props: { user?: string }) {\n  return (\n    <main>\n      <Show when={props.user} fallback={<p>Guest</p>}>\n        {(user) => <p>{user}</p>}\n      </Show>\n    </main>\n  );\n}\n",
+        },
+    }
+    JsxListExpression {
+        name: "JSX_LIST_EXPRESSION",
+        severity: Error,
+        title: "An array method renders JSX",
+        message: "A list that renders JSX uses `<For>` or `<Repeat>`, not `.{method}`.",
+        explanation: "Lists that produce JSX are written with `<For>` or `<Repeat>`, which state how rows are keyed. `data.method` is the array method found.",
+        repair: "Apply the fix, or rewrite the expression as `<For each={…}>{(item) => …}</For>`.",
+        fix: Some("rewrite with `<For>`"),
+        example: Pair {
+            bad: "export default function Page(props: { tags: string[] }) {\n  return <ul>{props.tags.map((tag) => <li>{tag}</li>)}</ul>;\n}\n",
+            good: "import { For } from \"reze-js\";\n\nexport default function Page(props: { tags: string[] }) {\n  return (\n    <ul>\n      <For each={props.tags}>{(tag) => <li>{tag}</li>}</For>\n    </ul>\n  );\n}\n",
+        },
+    }
+    JsxArrayMethod {
+        name: "JSX_ARRAY_METHOD",
+        severity: Error,
+        title: "A template calls an array method",
+        message: "Array methods are not called in templates: `.{method}` here. Compute the value in the loader, or in a `computed` for client state.",
+        explanation: "The template stays a projection of data, so every target, the Rust server included, can lower it. `.length` is a property and stays allowed. `data.method` is the method called.",
+        repair: "Move the computation into the loader and read the prepared field, or declare a `computed` for values derived from client state.",
         fix: None,
         example: Pair {
-            bad: "import { Show } from \"reze-js\";\n\nexport const Conditional = Show;\n",
-            good: "import { Show } from \"reze-js\";\n\nexport const view = <Show when={open()}><p>open</p></Show>;\n",
+            bad: "export default function Page(props: { tags: string[] }) {\n  return <p>{props.tags.join(\", \")}</p>;\n}\n",
+            good: "export default function Page(props: { tagList: string }) {\n  return <p>{props.tagList}</p>;\n}\n",
+        },
+    }
+    JsxOutsideTemplate {
+        name: "JSX_OUTSIDE_TEMPLATE",
+        severity: Error,
+        title: "JSX outside a component's returned template",
+        message: "JSX is written only in the template a component returns, in props of components, and in control-flow callbacks.",
+        explanation: "A component runs on the server only, and its template is compiled into server render code and client bindings. JSX stored in a variable or returned from a helper function has no fixed place in that template.",
+        repair: "Move the markup into the returned template, or extract it into a component.",
+        fix: None,
+        example: Pair {
+            bad: "export default function Page() {\n  const title = <h1>Hi</h1>;\n  return <main>{title}</main>;\n}\n",
+            good: "function Title() {\n  return <h1>Hi</h1>;\n}\n\nexport default function Page() {\n  return (\n    <main>\n      <Title />\n    </main>\n  );\n}\n",
+        },
+    }
+    ComponentReturn {
+        name: "COMPONENT_RETURN",
+        severity: Error,
+        title: "A component returns more than one template",
+        message: "A component returns one template, at the end of its body. Write conditions with `<Show>` or `<Switch>` inside it.",
+        explanation: "The compiler gives every component one fixed template, so client bindings can locate their nodes by path. An early `return` makes the structure depend on runtime values.",
+        repair: "Remove the early return and wrap the alternatives in `<Show>` or `<Switch>`.",
+        fix: None,
+        example: Pair {
+            bad: "export default function Page(props: { ok: boolean }) {\n  if (!props.ok) return <p>No</p>;\n  return <p>Yes</p>;\n}\n",
+            good: "import { Show } from \"reze-js\";\n\nexport default function Page(props: { ok: boolean }) {\n  return (\n    <Show when={props.ok} fallback={<p>No</p>}>\n      <p>Yes</p>\n    </Show>\n  );\n}\n",
         },
     }
     ControlFlowAttribute {
         name: "CONTROL_FLOW_ATTRIBUTE",
         severity: Error,
-        title: "Attribute a control-flow tag does not accept",
-        message: "`<{tag}>` does not accept `{attribute}`, so it would be silently dropped. Remove it.",
-        explanation: "A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`, `<Loading fallback>`, `<Errored fallback>`, and `<Head>` takes none. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).",
-        repair: "Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.",
-        fix: Some("remove `{attribute}`"),
+        title: "Attribute a control-flow component does not accept",
+        message: "`<{tag}>` does not accept `{attribute}`. Remove it.",
+        explanation: "Control-flow components accept a fixed set of attributes: `<Show when fallback>`, `<Switch fallback>`, `<Match when>`, `<For each key fallback>`, `<Repeat count fallback>`, `<Loading fallback>`, `<Errored fallback>`, `<Portal mount>`. `data.tag` is the component and `data.attribute` the attribute.",
+        repair: "Remove the attribute.",
+        fix: None,
         example: Pair {
-            bad: "import { Show } from \"reze-js\";\n\nexport const view = <Show when={open()} keyed><p>open</p></Show>;\n",
-            good: "import { Show } from \"reze-js\";\n\nexport const view = <Show when={open()}><p>open</p></Show>;\n",
+            bad: "import { Show } from \"reze-js\";\n\nexport default function Page(props: { ok: boolean }) {\n  return <Show when={props.ok} each={1}><p>ok</p></Show>;\n}\n",
+            good: "import { Show } from \"reze-js\";\n\nexport default function Page(props: { ok: boolean }) {\n  return <Show when={props.ok}><p>ok</p></Show>;\n}\n",
         },
     }
     ControlFlowMissing {
         name: "CONTROL_FLOW_MISSING",
         severity: Error,
-        title: "Control-flow tag without its required attribute",
-        message: "`<{tag}>` needs `{attribute}` to decide what to render. Add `{attribute}={…}`.",
-        explanation: "`<Show>` and `<Match>` render by `when`, `<For>` by `each`, `<Repeat>` by `count`, and `<Errored>` needs `fallback` to show on failure. Without it there is nothing to decide on. `data.tag` is the tag and `data.attribute` the missing attribute.",
-        repair: "Add the attribute with the condition (`when`), the list (`each`), the number of rows (`count`) or the failure view (`fallback={(error, reset) => …}`).",
+        title: "A control-flow component lacks a required attribute",
+        message: "`<{tag}>` needs `{attribute}`.",
+        explanation: "`<Show>` and `<Match>` need `when`, `<For>` needs `each`, `<Repeat>` needs `count`. `data.tag` is the component and `data.attribute` the missing attribute.",
+        repair: "Add the attribute.",
         fix: None,
         example: Pair {
-            bad: "import { Show } from \"reze-js\";\n\nexport const view = <Show fallback={<p>closed</p>}><p>open</p></Show>;\n",
-            good: "import { Show } from \"reze-js\";\n\nexport const view = <Show when={open()} fallback={<p>closed</p>}><p>open</p></Show>;\n",
+            bad: "import { Show } from \"reze-js\";\n\nexport default function Page() {\n  return <Show><p>ok</p></Show>;\n}\n",
+            good: "import { Show } from \"reze-js\";\n\nexport default function Page(props: { ok: boolean }) {\n  return <Show when={props.ok}><p>ok</p></Show>;\n}\n",
         },
     }
     ControlFlowChildren {
         name: "CONTROL_FLOW_CHILDREN",
         severity: Error,
-        title: "Control-flow tag with children it cannot render",
-        message: "`<{tag}>` expects {expected} as children, so this cannot be compiled.",
-        explanation: "`<Show>`, `<Match>`, `<Portal>`, `<Loading>` and `<Errored>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only the head elements `<title>`, `<base>`, `<meta>`, `<link>`, `<script>` and `<style>`; a `<noscript>` in the head parses as text while scripts run, so it belongs in `document.tsx`. `data.tag` is the tag and `data.expected` what it takes.",
-        repair: "Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`, and keep only head elements in `<Head>`.",
+        title: "Children a control-flow component cannot render",
+        message: "`<{tag}>` takes {expected} as children.",
+        explanation: "`<For>` and `<Repeat>` take one callback that renders a row. `<Show>` takes markup or one callback that receives the narrowed value. `<Switch>` takes only `<Match>` elements. `data.tag` is the component and `data.expected` what it accepts.",
+        repair: "Write the children in the expected form.",
         fix: None,
         example: Pair {
-            bad: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()}><li>item</li></For></ul>;\n",
-            good: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()}>{(item) => <li>{item}</li>}</For></ul>;\n",
+            bad: "import { For } from \"reze-js\";\n\nexport default function Page(props: { tags: string[] }) {\n  return <ul><For each={props.tags}><li /></For></ul>;\n}\n",
+            good: "import { For } from \"reze-js\";\n\nexport default function Page(props: { tags: string[] }) {\n  return <ul><For each={props.tags}>{(tag) => <li>{tag}</li>}</For></ul>;\n}\n",
         },
     }
-    MatchOutsideSwitch {
-        name: "MATCH_OUTSIDE_SWITCH",
+    ControlFlowAsValue {
+        name: "CONTROL_FLOW_AS_VALUE",
         severity: Error,
-        title: "`<Match>` outside `<Switch>`",
-        message: "`<Match>` only works as a direct child of `<Switch>`. Move it into a `<Switch>`.",
-        explanation: "`<Match>` is a case of the `<Switch>` around it; on its own, or nested deeper, there is no switch to choose it.",
-        repair: "Make the `<Match>` a direct child of a `<Switch>`, or use `<Show when={…}>` for a single condition.",
+        title: "A compiler component used as a value",
+        message: "`{name}` exists only as a JSX tag. Use it as `<{name}>`.",
+        explanation: "`Show`, `Switch`, `Match`, `For`, `Repeat`, `Loading`, `Errored`, and `Portal` are compiled away and have no runtime value. `data.name` is the component.",
+        repair: "Render it as a tag.",
         fix: None,
         example: Pair {
-            bad: "import { Match } from \"reze-js\";\n\nexport const view = <div><Match when={ready()}><b>ready</b></Match></div>;\n",
-            good: "import { Match, Switch } from \"reze-js\";\n\nexport const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Switch></div>;\n",
+            bad: "import { Show } from \"reze-js\";\n\nexport const Conditional = Show;\n",
+            good: "import { Show } from \"reze-js\";\n\nexport default function Page(props: { ok: boolean }) {\n  return <Show when={props.ok}><p>ok</p></Show>;\n}\n",
         },
     }
-    HeadAttr {
-        name: "HEAD_ATTR",
+    UnknownComponent {
+        name: "UNKNOWN_COMPONENT",
         severity: Error,
-        title: "Invalid `<Head>` tag",
-        message: "`<{tag}>` in `<Head>` {detail}.",
-        explanation: "A keyed `<Head>` tag replaces the tag of the same key from `document.tsx` or an outer component while it is mounted, so its key must be static. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `link rel=\"canonical\"` by its `rel` and any other `link` by `rel` and `href`, and `script` by `src`; those attributes must be known at compile time: a string literal, or a `const` declared earlier in the same module whose value is a string literal or a template of such constants. Imported bindings are not resolved. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta`, `link` and `base` take no children, and `script`, `style` and `title` take only text. `data.tag` is the tag and `data.detail` what is wrong.",
-        repair: "Write the identity attributes as string literals or `const` strings declared in this module, or move the tag out of `<Head>`.",
+        title: "A component the compiler cannot find",
+        message: "`<{name}>` does not resolve to a component declared in the project.",
+        explanation: "The compiler analyzes every component it renders: their templates become server render code and client bindings. A tag must name a component declared in the project or imported from a module with source. `data.name` is the tag.",
+        repair: "Import the component from a project module, or declare it.",
         fix: None,
         example: Pair {
-            bad: "import { Head } from \"reze-js\";\n\nexport const view = <Head><script src={url} /></Head>;\n",
-            good: "import { Head } from \"reze-js\";\n\nconst url = \"/sdk.js\";\n\nexport const view = <Head><script src={url} /></Head>;\n",
+            bad: "export default function Page() {\n  return <Missing />;\n}\n",
+            good: "function Present() {\n  return <p />;\n}\n\nexport default function Page() {\n  return <Present />;\n}\n",
         },
     }
-    DocumentShape {
-        name: "DOCUMENT_SHAPE",
+    PackageSourceMissing {
+        name: "PACKAGE_SOURCE_MISSING",
         severity: Error,
-        title: "Document is not an `<html>` page",
-        message: "The document {detail}.",
-        explanation: "A document module default-exports a function that returns one `<html>` element holding a `<head>` and then a `<body>`. Raw-text elements such as `<script>` and `<style>` take only text, void elements take no children, and a component cannot render itself. These hold however the document renders. `data.detail` is what is wrong.",
-        repair: "Default-export `function Document(props) { return <html><head>…</head><body>…</body></html>; }`.",
+        title: "A component from a package without source",
+        message: "`{package}` exposes no `reze` source, so `{name}` cannot be compiled.",
+        explanation: "The compiler analyzes a library component like project code, so a package publishes its source through the `reze` export condition. `data.package` is the package and `data.name` the component.",
+        repair: "Use a package with a `reze` export, or write the component in the project.",
         fix: None,
         example: Pair {
-            bad: "export default function Document(props) {\n  return <div>{props.children}</div>;\n}\n",
-            good: "export default function Document(props) {\n  return <html><head /><body><div>{props.children}</div></body></html>;\n}\n",
+            bad: "import { Dialog } from \"some-ui\";\n\nexport default function Page() {\n  return <Dialog />;\n}\n",
+            good: "function Dialog() {\n  return <dialog />;\n}\n\nexport default function Page() {\n  return <Dialog />;\n}\n",
         },
     }
-    DocumentDynamic {
-        name: "DOCUMENT_DYNAMIC",
-        severity: Info,
-        title: "Document renders at build time",
-        message: "The document holds {detail}, which is not static, so it renders by running its code instead of compiling to HTML.",
-        explanation: "The compiler turns a static document into HTML without running it: literals, template literals without substitutions, literal `const`s, the bundler's `define` values, the `children` slot, and components whose props are static, from the document module, other source files, or packages that export their source under the `reze` condition. When anything else is in the page, the document module runs once on the server at build time and when the dev server renders its first page, and its output becomes the page. Both produce the same page. `data.detail` names the first part that is not static.",
-        repair: "No action is needed. To compile the document without running it, make that part static.",
+    SpreadChild {
+        name: "SPREAD_CHILD",
+        severity: Error,
+        title: "A spread child in JSX",
+        message: "`{...}` as a JSX child has no fixed place in the template. Render lists with `<For>`.",
+        explanation: "A spread child inserts an unknown number of nodes, which no target can locate.",
+        repair: "Use `<For each={…}>`.",
         fix: None,
         example: Pair {
-            bad: "export default function Document(props) {\n  return <html lang={navigator.language}><head /><body><div>{props.children}</div></body></html>;\n}\n",
-            good: "export default function Document(props) {\n  return <html lang=\"en\"><head /><body><div>{props.children}</div></body></html>;\n}\n",
+            bad: "export default function Page(props: { items: string[] }) {\n  return <p>{...props.items}</p>;\n}\n",
+            good: "import { For } from \"reze-js\";\n\nexport default function Page(props: { items: string[] }) {\n  return <p><For each={props.items}>{(item) => item}</For></p>;\n}\n",
         },
     }
-    DocumentRoot {
-        name: "DOCUMENT_ROOT",
+    ServerHoleUnsupported {
+        name: "SERVER_HOLE_UNSUPPORTED",
         severity: Error,
-        title: "Missing or misplaced document root",
-        message: "The document {detail}.",
-        explanation: "The app renders into the element that holds the document's `children`: the server streams into it and client navigation replaces its content. That element exists exactly once, holds nothing else, sits inside `<body>`, and is an ordinary element, not `<body>` itself, a raw-text, void, `<template>` or SVG element. Its literal `id` names the root, `app` when it has none, and no other element may reuse that `id`. `data.detail` is what is wrong.",
-        repair: "Render `{props.children}` once, alone, in an element inside `<body>`, for example `<body><div id=\"app\">{props.children}</div></body>`.",
+        title: "A template hole the server cannot lower",
+        message: "{reason}. Compute the value in the loader, or make the element interactive on the client.",
+        explanation: "A hole rendered on the server is a projection of params, data, context, and loop variables: field access, literals, template literals, logical and comparison operators, arithmetic, and `.length`. Calls to unanalyzed functions have no Rust lowering, and the JS server and the Rust server must render the same bytes. `data.reason` names the expression.",
+        repair: "Compute the value in the loader and read the prepared field.",
         fix: None,
         example: Pair {
-            bad: "export default function Document(props) {\n  return <html><head /><body>{props.children}</body></html>;\n}\n",
-            good: "export default function Document(props) {\n  return <html><head /><body><div>{props.children}</div></body></html>;\n}\n",
+            bad: "export default function Page(props: { at: Date }) {\n  return <time>{props.at.toISOString()}</time>;\n}\n",
+            good: "export default function Page(props: { at: string }) {\n  return <time>{props.at}</time>;\n}\n",
         },
     }
-    FlowParamCalled {
-        name: "FLOW_PARAM_CALLED",
+    HandlerCaptureUnserializable {
+        name: "HANDLER_CAPTURE_UNSERIALIZABLE",
         severity: Error,
-        title: "Flow parameter called as a function",
-        message: "`{param}` reads as a signal here, so `{param}()` calls the getter instead of reading the value. Remove the call.",
-        explanation: "The value parameter of a `<Show>` or `<Match>` child, and the `<For>` row parameters the `keyed` mode makes reactive, read as signals: the compiler turns each read into a getter call. An explicit call would call the getter itself, so it is refused. `data.param` is the parameter.",
-        repair: "Apply the fix to remove `()`. Read the parameter where the value is used, like a `signal`.",
-        fix: Some("read `{param}` as a signal"),
-        example: Pair {
-            bad: "import { Show } from \"reze-js\";\n\nexport const view = <Show when={user()}>{(u) => <b>{u().name}</b>}</Show>;\n",
-            good: "import { Show } from \"reze-js\";\n\nexport const view = <Show when={user()}>{(u) => <b>{u.name}</b>}</Show>;\n",
-        },
-    }
-    ForKeyedDynamic {
-        name: "FOR_KEYED_DYNAMIC",
-        severity: Error,
-        title: "Non-static `<For keyed>`",
-        message: "`keyed` must be `true`, `false`, or a key function written here, so the compiler knows which row parameters read as signals. The value here cannot be decided.",
-        explanation: "`<For>` passes its row parameters as getters or plain values depending on `keyed`: without it the index is a getter, with `keyed={false}` the item is, and with a key function both are. A variable, a member, or a call leaves the parameters unknown, so it is refused. `keyed` is read once when the list is built.",
-        repair: "Write `keyed`, `keyed={true}`, `keyed={false}`, or `keyed={(item) => item.id}`. To share one key function, write it in each `<For>`.",
+        title: "A handler captures a value that cannot reach the browser",
+        message: "`{name}` is {what}, which cannot cross from server to browser.",
+        explanation: "A handler runs in the browser without its component, so every value it captures reaches the browser in the client state: signals and stores as references, data as positional JSON, project functions as code. Anything else, such as class instances or values from unanalyzed calls, cannot be encoded. `data.name` is the captured variable and `data.what` what it holds.",
+        repair: "Create the value inside the handler or inside an `effect`.",
         fix: None,
         example: Pair {
-            bad: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()} keyed={mode}>{(item) => <li>{item}</li>}</For></ul>;\n",
-            good: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={items()} keyed={(item) => item.id}>{(item) => <li>{item.id}</li>}</For></ul>;\n",
+            bad: "export default function Page() {\n  const socket = new WebSocket(\"/live\");\n  return <button onClick={() => socket.send(\"ping\")}>Ping</button>;\n}\n",
+            good: "export default function Page() {\n  return <button onClick={() => new WebSocket(\"/live\").send(\"ping\")}>Ping</button>;\n}\n",
         },
     }
-    SignalNotDeclared {
-        name: "SIGNAL_NOT_DECLARED",
+    ModuleStateServerWrite {
+        name: "MODULE_STATE_SERVER_WRITE",
         severity: Error,
-        title: "`signal` or `computed` outside a variable declaration",
-        message: "`{primitive}` is only valid as the initializer of `let name = {primitive}(…)` or `const name = {primitive}(…)`. The compiler rewrites every use of that name, so it needs the declaration to see it.",
-        explanation: "`signal(…)` and `computed(…)` are compiler syntax, not functions: the declared variable becomes a getter (and, for a written `signal`, a setter), and each read and write of it is rewritten. A call anywhere else, a `var` declaration, the syntax passed around as a value or re-exported has no variable to rewrite. `data.primitive` is the syntax used.",
-        repair: "Declare the variable with `let name = signal(…)` or `const name = computed(…)` and use `name` where the value is needed. To pass the current value around, read `name` where it is needed or wrap the read in a function: `() => name`.",
+        title: "The server render writes module state",
+        message: "`{name}` is module state, and the server render writes it here. Write it from a handler or an `effect`.",
+        explanation: "A server process serves many users, so a write during the server render would leak between requests. Module state is read-only on the server, and its initializer is a constant. `data.name` is the state.",
+        repair: "Move the write into a handler or an `effect`, or keep the value in loader data.",
         fix: None,
         example: Pair {
-            bad: "import { signal } from \"reze-js\";\n\nexport const view = <p>{signal(0)}</p>;\n",
-            good: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport const view = <button onClick={() => (count += 1)}>{count}</button>;\n",
+            bad: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\n\nexport default function Page() {\n  count = 1;\n  return <p>{count}</p>;\n}\n",
+            good: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\n\nexport default function Page() {\n  return <button onClick={() => count++}>{count}</button>;\n}\n",
         },
     }
-    SignalPattern {
-        name: "SIGNAL_PATTERN",
+    ModuleStateInitializer {
+        name: "MODULE_STATE_INITIALIZER",
         severity: Error,
-        title: "`signal` or `computed` destructured",
-        message: "`{primitive}(…)` initializes a destructuring pattern. A reactive variable is one name: declare `const name = {primitive}(…)`.",
-        explanation: "The declared name is rewritten into a getter (and, for a written `signal`, a setter), which needs exactly one identifier to rename. `data.primitive` is the syntax used.",
-        repair: "Apply the fix for the `[get, set]` tuple of other libraries: it declares one name, turns `name()` reads into `name` and `setName(value)` statements into `name = value`. Without a fix, declare one name per `signal` or `computed`, for example `let count = signal(0)`, and assign to it to write it.",
-        fix: Some("declare `{name}` as one `{primitive}` variable"),
-        example: Pair {
-            bad: "import { signal } from \"reze-js\";\n\nconst [count, setCount] = signal(0);\nexport const view = <button onClick={() => setCount(count() + 1)}>{count()}</button>;\n",
-            good: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport const view = <button onClick={() => (count += 1)}>{count}</button>;\n",
-        },
-    }
-    SignalDefaultExport {
-        name: "SIGNAL_DEFAULT_EXPORT",
-        severity: Error,
-        title: "`signal` or `computed` as the default export",
-        message: "`{signal}` is a `{primitive}` and cannot be the default export: a default import carries no reactive facts, so it would read a getter function or a value that never updates.",
-        explanation: "Named exports of `signal` and `computed` variables are reactive: importers read them as values. The default export is not analyzed across modules, so it is refused. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.",
-        repair: "Export it by name: `export let count = signal(0)`, or export a function that reads it.",
-        fix: Some("export `{signal}` by name"),
-        example: Pair {
-            bad: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport default count;\n",
-            good: "import { signal } from \"reze-js\";\n\nexport let count = signal(0);\n",
-        },
-    }
-    SignalAssignPattern {
-        name: "SIGNAL_ASSIGN_PATTERN",
-        severity: Error,
-        title: "`signal` written through a pattern",
-        message: "`{signal}` is written through a destructuring pattern or a `for` loop head, which the compiler cannot turn into a setter call. Assign with `{signal} = value`.",
-        explanation: "A write to a `signal` becomes a setter call. In `[a] = list`, `({ a } = obj)` and `for (a of list)` the assignment is done by the language, not by an expression the compiler can replace. `data.signal` is the written variable.",
-        repair: "Read the value into a temporary and assign it with `name = value` in a statement.",
+        title: "Module state starts from a non-constant value",
+        message: "The initializer of module state `{name}` must be a constant, because the server renders it and the state block carries nothing for it.",
+        explanation: "Module state has one instance in the browser and is read-only on the server. Its initial value must be the same in every request and every build, so the compiler requires a literal. `data.name` is the state.",
+        repair: "Initialize it with a literal, and write the real value from a handler, or use loader data.",
         fix: None,
         example: Pair {
-            bad: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport function pick(list) {\n  [count] = list;\n}\nexport const view = <p>{count}</p>;\n",
-            good: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport function pick(list) {\n  count = list[0];\n}\nexport const view = <p>{count}</p>;\n",
+            bad: "import { signal } from \"reze-js\";\n\nexport let now = signal(Date.now());\n",
+            good: "import { signal } from \"reze-js\";\n\nexport let now = signal(0);\n",
         },
     }
-    SignalUpdateInExpression {
-        name: "SIGNAL_UPDATE_IN_EXPRESSION",
+    EventDecisionDeferred {
+        name: "EVENT_DECISION_DEFERRED",
         severity: Error,
-        title: "`++`/`--` on a `signal` inside an expression",
-        message: "`{signal}` is incremented or decremented as part of an expression. Use it as a statement, or write `{signal} += 1`, which is an expression with the new value.",
-        explanation: "`count++` as a statement becomes `setCount(count() + 1)`. Inside a larger expression, for example `() => count++` or `use(count++)`, the value of the old `++` would change meaning, so it is not accepted. `data.signal` is the updated variable.",
-        repair: "Put the update in its own statement, or use `count += 1` (value: the new count) or `count -= 1`.",
-        fix: Some("write `{signal} += 1` or `{signal} -= 1`"),
-        example: Pair {
-            bad: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport const view = <button onClick={() => count++}>{count}</button>;\n",
-            good: "import { signal } from \"reze-js\";\n\nlet count = signal(0);\nexport const view = <button onClick={() => { count++; }}>{count}</button>;\n",
-        },
-    }
-    ComputedWritten {
-        name: "COMPUTED_WRITTEN",
-        severity: Error,
-        title: "`computed` written",
-        message: "`{computed}` is a `computed` and cannot be written: its value is derived from what its expression reads. Write to those signals instead.",
-        explanation: "A `computed` variable is a derived getter with no setter. Assignments, compound assignments, `++`/`--` and writes through a pattern or a `for` loop head are refused. `data.computed` is the written variable.",
-        repair: "Write the `signal` the expression reads, or declare the variable with `signal` when it is meant to be set directly.",
+        title: "An event decision that cannot wait for the chunk",
+        message: "`{method}` depends on {condition}, which the dispatcher cannot evaluate before the chunk loads.",
+        explanation: "The handler's chunk loads when the user starts the interaction, so the dispatcher decides `preventDefault`, `stopPropagation`, and `stopImmediatePropagation` from markup. Unconditional calls and conditions on `key`, `code`, `button`, and the modifier flags are extracted into the markup; any other condition is not. `data.method` is the call; `data.condition` is the test it depends on, or `control flow`.",
+        repair: "Move the check to a native mechanism, such as `required` or a `beforeunload` guard, or set `eager` on the element so its chunk loads before the first interaction.",
         fix: None,
         example: Pair {
-            bad: "import { computed, signal } from \"reze-js\";\n\nlet count = signal(0);\nconst doubled = computed(count * 2);\nexport const view = <button onClick={() => (doubled = 0)}>{doubled}</button>;\n",
-            good: "import { computed, signal } from \"reze-js\";\n\nlet count = signal(0);\nconst doubled = computed(count * 2);\nexport const view = <button onClick={() => (count = 0)}>{doubled}</button>;\n",
+            bad: "import { signal } from \"reze-js\";\n\nexport default function Page() {\n  let dirty = signal(false);\n  return <a href=\"/next\" onClick={(event) => { if (dirty) event.preventDefault(); }}>Next</a>;\n}\n",
+            good: "export default function Page() {\n  return <a href=\"/next\" onClick={(event) => event.preventDefault()}>Next</a>;\n}\n",
         },
     }
-    ComputedFunction {
-        name: "COMPUTED_FUNCTION",
+    DynamicComponentUnbounded {
+        name: "DYNAMIC_COMPONENT_UNBOUNDED",
         severity: Error,
-        title: "Function literal passed to `computed`",
-        message: "`computed` takes the expression itself and wraps it in a function, so a function literal here would make the derived value that function. Write `computed(expression)` without `() =>`.",
-        explanation: "`const doubled = computed(count * 2)` derives `doubled` from `count * 2`. A function literal as the argument is refused rather than quietly deriving a function. A derived value that is a function comes from another expression: a call, a conditional or an identifier.",
-        repair: "Apply the fix to remove `() =>`. For several statements, move them into a function and derive its call: `computed(compute())`.",
-        fix: Some("remove `() =>`"),
-        example: Pair {
-            bad: "import { computed, signal } from \"reze-js\";\n\nlet count = signal(0);\nconst doubled = computed(() => count * 2);\nexport const view = <button onClick={() => (count += 1)}>{doubled}</button>;\n",
-            good: "import { computed, signal } from \"reze-js\";\n\nlet count = signal(0);\nconst doubled = computed(count * 2);\nexport const view = <button onClick={() => (count += 1)}>{doubled}</button>;\n",
-        },
-    }
-    ActionArgument {
-        name: "ACTION_ARGUMENT",
-        severity: Error,
-        title: "`action` without a function literal",
-        message: "`action` needs its body written at the call, as an arrow function or function expression, so the compiler can keep the action current across each `await`. Write `action(async (…) => { … })`.",
-        explanation: "`action(fn)` rewrites `fn`: every `await` in its body resumes the action and the body ends it. An identifier, a call or a missing argument hides the body from the compiler.",
-        repair: "Write the body in the call and call the existing function from it: `action(async (todo) => { await save(todo); })`.",
+        title: "The candidates of `dynamic` are not known",
+        message: "The candidates of `dynamic` are not known at build time. Choose from an object literal of components.",
+        explanation: "Every target renders each candidate of a dynamic component and switches between them, so the set must be finite and visible to the compiler: an object literal whose values are project components.",
+        repair: "Choose from an object, `dynamic(icons[props.kind])` with `const icons = { star: Star }`.",
         fix: None,
         example: Pair {
-            bad: "import { action } from \"reze-js\";\n\nexport const save = action(saveTodo);\n",
-            good: "import { action } from \"reze-js\";\n\nexport const save = action(async (todo) => {\n  await saveTodo(todo);\n});\n",
+            bad: "import { dynamic } from \"reze-js\";\n\nexport default function Page(props: { c: any }) {\n  const Widget = dynamic(props.c);\n  return <Widget />;\n}\n",
+            good: "import { dynamic } from \"reze-js\";\n\nfunction A() {\n  return <p>a</p>;\n}\n\nconst parts = { a: A };\n\nexport default function Page(props: { c: \"a\" }) {\n  const Widget = dynamic(parts[props.c]);\n  return <Widget />;\n}\n",
         },
     }
-    ActionUnsupported {
-        name: "ACTION_UNSUPPORTED",
+    MutationInputUntyped {
+        name: "MUTATION_INPUT_UNTYPED",
         severity: Error,
-        title: "`for await`, `await using` or a generator in `action`",
-        message: "`{construct}` suspends the `action` body where the compiler cannot resume the action, so writes after it would escape the action. Use a plain `await` instead.",
-        explanation: "The compiler resumes the action after each `await` expression. `for await` and `await using` suspend without one, and a generator suspends at every `yield`. `data.construct` is what was found: `for await`, `await using` or `generator`.",
-        repair: "Loop with `for (…) { const item = await next(); … }`, dispose with `try { … } finally { await resource[Symbol.asyncDispose](); }`, and pass an `async` function instead of a generator.",
+        title: "A mutation without an input contract",
+        message: "A mutation is a public endpoint and needs a contract for its input. Annotate the input, or pass a schema.",
+        explanation: "Every `mutation` is a public POST endpoint, so its input is validated at runtime. The compiler generates the validator from the input annotation; a Standard Schema passed as the first argument replaces it. `unknown`, `any`, and a missing annotation describe nothing.",
+        repair: "Annotate the first parameter with the input type, or pass a schema.",
         fix: None,
         example: Pair {
-            bad: "import { action } from \"reze-js\";\n\nexport const load = action(async (list) => {\n  for await (const item of stream()) list.push(item);\n});\n",
-            good: "import { action } from \"reze-js\";\n\nexport const load = action(async (list) => {\n  for (const item of await fetchAll()) list.push(item);\n});\n",
+            bad: "import { mutation } from \"reze-js/server\";\n\nexport const save = mutation(async (input) => input);\n",
+            good: "import { mutation } from \"reze-js/server\";\n\nexport const save = mutation(async (input: { title: string }) => input.title);\n",
         },
     }
-    ActionNotCalled {
-        name: "ACTION_NOT_CALLED",
+    MutationInputUnresolved {
+        name: "MUTATION_INPUT_UNRESOLVED",
         severity: Error,
-        title: "`action` used as a value",
-        message: "`action` is compiler syntax and has no runtime value, so this reference would fail. Call it with the body: `action(async (…) => { … })`.",
-        explanation: "Only a call `action(fn)` is rewritten. Passing `action` around, storing it or re-exporting it leaves a reference to a function that does not exist at runtime.",
-        repair: "Call `action` where the action is defined.",
+        title: "A data type the compiler does not lower",
+        message: "{reason}. Write the type out, or pass a schema.",
+        explanation: "The compiler lowers annotations syntactically: primitives, literals and their unions, object types, interfaces and aliases from project files, arrays, tuples, `Record`, `Map`, `Set`, `Date`, `Uint8Array`, `File`, discriminated unions, and the integer aliases of `reze-js/types`. `data.reason` names what it could not lower.",
+        repair: "Write the object type out, use a supported type, or pass a schema.",
         fix: None,
         example: Pair {
-            bad: "import { action } from \"reze-js\";\n\nexport const make = action;\n",
-            good: "import { action } from \"reze-js\";\n\nexport const save = action(async (todo) => {\n  await saveTodo(todo);\n});\n",
+            bad: "import { mutation } from \"reze-js/server\";\n\ninterface Todo { title: string; done: boolean }\n\nexport const save = mutation(async (input: Pick<Todo, \"title\">) => input.title);\n",
+            good: "import { mutation } from \"reze-js/server\";\n\nexport const save = mutation(async (input: { title: string }) => input.title);\n",
         },
     }
-    PropsAsValue {
-        name: "PROPS_AS_VALUE",
+    MutationIdCollision {
+        name: "MUTATION_ID_COLLISION",
         severity: Error,
-        title: "`mergeProps`, `splitProps` or `omitProps` used as a value",
-        message: "`{name}` is compiler syntax and has no runtime value, so this reference would fail. Call it: `mergeProps(…)`, `splitProps(…)` or `omitProps(…)`.",
-        explanation: "Only calls of the three props helpers are rewritten: dissolvable calls become object literals, the rest compiles to direct runtime calls. Passing a helper around, storing it or re-exporting it leaves a reference to a function that does not exist at runtime. `data.name` is the helper.",
-        repair: "Call the helper where the props are handled.",
+        title: "Two mutations share an endpoint id",
+        message: "`{name}` and `{other}` hash to the same mutation id `{id}`. Rename one of them.",
+        explanation: "A mutation id is base-36 of a hash of its module path and export name, so it stays the same across builds. Two mutations with the same id would share an endpoint. `data.name` and `data.other` are the mutations and `data.id` the id.",
+        repair: "Rename the export or the file of one mutation.",
+        fix: None,
+        example: Prose("Two mutations in different files whose path and export name hash to the same id."),
+    }
+    MutationFormField {
+        name: "MUTATION_FORM_FIELD",
+        severity: Error,
+        title: "A form field the mutation input does not declare",
+        message: "The form posts `{field}`, which the input type of `{mutation}` does not declare.",
+        explanation: "A `<form action={mutation}>` posts its named fields as the mutation input. A field the input type does not declare would be rejected or ignored. `data.field` is the field and `data.mutation` the mutation.",
+        repair: "Add the field to the input type, or rename the field.",
         fix: None,
         example: Pair {
-            bad: "import { omitProps } from \"reze-js\";\n\nexport const view = omitProps;\n",
-            good: "import { omitProps } from \"reze-js\";\n\nexport const view = omitProps(props, \"id\");\n",
+            bad: "import { mutation } from \"reze-js/server\";\n\nexport const save = mutation(async (input: { title: string }) => input.title);\n\nexport default function Page() {\n  return <form action={save}><input name=\"name\" /></form>;\n}\n",
+            good: "import { mutation } from \"reze-js/server\";\n\nexport const save = mutation(async (input: { title: string }) => input.title);\n\nexport default function Page() {\n  return <form action={save}><input name=\"title\" /></form>;\n}\n",
         },
     }
-    IslandTrigger {
-        name: "ISLAND_TRIGGER",
+    LoaderResultUntyped {
+        name: "LOADER_RESULT_UNTYPED",
         severity: Error,
-        title: "`island` with an unknown trigger",
-        message: "`{value}` is not an island trigger: `island` takes `eager`, `idle`, `visible`, `media` or `interaction`. Write `island` for the default, which is `eager`, or `island=\"visible\"`.",
-        explanation: "`island` marks a component as an island: it renders its fallback and loads the component when the trigger fires. The trigger is read at compile time, so it must be a bare attribute or a string literal. `data.value` is what was written.",
-        repair: "Write `island` or one of the five triggers as a string literal. A trigger chosen at runtime is not supported.",
+        title: "Client code reads loader data without a result type",
+        message: "The client reads `{read}`, but the loader of `{route}` has no result type.",
+        explanation: "Client state crosses the wire as positional JSON, which needs a type the compiler can lower. The compiler never asks the TypeScript checker for an inferred type. `data.read` is the read and `data.route` the route pattern.",
+        repair: "Annotate the result, `loader<Post>(…)` or `async (): Promise<Post> => …`.",
         fix: None,
         example: Pair {
-            bad: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"sometimes\" />;\n",
-            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"visible\" />;\n",
+            bad: "import { signal } from \"reze-js\";\nimport { loader } from \"reze-js/server\";\n\nexport const load = loader(async () => ({ likes: 1 }));\n\nexport default function Page(props: { data: { likes: number } }) {\n  let likes = signal(props.data.likes);\n  return <button onClick={() => likes++}>{likes}</button>;\n}\n",
+            good: "import { signal } from \"reze-js\";\nimport { loader } from \"reze-js/server\";\n\ninterface Post { likes: number }\n\nexport const load = loader<Post>(async () => ({ likes: 1 }));\n\nexport default function Page(props: { data: Post }) {\n  let likes = signal(props.data.likes);\n  return <button onClick={() => likes++}>{likes}</button>;\n}\n",
         },
     }
-    IslandMediaMissing {
-        name: "ISLAND_MEDIA_MISSING",
+    LoaderParamsType {
+        name: "LOADER_PARAMS_TYPE",
         severity: Error,
-        title: "`island=\"media\"` without `islandMedia`",
-        message: "`island=\"media\"` loads when a media query matches, so it needs `islandMedia=\"(…)\"` with the query. Add it.",
-        explanation: "A `media` island never observes an element: it loads when the query matches, immediately when it already does. Without the query there is nothing to match.",
-        repair: "Add `islandMedia=\"(max-width: 40rem)\"` next to `island=\"media\"`.",
+        title: "A params annotation names a key the pattern lacks",
+        message: "The params annotation declares `{name}`, which the pattern `{route}` does not have.",
+        explanation: "Params come from the URL pattern of the route. An annotation can change their type but not add keys. `data.name` is the key and `data.route` the pattern.",
+        repair: "Remove the key, or rename the route file to add the param.",
         fix: None,
-        example: Pair {
-            bad: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"media\" />;\n",
-            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"media\" islandMedia=\"(max-width: 40rem)\" />;\n",
-        },
+        example: Prose("`loader(async ({ params }: { params: { slug: string } }) => …)` in `src/routes/blog/[id].tsx`."),
     }
-    IslandOnElement {
-        name: "ISLAND_ON_ELEMENT",
+    DataTypeUnsupported {
+        name: "DATA_TYPE_UNSUPPORTED",
         severity: Error,
-        title: "`island` on a native element",
-        message: "`island` marks a component, but this is a native element, so there is no component to defer. Move `island` to a component.",
-        explanation: "Only a component tag takes `island` and its companions `islandMedia`, `islandRootMargin` and `islandFallback`. On a native element they would render as useless attributes.",
-        repair: "Move the attributes to the component that should load later.",
+        title: "Data with no wire encoding",
+        message: "{reason}, which has no wire encoding.",
+        explanation: "Values that reach the browser are encoded as positional JSON, which carries primitives, literals, objects, arrays, maps, sets, dates, and bytes. `data.reason` names the type.",
+        repair: "Convert the value in the loader to a supported type.",
         fix: None,
-        example: Pair {
-            bad: "export const view = <section island=\"visible\" />;\n",
-            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"visible\" />;\n",
-        },
+        example: Prose("A loader annotated `loader<{ at: Temporal.Instant }>` whose field a handler reads."),
     }
-    IslandOrphan {
-        name: "ISLAND_ORPHAN",
+    ServerInSpa {
+        name: "SERVER_IN_SPA",
         severity: Error,
-        title: "Island companion without `island`",
-        message: "`{attribute}` only means something next to `island`, but this component has none, so it would reach the component as a stray prop. Add `island` or remove it.",
-        explanation: "`islandMedia`, `islandRootMargin` and `islandFallback` are consumed by the compiler and never reach the component. Without `island` there is no island to consume them. `data.attribute` is the name.",
-        repair: "Add `island=\"…\"` to the component, or remove the companion.",
-        fix: Some("remove `{attribute}`"),
-        example: Pair {
-            bad: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter islandMedia=\"(max-width: 40rem)\" />;\n",
-            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"media\" islandMedia=\"(max-width: 40rem)\" />;\n",
-        },
-    }
-    MissingModuleId {
-        name: "MISSING_MODULE_ID",
-        severity: Error,
-        title: "Build target without a module id",
-        message: "The `{target}` target keys its output by module, but no `moduleId` was passed, so this file was not compiled. Pass the canonical module id for this file.",
-        explanation: "`island` and `html` outputs are keyed by module: compiler sites, island descriptors and component registrations reference the canonical module id the build driver passes. An absent or empty `moduleId` would make those keys unstable, so compilation stops before parsing. The `client` target needs no `moduleId`. `data.target` is the requested target.",
-        repair: "Pass `moduleId` alongside `target`, for example `compile(source, filename, { target: \"island\", moduleId: \"src/view.tsx\" })`. The id itself is opaque to the compiler: the build driver owns its canonical form.",
+        title: "Server code in a client-only application",
+        message: "`target: \"spa\"` has no server to run `{name}`.",
+        explanation: "A client-only application is a static `index.html` and one chunk per route. Loaders and mutations need a server. `data.name` is the export.",
+        repair: "Build with a server target, or fetch the data in an `effect`.",
         fix: None,
-        example: Shows("export const view = <div />;\n"),
+        example: Prose("`export const load = loader(…)` in an application built with `reze({ target: \"spa\" })`."),
     }
-    ModuleStateShared {
-        name: "MODULE_STATE_SHARED",
-        severity: Error,
-        title: "Module state written during a request",
-        message: "`{name}` is a module-level mutable binding, and a component or route callback writes it. The module is loaded once per process, so every request shares the value and sees writes from other users.",
-        explanation: "Server rendering keeps one module instance for every request. The compiler moves module-level `signal`, `computed`, `action`, `selector`, `store`, `createContext`, `effect` and `provideContext` declarations into per-request state, but a plain `let` or `var` stays where it is and is shared. A component body, `preload`, `beforeLoad`, `redirect`, `loader` or `action` that writes such a binding leaks data between requests. `data.name` is the binding.",
-        repair: "Declare the value with `signal`, `store`, `selector` or `createContext` so the compiler recreates it per request, or move it into the route `context` from `beforeLoad`. Keep plain module variables for build-time constants only.",
-        fix: None,
-        example: Pair {
-            bad: "let cart: string[] = [];\n\nexport function Cart() {\n  cart = [...cart, \"item\"];\n  return <ul>{cart}</ul>;\n}\n",
-            good: "import { signal } from \"reze-js\";\n\nlet cart = signal<string[]>([]);\n\nexport function Cart() {\n  cart = [...cart, \"item\"];\n  return <ul>{cart}</ul>;\n}\n",
-        },
-    }
-    ServerInputSchema {
-        name: "SERVER_INPUT_SCHEMA",
-        severity: Error,
-        title: "Server function without an input schema",
-        message: "A server action is a public POST endpoint, and this call has no input schema, so its body would accept any JSON shape. Pass a schema from `reze-js/schema` as the first argument.",
-        explanation: "The compiler rewrites `server` to a typed RPC endpoint. Every request reaches the handler with whatever body a client sends, so the value must be parsed by a schema before the handler runs. The first argument must be a `reze-js/schema` builder such as `s.object`, or a module-level constant initialized with one.",
-        repair: "Write `server(s.object({ … }), async (input) => …)`. The schema validates the body and gives the handler a typed input; authorize the caller inside the handler.",
-        fix: None,
-        example: Pair {
-            bad: "import { server } from \"reze-js\";\n\nexport const save = server(async (input: { title: string }) => input.title);\n",
-            good: "import { server } from \"reze-js\";\nimport * as s from \"reze-js/schema\";\n\nexport const save = server(s.object({ title: s.string() }), async (input) => input.title);\n",
-        },
-    }
-    ChildrenPropIgnored {
-        name: "CHILDREN_PROP_IGNORED",
+    UntrackRedundant {
+        name: "UNTRACK_REDUNDANT",
         severity: Warn,
-        title: "`children` attribute next to nested children",
-        message: "`children` is set both as an attribute and as nested children, and nested children win, so the attribute is never rendered. Remove the attribute.",
-        explanation: "An element or component has both a `children` attribute and nested children. The nested children are rendered; the attribute is dead code.",
-        repair: "Apply the fix to remove the attribute, or move its value between the tags.",
-        fix: Some("remove the `children` attribute"),
+        title: "An `untrack` the compiler does not need",
+        message: "This read is already untracked here; remove `untrack`.",
+        explanation: "The compiler decides which reads subscribe: reads inside handlers and reads that only initialize state never do. `untrack` is an escape hatch for the reads a rule does not cover.",
+        repair: "Replace `untrack(() => x)` with `x`.",
+        fix: Some("remove `untrack`"),
         example: Pair {
-            bad: "export const view = <div children={label()}><b /></div>;\n",
-            good: "export const view = <div>{label()}<b /></div>;\n",
+            bad: "import { signal, untrack } from \"reze-js\";\n\nexport default function Page() {\n  let count = signal(0);\n  return <button onClick={() => console.log(untrack(() => count))}>Log</button>;\n}\n",
+            good: "import { signal } from \"reze-js\";\n\nexport default function Page() {\n  let count = signal(0);\n  return <button onClick={() => console.log(count)}>Log</button>;\n}\n",
         },
-    }
-    KeyOnElement {
-        name: "KEY_ON_ELEMENT",
-        severity: Warn,
-        title: "`key` on a native element",
-        message: "`key` does nothing on a native element and renders as a useless attribute, since list rows are keyed by `<For>`. Remove it.",
-        explanation: "Reze has no virtual DOM to reconcile by `key`: `<For>` keys its rows by item identity, or by its own `keyed` function. On a native element `key` is an ordinary attribute.",
-        repair: "Apply the fix to remove the attribute. To key rows, render the list with `<For each={items()} keyed={(item) => item.id}>`.",
-        fix: Some("remove `key`"),
-        example: Pair {
-            bad: "export const view = <li key=\"a\">a</li>;\n",
-            good: "export const view = <li>a</li>;\n",
-        },
-    }
-    DuplicateAttribute {
-        name: "DUPLICATE_ATTRIBUTE",
-        severity: Warn,
-        title: "The same attribute twice on one element",
-        message: "`{attribute}` is set twice on this element and the last one wins, so the earlier one is dead code. Remove it or merge the values.",
-        explanation: "An element sets the same attribute more than once. Only the last value is used; the label marks the overridden one. `data.attribute` is the name.",
-        repair: "Apply the fix to remove the earlier attribute, or merge both values into one.",
-        fix: Some("remove the earlier `{attribute}`"),
-        example: Pair {
-            bad: "export const view = <a href=\"/a\" href={url()} />;\n",
-            good: "export const view = <a href={url()} />;\n",
-        },
-    }
-    UnknownAttribute {
-        name: "UNKNOWN_ATTRIBUTE",
-        severity: Warn,
-        title: "Probable attribute typo",
-        message: "`{attribute}` is not a known attribute and renders as written, so the browser ignores it. Did you mean `{suggestion}`?",
-        explanation: "The attribute is not a known HTML or SVG attribute but is one or two edits away from one, or it is React's `className`/`classList`. It renders exactly as written. `data.attribute` is the name and `data.suggestion` the known one.",
-        repair: "Apply the fix to rename it to the suggestion. Custom attributes take a `data-` prefix, which is never checked.",
-        fix: Some("rename to `{suggestion}`"),
-        example: Pair {
-            bad: "export const view = <div clas=\"box\" />;\n",
-            good: "export const view = <div class=\"box\" />;\n",
-        },
-    }
-    EventNameLowercase {
-        name: "EVENT_NAME_LOWERCASE",
-        severity: Warn,
-        title: "Lower-case event attribute with a function",
-        message: "`{attribute}` passes a function to a lower-case attribute, which never attaches a listener. Rename it to `{suggestion}`, which is how it was compiled.",
-        explanation: "Only camel-case `onClick` (or `on:click`) attaches a listener; a lower-case `onclick` is an HTML attribute that takes code as a string. The compiler compiled it as the camel-case name. `data.attribute` is the name and `data.suggestion` the camel-case one.",
-        repair: "Apply the fix to rename the attribute to camel case, or use `on:click` for a listener that is not delegated.",
-        fix: Some("rename to `{suggestion}`"),
-        example: Pair {
-            bad: "export const view = <button onclick={() => save()} />;\n",
-            good: "export const view = <button onClick={() => save()} />;\n",
-        },
-    }
-    PropsDestructured {
-        name: "PROPS_DESTRUCTURED",
-        severity: Warn,
-        title: "Props destructured in a form that cannot be rewritten",
-        message: "`{component}` destructures its props in a form the compiler cannot rewrite ({detail}), so each value is read once and never updates. Take `props` and read `props.x` where it is used.",
-        explanation: "Destructured props are rewritten into lazy reads of one props object, unless the pattern uses a computed key (`computed-key`), a default that cannot run once at the start (`default`), a default on a nested pattern (`nested-default`), a nested rest (`nested-rest`), an array pattern (`array-pattern`), a name that is assigned (`written`), `arguments` (`arguments`), a generator (`generator`), more than one parameter (`params`), or a type-position read of a non-identifier key (`type`), which no qualified type name can spell. `data.component` is the component and `data.reason` the rule.",
-        repair: "Take `props` as the one parameter and read `props.name` where the value is used. Use `splitProps` to forward a subset.",
-        fix: None,
-        example: Pair {
-            bad: "export function Greeting({ name = fallback() }) {\n  return <p>Hello {name}</p>;\n}\n",
-            good: "export function Greeting(props) {\n  return <p>Hello {props.name ?? fallback()}</p>;\n}\n",
-        },
-    }
-    InlineEach {
-        name: "INLINE_EACH",
-        severity: Warn,
-        title: "Inline array literal in `<For each>`",
-        message: "`<For each={[…]}>` builds a new array on every evaluation, so every row is rebuilt each time. Hoist the array to a constant or keep it in a signal.",
-        explanation: "An array literal has new identity, and new items, each time `each` is evaluated, so `<For>` cannot reuse any row.",
-        repair: "Hoist the array to a module constant, or hold it in a signal or computed.",
-        fix: None,
-        example: Pair {
-            bad: "import { For } from \"reze-js\";\n\nexport const view = <ul><For each={[1, 2, 3]}>{(n) => <li>{n}</li>}</For></ul>;\n",
-            good: "import { For } from \"reze-js\";\n\nconst numbers = [1, 2, 3];\nexport const view = <ul><For each={numbers}>{(n) => <li>{n}</li>}</For></ul>;\n",
-        },
-    }
-    AsyncComponentShape {
-        name: "ASYNC_COMPONENT_SHAPE",
-        severity: Error,
-        title: "Async component in a form that cannot be compiled",
-        message: "`{component}` is an async component the compiler cannot rewrite ({detail}). Reshape the awaits so each one is a whole statement.",
-        explanation: "An `async` component compiles to a load step, re-run when a source it reads changes, and a body that runs once after the first load and reads each awaited value through a getter, so later loads update it in place. That needs each top-level `await` to be a whole statement, `const x = await …;` or `await …;` (`await-position`, and `nested-await` when its operand awaits again); between the first and last await only `const`/`let`/`var` declarations may appear (`statement-between-awaits`); nothing up to the last await may `return` (`return-before-await`) or contain JSX (`jsx-before-await`); no value an await produces may be assigned after the last await (`value-reassigned`). `data.component` is the component and `data.reason` the rule.",
-        repair: "Give every await its own `const x = await …;` statement, keep other statements before the first await or after the last one, and start the JSX after the last await.",
-        fix: None,
-        example: Pair {
-            bad: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  log(user);\n  const posts = await fetchPosts(user.id);\n  return <p>{posts.length}</p>;\n}\n",
-            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  const posts = await fetchPosts(user.id);\n  log(user);\n  return <p>{posts.length}</p>;\n}\n",
-        },
-    }
-    AsyncViewProperty {
-        name: "ASYNC_VIEW_PROPERTY",
-        severity: Error,
-        title: "Loading or error view attached as a component property",
-        message: "`{name}.{view}` is not read by anything. Wrap the use site in `<{boundary}>` instead.",
-        explanation: "Loading and error views belong to the place a component is used, not to the component: `<Loading fallback>` shows one fallback until everything below it has loaded once, and `<Errored fallback={(error, reset) => …}>` catches failures below it. A `pending` or `failure` property would be a plain write that no runtime reads. `data.name` is the component and `data.view` the property.",
-        repair: "Delete the assignment and wrap the use site: `<Loading fallback={…}><{name} /></Loading>` for `pending`, `<Errored fallback={(error, reset) => …}><{name} /></Errored>` for `failure`.",
-        fix: None,
-        example: Pair {
-            bad: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  return <p>{user.name}</p>;\n}\nCard.failure = (error) => <p>{error.message}</p>;\n",
-            good: "import { Errored } from \"reze-js\";\n\nasync function Card(props) {\n  const user = await fetchUser(props.id);\n  return <p>{user.name}</p>;\n}\nexport const view = <Errored fallback={(error) => <p>{error.message}</p>}><Card id={1} /></Errored>;\n",
-        },
-    }
-    InternalReactivityImport {
-        name: "INTERNAL_REACTIVITY_IMPORT",
-        severity: Error,
-        title: "Reactive primitive imported from the private compiler module",
-        message: "`{name}` is imported from `reze-js/internal/reactivity`, which is private compiler output. Import `{name}` from `reze-js` instead.",
-        explanation: "`reze-js/internal/reactivity` is the module compiler output calls. Only `reze-js` is a public import, and importing a reactive primitive from the private module would skip the public surface and its diagnostics.",
-        repair: "Import `{name}` from `reze-js` and let the compiler lower it.",
-        fix: Some("import `{name}` from `reze-js`"),
-        example: Pair {
-            bad: "import { signal } from \"reze-js/internal/reactivity\";\nlet count = signal(0);\nexport const view = <p>{count}</p>;\n",
-            good: "import { signal } from \"reze-js\";\nlet count = signal(0);\nexport const view = <p>{count}</p>;\n",
-        },
-    }
-    AsyncPropsReadInAwait {
-        name: "ASYNC_PROPS_READ_IN_AWAIT",
-        severity: Error,
-        title: "Props read inside an await",
-        message: "`{component}` reads its props inside an `await` operand, which the load does not track, so it can keep a stale value. Hoist the read into a `const` before the first `await`.",
-        explanation: "An async component re-runs its load when a tracked read changes. A props read inside an `await` operand is not tracked, so the load would keep a stale value. The compiler refuses the shape instead of guessing. `data.component` is the component.",
-        repair: "Read the prop into a `const` before the first `await`, then pass that constant to the awaited call.",
-        fix: None,
-        example: Pair {
-            bad: "export async function Card(props) {\n  const user = await fetchUser(props.id);\n  return <p>{user.name}</p>;\n}\n",
-            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\n",
-        },
-    }
-    AsyncTryAroundAwait {
-        name: "ASYNC_TRY_AROUND_AWAIT",
-        severity: Error,
-        title: "`try` around an await in an async component",
-        message: "`{component}` wraps an `await` in `try`, which the compiler cannot lower into the load step. Handle the failure with an `<Errored>` boundary around the use site or catch the promise in the awaited expression.",
-        explanation: "Each `await` in an async component is a step of one lowering path, which has no place for a `try` around it. A rejected await throws to the nearest `<Errored>` boundary. Handle a specific error by inspecting the value in that boundary's `fallback`, or by catching the promise in the load expression. `data.component` is the component.",
-        repair: "Remove the `try`, and wrap the use site in `<Errored fallback={(error, reset) => …}>` to show the error.",
-        fix: None,
-        example: Pair {
-            bad: "export async function Card(props) {\n  const id = props.id;\n  try {\n    const user = await fetchUser(id);\n    return <p>{user.name}</p>;\n  } catch (error) {\n    return <p>Failed</p>;\n  }\n}\n",
-            good: "export async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{user.name}</p>;\n}\n",
-        },
-    }
-    AbortSignalOutsideLoad {
-        name: "ABORT_SIGNAL_OUTSIDE_LOAD",
-        severity: Error,
-        title: "`abortSignal()` outside the load of an async component",
-        message: "`abortSignal()` must be called directly in the load of an async component, before its view. Call it where the awaited work starts.",
-        explanation: "Each run of an async component's load owns one AbortSignal. The signal aborts when a newer run supersedes that run, and when the component is disposed, even after the load has settled, so cleanup registered after an `await` still sees the abort. A call in the view or outside the component has no run to own, so the compiler refuses it instead of returning a signal that nothing aborts.",
-        repair: "Call `abortSignal()` before the first `await` of the component, and pass the signal to the awaited call.",
-        fix: None,
-        example: Pair {
-            bad: "import { abortSignal } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  const signal = abortSignal();\n  return <p>{user.name}</p>;\n}\n",
-            good: "import { abortSignal } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const signal = abortSignal();\n  const user = await fetchUser(id, signal);\n  return <p>{user.name}</p>;\n}\n",
-        },
-    }
-    IsPendingOutsideView {
-        name: "IS_PENDING_OUTSIDE_VIEW",
-        severity: Error,
-        title: "`isPending()` outside the view of an async component",
-        message: "`isPending()` must be called in the view of an async component, after its last `await`. It reports whether a reload is in progress.",
-        explanation: "The view renders once the load has settled. `isPending()` is true while a reload is in progress and the previous value is still shown, and false during the first load. Reading it in the load would make the load depend on its own pending state, so the compiler refuses that call instead.",
-        repair: "Move the call into the view, after the last `await`, into the JSX that renders it.",
-        fix: None,
-        example: Pair {
-            bad: "import { isPending } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const busy = isPending();\n  const user = await fetchUser(id);\n  return <p>{busy ? \"Refreshing\" : user.name}</p>;\n}\n",
-            good: "import { isPending } from \"reze-js\";\n\nexport async function Card(props) {\n  const id = props.id;\n  const user = await fetchUser(id);\n  return <p>{isPending() ? \"Refreshing\" : user.name}</p>;\n}\n",
-        },
-    }
-    SignalReadOnce {
-        name: "SIGNAL_READ_ONCE",
-        severity: Warn,
-        title: "`signal` or `computed` copied once in a component body",
-        message: "`{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `computed(…)`.",
-        explanation: "A component function runs once, so a `signal` or `computed` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `computed` and JSX are reactive and are not reported. `data.signal` is the variable read and `data.variable` the declared variable.",
-        repair: "Move the read to where the value is used, or declare `const name = computed(expression)` and read `name`. Mark an intended one-time read with `untrack(() => …)`.",
-        fix: Some("derive `{variable}` with `computed(…)`"),
-        example: Pair {
-            bad: "import { computed, signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = signal(0);\n  const doubled = count * 2;\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
-            good: "import { computed, signal } from \"reze-js\";\n\nexport function Counter() {\n  let count = signal(0);\n  const doubled = computed(count * 2);\n  return <button onClick={() => (count += 1)}>{doubled}</button>;\n}\n",
-        },
-    }
-    ActionNestedWrite {
-        name: "ACTION_NESTED_WRITE",
-        severity: Warn,
-        title: "Write in a function of `action` that runs later",
-        message: "This write is in {via} inside an `action` body, which runs after the action moved on, so it is not undone when the action fails. Await the value and write it in the body.",
-        explanation: "Only the `action` body is kept inside the action across its `await`s; nested functions are not rewritten. A write to a member in an async function, or in a callback of `.then`, `.catch`, `.finally`, `setTimeout`, `setInterval`, `queueMicrotask`, `requestAnimationFrame` or `requestIdleCallback`, likely runs outside the action and is a real write. The compiler cannot tell a store from a plain object, so this is a heuristic. `data.via` is the enclosing function.",
-        repair: "Replace `.then((saved) => { todo.at = saved.at; })` with `const saved = await …; todo.at = saved.at;` in the body. A write outside the action on purpose can stay; move it out of the body to silence the warning.",
-        fix: None,
-        example: Pair {
-            bad: "import { action } from \"reze-js\";\n\nexport const save = action(async (todo) => {\n  todo.done = true;\n  api.save(todo).then((saved) => {\n    todo.at = saved.at;\n  });\n});\n",
-            good: "import { action } from \"reze-js\";\n\nexport const save = action(async (todo) => {\n  todo.done = true;\n  const saved = await api.save(todo);\n  todo.at = saved.at;\n});\n",
-        },
-    }
-    IslandNotSplit {
-        name: "ISLAND_NOT_SPLIT",
-        severity: Warn,
-        title: "Island component that stays in the main chunk",
-        message: "`{component}` is an island, but it is also {reason}, so it loads from the main chunk instead of its own. Only its execution waits for the trigger.",
-        explanation: "An island splits into its own chunk when the component is imported and every use of the import is an island: the static import is then replaced by a dynamic one. Otherwise the component stays where it is and the island only defers its execution. `data.component` is the tag and `data.reason` is `used outside islands` or `exported`.",
-        repair: "Move the component to its own module, import it where the island is, and use the import only as an island.",
-        fix: None,
-        example: Pair {
-            bad: "import { Counter } from \"./Counter\";\n\nexport const first = <Counter island=\"visible\" />;\nexport const second = <Counter step={1} />;\n",
-            good: "import { Counter } from \"./Counter\";\n\nexport const view = <Counter island=\"visible\" />;\n",
-        },
-    }
-    SignalFolded {
-        name: "SIGNAL_FOLDED",
-        severity: Info,
-        title: "Constant signal folded",
-        message: "`{signal}` is never written, so it compiled to a plain constant.",
-        explanation: "The signal is never written and is not exported, so it became a constant: reads cost nothing and literal values render straight into the template. `data.signal` is the variable.",
-        repair: "Nothing to repair. Write the variable somewhere and the fold disappears.",
-        fix: None,
-        example: Shows("import { signal } from \"reze-js\";\n\nconst title = signal(\"Reze\");\nexport const view = <h1>{title}</h1>;\n"),
-    }
-    DeadBranchRemoved {
-        name: "DEAD_BRANCH_REMOVED",
-        severity: Info,
-        title: "Dead JSX branch removed",
-        message: "The condition is a literal, so this branch can never render; it was removed.",
-        explanation: "A child's condition is a literal, so one branch never renders. It was dropped with its templates and runtime imports.",
-        repair: "Nothing to repair. Delete the dead branch to make the intent explicit.",
-        fix: None,
-        example: Shows("export const view = <div>{false && <b>debug</b>}</div>;\n"),
-    }
-    PropsRewritten {
-        name: "PROPS_REWRITTEN",
-        severity: Info,
-        title: "Destructured props rewritten to lazy reads",
-        message: "`{component}` destructures its props, so the pattern became one props object and each destructured name a lazy read of it.",
-        explanation: "Each destructured name reads the props object where it is used, so it stays reactive. Defaults apply when the prop is `undefined`; a rest element becomes `splitProps`. `data.component` is the component.",
-        repair: "Nothing to repair.",
-        fix: None,
-        example: Shows("export function Greeting({ name }) {\n  return <p>Hello {name}</p>;\n}\n"),
-    }
-    AutoSelector {
-        name: "AUTO_SELECTOR",
-        severity: Info,
-        title: "Row comparison compiled to a selector",
-        message: "Each row compares `{signal}` with its own key, so a change would re-run every row; the comparison now reads a selector created once for this `<For>`.",
-        explanation: "A `<For>` row compares a `signal`/`computed` declared outside the row with a key built from the row's parameters. One `selector` per `<For>` replaces the comparison, so a change re-runs only the rows whose result flips. `data.signal` is the variable.",
-        repair: "Nothing to repair. Compare inside a nested function, or with something that is not the row's key, and it stays a plain comparison.",
-        fix: None,
-        example: Shows("import { For, signal } from \"reze-js\";\n\nlet selected = signal(0);\nexport const view = (\n  <ul>\n    <For each={rows()}>\n      {(row) => <li class={selected === row.id ? \"on\" : \"\"} onClick={() => (selected = row.id)} />}\n    </For>\n  </ul>\n);\n"),
     }
 }

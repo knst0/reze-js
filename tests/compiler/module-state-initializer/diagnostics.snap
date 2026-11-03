@@ -1,0 +1,6 @@
+[MODULE_STATE_INITIALIZER] The initializer of module state `count` must be a constant, because the server renders it and the state block carries nothing for it.
+  at src/cart.ts:3:27
+  2 | 
+> 3 | export let count = signal(Number(process.env.START));
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 |

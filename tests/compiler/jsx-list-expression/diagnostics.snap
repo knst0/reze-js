@@ -1,0 +1,9 @@
+[JSX_LIST_EXPRESSION] A list that renders JSX uses `<For>` or `<Repeat>`, not `.map`.
+  in <Home> › ul
+  at src/routes/index.tsx:8:8
+  7 |       <For each={todos}>{(todo) => <li>{todo.title}</li>}</For>
+> 8 |       {todos.map((todo) => (
+    |        ^^^^^^^^^^^^^^^^^^^^^
+  9 |         <li>{todo.title}</li>
+  fix: rewrite with `<For>`
+  193..255 "<For each={todos}>{(todo) => (\n        <li>{todo.title}</li>\n      )}</For>"

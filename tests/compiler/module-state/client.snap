@@ -1,0 +1,19 @@
+// src/cart.ts
+import { $sig } from "reze-js/runtime/client";
+export const count = $sig(0);
+
+// src/routes/index.tsx
+import { $fx, $q, $str, $text } from "reze-js/runtime/client";
+import { count } from "../cart";
+export const $c0 = (s, i, a) => {
+  for (const b of $q(i, 0)) {
+    const [t99] = $text(b.previousElementSibling, null, 0, [$str(count.v), 6]);
+    $fx(() => { t99.data = $str(count.v); });
+  }
+  return { 0: { click: (r) => () => count.v++ } };
+};
+
+// virtual:rz-route/0
+import { $c0 } from "/src/routes/index.tsx";
+export default { 0: $c0 };
+export const g = [0];

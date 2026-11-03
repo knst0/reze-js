@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-11-02T23:01:11.488Z",
+  "sizes": {
+    "menu: dispatcher.js": {
+      "raw": 2220,
+      "gzip": 1223,
+      "brotli": 1040
+    },
+    "menu: html": {
+      "raw": 788,
+      "gzip": 442,
+      "brotli": 321
+    },
+    "menu: route-1.js": {
+      "raw": 2025,
+      "gzip": 974,
+      "brotli": 865
+    },
+    "static: html": {
+      "raw": 382,
+      "gzip": 247,
+      "brotli": 159
+    }
+  }
+}

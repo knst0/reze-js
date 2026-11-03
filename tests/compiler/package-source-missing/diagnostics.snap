@@ -1,0 +1,7 @@
+[PACKAGE_SOURCE_MISSING] `some-ui` exposes no `reze` source, so `Dialog` cannot be compiled.
+  in <Page>
+  at src/routes/index.tsx:4:11
+  3 | export default function Page() {
+> 4 |   return <Dialog />;
+    |           ^^^^^^
+  5 | }

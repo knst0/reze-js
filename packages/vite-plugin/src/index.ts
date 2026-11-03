@@ -1,526 +1,123 @@
-import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import type { IncomingMessage } from "node:http";
-import { dirname, join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join, relative } from "node:path";
 
-import { compileAsync, profileHash } from "@rezejs/compiler";
-import { defaultClientConditions, defaultServerConditions, normalizePath, version as viteVersion } from "vite";
-import type { DevEnvironment, Environment, EnvironmentModuleNode, Plugin, UserConfig, ViteDevServer } from "vite";
+import { type Chunks, compileProjectAsync, type ProjectResult } from "@rezejs/compiler";
+import { minify, type Plugin, transformWithOxc } from "vite";
 
-import { BeforeLoadFlag, mentionsBeforeLoad, sourcesMentionBeforeLoad } from "./before-load";
-import { ModuleFactsStore, staticImportSpecifiers, type Resolver } from "./facts";
-import { canonicalModuleId } from "./module-identity";
-import { createFileRoutesPlugin, type FileRoutesApi, type FileRoutesOptions } from "./routes";
-import { DocumentViewId, GeneratedIds, HtmlEnv, SsgViewId } from "./server/adapter";
-import { analyzeDocument } from "./server/document";
-import type { ImportResolver } from "./server/document";
-import type { SsgOptions, SsrOptions } from "./server/options";
-import { createServerPlugin, createServerShared } from "./server/plugin";
-import type { ServerShared } from "./server/plugin";
-export interface Options {
-  diagnostics?: {
-    /** File every diagnostic, `info` included, is appended to as one JSON line. */
-    jsonl?: string;
-  };
-  /** Module exporting `link`, e.g. `"@rezejs/router"`: native `<a href>` elements are claimed and passed to it. */
-  links?: string;
-  /** File extensions the transform compiles, replacing `DEFAULT_ROUTE_EXTENSIONS`. Spread it to extend, e.g. `[...DEFAULT_ROUTE_EXTENSIONS, ".mdx"]` when a preprocessor runs before this plugin. File routes default to this list. */
-  extensions?: string[];
-  /** File-system routes served after this plugin; `true` is `@rezejs/router/fs` defaults. On whenever `ssg` or `ssr` is set. The result is awaitable in `plugins`. */
-  fileRoutes?: boolean | FileRoutesOptions;
-  /** Static-site generation: a production build that prerenders each file route with the server renderer. Absent by default. */
-  ssg?: true | SsgOptions;
-  /** Request-time rendering of the file routes: builds `dist/server/entry.js`, exporting a web `fetch` handler. Absent by default. */
-  ssr?: true | SsrOptions;
-  profile?: {
-    /** Directory of per-file profiling facts. The dev server files session trees posted to `/__reze/profile` there; later transforms read them back to specialize codegen. */
-    dir: string;
-  };
-  /** Packages whose sources are analyzed for module facts when their `reze.json` manifest is missing or stale, e.g. `"@acme/ui"` or `"@acme/charts/*"`. Other packages stay opaque. */
-  analyze?: string[];
+export interface RezeOptions {
+  /** Directory of route modules, relative to the Vite root. */
+  routesDir?: string;
+  chunks?: Chunks;
 }
 
-export interface RezeApi {
-  /** Claims native `<a href>` elements for `module`, as the `links` option does. */
-  claimLinks(module: string): void;
+const app = "virtual:rz-app";
+const resolvedApp = `\0${app}`;
+const dispatcher = "virtual:rz-dispatcher";
+const route = "virtual:rz-route/";
+
+/** The URL the dev server serves a virtual module at. */
+const devUrl = (id: string) => `/@id/__x00__${id}`;
+
+/** URLs of the client build, which the server build reads. */
+interface Built {
+  dispatcher: string;
+  chunks: Record<string, string>;
 }
 
-interface Position {
-  offset: number;
-  line: number;
-  column: number;
-}
+export default function reze(options: RezeOptions = {}): Plugin {
+  let root = process.cwd();
+  let dev = false;
+  let base = "/";
+  let output: Promise<ProjectResult> | undefined;
+  let built: Built | undefined;
+  const refs = new Map<string, string>();
+  let dispatcherRef = "";
 
-interface Diagnostic {
-  code: string;
-  severity: "error" | "warn" | "info";
-  message: string;
-  file: string;
-  start: Position;
-  end: Position;
-  path: string[];
-  labels: { start: number; end: number; message: string }[];
-  fixes: { title: string; edits: { start: number; end: number; text: string }[] }[];
-  data: Record<string, string>;
-  docs: string;
-  rendered: string;
-}
-
-const SkillGuide = "node_modules/@rezejs/compiler/skills/reze-compiler-diagnostics/SKILL.md";
-const QueryOrHash = /[?#].*$/;
-const RuntimeEntry = /^(?:reze-js|@rezejs\/(?:dom|signals|router))(?:\/|$)/;
-
-/** File extensions the transform compiles by default; spread it to extend the list instead of replacing it. */
-export const DEFAULT_ROUTE_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
-
-function normalizeExtension(e: string): string {
-  return (e.startsWith(".") ? e : `.${e}`).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function transformFilter(extras: readonly string[] | undefined): { include: RegExp; exclude: RegExp } {
-  const list = extras === undefined || extras.length === 0 ? DEFAULT_ROUTE_EXTENSIONS : extras;
-  const include = new RegExp(`(?:${list.map(normalizeExtension).join("|")})(?:$|\\?)`);
-  return { include, exclude: /\/node_modules\// };
-}
-
-interface ProfileComponentFacts {
-  component: string;
-  file: string;
-  mounts: number;
-  props: number;
-  reruns: number;
-  writes: number;
-}
-
-interface ProfileFile {
-  v: 1;
-  file: string;
-  hash: string;
-  components: ProfileComponentFacts[];
-}
-
-function profileKey(file: string): string {
-  return `${createHash("sha256").update(file).digest("hex").slice(0, 32)}.json`;
-}
-
-function readProfileFacts(dir: string, file: string, source: string): ProfileFile | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(join(dir, profileKey(file)), "utf8"));
-  } catch {
-    return undefined;
-  }
-  if (typeof parsed !== "object" || parsed === null) return undefined;
-  const record = parsed as Partial<ProfileFile>;
-  if (record.v !== 1 || record.file !== file || record.hash !== profileHash(source)) return undefined;
-  if (!Array.isArray(record.components)) return undefined;
-  return { v: 1, file, hash: record.hash, components: record.components };
-}
-
-function normalizeCounts(value: unknown): ProfileComponentFacts | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const row = value as Record<string, unknown>;
-  if (typeof row.component !== "string" || typeof row.file !== "string") return undefined;
-  const counts = [row.mounts, row.props, row.reruns, row.writes];
-  if (!counts.every((count) => typeof count === "number" && Number.isFinite(count))) return undefined;
-  const [mounts, props, reruns, writes] = counts as number[];
-  return {
-    component: row.component,
-    file: row.file,
-    mounts: Math.max(0, Math.floor(mounts!)),
-    props: Math.max(0, Math.floor(props!)),
-    reruns: Math.max(0, Math.floor(reruns!)),
-    writes: Math.max(0, Math.floor(writes!)),
-  };
-}
-
-function mergeProfileComponents(current: ProfileComponentFacts[], incoming: ProfileComponentFacts[]): ProfileComponentFacts[] {
-  const rows = new Map<string, ProfileComponentFacts>();
-  for (const row of current) rows.set(`${row.file}#${row.component}`, { ...row });
-  for (const row of incoming) {
-    const key = `${row.file}#${row.component}`;
-    const kept = rows.get(key);
-    if (kept === undefined) {
-      rows.set(key, { ...row });
-    } else {
-      kept.mounts += row.mounts;
-      kept.props = Math.max(kept.props, row.props);
-      kept.reruns += row.reruns;
-      kept.writes += row.writes;
-    }
-  }
-  return [...rows.values()].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.component < b.component ? -1 : 1));
-}
-
-function fileProfileTree(dir: string, hashes: Map<string, string>, tree: unknown): void {
-  if (typeof tree !== "object" || tree === null) throw new Error("a profile tree is an object");
-  const { components } = tree as { components: unknown };
-  if (!Array.isArray(components)) throw new Error("a profile tree needs components");
-  const byFile = new Map<string, ProfileComponentFacts[]>();
-  for (const value of components) {
-    const row = normalizeCounts(value);
-    if (row === undefined) throw new Error("a profile row needs component, file and counters");
-    const rows = byFile.get(row.file);
-    if (rows === undefined) byFile.set(row.file, [row]);
-    else rows.push(row);
-  }
-  if (byFile.size === 0) return;
-  let madeDir = false;
-  for (const [file, incoming] of byFile) {
-    const hash = hashes.get(file);
-    if (hash === undefined) continue;
-    if (!madeDir) {
-      mkdirSync(dir, { recursive: true });
-      madeDir = true;
-    }
-    const path = join(dir, profileKey(file));
-    let current: ProfileComponentFacts[] = [];
-    try {
-      const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ProfileFile>;
-      if (parsed.v === 1 && parsed.hash === hash && Array.isArray(parsed.components)) current = parsed.components;
-    } catch {
-      current = [];
-    }
-    const record: ProfileFile = { v: 1, file, hash, components: mergeProfileComponents(current, incoming) };
-    writeFileSync(path, `${JSON.stringify(record)}\n`);
-  }
-}
-
-type ResolveById = (specifier: string, importer: string) => Promise<{ id: string; external?: unknown } | null>;
-
-function resolverOf(resolveById: ResolveById): Resolver {
-  return async (specifier, importer) => {
-    const resolved = await resolveById(specifier, importer);
-    if (resolved === null || resolved.external || resolved.id.startsWith("\0")) return undefined;
-    return resolved.id.replace(QueryOrHash, "");
-  };
-}
-
-function viteMajor(): number {
-  return Number(viteVersion.split(".")[0]);
-}
-
-function bundlerInput(config: UserConfig): unknown {
-  const build = config.build ?? {};
-  const options = (build[viteMajor() >= 8 ? "rolldownOptions" : "rollupOptions"] ?? {}) as { input?: unknown };
-  return options.input;
-}
-
-function setSpaInput(config: UserConfig, htmlId: string): void {
-  const key = viteMajor() >= 8 ? "rolldownOptions" : "rollupOptions";
-  const build = config.build ?? {};
-  if (build.lib !== undefined && build.lib !== false) {
-    throw new Error("[reze] a client-only app renders its page from src/document.tsx; library mode has no page");
-  }
-  config.build = { ...build, [key]: { ...build[key], input: htmlId } } as UserConfig["build"];
-}
-
-function isSpaDocumentRequest(req: IncomingMessage): boolean {
-  if (req.method !== "GET" && req.method !== "HEAD") return false;
-  if (!(req.headers.accept ?? "").includes("text/html")) return false;
-  const pathname = (req.url ?? "/").split("?")[0] ?? "/";
-  if (pathname === "/index.html") return true;
-  if (pathname.startsWith("/@") || pathname.startsWith("/__reze/") || pathname.startsWith("/node_modules/")) return false;
-  return !/\.[^/]+$/.test(pathname);
-}
-
-function rezePlugin(options: Options, shared: ServerShared): Plugin<RezeApi> {
-  const jsonl = options.diagnostics?.jsonl;
-  const seenCodes = new Set<string>();
-  let jsonlDirReady = false;
-  let isServe = false;
-  let debugNames = false;
-  let hot = false;
-  let links = options.links;
-  let root = "";
-  let beforeLoadSources: string | undefined;
-  const profileDir = options.profile?.dir;
-  const profileHashes = new Map<string, string>();
-  const runtimeEntries = new Set<string>();
-  const runtimeDirectories = new Set<string>();
-  const filter = transformFilter(options.extensions);
-  const moduleFacts = new ModuleFactsStore(options.analyze ?? [], (file) => filter.include.test(file));
-  const isClientOnly = options.ssg === undefined && options.ssr === undefined;
-  let spaHtmlId: string | undefined;
-  let spaDocumentFile: string | undefined;
-  let spaDocumentFiles: ReadonlySet<string> | undefined;
-  let spaHtml: Promise<string> | undefined;
-  let spaDefine: Record<string, unknown> | undefined;
-
-  async function spaDocumentHtml(resolveImport: ImportResolver): Promise<string> {
-    if (spaHtml !== undefined) return spaHtml;
-    const loading = analyzeDocument(spaDocumentFile!, resolveImport, spaDefine, null).then((analysis) => {
-      if (analysis.status === "render") {
-        throw new Error(
-          `[reze] a client-only app needs a static src/document.tsx, but the document runs at render time: ${analysis.reasons}`,
-        );
-      }
-      spaDocumentFiles = new Set(analysis.document.files ?? []);
-      return analysis.document.html;
-    });
-    spaHtml = loading;
-    loading.catch(() => {
-      if (spaHtml === loading) spaHtml = undefined;
-    });
-    return loading;
-  }
-
-  async function invalidateStaleImporters(environment: DevEnvironment, file: string, timestamp: number): Promise<EnvironmentModuleNode[]> {
-    const resolve = resolverOf((specifier, importer) => environment.pluginContainer.resolveId(specifier, importer));
-    const graph = environment.moduleGraph;
-    const importers = await moduleFacts.importersToInvalidate(file, resolve);
-    const nodes = importers.flatMap((importer) => [...(graph.getModulesByFile(importer) ?? [])]);
-    for (const node of nodes) graph.invalidateModule(node, new Set(), timestamp, true);
-    return nodes;
-  }
-
-  function formatDiagnostic(d: Diagnostic): string {
-    if (seenCodes.has(d.code)) return d.rendered;
-    seenCodes.add(d.code);
-    return `${d.rendered.trimEnd()}
-  repair guide: ${SkillGuide}#${d.code.toLowerCase()}
-                ${d.docs}`;
-  }
-
-  function record(diagnostics: Diagnostic[]): void {
-    if (jsonl === undefined || diagnostics.length === 0) return;
-    if (!jsonlDirReady) {
-      mkdirSync(dirname(jsonl), { recursive: true });
-      jsonlDirReady = true;
-    }
-    appendFileSync(jsonl, diagnostics.map((d) => JSON.stringify(d) + "\n").join(""));
-  }
-
-  function isBeyondSources(file: string): boolean {
-    if (file.startsWith("\0")) return false;
-    if (file.startsWith(beforeLoadSources + "/") && !file.includes("/node_modules/")) return false;
-    return moduleFacts.packageName(file) !== "@rezejs/router";
-  }
-
-  function emitsSourceMap(config: Environment["config"]): boolean {
-    if (!isServe) return Boolean(config.build.sourcemap);
-    const sourcemap = config.dev.sourcemap;
-    return sourcemap === true || (typeof sourcemap === "object" && sourcemap.js !== false);
-  }
-
-  function installSpaDocument(server: ViteDevServer): void {
-    server.middlewares.use((req, res, next) => {
-      if (!isSpaDocumentRequest(req)) {
-        next();
-        return;
-      }
-      const resolveImport: ImportResolver = async (specifier, importer) =>
-        (await server.environments.client.pluginContainer.resolveId(specifier, importer))?.id;
-      spaDocumentHtml(resolveImport).then(
-        async (html) => {
-          server.watcher.add(spaDocumentFile!);
-          for (const file of spaDocumentFiles ?? []) server.watcher.add(file);
-          const page = await server.transformIndexHtml(req.url ?? "/", html, req.originalUrl);
-          res.statusCode = 200;
-          res.setHeader("content-type", "text/html; charset=utf-8");
-          res.end(req.method === "HEAD" ? undefined : page);
-        },
-        (error) => next(error),
-      );
-    });
-  }
+  const compile = () => (output ??= compileProjectAsync({ root }, { routesDir: options.routesDir, chunks: options.chunks, dev }));
 
   return {
-    name: "reze-js",
+    name: "reze",
     enforce: "pre",
-    api: {
-      claimLinks(module) {
-        links = module;
-      },
-    },
     config(config, env) {
-      if (isClientOnly && bundlerInput(config) === undefined) {
-        const projectRoot = resolve(config.root ?? process.cwd());
-        const documentFile = join(projectRoot, "src", "document.tsx");
-        if (existsSync(documentFile)) {
-          if (existsSync(join(projectRoot, "index.html"))) {
-            throw new Error(
-              "[reze] a client-only app renders its page from src/document.tsx and never reads index.html; move its tags into the document and delete index.html",
-            );
-          }
-          spaDocumentFile = normalizePath(documentFile);
-          spaHtmlId = normalizePath(join(projectRoot, "index.html"));
-          if (env.command === "build") setSpaInput(config, spaHtmlId);
-        }
-      }
       if (env.command !== "build") return;
-      const projectRoot = resolve(config.root ?? process.cwd());
-      if (sourcesMentionBeforeLoad(projectRoot, resolve(projectRoot, config.build?.outDir ?? "dist"), filter.include)) return;
-      beforeLoadSources = projectRoot;
-      return { define: { [BeforeLoadFlag]: "false" } };
-    },
-    applyToEnvironment: (environment) => environment.name === "client" || environment.name === HtmlEnv,
-    configEnvironment(name, envConfig) {
-      if (name !== "client" && name !== HtmlEnv) return;
-      const added = name === HtmlEnv ? ["reze-html", "reze"] : ["reze"];
-      const conditions = envConfig.resolve?.conditions ?? (name === HtmlEnv ? defaultServerConditions : defaultClientConditions);
-      envConfig.resolve = { ...envConfig.resolve, conditions: [...added.filter((c) => !conditions.includes(c)), ...conditions] };
+      const appRoot = config.root ?? process.cwd();
+      const server = existsSync(join(appRoot, "src/server.ts")) ? "/src/server.ts" : "reze-js/server";
+      return {
+        builder: {
+          async buildApp(builder) {
+            if (Object.keys((await compile()).chunks).length > 0) await builder.build(builder.environments.client!);
+            await builder.build(builder.environments.ssr!);
+          },
+        },
+        environments: {
+          client: { build: { outDir: config.environments?.client?.build?.outDir ?? "dist/client", rollupOptions: { input: [] } } },
+          ssr: {
+            build: { outDir: config.environments?.ssr?.build?.outDir ?? "dist/server", ssr: true, rollupOptions: { input: { server } } },
+          },
+        },
+      };
     },
     configResolved(config) {
-      isServe = config.command === "serve";
-      debugNames = !config.isProduction;
-      hot = isServe && config.server.hmr !== false;
-      root = config.root ?? "";
-      spaDefine = config.define as Record<string, unknown> | undefined;
-      shared.root = root;
-      shared.isServe = isServe;
-      moduleFacts.configure({ root, warn: isServe ? (message) => config.logger.warn(message) : undefined });
+      root = config.root;
+      base = config.base;
+      dev = config.command === "serve";
     },
-    async resolveId(id, importer, options) {
-      if (spaHtmlId !== undefined && normalizePath(id) === spaHtmlId) return spaHtmlId;
-      if (!RuntimeEntry.test(id)) return;
-      const resolved = await this.resolve(id, importer, { ...options, skipSelf: true });
-      if (resolved) {
-        const file = resolved.id.replace(QueryOrHash, "");
-        runtimeEntries.add(file);
-        const dist = file.lastIndexOf("/dist/");
-        if (dist !== -1) runtimeDirectories.add(file.slice(0, dist + 6));
+    async buildStart() {
+      if (dev || this.environment.name !== "client") return;
+      refs.clear();
+      for (const node of Object.keys((await compile()).chunks)) {
+        refs.set(node, this.emitFile({ type: "chunk", id: `${route}${node}`, name: `route-${node}`, preserveSignature: "exports-only" }));
       }
-      return resolved;
-    },
-    async load(id) {
-      if (spaHtmlId === undefined || normalizePath(id) !== spaHtmlId) return undefined;
-      return spaDocumentHtml(async (specifier, importer) => (await this.resolve(specifier, importer, { skipSelf: true }))?.id);
-    },
-    buildStart() {
-      if (isClientOnly) spaHtml = undefined;
-    },
-    async transform(code, id) {
-      const file = id.replace(QueryOrHash, "");
-      if (beforeLoadSources !== undefined && isBeyondSources(file) && mentionsBeforeLoad(code)) {
-        this.error(
-          `[reze] ${file} uses beforeLoad, but no source under ${beforeLoadSources} mentions it, so the build compiled the beforeLoad cascade out; declare the beforeLoad route config in a module under ${beforeLoadSources}`,
-        );
-      }
-      const isView = id === SsgViewId || id === DocumentViewId;
-      if (!isView && (!filter.include.test(id) || (filter.exclude.test(id) && !moduleFacts.declaresReze(file)))) return null;
-      if (runtimeEntries.has(file) || GeneratedIds.includes(id)) return;
-      if (id.startsWith("\0vite/") || id.startsWith("\0rolldown/")) return;
-      for (const directory of runtimeDirectories) if (file.startsWith(directory)) return;
-      const profile = profileDir === undefined ? undefined : readProfileFacts(resolve(root, profileDir), file, code);
-      if (profileDir !== undefined) profileHashes.set(file, profileHash(code));
-      const envName = this.environment.name;
-      const target = shared.enabled && shared.root !== "" ? (envName === HtmlEnv ? "html" : "island") : undefined;
-      const moduleId = target === undefined ? undefined : canonicalModuleId(id, shared.root);
-      if (moduleId !== undefined) {
-        if (isServe) shared.registry.update(moduleId, code);
-        else shared.registry.register(moduleId, code);
-        if (target === "html" && !isView) shared.moduleFiles.set(moduleId, file);
-      }
-      const imported = await moduleFacts.factsFor(
-        file,
-        staticImportSpecifiers(code),
-        resolverOf((specifier, importer) => this.resolve(specifier, importer, { skipSelf: true })),
-      );
-      const result = await compileAsync(code, file, {
-        sourceMap: emitsSourceMap(this.environment.config),
-        debugNames,
-        hot,
-        links,
-        ...(profile === undefined ? {} : { profile }),
-        ...(target === undefined ? {} : { target, moduleId }),
-        facts: imported,
+      const file = (await this.resolve("reze-js/runtime/dispatcher", join(root, "index.html")))!.id;
+      let code = await readFile(file, "utf8");
+      if (file.endsWith(".ts")) code = (await transformWithOxc(code, file)).code;
+      dispatcherRef = this.emitFile({
+        type: "asset",
+        name: "dispatcher.js",
+        source: (await minify(file, code, { module: true, mangle: { toplevel: true } })).code,
       });
-      if (result === null) return null;
-      moduleFacts.recordCompiled(file, code, result.facts);
-      const diagnostics: Diagnostic[] = result.diagnostics;
-      record(diagnostics);
-      const errors: Diagnostic[] = [];
-      for (const d of diagnostics) {
-        if (d.severity === "error") errors.push(d);
-        else if (d.severity === "warn") {
-          this.warn({
-            message: formatDiagnostic(d),
-            id,
-            loc: { file: d.file, line: d.start.line, column: d.start.column },
-          });
-        }
-      }
-      if (errors.length > 0) {
-        const first = errors[0]!;
-        throw Object.assign(new Error(errors.map(formatDiagnostic).join("\n\n")), {
-          id,
-          loc: { file: first.file, line: first.start.line, column: first.start.column },
-          frame: first.rendered,
-          plugin: "reze-js",
-          diagnostics: errors,
-        });
-      }
-      return { code: result.code!, map: result.map ?? null };
     },
-    async watchChange(file) {
-      if (this.environment.mode === "dev") await invalidateStaleImporters(this.environment, file, Date.now());
-    },
-    async hotUpdate(context) {
-      if (spaDocumentFile !== undefined && (context.file === spaDocumentFile || spaDocumentFiles?.has(context.file))) {
-        spaHtml = undefined;
-        context.server.ws.send({ type: "full-reload" });
-        return [];
-      }
-      const importers = await invalidateStaleImporters(this.environment, context.file, context.timestamp);
-      if (importers.length === 0) return;
-      return [...new Set([...context.modules, ...importers])];
+    generateBundle() {
+      if (dev || this.environment.name !== "client") return;
+      built = {
+        dispatcher: base + this.getFileName(dispatcherRef),
+        chunks: Object.fromEntries([...refs].map(([node, ref]) => [node, base + this.getFileName(ref)])),
+      };
     },
     configureServer(server) {
-      if (spaHtmlId !== undefined && spaDocumentFile !== undefined) installSpaDocument(server);
-      if (profileDir === undefined) return;
-      const dir = resolve(root, profileDir);
-      server.middlewares.use("/__reze/profile", (req, res, next) => {
-        if (req.method !== "POST") {
-          next();
-          return;
+      server.watcher.on("all", (_, file) => {
+        if (relative(root, file).startsWith("..")) return;
+        output = undefined;
+        for (const environment of Object.values(server.environments)) {
+          environment.moduleGraph.invalidateAll();
         }
-        let body = "";
-        req.on("data", (chunk: unknown) => {
-          body += String(chunk);
-        });
-        req.on("end", () => {
-          try {
-            fileProfileTree(dir, profileHashes, JSON.parse(body));
-            res.statusCode = 200;
-          } catch {
-            res.statusCode = 400;
-          }
-          res.end();
-        });
       });
     },
+    resolveId(id, importer) {
+      if (id === app || id === dispatcher || id.startsWith(route)) return `\0${id}`;
+      if (importer === resolvedApp && id.startsWith("./")) return join(root, id);
+    },
+    async load(id) {
+      if (id === `\0${dispatcher}`) return 'import "reze-js/runtime/dispatcher";';
+      if (id.startsWith(`\0${route}`)) return (await compile()).chunks[id.slice(route.length + 1)];
+      if (id !== resolvedApp) return;
+      const result = await compile();
+      const errors = result.diagnostics.filter((d) => d.severity === "error");
+      if (errors.length > 0) this.error(errors.map((d) => d.rendered).join("\n\n"));
+      for (const diagnostic of result.diagnostics) this.warn(diagnostic.rendered);
+      const assets = built
+        ? `const chunks = ${JSON.stringify(built.chunks)};\nexport const assets = { dispatcher: ${JSON.stringify(built.dispatcher)}, chunk: (node) => chunks[node] };\n`
+        : `export const assets = { dispatcher: ${JSON.stringify(devUrl(dispatcher))}, chunk: (node) => ${JSON.stringify(devUrl(route))} + node };\n`;
+      return result.app + assets;
+    },
+    async transform(_, id, transformOptions) {
+      const file = relative(root, id.split("?")[0]!).replaceAll("\\", "/");
+      if (file.startsWith("..")) return;
+      const module = (await compile()).modules[file];
+      const code = transformOptions?.ssr ? module?.server : module?.client;
+      if (code === undefined) return;
+      return { code, map: null };
+    },
   };
-}
-
-export type { FileRoutesOptions } from "./routes";
-export type { SsgOptions, SsrOptions, StaticParams, StaticPathsValue } from "./server/options";
-
-export default function reze(options?: Options & { fileRoutes?: false | undefined; ssg?: undefined; ssr?: undefined }): Plugin<RezeApi>;
-export default function reze(options: Options & { fileRoutes?: true | FileRoutesOptions }): Promise<Plugin[]>;
-export default function reze(options: Options = {}): Plugin<RezeApi> | Promise<Plugin[]> {
-  const shared = createServerShared();
-  const plugin = rezePlugin(options, shared);
-  const isServer = options.ssg !== undefined || options.ssr !== undefined;
-  if (options.fileRoutes === false || (!isServer && options.fileRoutes === undefined)) {
-    if (isServer) throw new Error("[reze] ssg and ssr render the file routes; remove fileRoutes: false");
-    return plugin;
-  }
-  const routesOptions = options.fileRoutes === undefined || options.fileRoutes === true ? {} : options.fileRoutes;
-  const server = isServer ? createServerPlugin({ ssg: options.ssg, ssr: options.ssr }, shared, routesOptions) : [];
-  return routesPlugins(plugin, routesOptions, options.extensions).then((plugins) => [...server, ...plugins]);
-}
-
-async function loadRouterFs(): Promise<FileRoutesApi> {
-  try {
-    return await import("@rezejs/router/fs");
-  } catch {
-    throw new Error("[reze] fileRoutes needs @rezejs/router to be installed");
-  }
-}
-
-async function routesPlugins(plugin: Plugin<RezeApi>, options: FileRoutesOptions, extras?: readonly string[]): Promise<Plugin[]> {
-  const fs = await loadRouterFs();
-  if (options.links !== false) plugin.api?.claimLinks("@rezejs/router");
-  return [plugin, createFileRoutesPlugin(fs, options, extras)];
 }

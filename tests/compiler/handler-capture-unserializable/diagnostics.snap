@@ -1,0 +1,6 @@
+[HANDLER_CAPTURE_UNSERIALIZABLE] `socket` is a `WebSocket`, which cannot cross from server to browser.
+  at src/routes/index.tsx:3:33
+  2 |   const socket = new WebSocket("/live");
+> 3 |   return <button onClick={() => socket.send("ping")}>Ping</button>;
+    |                                 ^^^^^^
+  4 | }

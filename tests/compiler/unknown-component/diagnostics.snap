@@ -1,0 +1,7 @@
+[UNKNOWN_COMPONENT] `<Missing>` does not resolve to a component declared in the project.
+  in <Page> › main
+  at src/routes/index.tsx:4:8
+  3 |     <main>
+> 4 |       <Missing>
+    |        ^^^^^^^
+  5 |         <p>inside</p>

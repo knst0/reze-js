@@ -2,7 +2,8 @@
 
 mod convert;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
 
 use convert::Document;
 use lsp_server::{Connection, Message, Request, Response};
@@ -11,12 +12,10 @@ use lsp_types::request::Request as RequestMethod;
 use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionParams, CodeActionProviderCapability,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    GotoDefinitionParams, Hover, HoverContents, HoverParams, HoverProviderCapability, Location,
-    MarkupContent, MarkupKind, OneOf, PositionEncodingKind, PublishDiagnosticsParams,
-    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
-    notification as notify, request as req,
+    PositionEncodingKind, PublishDiagnosticsParams, ServerCapabilities, TextDocumentSyncCapability,
+    TextDocumentSyncKind, Uri, notification as notify, request as req,
 };
-use reze_compiler::{LineIndex, Options};
+use reze_compiler::{DiskFs, FileSystem, LineIndex, Options, compile_project};
 
 pub fn capabilities() -> ServerCapabilities {
     ServerCapabilities {
@@ -26,8 +25,6 @@ pub fn capabilities() -> ServerCapabilities {
             code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
             ..Default::default()
         })),
-        definition_provider: Some(OneOf::Left(true)),
-        hover_provider: Some(HoverProviderCapability::Simple(true)),
         ..Default::default()
     }
 }
@@ -61,107 +58,41 @@ fn respond(
     request: Request,
     documents: &HashMap<String, Document>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    match request.method.as_str() {
-        req::CodeActionRequest::METHOD => {
-            let Request { id, params, .. } = request;
-            let params: CodeActionParams = match serde_json::from_value(params) {
-                Ok(params) => params,
-                Err(error) => {
-                    return send(
-                        connection,
-                        Response::new_err(
-                            id,
-                            lsp_server::ErrorCode::InvalidParams as i32,
-                            error.to_string(),
-                        ),
-                    );
-                }
-            };
-            let actions =
-                documents.get(params.text_document.uri.as_str()).map_or(Vec::new(), |document| {
-                    convert::code_actions(
-                        &params.text_document.uri,
-                        &document.text,
-                        &document.index,
-                        &document.reports,
-                        params.range,
-                        params.context.only.clone(),
-                    )
-                });
-            send(connection, Response::new_ok(id, actions))
-        }
-        req::GotoDefinition::METHOD => {
-            let Request { id, params, .. } = request;
-            let Ok(params) = serde_json::from_value::<GotoDefinitionParams>(params) else {
-                return send(
-                    connection,
-                    Response::new_err(
-                        id,
-                        lsp_server::ErrorCode::InvalidParams as i32,
-                        String::from("invalid definition params"),
-                    ),
-                );
-            };
-            let at = params.text_document_position_params;
-            let location = documents.get(at.text_document.uri.as_str()).and_then(|document| {
-                let offset = document.offset_at(at.position)?;
-                let inspection = reze_compiler::inspect(
-                    &document.text,
-                    &convert::filename(&at.text_document.uri),
-                    offset,
-                )?;
-                Some(Location {
-                    uri: at.text_document.uri.clone(),
-                    range: document
-                        .span_range(inspection.declaration_start, inspection.declaration_end),
-                })
-            });
-            send(connection, Response::new_ok(id, location))
-        }
-        req::HoverRequest::METHOD => {
-            let Request { id, params, .. } = request;
-            let Ok(params) = serde_json::from_value::<HoverParams>(params) else {
-                return send(
-                    connection,
-                    Response::new_err(
-                        id,
-                        lsp_server::ErrorCode::InvalidParams as i32,
-                        String::from("invalid hover params"),
-                    ),
-                );
-            };
-            let at = params.text_document_position_params;
-            let hover = documents.get(at.text_document.uri.as_str()).and_then(|document| {
-                let offset = document.offset_at(at.position)?;
-                let inspection = reze_compiler::inspect(
-                    &document.text,
-                    &convert::filename(&at.text_document.uri),
-                    offset,
-                )?;
-                Some(Hover {
-                    contents: HoverContents::Markup(MarkupContent {
-                        kind: MarkupKind::Markdown,
-                        value: format!(
-                            "**{}** `{}`\n\n```tsx\n{}\n```",
-                            inspection.kind.label(),
-                            inspection.name,
-                            inspection.lowered
-                        ),
-                    }),
-                    range: Some(document.span_range(inspection.use_start, inspection.use_end)),
-                })
-            });
-            send(connection, Response::new_ok(id, hover))
-        }
-        _ => send(
+    if request.method != req::CodeActionRequest::METHOD {
+        return send(
             connection,
             Response::new_err(
                 request.id,
                 lsp_server::ErrorCode::MethodNotFound as i32,
                 format!("unsupported method {}", request.method),
             ),
-        ),
+        );
     }
+    let Request { id, params, .. } = request;
+    let params: CodeActionParams = match serde_json::from_value(params) {
+        Ok(params) => params,
+        Err(error) => {
+            return send(
+                connection,
+                Response::new_err(
+                    id,
+                    lsp_server::ErrorCode::InvalidParams as i32,
+                    error.to_string(),
+                ),
+            );
+        }
+    };
+    let actions = documents.get(params.text_document.uri.as_str()).map_or(Vec::new(), |document| {
+        convert::code_actions(
+            &params.text_document.uri,
+            &document.text,
+            &document.index,
+            &document.reports,
+            params.range,
+            params.context.only.clone(),
+        )
+    });
+    send(connection, Response::new_ok(id, actions))
 }
 
 fn receive(
@@ -169,20 +100,17 @@ fn receive(
     documents: &mut HashMap<String, Document>,
     notification: lsp_server::Notification,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    match notification.method.as_str() {
+    let changed = match notification.method.as_str() {
         notify::DidOpenTextDocument::METHOD => {
             let Ok(params) =
                 serde_json::from_value::<DidOpenTextDocumentParams>(notification.params)
             else {
                 return Ok(());
             };
-            let document = compile(
-                &params.text_document.uri,
-                &params.text_document.text,
-                params.text_document.version,
-            );
-            publish(connection, &params.text_document.uri, &document)?;
-            documents.insert(params.text_document.uri.as_str().to_string(), document);
+            let item = params.text_document;
+            documents
+                .insert(item.uri.to_string(), document(item.uri.clone(), item.text, item.version));
+            item.uri
         }
         notify::DidChangeTextDocument::METHOD => {
             let Ok(params) =
@@ -190,14 +118,16 @@ fn receive(
             else {
                 return Ok(());
             };
-            let Some(document) = documents.get_mut(params.text_document.uri.as_str()) else {
+            let uri = params.text_document.uri;
+            let Some(change) = params.content_changes.into_iter().last() else { return Ok(()) };
+            if !documents.contains_key(uri.as_str()) {
                 return Ok(());
-            };
-            if let Some(change) = params.content_changes.into_iter().last() {
-                *document =
-                    compile(&params.text_document.uri, &change.text, params.text_document.version);
-                publish(connection, &params.text_document.uri, document)?;
             }
+            documents.insert(
+                uri.to_string(),
+                document(uri.clone(), change.text, params.text_document.version),
+            );
+            uri
         }
         notify::DidCloseTextDocument::METHOD => {
             let Ok(params) =
@@ -205,30 +135,97 @@ fn receive(
             else {
                 return Ok(());
             };
-            if documents.remove(params.text_document.uri.as_str()).is_some() {
-                clear(connection, &params.text_document.uri)?;
+            let uri = params.text_document.uri;
+            if documents.remove(uri.as_str()).is_none() {
+                return Ok(());
             }
+            clear(connection, &uri)?;
+            uri
         }
-        _ => {}
+        _ => return Ok(()),
+    };
+    let previous: HashMap<String, Vec<String>> =
+        documents.iter().map(|(key, document)| (key.clone(), rendered(document))).collect();
+    compile(documents);
+    for (key, document) in documents.iter() {
+        if document.uri == changed || previous.get(key) != Some(&rendered(document)) {
+            publish(connection, document)?;
+        }
     }
     Ok(())
 }
 
-fn compile(uri: &Uri, text: &str, version: i32) -> Document {
-    let filename = convert::filename(uri);
-    let options = Options::default();
-    let reports = match reze_compiler::compile(text, &filename, &options) {
-        Ok(output) => output.map(|output| output.diagnostics).unwrap_or_default(),
-        Err(reports) => reports,
-    };
-    Document { text: text.to_string(), version, index: LineIndex::new(text), reports }
+fn document(uri: Uri, text: String, version: i32) -> Document {
+    Document { uri, index: LineIndex::new(&text), text, version, reports: Vec::new() }
 }
 
-fn publish(
-    connection: &Connection,
-    uri: &Uri,
-    document: &Document,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn rendered(document: &Document) -> Vec<String> {
+    document.reports.iter().map(|report| report.rendered.clone()).collect()
+}
+
+/// The directory of the nearest `package.json` above `path`, or `None` when the file is not on
+/// disk under a package.
+fn project_root(path: &Path) -> Option<PathBuf> {
+    path.ancestors().skip(1).find(|dir| dir.join("package.json").is_file()).map(Path::to_path_buf)
+}
+
+/// Open documents over the files on disk.
+struct Overlay {
+    disk: Option<DiskFs>,
+    open: BTreeMap<String, String>,
+}
+
+impl FileSystem for Overlay {
+    fn read(&self, path: &str) -> Option<String> {
+        self.open.get(path).cloned().or_else(|| self.disk.as_ref()?.read(path))
+    }
+
+    fn list(&self, dir: &str) -> Vec<String> {
+        let mut paths = self.disk.as_ref().map_or(Vec::new(), |disk| disk.list(dir));
+        let prefix = format!("{}/", dir.trim_end_matches('/'));
+        paths.extend(
+            self.open.keys().filter(|path| dir.is_empty() || path.starts_with(&prefix)).cloned(),
+        );
+        paths.sort();
+        paths.dedup();
+        paths
+    }
+}
+
+/// Compiles every project with an open document and stores each document's diagnostics.
+fn compile(documents: &mut HashMap<String, Document>) {
+    let mut projects: BTreeMap<Option<PathBuf>, Vec<(String, String)>> = BTreeMap::new();
+    for (key, document) in documents.iter() {
+        let path = PathBuf::from(convert::filename(&document.uri));
+        let root = project_root(&path);
+        let relative = match &root {
+            Some(root) => path.strip_prefix(root).unwrap_or(&path),
+            None => path.strip_prefix("/").unwrap_or(&path),
+        };
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        projects.entry(root).or_default().push((key.clone(), relative));
+    }
+    for (root, members) in projects {
+        let overlay = Overlay {
+            disk: root.map(DiskFs::new),
+            open: members
+                .iter()
+                .map(|(key, relative)| (relative.clone(), documents[key].text.clone()))
+                .collect(),
+        };
+        let mut output = compile_project(&overlay, &Options::default());
+        for (key, relative) in members {
+            let document = documents.get_mut(&key).expect("member of an open document");
+            document.reports = output
+                .diagnostics
+                .extract_if(.., |diagnostic| diagnostic.file == relative)
+                .collect();
+        }
+    }
+}
+
+fn publish(connection: &Connection, document: &Document) -> Result<(), Box<dyn std::error::Error>> {
+    let uri = &document.uri;
     send(
         connection,
         lsp_server::Notification::new(

@@ -716,12 +716,9 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { analyze, analyzeAsync, compile, compileAsync, compileDocument, CompileTarget, profileHash } = nativeBinding
-export { analyze }
-export { analyzeAsync }
-export { compile }
-export { compileAsync }
-export { compileDocument }
-export { CompileTarget }
-export { profileHash }
+const { Chunks, compileProject, compileProjectAsync, Target } = nativeBinding
+export { Chunks }
+export { compileProject }
+export { compileProjectAsync }
+export { Target }
 export const __napiBindingTarget = __napiLoadedBindingTarget

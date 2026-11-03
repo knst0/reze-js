@@ -1,0 +1,7 @@
+[COMPONENT_RETURN] A component returns one template, at the end of its body. Write conditions with `<Show>` or `<Switch>` inside it.
+  at src/routes/index.tsx:3:12
+  2 |   const ok = false;
+> 3 |   if (!ok) return <p>No</p>;
+    |            ^^^^^^^^^^^^^^^^^
+  4 |   return <p>Yes</p>;
+  note: the template (src/routes/index.tsx:4:10)

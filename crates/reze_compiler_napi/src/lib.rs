@@ -3,53 +3,37 @@ use std::collections::HashMap;
 use napi::bindgen_prelude::{AsyncTask, Env, Task};
 use napi_derive::napi;
 
-#[napi(object)]
-pub struct ProfileComponentFacts {
-    pub component: String,
-    pub file: String,
-    pub mounts: u32,
-    pub props: u32,
-    pub reruns: u32,
-    pub writes: u32,
-}
-
-#[napi(object)]
-pub struct ProfileFacts {
-    /// Session-tree schema version; anything but the compiler's version is ignored.
-    pub v: u32,
-    /// The compiled file, as passed for `filename`.
-    pub file: String,
-    /// FNV-1a64 of the compiled source, hex; a mismatch compiles as without facts.
-    pub hash: String,
-    pub components: Vec<ProfileComponentFacts>,
+#[napi(string_enum = "lowercase")]
+pub enum Target {
+    Server,
+    Spa,
 }
 
 #[napi(string_enum = "lowercase")]
-pub enum CompileTarget {
-    Client,
-    Island,
-    Html,
+pub enum Chunks {
+    Route,
+    Component,
+    Handler,
+}
+
+#[napi(object)]
+pub struct ProjectInput {
+    /// Directory read from disk. Ignored when `files` is set.
+    pub root: Option<String>,
+    /// Project-relative paths to sources, instead of reading `root`.
+    pub files: Option<HashMap<String, String>>,
 }
 
 #[napi(object)]
 pub struct CompileOptions {
-    /// Default: `true`.
-    pub source_map: Option<bool>,
-    /// Pass `{ name }` to `signal`/`computed`/`action` for profiling. Default: `false`.
-    pub debug_names: Option<bool>,
-    /// Register components for hot-swap through `import.meta.hot`. Default: `false`.
-    pub hot: Option<bool>,
-    /// Module exporting `link`: native `<a href>` elements are claimed and passed to it. Default: none.
-    pub links: Option<String>,
-    /// Which output to produce. Default: `"client"`.
-    pub target: Option<CompileTarget>,
-    /// Stable canonical module id; required (nonempty) for `island` and `html`. Default: none.
-    pub module_id: Option<String>,
-    /// Profiling facts for this file, from the profile store. Default: none.
-    pub profile: Option<ProfileFacts>,
-    /// Reactive facts of imported modules keyed by import specifier, from `analyze`. Each entry
-    /// must be for the exact source the import resolves to. Default: none.
-    pub facts: Option<serde_json::Value>,
+    /// Default: `"src/routes"`.
+    pub routes_dir: Option<String>,
+    /// Default: `false`.
+    pub dev: Option<bool>,
+    /// Default: `"server"`.
+    pub target: Option<Target>,
+    /// Default: `"route"`.
+    pub chunks: Option<Chunks>,
 }
 
 #[napi(object)]
@@ -106,17 +90,6 @@ pub struct Diagnostic {
     pub rendered: String,
 }
 
-#[napi(object)]
-pub struct CompileResult {
-    /// Absent when `diagnostics` holds an `error`.
-    pub code: Option<String>,
-    /// Source map v3 JSON.
-    pub map: Option<String>,
-    pub diagnostics: Vec<Diagnostic>,
-    /// Reactive facts of this module's exports; absent when `diagnostics` holds an `error`.
-    pub facts: Option<serde_json::Value>,
-}
-
 fn position(position: reze_compiler::Position) -> Position {
     Position { offset: position.offset, line: position.line, column: position.column }
 }
@@ -154,265 +127,103 @@ fn diagnostic(d: reze_compiler::Diagnostic) -> Diagnostic {
 }
 
 #[napi(object)]
-pub struct AnalyzeResult {
-    /// Absent when `diagnostics` holds an `error`.
-    pub facts: Option<serde_json::Value>,
+pub struct ModuleOutput {
+    pub server: Option<String>,
+    pub client: Option<String>,
+}
+
+#[napi(object)]
+pub struct ProjectResult {
+    /// Compiled modules by project-relative source path; empty when `diagnostics` holds an error.
+    pub modules: HashMap<String, ModuleOutput>,
+    /// The route table: `{ file, pattern, segments, parent, is_layout }` per route file.
+    pub routes: serde_json::Value,
+    /// Source of `virtual:rz-app`.
+    pub app: String,
+    /// Source of `virtual:rz-route/{node}`, by route node index.
+    pub chunks: HashMap<String, String>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
-#[napi(object)]
-pub struct DocumentImport {
-    pub importer: String,
-    pub specifier: String,
-    /// The resolved file; absent when the import does not resolve to a source module.
-    pub file: Option<String>,
-}
-
-#[napi(object)]
-pub struct DocumentInput {
-    pub imports: Vec<DocumentImport>,
-    /// Source text of each resolved file.
-    pub sources: HashMap<String, String>,
-    /// Vite `define` entries: each dotted key with the code that replaces it.
-    pub defines: Option<HashMap<String, String>>,
-}
-
-#[napi(object)]
-pub struct DocumentRequest {
-    pub importer: String,
-    pub specifier: String,
-}
-
-#[napi(object)]
-pub struct DocumentResult {
-    /// The whole page with an empty root element; present only for a static page.
-    pub html: Option<String>,
-    /// `id` of the root element; present only for a static page.
-    pub root_id: Option<String>,
-    /// The imported files a static page was compiled from.
-    pub files: Vec<String>,
-    /// Imports to resolve into the input before compiling again.
-    pub requests: Vec<DocumentRequest>,
-    /// The module must run to render the page; `info` diagnostics name the parts that are not static.
-    pub render: bool,
-    pub diagnostics: Vec<Diagnostic>,
-}
-
-fn facts_value(facts: &reze_compiler::ModuleFacts) -> napi::Result<serde_json::Value> {
-    serde_json::to_value(facts).map_err(|error| napi::Error::from_reason(error.to_string()))
-}
-
-fn diagnostics(diagnostics: Vec<reze_compiler::Diagnostic>) -> Vec<Diagnostic> {
-    diagnostics.into_iter().map(diagnostic).collect()
-}
-
-fn compile_options(options: Option<CompileOptions>) -> napi::Result<reze_compiler::Options> {
-    let mut opts = reze_compiler::Options::default();
-    if let Some(o) = options {
-        opts.source_map = o.source_map.unwrap_or(opts.source_map);
-        opts.debug_names = o.debug_names.unwrap_or(opts.debug_names);
-        opts.hot = o.hot.unwrap_or(opts.hot);
-        opts.links = o.links.or(opts.links);
-        opts.target = match o.target {
-            Some(CompileTarget::Island) => reze_compiler::CompileTarget::Island,
-            Some(CompileTarget::Html) => reze_compiler::CompileTarget::Html,
-            Some(CompileTarget::Client) | None => reze_compiler::CompileTarget::Client,
-        };
-        opts.module_id = o.module_id;
-        opts.profile = o.profile.map(|facts| reze_compiler::ProfileFacts {
-            v: facts.v,
-            file: facts.file,
-            hash: facts.hash,
-            components: facts
-                .components
-                .into_iter()
-                .map(|c| reze_compiler::ProfileComponent {
-                    component: c.component,
-                    file: c.file,
-                    mounts: c.mounts,
-                    props: c.props,
-                    reruns: c.reruns,
-                    writes: c.writes,
-                })
-                .collect(),
-        });
-        opts.facts = match o.facts {
-            Some(value) => serde_json::from_value(value)
-                .map_err(|error| napi::Error::from_reason(format!("invalid facts: {error}")))?,
-            None => HashMap::new(),
-        };
+fn options(options: Option<CompileOptions>) -> reze_compiler::Options {
+    let mut out = reze_compiler::Options::default();
+    let Some(options) = options else { return out };
+    if let Some(routes_dir) = options.routes_dir {
+        out.routes_dir = routes_dir;
     }
-    Ok(opts)
+    out.dev = options.dev.unwrap_or(out.dev);
+    out.target = match options.target {
+        Some(Target::Spa) => reze_compiler::Target::Spa,
+        Some(Target::Server) | None => reze_compiler::Target::Server,
+    };
+    out.chunks = match options.chunks {
+        Some(Chunks::Component) => reze_compiler::Chunks::Component,
+        Some(Chunks::Handler) => reze_compiler::Chunks::Handler,
+        Some(Chunks::Route) | None => reze_compiler::Chunks::Route,
+    };
+    out
 }
 
-fn compile_result(
-    compiled: Result<reze_compiler::Compiled, Vec<reze_compiler::Diagnostic>>,
-) -> napi::Result<CompileResult> {
-    match compiled {
-        Ok(reze_compiler::Compiled { output, facts }) => {
-            let (code, map, diagnostics_out) = match output {
-                Some(out) => (Some(out.code), out.map, out.diagnostics),
-                None => (None, None, Vec::new()),
-            };
-            Ok(CompileResult {
-                code,
-                map,
-                diagnostics: diagnostics(diagnostics_out),
-                facts: Some(facts_value(&facts)?),
-            })
+fn run(input: &ProjectInput, options: &reze_compiler::Options) -> reze_compiler::ProjectOutput {
+    match (&input.files, &input.root) {
+        (Some(files), _) => {
+            let fs = reze_compiler::MemoryFs::new(files.clone());
+            reze_compiler::compile_project(&fs, options)
         }
-        Err(errors) => Ok(CompileResult {
-            code: None,
-            map: None,
-            diagnostics: diagnostics(errors),
-            facts: None,
-        }),
+        (None, root) => {
+            let fs = reze_compiler::DiskFs::new(root.clone().unwrap_or_else(|| ".".into()));
+            reze_compiler::compile_project(&fs, options)
+        }
     }
 }
 
-/// Compiles `source`. `code` is absent when nothing in the file is rewritten, and when
-/// `diagnostics` holds an `error`; compile errors come back as diagnostics without `code`, and the
-/// call never throws on them.
+fn result(output: reze_compiler::ProjectOutput) -> napi::Result<ProjectResult> {
+    let routes = serde_json::to_value(&output.routes.nodes)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))?;
+    Ok(ProjectResult {
+        modules: output
+            .modules
+            .into_iter()
+            .map(|(path, m)| (path, ModuleOutput { server: m.server, client: m.client }))
+            .collect(),
+        routes,
+        app: output.app,
+        chunks: output.chunks.into_iter().map(|(node, code)| (node.to_string(), code)).collect(),
+        diagnostics: output.diagnostics.into_iter().map(diagnostic).collect(),
+    })
+}
+
 #[napi]
-pub fn compile(
-    source: String,
-    filename: String,
+pub fn compile_project(
+    input: ProjectInput,
     options: Option<CompileOptions>,
-) -> napi::Result<CompileResult> {
-    let options = compile_options(options)?;
-    compile_result(reze_compiler::compile_with_facts(&source, &filename, &options))
+) -> napi::Result<ProjectResult> {
+    let options = self::options(options);
+    result(run(&input, &options))
 }
 
 pub struct CompileTask {
-    source: String,
-    filename: String,
+    input: ProjectInput,
     options: reze_compiler::Options,
 }
 
 impl Task for CompileTask {
-    type Output = Result<reze_compiler::Compiled, Vec<reze_compiler::Diagnostic>>;
-    type JsValue = CompileResult;
+    type Output = reze_compiler::ProjectOutput;
+    type JsValue = ProjectResult;
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        Ok(reze_compiler::compile_with_facts(&self.source, &self.filename, &self.options))
+        Ok(run(&self.input, &self.options))
     }
 
-    fn resolve(&mut self, _: Env, compiled: Self::Output) -> napi::Result<CompileResult> {
-        compile_result(compiled)
+    fn resolve(&mut self, _: Env, output: Self::Output) -> napi::Result<ProjectResult> {
+        result(output)
     }
 }
 
-/// `compile` on the libuv thread pool.
-#[napi(ts_return_type = "Promise<CompileResult>")]
-pub fn compile_async(
-    source: String,
-    filename: String,
+#[napi(ts_return_type = "Promise<ProjectResult>")]
+pub fn compile_project_async(
+    input: ProjectInput,
     options: Option<CompileOptions>,
-) -> napi::Result<AsyncTask<CompileTask>> {
-    let options = compile_options(options)?;
-    Ok(AsyncTask::new(CompileTask { source, filename, options }))
-}
-
-/// Reactive facts of `source`'s exports, for `compile`'s `facts` of imported modules. `facts` is
-/// absent when the module has errors.
-#[napi]
-pub fn analyze(source: String, filename: String) -> napi::Result<AnalyzeResult> {
-    analyze_result(reze_compiler::analyze(&source, &filename))
-}
-
-fn analyze_result(
-    analyzed: Result<reze_compiler::ModuleFacts, Vec<reze_compiler::Diagnostic>>,
-) -> napi::Result<AnalyzeResult> {
-    match analyzed {
-        Ok(facts) => {
-            Ok(AnalyzeResult { facts: Some(facts_value(&facts)?), diagnostics: Vec::new() })
-        }
-        Err(errors) => Ok(AnalyzeResult { facts: None, diagnostics: diagnostics(errors) }),
-    }
-}
-
-pub struct AnalyzeTask {
-    source: String,
-    filename: String,
-}
-
-impl Task for AnalyzeTask {
-    type Output = Result<reze_compiler::ModuleFacts, Vec<reze_compiler::Diagnostic>>;
-    type JsValue = AnalyzeResult;
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        Ok(reze_compiler::analyze(&self.source, &self.filename))
-    }
-
-    fn resolve(&mut self, _: Env, analyzed: Self::Output) -> napi::Result<AnalyzeResult> {
-        analyze_result(analyzed)
-    }
-}
-
-/// `analyze` on the libuv thread pool.
-#[napi(ts_return_type = "Promise<AnalyzeResult>")]
-pub fn analyze_async(source: String, filename: String) -> AsyncTask<AnalyzeTask> {
-    AsyncTask::new(AnalyzeTask { source, filename })
-}
-
-/// FNV-1a64 of `text`'s UTF-8 bytes, lowercase hex: the hash `facts` and `profile` entries carry.
-#[napi]
-pub fn profile_hash(text: String) -> String {
-    reze_compiler::profile_hash(&text)
-}
-
-/// Compiles the default-exported document component of `source` to static HTML, following the
-/// imports resolved in `input`. Errors come back as diagnostics, and the call never throws on them.
-#[napi]
-pub fn compile_document(
-    source: String,
-    filename: String,
-    input: Option<DocumentInput>,
-) -> DocumentResult {
-    let mut modules = reze_compiler::DocumentModules::default();
-    if let Some(input) = input {
-        for import in input.imports {
-            let request = reze_compiler::ImportRequest {
-                importer: import.importer,
-                specifier: import.specifier,
-            };
-            modules.resolve(request, import.file);
-        }
-        for (file, source) in input.sources {
-            modules.add_source(file, source);
-        }
-        for (key, code) in input.defines.into_iter().flatten() {
-            modules.define(key, code);
-        }
-    }
-    let empty = DocumentResult {
-        html: None,
-        root_id: None,
-        files: Vec::new(),
-        requests: Vec::new(),
-        render: false,
-        diagnostics: Vec::new(),
-    };
-    match reze_compiler::compile_document(&source, &filename, &modules) {
-        Ok(reze_compiler::DocumentOutcome::Html(document)) => DocumentResult {
-            html: Some(document.html),
-            root_id: Some(document.root_id),
-            files: document.files,
-            ..empty
-        },
-        Ok(reze_compiler::DocumentOutcome::Resolve(requests)) => DocumentResult {
-            requests: requests
-                .into_iter()
-                .map(|request| DocumentRequest {
-                    importer: request.importer,
-                    specifier: request.specifier,
-                })
-                .collect(),
-            ..empty
-        },
-        Ok(reze_compiler::DocumentOutcome::Render(reasons)) => {
-            DocumentResult { render: true, diagnostics: diagnostics(reasons), ..empty }
-        }
-        Err(errors) => DocumentResult { diagnostics: diagnostics(errors), ..empty },
-    }
+) -> AsyncTask<CompileTask> {
+    AsyncTask::new(CompileTask { input, options: self::options(options) })
 }

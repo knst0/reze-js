@@ -1,0 +1,6 @@
+[PARSE_ERROR] The parser rejected this file (Unexpected token. Did you mean `{'}'}` or `&rbrace;`?). Fix the syntax at this position.
+  at src/routes/index.tsx:3:1
+  2 |   return <main>;
+> 3 | }
+    | ^
+  4 |

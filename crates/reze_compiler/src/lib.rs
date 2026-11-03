@@ -1,327 +1,90 @@
-//! JSX and reactive syntax compiled through shared semantic IR into target-specific Oxc AST.
+//! Whole-program compiler: route modules and the modules they import become server render code,
+//! client chunks, the route table, and diagnostics.
 
-mod ast;
-mod codegen;
+mod analyze;
+mod client;
 mod diagnostic;
-mod document;
-mod exports;
-mod frontend;
+mod emit;
+mod fs;
 mod html;
-mod imports;
-mod inspect;
-mod ir;
-mod kind;
-mod module_facts;
-mod server_state;
+mod project;
+mod routes;
+mod view;
 
-use oxc_allocator::Allocator;
-use oxc_ast::ast::Program;
-use oxc_codegen::{Codegen, CodegenOptions};
-use oxc_parser::Parser;
-use oxc_span::{SourceType, Span};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
+
+use serde::Serialize;
 
 pub use diagnostic::{
     CATALOG, Code, Diagnostic, Edit, Entry, Example, Fix, Label, LineIndex, Position, Severity,
     render_skill,
 };
+pub use fs::{DiskFs, FileSystem, MemoryFs};
+pub use routes::{RouteNode, RouteTable, Segment};
 
-pub use document::{Document, DocumentModules, DocumentOutcome, ImportRequest, compile_document};
-pub use inspect::{BindingKind, Inspection, inspect};
-pub use module_facts::{ExportFacts, FactKind, ModuleFacts, Reads, Written};
-
-use diagnostic::Report;
-
-/// The module compiled code imports runtime helpers from.
-pub const RUNTIME_MODULE: &str = exports::RUNTIME;
+/// The module compiled server code imports render helpers from.
+pub const SERVER_RUNTIME: &str = "reze-js/runtime/server";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum CompileTarget {
+pub enum Target {
     #[default]
-    Client,
-    Island,
-    Html,
+    Server,
+    Spa,
 }
 
-impl CompileTarget {
-    pub(crate) fn runs_in_browser(self) -> bool {
-        matches!(self, Self::Client | Self::Island)
-    }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Chunks {
+    #[default]
+    Route,
+    Component,
+    Handler,
 }
 
 pub struct Options {
-    /// Emit a v3 source map.
-    pub source_map: bool,
-    /// Pass `{ name }` to `signal`/`computed`/`action` after the declared variable, for profiling.
-    pub debug_names: bool,
-    /// Register components for hot-swap through `import.meta.hot`.
-    pub hot: bool,
-    /// Module exporting `link`: when set, native `<a href>` elements are claimed and passed to
-    /// `link(el, href?)`, which keeps their `aria-current`/`data-active`/`data-pending` current.
-    pub links: Option<String>,
-    /// Default: `Client`.
-    pub target: CompileTarget,
-    /// Nonempty canonical identity required by `Island` and `Html`.
-    pub module_id: Option<String>,
-    /// Profiling record for this file, in the session-tree shape the host stores. The file is
-    /// specialized only when the record names this file with a matching schema and source hash;
-    /// anything else compiles as without facts.
-    pub profile: Option<ProfileFacts>,
-    /// Facts of imported modules keyed by import specifier as written in the source. Each entry's
-    /// `hash` must match the imported source; facts whose `v` or `compiler` differ from this build
-    /// are ignored.
-    pub facts: HashMap<String, ModuleFacts>,
-}
-
-/// Schema version of `ProfileFacts`; records with another version are ignored.
-pub const PROFILE_VERSION: u32 = 1;
-
-/// One dev session's counters for a component, as collected by `startProfileSession`.
-#[derive(Default, serde::Deserialize)]
-pub struct ProfileComponent {
-    pub component: String,
-    pub file: String,
-    pub mounts: u32,
-    pub props: u32,
-    pub reruns: u32,
-    pub writes: u32,
-}
-
-/// Profiling record for one file: `hash` is FNV-1a64 of the compiled source, hex.
-#[derive(Default, serde::Deserialize)]
-pub struct ProfileFacts {
-    pub v: u32,
-    pub file: String,
-    pub hash: String,
-    pub components: Vec<ProfileComponent>,
-}
-
-/// FNV-1a64 of `text`, lowercase hex. The dev server computes the same hash to key the store.
-pub fn profile_hash(text: &str) -> String {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for byte in text.bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    format!("{hash:016x}")
-}
-
-/// Whether `profile` describes `filename` and `source` with at least one mount and zero re-runs.
-fn is_cold(source: &str, filename: &str, profile: Option<&ProfileFacts>) -> bool {
-    let Some(facts) = profile else { return false };
-    if facts.v != PROFILE_VERSION
-        || facts.file != filename
-        || facts.hash != profile_hash(source)
-        || facts.components.is_empty()
-    {
-        return false;
-    }
-    facts.components.iter().any(|c| c.mounts > 0) && facts.components.iter().all(|c| c.reruns == 0)
+    /// Project-relative directory of route modules; the same path plus an extension is the root
+    /// layout.
+    pub routes_dir: String,
+    pub dev: bool,
+    pub target: Target,
+    pub chunks: Chunks,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
-            source_map: true,
-            debug_names: false,
-            hot: false,
-            links: None,
-            target: CompileTarget::Client,
-            module_id: None,
-            profile: None,
-            facts: HashMap::new(),
+            routes_dir: "src/routes".into(),
+            dev: false,
+            target: Target::Server,
+            chunks: Chunks::Route,
         }
     }
 }
 
-pub struct Output {
-    pub code: String,
-    /// Source map v3 JSON.
-    pub map: Option<String>,
-    /// `warn` and `info` diagnostics.
+/// Compiled code of one project module, as TypeScript.
+#[derive(Debug, Default, Serialize)]
+pub struct ModuleOutput {
+    pub server: Option<String>,
+    pub client: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct ProjectOutput {
+    /// Project-relative path to compiled code, for every module the routes reach.
+    pub modules: BTreeMap<String, ModuleOutput>,
+    pub routes: RouteTable,
+    /// Source of `virtual:rz-app`: the route modules and the route table for `createHandler`.
+    pub app: String,
+    /// Source of `virtual:rz-route/{node}`: the client factories of each page route that has any.
+    pub chunks: BTreeMap<usize, String>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Result of `compile_with_facts`. `output` is `None` when nothing in the file is rewritten.
-pub struct Compiled {
-    pub output: Option<Output>,
-    /// Facts of this module's exports, a function of its own source only.
-    pub facts: ModuleFacts,
+impl ProjectOutput {
+    pub fn has_errors(&self) -> bool {
+        self.diagnostics.iter().any(|d| d.severity == Severity::Error)
+    }
 }
 
-/// Compiles `source`. `Ok(None)` when nothing in the file is rewritten; `Err` holds every
-/// diagnostic when at least one is an `error`. `filename` picks the dialect (unknown extensions
-/// parse as TSX) and names the source in diagnostics, source maps and hot-swap ids.
-/// `Island` and `Html` require a nonempty `Options.module_id`; missing identity reports
-/// `MISSING_MODULE_ID` before parsing.
-pub fn compile(
-    source: &str,
-    filename: &str,
-    options: &Options,
-) -> Result<Option<Output>, Vec<Diagnostic>> {
-    compile_with_facts(source, filename, options).map(|compiled| compiled.output)
-}
-
-/// Like `compile`, also returning the module's facts; facts are returned even when `output` is `None`.
-pub fn compile_with_facts(
-    source: &str,
-    filename: &str,
-    options: &Options,
-) -> Result<Compiled, Vec<Diagnostic>> {
-    if matches!(options.target, CompileTarget::Island | CompileTarget::Html)
-        && options.module_id.as_deref().is_none_or(str::is_empty)
-    {
-        let target = match options.target {
-            CompileTarget::Island => "island",
-            CompileTarget::Html => "html",
-            CompileTarget::Client => "client",
-        };
-        let reports =
-            vec![Report::new(Code::MissingModuleId, Span::empty(0)).arg("target", target)];
-        return Err(diagnostic::resolve(reports, source, filename));
-    }
-    let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::tsx());
-    compile_module(source, filename, source_type, options)
-}
-
-fn compile_module(
-    source: &str,
-    filename: &str,
-    source_type: SourceType,
-    options: &Options,
-) -> Result<Compiled, Vec<Diagnostic>> {
-    let allocator = Allocator::default();
-    let program = parse_program(&allocator, source, filename, source_type)?;
-    let hot_plan = codegen::hot::should_apply(options).then(|| codegen::hot::collect(program));
-    let module_id =
-        (options.target != CompileTarget::Client).then_some(options.module_id.as_deref()).flatten();
-    let sites = ir::collect_sites(program, module_id, source);
-    let mut normalized = frontend::normalize(&allocator, program, source, &options.facts);
-    let facts = module_facts::collect(
-        normalized.program,
-        &normalized.scoping,
-        &normalized.facts,
-        profile_hash(source),
-    );
-    module_facts::apply_imports(
-        normalized.program,
-        &normalized.scoping,
-        &options.facts,
-        &mut normalized.facts,
-    );
-    if options.target == CompileTarget::Html {
-        normalized.reports.extend(server_state::check(
-            normalized.program,
-            &normalized.scoping,
-            &normalized.facts,
-        ));
-    }
-    let mut module = ir::build_module_ir(
-        normalized.program,
-        &normalized.scoping,
-        &normalized.facts,
-        source,
-        module_id,
-        options.links.is_some(),
-        sites,
-    );
-    for view in &mut module.views {
-        if let ir::view::ViewKind::Element(element) = &mut view.kind {
-            ir::layout::normalize(
-                element,
-                view.origin,
-                options.target == CompileTarget::Html,
-                &mut module.reports,
-            );
-        }
-    }
-    let mut reports = normalized.reports;
-    reports.append(&mut module.reports);
-    let diagnostics = diagnostic::resolve(reports, source, filename);
-    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
-        return Err(diagnostics);
-    }
-    if !module.has_views
-        && !normalized.content_changed
-        && normalized.facts.folded_bindings.is_empty()
-        && normalized.facts.dynamic_tags.is_empty()
-        && !(options.debug_names && options.target != CompileTarget::Html)
-        && options.target == CompileTarget::Client
-    {
-        return Ok(Compiled { output: None, facts });
-    }
-    let cold = options.target != CompileTarget::Html
-        && is_cold(source, filename, options.profile.as_ref());
-    let changed = codegen::EmitContext::new(
-        &allocator,
-        options,
-        source,
-        filename,
-        &module,
-        &normalized.facts,
-        &normalized.scoping,
-        normalized.namer,
-        normalized.helpers,
-        cold,
-    )
-    .emit(normalized.program, hot_plan.as_ref());
-    if !changed && !normalized.content_changed {
-        return Ok(Compiled { output: None, facts });
-    }
-    let output = Codegen::new()
-        .with_options(CodegenOptions {
-            source_map_path: options.source_map.then(|| filename.into()),
-            ..CodegenOptions::default()
-        })
-        .build(normalized.program);
-    Ok(Compiled {
-        output: Some(Output {
-            code: output.code,
-            map: output.map.map(codegen::serialize_source_map),
-            diagnostics,
-        }),
-        facts,
-    })
-}
-
-/// Reactive facts of `source`'s exports, computed without compiling. `Err` when the module has errors.
-pub fn analyze(source: &str, filename: &str) -> Result<ModuleFacts, Vec<Diagnostic>> {
-    let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::tsx());
-    let allocator = Allocator::default();
-    let program = parse_program(&allocator, source, filename, source_type)?;
-    let normalized = frontend::normalize(&allocator, program, source, &HashMap::new());
-    let diagnostics = diagnostic::resolve(normalized.reports, source, filename);
-    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
-        return Err(diagnostics);
-    }
-    Ok(module_facts::collect(
-        normalized.program,
-        &normalized.scoping,
-        &normalized.facts,
-        profile_hash(source),
-    ))
-}
-
-fn parse_program<'a>(
-    allocator: &'a Allocator,
-    source: &'a str,
-    filename: &str,
-    source_type: SourceType,
-) -> Result<&'a mut Program<'a>, Vec<Diagnostic>> {
-    let parsed = Parser::new(allocator, source, source_type).parse();
-    if !parsed.diagnostics.is_empty() {
-        let reports = parsed
-            .diagnostics
-            .iter()
-            .map(|d| {
-                let span = d.labels.first().map_or(Span::empty(0), |label| {
-                    let start = label.offset();
-                    Span::new(start, start + label.len())
-                });
-                Report::new(Code::ParseError, span).arg("detail", d.message.to_string())
-            })
-            .collect();
-        return Err(diagnostic::resolve(reports, source, filename));
-    }
-    Ok(allocator.alloc(parsed.program))
+pub fn compile_project(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
+    project::compile(fs, options)
 }

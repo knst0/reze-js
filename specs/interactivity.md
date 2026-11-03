@@ -401,7 +401,7 @@ The same handler site from the [Client](#client) example, rendered:
 
 ```html
 <nav>
-  <button data-rz="c1.0" aria-expanded="false">Menu</button>
+  <button aria-expanded="false" data-rz="c1.0">Menu</button>
   <ul hidden>
     <li><a href="/docs">Docs</a></li>
     <li><a href="/blog">Blog</a></li>
@@ -463,3 +463,27 @@ each page's compressed HTML on realistic applications. The share SHOULD stay und
 | --------------------------- | --------------------------------------------------------------------------------- |
 | `MODULE_STATE_SERVER_WRITE` | The server render writes state declared at module level                           |
 | `EVENT_DECISION_DEFERRED`   | `preventDefault` or `stopPropagation` depends on a condition markup can't express |
+
+## Implementation status
+
+The current implementation differs from this design in these points:
+
+- Chunks are per route only. Shared, `component`, and `handler` chunks are not built yet.
+- A component with an effect or a `ref` loads its chunk at page start, not when it enters the
+  viewport.
+- The idle preload checks once, at idle time, whether any handler site is above the fold. It does
+  not observe scrolling.
+- A store notifies on any write to the object it wraps, with no per-field tracking.
+- Client ranges (`Show`, `For` with reactive sources) are not updated in the browser. Reactive
+  props passed to child components are not supported either.
+- The state block does not restore `Date`, `Map`, `Set`, or `bigint` yet.
+- Server-tier lowering of handlers into `<form>` is not implemented.
+- A prevent condition is written as `type:cond+cond`. A condition is a bare `key` value, or
+  `field=value` for `code`, `button`, and the modifier flags (`ctrlKey=true`). A key value that
+  contains a space, `:`, `+`, or `=` cannot be written this way and raises
+  `EVENT_DECISION_DEFERRED`.
+- After a chunk fails to load, the dispatcher goes inert for the rest of the page. The native
+  fallback, `rz:chunkerror` on `window`, or the single reload takes over.
+- The dispatcher is about 1.2 KB gzip, above the 1 KB target.
+- `scripts/bench/size.mts` measures only the test applications, which are too small to judge the
+  2% metadata share.

@@ -1,0 +1,7 @@
+[SPREAD_CHILD] `{...}` as a JSX child has no fixed place in the template. Render lists with `<For>`.
+  in <Page> › p
+  at src/routes/index.tsx:3:13
+  2 |   const items = ["a", "b"];
+> 3 |   return <p>{...items}</p>;
+    |             ^^^^^^^^^^
+  4 | }

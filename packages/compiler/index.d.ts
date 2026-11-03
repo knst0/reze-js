@@ -9,70 +9,22 @@
  */
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
-/**
- * Reactive facts of `source`'s exports, for `compile`'s `facts` of imported modules. `facts` is
- * absent when the module has errors.
- */
-export declare function analyze(source: string, filename: string): AnalyzeResult
-
-/** `analyze` on the libuv thread pool. */
-export declare function analyzeAsync(source: string, filename: string): Promise<AnalyzeResult>
-
-export interface AnalyzeResult {
-  /** Absent when `diagnostics` holds an `error`. */
-  facts?: any
-  diagnostics: Array<Diagnostic>
-}
-
-/**
- * Compiles `source`. `code` is absent when nothing in the file is rewritten, and when
- * `diagnostics` holds an `error`; compile errors come back as diagnostics without `code`, and the
- * call never throws on them.
- */
-export declare function compile(source: string, filename: string, options?: CompileOptions | undefined | null): CompileResult
-
-/** `compile` on the libuv thread pool. */
-export declare function compileAsync(source: string, filename: string, options?: CompileOptions | undefined | null): Promise<CompileResult>
-
-/**
- * Compiles the default-exported document component of `source` to static HTML, following the
- * imports resolved in `input`. Errors come back as diagnostics, and the call never throws on them.
- */
-export declare function compileDocument(source: string, filename: string, input?: DocumentInput | undefined | null): DocumentResult
+export type Chunks = 'route' | 'component' | 'handler'
 
 export interface CompileOptions {
-  /** Default: `true`. */
-  sourceMap?: boolean
-  /** Pass `{ name }` to `signal`/`computed`/`action` for profiling. Default: `false`. */
-  debugNames?: boolean
-  /** Register components for hot-swap through `import.meta.hot`. Default: `false`. */
-  hot?: boolean
-  /** Module exporting `link`: native `<a href>` elements are claimed and passed to it. Default: none. */
-  links?: string
-  /** Which output to produce. Default: `"client"`. */
-  target?: CompileTarget
-  /** Stable canonical module id; required (nonempty) for `island` and `html`. Default: none. */
-  moduleId?: string
-  /** Profiling facts for this file, from the profile store. Default: none. */
-  profile?: ProfileFacts
-  /**
-   * Reactive facts of imported modules keyed by import specifier, from `analyze`. Each entry
-   * must be for the exact source the import resolves to. Default: none.
-   */
-  facts?: any
+  /** Default: `"src/routes"`. */
+  routesDir?: string
+  /** Default: `false`. */
+  dev?: boolean
+  /** Default: `"server"`. */
+  target?: Target
+  /** Default: `"route"`. */
+  chunks?: Chunks
 }
 
-export interface CompileResult {
-  /** Absent when `diagnostics` holds an `error`. */
-  code?: string
-  /** Source map v3 JSON. */
-  map?: string
-  diagnostics: Array<Diagnostic>
-  /** Reactive facts of this module's exports; absent when `diagnostics` holds an `error`. */
-  facts?: any
-}
+export declare function compileProject(input: ProjectInput, options?: CompileOptions | undefined | null): ProjectResult
 
-export type CompileTarget = 'client' | 'island' | 'html'
+export declare function compileProjectAsync(input: ProjectInput, options?: CompileOptions | undefined | null): Promise<ProjectResult>
 
 export interface Diagnostic {
   /** Stable code; see `skills/reze-compiler-diagnostics/SKILL.md`. */
@@ -94,40 +46,6 @@ export interface Diagnostic {
   rendered: string
 }
 
-export interface DocumentImport {
-  importer: string
-  specifier: string
-  /** The resolved file; absent when the import does not resolve to a source module. */
-  file?: string
-}
-
-export interface DocumentInput {
-  imports: Array<DocumentImport>
-  /** Source text of each resolved file. */
-  sources: Record<string, string>
-  /** Vite `define` entries: each dotted key with the code that replaces it. */
-  defines?: Record<string, string>
-}
-
-export interface DocumentRequest {
-  importer: string
-  specifier: string
-}
-
-export interface DocumentResult {
-  /** The whole page with an empty root element; present only for a static page. */
-  html?: string
-  /** `id` of the root element; present only for a static page. */
-  rootId?: string
-  /** The imported files a static page was compiled from. */
-  files: Array<string>
-  /** Imports to resolve into the input before compiling again. */
-  requests: Array<DocumentRequest>
-  /** The module must run to render the page; `info` diagnostics name the parts that are not static. */
-  render: boolean
-  diagnostics: Array<Diagnostic>
-}
-
 /** Replaces source bytes `start..end` with `text`. */
 export interface Edit {
   start: number
@@ -147,6 +65,11 @@ export interface Label {
   message: string
 }
 
+export interface ModuleOutput {
+  server?: string
+  client?: string
+}
+
 export interface Position {
   /** Byte offset. */
   offset: number
@@ -156,24 +79,23 @@ export interface Position {
   column: number
 }
 
-export interface ProfileComponentFacts {
-  component: string
-  file: string
-  mounts: number
-  props: number
-  reruns: number
-  writes: number
+export interface ProjectInput {
+  /** Directory read from disk. Ignored when `files` is set. */
+  root?: string
+  /** Project-relative paths to sources, instead of reading `root`. */
+  files?: Record<string, string>
 }
 
-export interface ProfileFacts {
-  /** Session-tree schema version; anything but the compiler's version is ignored. */
-  v: number
-  /** The compiled file, as passed for `filename`. */
-  file: string
-  /** FNV-1a64 of the compiled source, hex; a mismatch compiles as without facts. */
-  hash: string
-  components: Array<ProfileComponentFacts>
+export interface ProjectResult {
+  /** Compiled modules by project-relative source path; empty when `diagnostics` holds an error. */
+  modules: Record<string, ModuleOutput>
+  /** The route table: `{ file, pattern, segments, parent, is_layout }` per route file. */
+  routes: any
+  /** Source of `virtual:rz-app`. */
+  app: string
+  /** Source of `virtual:rz-route/{node}`, by route node index. */
+  chunks: Record<string, string>
+  diagnostics: Array<Diagnostic>
 }
 
-/** FNV-1a64 of `text`'s UTF-8 bytes, lowercase hex: the hash `facts` and `profile` entries carry. */
-export declare function profileHash(text: string): string
+export type Target = 'server' | 'spa'

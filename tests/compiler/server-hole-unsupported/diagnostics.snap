@@ -1,0 +1,15 @@
+[SERVER_HOLE_UNSUPPORTED] `new Intl.DateTimeFormat("de").format()` calls a function the compiler does not analyze. Compute the value in the loader, or make the element interactive on the client.
+  in <Home> › main › time
+  at src/routes/index.tsx:7:14
+  6 |     <main>
+> 7 |       <time>{new Intl.DateTimeFormat("de").format(at)}</time>
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  8 |       <p>{slugify("A title")}</p>
+
+[SERVER_HOLE_UNSUPPORTED] `slugify()` calls a function the compiler does not analyze. Compute the value in the loader, or make the element interactive on the client.
+  in <Home> › main › p
+  at src/routes/index.tsx:8:11
+  7 |       <time>{new Intl.DateTimeFormat("de").format(at)}</time>
+> 8 |       <p>{slugify("A title")}</p>
+    |           ^^^^^^^^^^^^^^^^^^
+  9 |     </main>

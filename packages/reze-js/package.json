@@ -12,16 +12,14 @@
     "dist"
   ],
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/runtime/dispatcher.js"
+  ],
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./schema": {
-      "types": "./dist/schema.d.ts",
-      "import": "./dist/schema.js"
     },
     "./jsx-runtime": {
       "types": "./dist/jsx-runtime.d.ts",
@@ -31,26 +29,21 @@
       "types": "./dist/jsx-dev-runtime.d.ts",
       "import": "./dist/jsx-dev-runtime.js"
     },
-    "./internal/reactivity": {
-      "types": "./dist/internal/reactivity.d.ts",
-      "import": "./dist/internal/reactivity.js"
+    "./runtime/client": {
+      "types": "./dist/runtime/client.d.ts",
+      "import": "./dist/runtime/client.js"
     },
-    "./internal/runtime": {
-      "types": "./dist/internal/runtime.d.ts",
-      "import": "./dist/internal/runtime.js"
+    "./runtime/dispatcher": {
+      "types": "./dist/runtime/dispatcher.d.ts",
+      "import": "./dist/runtime/dispatcher.js"
     },
-    "./internal/html": {
-      "types": "./dist/internal/html.d.ts",
-      "import": "./dist/internal/html.js"
-    },
-    "./internal/client": {
-      "types": "./dist/internal/client.d.ts",
-      "import": "./dist/internal/client.js"
+    "./runtime/server": {
+      "types": "./dist/runtime/server.d.ts",
+      "import": "./dist/runtime/server.js"
     },
     "./server": {
-      "types": "./dist/server/node.d.ts",
-      "bun": "./dist/server/bun.js",
-      "node": "./dist/server/node.js"
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
     }
   },
   "publishConfig": {
@@ -58,9 +51,5 @@
   },
   "scripts": {
     "build": "vp pack"
-  },
-  "dependencies": {
-    "@rezejs/dom": "workspace:^",
-    "@rezejs/signals": "workspace:^"
   }
 }

@@ -26,8 +26,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build packages
         run: pnpm build
-      - name: Check runtime sizes
-        run: pnpm --workspace-concurrency=1 --no-sort --filter "./packages/*" --if-present bench:size --check
+      - name: Check app sizes
+        run: node scripts/bench/size.mts --check
       - name: Build the docs
         run: pnpm --filter @rezejs/docs exec vp build
       - name: Check docs initial JS

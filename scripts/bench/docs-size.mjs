@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, posix, relative } from "node:path";
 
-import { measure, recordSnapshot, sumSizes } from "./sizes.mjs";
+import { measure, recordSnapshot, sumSizes } from "./sizes.ts";
 
 const docsDir = join(import.meta.dirname, "..", "..", "docs");
 const distDir = join(docsDir, "dist");

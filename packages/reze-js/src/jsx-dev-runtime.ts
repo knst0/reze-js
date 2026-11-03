@@ -1,1 +1,1 @@
-export type { JSX } from "@rezejs/dom/jsx-runtime";
+export type { JSX } from "./jsx-runtime";

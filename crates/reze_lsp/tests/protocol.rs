@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 
@@ -7,21 +8,17 @@ use lsp_types::request::Request as RequestMethod;
 use lsp_types::{
     CodeAction, CodeActionContext, CodeActionKind, CodeActionOrCommand, CodeActionParams,
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, GotoDefinitionParams, Hover, HoverContents, HoverParams, Location,
-    NumberOrString, Position, PublishDiagnosticsParams, Range, ServerCapabilities,
-    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, TextEdit, Uri, VersionedTextDocumentIdentifier,
-    notification as notify, request as req,
+    DidOpenTextDocumentParams, NumberOrString, Position, PublishDiagnosticsParams, Range,
+    ServerCapabilities, TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+    TextEdit, Uri, VersionedTextDocumentIdentifier, notification as notify, request as req,
 };
 use serde_json::{Value, json};
 
-const DUPLICATE_BAD: &str = "export const view = <a href=\"/a\" href={url()} />;\n";
-const DUPLICATE_GOOD: &str = "export const view = <a href={url()} />;\n";
-const EMOJI_BAD: &str = "export const view = <div title=\"\u{1F389}\" clas=\"box\" />;\n";
-const EMOJI_GOOD: &str = "export const view = <div title=\"\u{1F389}\" class=\"box\" />;\n";
-const PARSE_BAD: &str = "export const view = <div>;\n";
-const FEATURE: &str = "import { signal, computed, action, Show } from \"reze-js\";\nlet count = signal(0);\nconst doubled = computed(count * 2);\nconst increment = action(() => { count++; });\nexport const view = <div><p>{count}{doubled}</p><button onClick={() => increment()}>go</button><Show when={count > 0}><span>{count}</span></Show></div>;\n";
-const FEATURE_BROKEN: &str = "import { signal } from \"reze-js\";\nlet [count] = signal(0);\nexport const view = <p>{count}</p>;\n";
+const CONDITIONAL: &str = "export default function Home() {\n  const ok = true;\n  return <main>{ok && <b>yes</b>}</main>;\n}\n";
+const CONDITIONAL_FIXED: &str = "import { Show } from \"reze-js\";\nexport default function Home() {\n  const ok = true;\n  return <main><Show when={ok}><b>yes</b></Show></main>;\n}\n";
+const IMPORTS_CARD: &str = "import Card from \"../Card\";\nexport default function Home() {\n  return <main><Card /></main>;\n}\n";
+const CARD: &str = "export default function Card() {\n  const items = [\"a\"];\n  return <ul>{items.map((item) => <li>{item}</li>)}</ul>;\n}\n";
+const PARSE_BAD: &str = "export default function Home() {\n  return <main>;\n}\n";
 
 struct Client {
     connection: Connection,
@@ -58,6 +55,81 @@ impl Client {
             message => panic!("expected diagnostics, got {message:?}"),
         }
     }
+
+    /// The next `count` publications, by document.
+    fn publications(&self, count: usize) -> HashMap<String, Vec<Diagnostic>> {
+        (0..count).map(|_| self.diagnostics()).map(|p| (p.uri.to_string(), p.diagnostics)).collect()
+    }
+
+    fn quiet(&self) {
+        assert!(self.connection.receiver.recv_timeout(Duration::from_millis(200)).is_err());
+    }
+
+    fn open(&self, uri: &Uri, text: &str) {
+        self.notify(Notification::new(
+            notify::DidOpenTextDocument::METHOD.to_string(),
+            serde_json::to_value(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: String::from("typescriptreact"),
+                    version: 1,
+                    text: text.to_string(),
+                },
+            })
+            .unwrap(),
+        ));
+    }
+
+    fn change(&self, uri: &Uri, version: i32, text: &str) {
+        self.notify(Notification::new(
+            notify::DidChangeTextDocument::METHOD.to_string(),
+            serde_json::to_value(DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier { uri: uri.clone(), version },
+                content_changes: vec![TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: text.to_string(),
+                }],
+            })
+            .unwrap(),
+        ));
+    }
+
+    fn close(&self, uri: &Uri) {
+        self.notify(Notification::new(
+            notify::DidCloseTextDocument::METHOD.to_string(),
+            serde_json::to_value(DidCloseTextDocumentParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+            })
+            .unwrap(),
+        ));
+    }
+
+    fn actions(&mut self, uri: &Uri, only: Option<Vec<CodeActionKind>>) -> Vec<CodeAction> {
+        let response = self.request(
+            req::CodeActionRequest::METHOD,
+            serde_json::to_value(CodeActionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                range: Range {
+                    start: Position { line: 0, character: 0 },
+                    end: Position { line: 100, character: 0 },
+                },
+                context: CodeActionContext { diagnostics: Vec::new(), only, trigger_kind: None },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .unwrap(),
+        );
+        let actions: Vec<CodeActionOrCommand> =
+            serde_json::from_value(response.response_result.unwrap()).unwrap();
+        actions
+            .into_iter()
+            .map(|action| match action {
+                CodeActionOrCommand::CodeAction(action) => action,
+                CodeActionOrCommand::Command(command) => panic!("expected action, got {command:?}"),
+            })
+            .collect()
+    }
 }
 
 type Server = thread::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
@@ -73,8 +145,14 @@ fn parse_uri(text: &str) -> Uri {
     text.parse().unwrap()
 }
 
-fn has(diagnostics: &[Diagnostic], code: &str) -> bool {
-    diagnostics.iter().any(|d| d.code == Some(NumberOrString::String(code.to_string())))
+fn codes(diagnostics: &[Diagnostic]) -> Vec<String> {
+    diagnostics
+        .iter()
+        .filter_map(|d| match &d.code {
+            Some(NumberOrString::String(code)) => Some(code.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn to_offset(text: &str, at: Position) -> usize {
@@ -107,122 +185,11 @@ fn apply(text: &str, edits: &[TextEdit]) -> String {
     fixed
 }
 
-fn full_line() -> Range {
-    Range { start: Position { line: 0, character: 0 }, end: Position { line: 0, character: 1000 } }
-}
-
-fn actions(client: &mut Client, uri: &Uri, only: Option<Vec<CodeActionKind>>) -> Vec<CodeAction> {
-    let response = client.request(
-        req::CodeActionRequest::METHOD,
-        serde_json::to_value(CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: full_line(),
-            context: CodeActionContext { diagnostics: Vec::new(), only, trigger_kind: None },
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
-        })
-        .unwrap(),
-    );
-    assert!(response.response_result.is_ok());
-    let actions: Vec<CodeActionOrCommand> =
-        serde_json::from_value(response.response_result.unwrap()).unwrap();
-    actions
-        .into_iter()
-        .map(|action| match action {
-            CodeActionOrCommand::CodeAction(action) => action,
-            CodeActionOrCommand::Command(command) => panic!("expected action, got {command:?}"),
-        })
-        .collect()
-}
-
-fn position_at(text: &str, offset: usize) -> Position {
-    let before = &text[..offset];
-    let line = before.matches('\n').count() as u32;
-    let line_start = before.rfind('\n').map_or(0, |found| found + 1);
-    Position { line, character: text[line_start..offset].encode_utf16().count() as u32 }
-}
-
-fn text_range(text: &str, start: usize, end: usize) -> Range {
-    Range { start: position_at(text, start), end: position_at(text, end) }
-}
-
-fn definition(client: &mut Client, uri: &Uri, at: Position) -> Option<Location> {
-    let response = client.request(
-        req::GotoDefinition::METHOD,
-        serde_json::to_value(GotoDefinitionParams {
-            text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri: uri.clone() },
-                position: at,
-            },
-            work_done_progress_params: Default::default(),
-            partial_result_params: Default::default(),
-        })
-        .unwrap(),
-    );
-    let result = response.response_result.unwrap();
-    if result.is_null() {
-        return None;
-    }
-    Some(serde_json::from_value(result).unwrap())
-}
-
-fn hover(client: &mut Client, uri: &Uri, at: Position) -> Option<Hover> {
-    let response = client.request(
-        req::HoverRequest::METHOD,
-        serde_json::to_value(HoverParams {
-            text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri: uri.clone() },
-                position: at,
-            },
-            work_done_progress_params: Default::default(),
-        })
-        .unwrap(),
-    );
-    let result = response.response_result.unwrap();
-    if result.is_null() {
-        return None;
-    }
-    Some(serde_json::from_value(result).unwrap())
-}
-
-fn hover_text(hover: &Hover) -> String {
-    match &hover.contents {
-        HoverContents::Markup(content) => content.value.clone(),
-        other => panic!("expected markup hover, got {other:?}"),
-    }
-}
-
-fn open(client: &mut Client, uri: &Uri, text: &str) -> PublishDiagnosticsParams {
-    client.notify(Notification::new(
-        notify::DidOpenTextDocument::METHOD.to_string(),
-        serde_json::to_value(DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: uri.clone(),
-                language_id: String::from("typescriptreact"),
-                version: 1,
-                text: text.to_string(),
-            },
-        })
-        .unwrap(),
-    ));
-    client.diagnostics()
-}
-
-fn close(client: &mut Client, uri: &Uri) {
-    client.notify(Notification::new(
-        notify::DidCloseTextDocument::METHOD.to_string(),
-        serde_json::to_value(DidCloseTextDocumentParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-        })
-        .unwrap(),
-    ));
-    assert!(client.diagnostics().diagnostics.is_empty());
-}
-
 #[test]
-fn session_reports_diagnostics_and_fixes() {
+fn session_reports_project_diagnostics_and_fixes() {
     let (mut client, server) = start();
-    let uri = parse_uri("file:///view.tsx");
+    let page = parse_uri("file:///src/routes/index.tsx");
+    let card = parse_uri("file:///src/Card.tsx");
 
     let response = client.request("initialize", json!({"capabilities": {}}));
     let capabilities: ServerCapabilities =
@@ -239,171 +206,51 @@ fn session_reports_diagnostics_and_fixes() {
         Some(lsp_types::TextDocumentSyncCapability::Kind(lsp_types::TextDocumentSyncKind::FULL))
     );
     assert_eq!(capabilities.position_encoding, Some(lsp_types::PositionEncodingKind::UTF16));
-    assert_eq!(capabilities.definition_provider, Some(lsp_types::OneOf::Left(true)));
-    assert_eq!(capabilities.hover_provider, Some(lsp_types::HoverProviderCapability::Simple(true)));
     client.notify(Notification::new(notify::Initialized::METHOD.to_string(), json!({})));
 
-    client.notify(Notification::new(
-        notify::DidOpenTextDocument::METHOD.to_string(),
-        serde_json::to_value(DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: uri.clone(),
-                language_id: String::from("typescriptreact"),
-                version: 1,
-                text: DUPLICATE_BAD.to_string(),
-            },
-        })
-        .unwrap(),
-    ));
+    client.open(&page, CONDITIONAL);
     let published = client.diagnostics();
+    assert_eq!(published.uri, page);
     assert_eq!(published.version, Some(1));
-    assert!(has(&published.diagnostics, "DUPLICATE_ATTRIBUTE"));
-    let report = published
-        .diagnostics
-        .iter()
-        .find(|d| has(std::slice::from_ref(d), "DUPLICATE_ATTRIBUTE"))
-        .unwrap();
-    assert_eq!(report.severity, Some(DiagnosticSeverity::WARNING));
-    assert_eq!(report.range.start.line, 0);
-    assert!(report.related_information.as_ref().is_some_and(|labels| !labels.is_empty()));
+    assert_eq!(codes(&published.diagnostics), ["JSX_CONDITIONAL_EXPRESSION"]);
+    let report = &published.diagnostics[0];
+    assert_eq!(report.range.start, Position { line: 2, character: 16 });
     assert!(report.code_description.is_some());
 
-    let fixes = actions(&mut client, &uri, None);
-    assert!(!fixes.is_empty());
+    let fixes = client.actions(&page, None);
+    assert_eq!(fixes.len(), 1);
     assert_eq!(fixes[0].kind, Some(CodeActionKind::QUICKFIX));
-    assert!(fixes[0].title.contains("earlier"));
     assert_eq!(fixes[0].is_preferred, Some(true));
-    let edits = fixes[0].edit.as_ref().unwrap().changes.as_ref().unwrap().get(&uri).unwrap();
-    assert_eq!(apply(DUPLICATE_BAD, edits), DUPLICATE_GOOD);
+    let edits = fixes[0].edit.as_ref().unwrap().changes.as_ref().unwrap().get(&page).unwrap();
+    assert_eq!(apply(CONDITIONAL, edits), CONDITIONAL_FIXED);
+    assert!(client.actions(&page, Some(vec![CodeActionKind::REFACTOR])).is_empty());
 
-    let filtered = actions(&mut client, &uri, Some(vec![CodeActionKind::REFACTOR]));
-    assert!(filtered.is_empty());
-
-    client.notify(Notification::new(
-        notify::DidChangeTextDocument::METHOD.to_string(),
-        serde_json::to_value(DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier { uri: uri.clone(), version: 2 },
-            content_changes: vec![TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text: DUPLICATE_GOOD.to_string(),
-            }],
-        })
-        .unwrap(),
-    ));
+    client.change(&page, 2, CONDITIONAL_FIXED);
     let cleared = client.diagnostics();
     assert_eq!(cleared.version, Some(2));
-    assert!(!has(&cleared.diagnostics, "DUPLICATE_ATTRIBUTE"));
+    assert!(cleared.diagnostics.is_empty());
 
-    let emoji = parse_uri("file:///emoji%20view.tsx");
-    client.notify(Notification::new(
-        notify::DidOpenTextDocument::METHOD.to_string(),
-        serde_json::to_value(DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: emoji.clone(),
-                language_id: String::from("typescriptreact"),
-                version: 1,
-                text: EMOJI_BAD.to_string(),
-            },
-        })
-        .unwrap(),
-    ));
-    let published = client.diagnostics();
-    assert!(has(&published.diagnostics, "UNKNOWN_ATTRIBUTE"));
-    let fixes = actions(&mut client, &emoji, None);
-    let edits = fixes[0].edit.as_ref().unwrap().changes.as_ref().unwrap().get(&emoji).unwrap();
-    assert_eq!(apply(EMOJI_BAD, edits), EMOJI_GOOD);
-    client.notify(Notification::new(
-        notify::DidCloseTextDocument::METHOD.to_string(),
-        serde_json::to_value(DidCloseTextDocumentParams {
-            text_document: TextDocumentIdentifier { uri: emoji },
-        })
-        .unwrap(),
-    ));
-    assert!(client.diagnostics().diagnostics.is_empty());
+    client.change(&page, 3, IMPORTS_CARD);
+    let missing = client.diagnostics();
+    assert_eq!(codes(&missing.diagnostics), ["IMPORT_UNRESOLVED"]);
 
-    client.notify(Notification::new(
-        notify::DidChangeTextDocument::METHOD.to_string(),
-        serde_json::to_value(DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier { uri: uri.clone(), version: 3 },
-            content_changes: vec![TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text: PARSE_BAD.to_string(),
-            }],
-        })
-        .unwrap(),
-    ));
-    let broken = client.diagnostics();
-    let parse =
-        broken.diagnostics.iter().find(|d| has(std::slice::from_ref(d), "PARSE_ERROR")).unwrap();
+    client.open(&card, CARD);
+    let reached = client.publications(2);
+    assert!(reached[page.as_str()].is_empty());
+    assert_eq!(codes(&reached[card.as_str()]), ["JSX_LIST_EXPRESSION"]);
+
+    client.change(&page, 4, PARSE_BAD);
+    let broken = client.publications(2);
+    let parse = &broken[page.as_str()][0];
+    assert_eq!(codes(std::slice::from_ref(parse)), ["PARSE_ERROR"]);
     assert_eq!(parse.severity, Some(DiagnosticSeverity::ERROR));
-    assert!(actions(&mut client, &uri, None).is_empty());
+    assert!(broken[card.as_str()].is_empty());
+    assert!(client.actions(&page, None).is_empty());
 
-    let feature = parse_uri("file:///feature.tsx");
-    open(&mut client, &feature, FEATURE);
-    let count_decl = FEATURE.find("let count").unwrap() + 4;
-    let count_range = text_range(FEATURE, count_decl, count_decl + 5);
-    let jsx_read = FEATURE.find("{count}{doubled}").unwrap() + 1;
-    let found = definition(&mut client, &feature, position_at(FEATURE, jsx_read + 1)).unwrap();
-    assert_eq!(found.uri, feature);
-    assert_eq!(found.range, count_range);
-    let on_decl = definition(&mut client, &feature, position_at(FEATURE, count_decl + 1)).unwrap();
-    assert_eq!(on_decl.range, count_range);
-    let doubled_decl = FEATURE.find("const doubled").unwrap() + 6;
-    let doubled_use = jsx_read + "{count}".len();
-    let found = definition(&mut client, &feature, position_at(FEATURE, doubled_use + 1)).unwrap();
-    assert_eq!(found.range, text_range(FEATURE, doubled_decl, doubled_decl + 7));
-    let increment_decl = FEATURE.find("const increment").unwrap() + 6;
-    let increment_use = FEATURE.find("increment()}").unwrap();
-    let found = definition(&mut client, &feature, position_at(FEATURE, increment_use + 1)).unwrap();
-    assert_eq!(found.range, text_range(FEATURE, increment_decl, increment_decl + 9));
-    let show_decl = FEATURE.find("Show").unwrap();
-    let show_use = FEATURE.find("<Show").unwrap() + 1;
-    let found = definition(&mut client, &feature, position_at(FEATURE, show_use + 1)).unwrap();
-    assert_eq!(found.range, text_range(FEATURE, show_decl, show_decl + 4));
-    let text =
-        hover_text(&hover(&mut client, &feature, position_at(FEATURE, jsx_read + 1)).unwrap());
-    assert!(
-        text.contains("signal") && text.contains("count()") && text.contains("setCount"),
-        "{text}"
-    );
-    let text =
-        hover_text(&hover(&mut client, &feature, position_at(FEATURE, doubled_use + 1)).unwrap());
-    assert!(
-        text.contains("computed") && text.contains("computed(() =>") && text.contains("doubled()"),
-        "{text}"
-    );
-    let text =
-        hover_text(&hover(&mut client, &feature, position_at(FEATURE, increment_use + 1)).unwrap());
-    assert!(text.contains("action") && text.contains("increment"), "{text}");
-    let text =
-        hover_text(&hover(&mut client, &feature, position_at(FEATURE, show_use + 1)).unwrap());
-    assert!(text.contains("Show") && text.contains("branch"), "{text}");
-    close(&mut client, &feature);
-
-    let broken_feature = parse_uri("file:///broken-feature.tsx");
-    let published = open(&mut client, &broken_feature, FEATURE_BROKEN);
-    assert!(has(&published.diagnostics, "SIGNAL_PATTERN"));
-    let broken_decl = FEATURE_BROKEN.find("[count]").unwrap() + 1;
-    let broken_use = FEATURE_BROKEN.find("{count}").unwrap() + 1;
-    let found =
-        definition(&mut client, &broken_feature, position_at(FEATURE_BROKEN, broken_use + 1))
-            .unwrap();
-    assert_eq!(found.range, text_range(FEATURE_BROKEN, broken_decl, broken_decl + 5));
-    let text = hover_text(
-        &hover(&mut client, &broken_feature, position_at(FEATURE_BROKEN, broken_use + 1)).unwrap(),
-    );
-    assert!(text.contains("signal") && text.contains("count()"), "{text}");
-    close(&mut client, &broken_feature);
-
-    client.notify(Notification::new(
-        notify::DidCloseTextDocument::METHOD.to_string(),
-        serde_json::to_value(DidCloseTextDocumentParams {
-            text_document: TextDocumentIdentifier { uri },
-        })
-        .unwrap(),
-    ));
+    client.close(&card);
+    assert!(client.diagnostics().diagnostics.is_empty());
+    client.quiet();
+    client.close(&page);
     assert!(client.diagnostics().diagnostics.is_empty());
 
     let response = client.request("shutdown", Value::Null);

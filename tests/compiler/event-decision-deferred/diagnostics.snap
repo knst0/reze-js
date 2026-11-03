@@ -1,0 +1,6 @@
+[EVENT_DECISION_DEFERRED] `preventDefault` depends on `dirty`, which the dispatcher cannot evaluate before the chunk loads.
+  at src/routes/index.tsx:11:22
+  10 |         onClick={(event) => {
+> 11 |           if (dirty) event.preventDefault();
+     |                      ^^^^^^^^^^^^^^^^^^^^^^
+  12 |         }}

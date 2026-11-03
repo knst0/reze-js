@@ -5,7 +5,7 @@ use super::render::placeholders;
 
 const HEADER: &str = "---
 name: reze-compiler-diagnostics
-description: Repair guide for reze-js compiler diagnostics. Use when a build, dev server or test prints a bracketed reze code such as [UNKNOWN_ATTRIBUTE], or when diagnostics.jsonl contains reze diagnostics.
+description: Repair guide for reze-js compiler diagnostics. Use when a build, dev server or test prints a bracketed reze code such as [JSX_CONDITIONAL_EXPRESSION], or when diagnostics.jsonl contains reze diagnostics.
 ---
 
 # reze-js compiler diagnostics
@@ -72,6 +72,9 @@ pub fn render_skill() -> String {
             }
             Example::Shows(module) => {
                 let _ = write!(out, "Example:\n\n```tsx\n{module}```\n");
+            }
+            Example::Prose(text) => {
+                let _ = writeln!(out, "Example: {text}");
             }
         }
     }

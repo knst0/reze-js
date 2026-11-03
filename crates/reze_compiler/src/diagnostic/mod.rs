@@ -22,6 +22,10 @@ pub enum Severity {
 }
 
 impl Severity {
+    pub fn is_error(self) -> bool {
+        self == Severity::Error
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Severity::Error => "error",
@@ -86,7 +90,6 @@ pub struct Report {
     pub span: Span,
     pub path: Vec<String>,
     args: Vec<(&'static str, String)>,
-    data: Vec<(&'static str, String)>,
     labels: Vec<Label>,
     fixes: Vec<Vec<Edit>>,
 }
@@ -98,7 +101,6 @@ impl Report {
             span,
             path: Vec::new(),
             args: Vec::new(),
-            data: Vec::new(),
             labels: Vec::new(),
             fixes: Vec::new(),
         }
@@ -107,12 +109,6 @@ impl Report {
     /// Fills `{key}` in the catalog message and fix title, and becomes `data.key`.
     pub fn arg(mut self, key: &'static str, value: impl Into<String>) -> Self {
         self.args.push((key, value.into()));
-        self
-    }
-
-    /// Becomes `data.key` only; it fills no catalog placeholder.
-    pub fn data(mut self, key: &'static str, value: impl Into<String>) -> Self {
-        self.data.push((key, value.into()));
         self
     }
 
@@ -174,12 +170,7 @@ fn resolve_one(report: Report, source: &str, file: &str, lines: &LineIndex) -> D
         path: report.path,
         labels: report.labels,
         fixes,
-        data: report
-            .args
-            .into_iter()
-            .chain(report.data)
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
+        data: report.args.into_iter().map(|(key, value)| (key.to_string(), value)).collect(),
         docs: docs_url(report.code),
         rendered,
     }

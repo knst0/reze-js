@@ -1,0 +1,21 @@
+[JSX_CONDITIONAL_EXPRESSION] A condition that renders JSX uses `<Show>` or `<Switch>`, not `?:`.
+  in <Home> › main
+  at src/routes/index.tsx:6:8
+  5 |     <main>
+> 6 |       {user ? <p>{user.name}</p> : <p>Sign in</p>}
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 |       {count && <span>{count}</span>}
+  fix: rewrite with `<Show>`
+  0..0 "import { Show } from \"reze-js\";\n"
+  112..156 "<Show when={user} fallback={<p>Sign in</p>}><p>{user.name}</p></Show>"
+
+[JSX_CONDITIONAL_EXPRESSION] A condition that renders JSX uses `<Show>` or `<Switch>`, not `&&`.
+  in <Home> › main
+  at src/routes/index.tsx:7:8
+  6 |       {user ? <p>{user.name}</p> : <p>Sign in</p>}
+> 7 |       {count && <span>{count}</span>}
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  8 |     </main>
+  fix: rewrite with `<Show>`
+  0..0 "import { Show } from \"reze-js\";\n"
+  163..194 "<Show when={count}><span>{count}</span></Show>"

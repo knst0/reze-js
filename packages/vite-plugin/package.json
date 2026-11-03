@@ -8,9 +8,6 @@
     "url": "git+https://github.com/knst0/reze-js.git",
     "directory": "packages/vite-plugin"
   },
-  "bin": {
-    "reze-manifest": "./dist/manifest-cli.js"
-  },
   "files": [
     "dist"
   ],
@@ -27,35 +24,18 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
-    "test": "vp test run"
+    "build": "vp pack"
   },
   "dependencies": {
-    "@noble/hashes": "^1.8.0",
-    "@rezejs/compiler": "workspace:^",
-    "@rollup/pluginutils": "^5.4.0",
-    "magic-string": "^0.30.21",
-    "parse5": "^7.3.0"
+    "@rezejs/compiler": "workspace:^"
   },
   "devDependencies": {
-    "@mdx-js/rollup": "^3.1.1",
-    "@rezejs/router": "workspace:*",
-    "@rezejs/signals": "workspace:*",
-    "playwright": "1.63.0",
-    "remark-frontmatter": "^5.0.0",
-    "remark-mdx-frontmatter": "^6.0.0",
     "reze-js": "workspace:*",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   },
   "peerDependencies": {
-    "@rezejs/router": "*",
     "reze-js": "*",
     "vite": "^6.4.0 || ^7.0.0 || ^8.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@rezejs/router": {
-      "optional": true
-    }
   }
 }

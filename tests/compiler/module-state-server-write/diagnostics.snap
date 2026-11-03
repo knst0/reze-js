@@ -1,0 +1,6 @@
+[MODULE_STATE_SERVER_WRITE] `count` is module state, and the server render writes it here. Write it from a handler or an `effect`.
+  at src/routes/index.tsx:4:3
+  3 | export default function Home() {
+> 4 |   count++;
+    |   ^^^^^^^
+  5 |   return (

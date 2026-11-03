@@ -1,0 +1,5 @@
+[IMPORT_UNRESOLVED] `../missing` does not resolve to a file of the project.
+  at src/routes/index.tsx:1:18
+> 1 | import Card from "../missing";
+    |                  ^^^^^^^^^^^^
+  2 |

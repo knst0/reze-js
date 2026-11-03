@@ -1,5 +1,4 @@
 packages:
-  - docs
   - examples/*
   - packages/*
   - packages/compiler/npm/*

@@ -1,0 +1,17 @@
+[UNTRACK_REDUNDANT] This read is already untracked here; remove `untrack`.
+  at src/routes/index.tsx:9:19
+   8 |   });
+>  9 |   const initial = untrack(() => user);
+     |                   ^^^^^^^^^^^^^^^^^^^
+  10 |   return (
+  fix: remove `untrack`
+  227..246 "user"
+
+[UNTRACK_REDUNDANT] This read is already untracked here; remove `untrack`.
+  at src/routes/index.tsx:13:42
+  12 |       <p>{initial}</p>
+> 13 |       <button onClick={() => console.log(untrack(() => page))}>Log</button>
+     |                                          ^^^^^^^^^^^^^^^^^^^
+  14 |       <button onClick={() => (user = "grace")}>Switch</button>
+  fix: remove `untrack`
+  334..353 "page"

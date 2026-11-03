@@ -1,0 +1,6 @@
+[CONTROL_FLOW_AS_VALUE] `Show` exists only as a JSX tag. Use it as `<Show>`.
+  at src/routes/index.tsx:3:28
+  2 | 
+> 3 | export const Conditional = Show;
+    |                            ^^^^
+  4 |

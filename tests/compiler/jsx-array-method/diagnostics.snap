@@ -1,0 +1,7 @@
+[JSX_ARRAY_METHOD] Array methods are not called in templates: `.join` here. Compute the value in the loader, or in a `computed` for client state.
+  in <Home> › span
+  at src/routes/index.tsx:3:17
+  2 |   const tags = [{ name: "a" }, { name: "b" }];
+> 3 |   return <span>{tags.map((tag) => tag.name).join(", ")}</span>;
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 | }

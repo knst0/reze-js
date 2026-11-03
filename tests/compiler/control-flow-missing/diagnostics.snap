@@ -1,0 +1,15 @@
+[CONTROL_FLOW_MISSING] `<Show>` needs `when`.
+  in <Page> › main
+  at src/routes/index.tsx:6:7
+  5 |     <main>
+> 6 |       <Show>
+    |       ^^^^^^
+  7 |         <p>ok</p>
+
+[CONTROL_FLOW_MISSING] `<For>` needs `each`.
+  in <Page> › main
+  at src/routes/index.tsx:9:7
+   8 |       </Show>
+>  9 |       <For>{(item) => <p>{item}</p>}</For>
+     |       ^^^^^
+  10 |     </main>

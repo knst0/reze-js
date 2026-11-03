@@ -1,0 +1,7 @@
+[DYNAMIC_COMPONENT_UNBOUNDED] The candidates of `dynamic` are not known at build time. Choose from an object literal of components.
+  in <Home>
+  at src/routes/index.tsx:4:18
+  3 | export default async function Home(props: { path: string }) {
+> 4 |   const Widget = dynamic(await import(props.path));
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 |   return <Widget />;

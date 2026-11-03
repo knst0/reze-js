@@ -1,0 +1,15 @@
+[CONTROL_FLOW_CHILDREN] `<For>` takes one callback that renders a row as children.
+  in <Page> › main › ul › <For>
+  at src/routes/index.tsx:8:9
+  7 |       <ul>
+> 8 |         <For each={tags}>
+    |         ^^^^^^^^^^^^^^^^^
+  9 |           <li />
+
+[CONTROL_FLOW_CHILDREN] `<Switch>` takes only `<Match>` elements as children.
+  in <Page> › main › <Switch>
+  at src/routes/index.tsx:13:9
+  12 |       <Switch>
+> 13 |         <p>loose</p>
+     |         ^^^^^^^^^^^^
+  14 |         <Match when={tags.length}>
