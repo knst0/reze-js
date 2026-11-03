@@ -10,6 +10,14 @@ test("renders the same HTML on the Rust and the JS server", async ({ request, se
   }
 });
 
+test("redirects from a Rust loader", async ({ request, server }) => {
+  for (const url of [server.url("/posts/first"), server.js!("/posts/first")]) {
+    const response = await request.get(url, { maxRedirects: 0 });
+    expect(response.status()).toBe(307);
+    expect(response.headers().location).toBe("/posts/1");
+  }
+});
+
 test("writes Server-Timing with the dev feature", async ({ request, server }) => {
   const timing = (await request.get(server.url("/posts/1"))).headers()["server-timing"];
   expect(timing).toMatch(/^loader-1;dur=\d+\.\d, render;dur=\d+\.\d$/);

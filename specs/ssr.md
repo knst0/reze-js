@@ -995,8 +995,10 @@ The current implementation differs from this design in these points:
   `<client outDir>/<path>/index.html` for the static host to serve.
 - `revalidate` takes the smallest value of the chain. The `ETag` is a SHA-1 of the document, sent
   on `200` responses to `GET` and `HEAD` that do not stream.
-- The Rust server renders loader data only: Rust has no mutations, guards, redirects, deferred
-  fields, or streaming. A Rust loader stops a request with a `RouteError`, and a `POST` answers
+- The Rust server renders loader data only: Rust has no mutations, guards, deferred fields, or
+  streaming. A Rust loader stops a request with a `RouteError`, and redirects with
+  `RouteError::redirect(location)`, a `307` whose `status` may be changed; the dev endpoint
+  answers the redirect with its status and `Location`, which the JS server answers with the same redirect. A `POST` answers
   `404`, or `403` when it is cross-site. `handle` takes any request body and returns
   `http::Response<Bytes>`; the `tower` service answers `Full<Bytes>`.
 - `reze_server::tower::service(app, context)` takes the context as an argument instead of

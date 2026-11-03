@@ -142,11 +142,21 @@ mod base64_url {
     }
 }
 
-/// What the loaders of one request write: their data, the shallowest error, and their timings.
+/// What the loaders of one request write: their data, the shallowest error, the first redirect,
+/// and their timings.
 struct Run<'r> {
     data: &'r mut [Option<Box<dyn Value>>],
     error: &'r mut Option<(usize, RouteError)>,
+    redirect: &'r mut Option<RouteError>,
     timings: &'r mut String,
+}
+
+fn redirect(target: &RouteError) -> Response<Bytes> {
+    let mut headers = HeaderMap::new();
+    if let Some(location) = target.location.as_deref().and_then(|l| HeaderValue::from_str(l).ok()) {
+        headers.insert(header::LOCATION, location);
+    }
+    response(target.status, headers, Bytes::new())
 }
 
 /// Appends a `Server-Timing` metric of `seconds`.
@@ -289,9 +299,13 @@ impl<C: Send + Sync + 'static> App<C> {
         }
 
         let mut data: Vec<Option<Box<dyn Value>>> = chain.iter().map(|_| None).collect();
-        let mut error = None;
-        let mut state = Run { data: &mut data, error: &mut error, timings: &mut timings };
+        let (mut error, mut stop) = (None, None);
+        let mut state =
+            Run { data: &mut data, error: &mut error, redirect: &mut stop, timings: &mut timings };
         self.run(route, (from..chain.len()).collect(), &params, context, &mut state).await;
+        if let Some(target) = &stop {
+            return redirect(target);
+        }
         let mut headers = HeaderMap::new();
         if let Some(seconds) =
             chain.iter().filter_map(|&node| self.table.nodes[node].revalidate).min()
@@ -316,8 +330,16 @@ impl<C: Send + Sync + 'static> App<C> {
                 headers.insert("rz-segment", HeaderValue::from(from));
                 return self.finish(rendered, headers, &timings, head, request);
             }
-            let mut state = Run { data: &mut data, error: &mut error, timings: &mut timings };
+            let mut state = Run {
+                data: &mut data,
+                error: &mut error,
+                redirect: &mut stop,
+                timings: &mut timings,
+            };
             self.run(route, (0..from).collect(), &params, context, &mut state).await;
+            if let Some(target) = &stop {
+                return redirect(target);
+            }
         }
         let page = Page {
             table: self.table,
@@ -371,6 +393,9 @@ impl<C: Send + Sync + 'static> App<C> {
             match result {
                 None => {}
                 Some(Ok(value)) => state.data[*depth] = Some(value),
+                Some(Err(failure)) if failure.location.is_some() => {
+                    state.redirect.get_or_insert(failure);
+                }
                 Some(Err(failure)) if state.error.as_ref().is_none_or(|(at, _)| at > depth) => {
                     *state.error = Some((*depth, failure));
                 }
@@ -456,6 +481,7 @@ impl<C: Send + Sync + 'static> App<C> {
                 headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
                 response(200, headers, value.json())
             }
+            Err(error) if error.location.is_some() => redirect(&error),
             Err(error) => response(error.status, HeaderMap::new(), error.message),
         }
     }

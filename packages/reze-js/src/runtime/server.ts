@@ -755,7 +755,8 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     if (!options.loaders) throw new Error("`loader.external()` needs the `loaders` option: the origin of the Rust server");
     const query = new URLSearchParams({ m: file });
     for (const [name, value] of Object.entries(params)) if (value !== undefined) query.append(name, String(value as string));
-    const response = await fetch(`${options.loaders}/__reze/load?${query}`);
+    const response = await fetch(`${options.loaders}/__reze/load?${query}`, { redirect: "manual" });
+    if (response.status >= 300 && response.status < 400) throw new Redirect(response.headers.get("location")!, response.status);
     if (response.status >= 400 && response.status < 500) throw new RouteError(response.status, await response.text());
     if (!response.ok) throw new Error(`The Rust loader of ${file} failed with ${response.status}`);
     return response.json() as Promise<unknown>;

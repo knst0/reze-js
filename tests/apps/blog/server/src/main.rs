@@ -57,6 +57,9 @@ async fn home(_: routes::index::Params, db: &Db) -> Result<Home> {
 }
 
 async fn post(params: routes::posts_id::Params, db: &Db) -> Result<Post> {
+    if params.id == "first" {
+        return Err(RouteError::redirect("/posts/1"));
+    }
     let id: u32 = params.id.parse().map_err(|_| RouteError::not_found())?;
     db.posts.iter().find(|post| post.id == id).cloned().ok_or_else(RouteError::not_found)
 }

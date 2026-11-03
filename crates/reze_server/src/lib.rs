@@ -26,15 +26,23 @@ pub use html::Html;
 pub use render::{Mark, Page, Render, children, push_segment};
 
 /// A route error: its status and message reach the nearest `<Errored>`, or the built-in error page.
+/// A redirect stops the request instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RouteError {
     pub status: u16,
     pub message: String,
+    /// The target of a redirect.
+    pub location: Option<String>,
 }
 
 impl RouteError {
     pub fn new(status: u16, message: impl Into<String>) -> Self {
-        Self { status, message: message.into() }
+        Self { status, message: message.into(), location: None }
+    }
+
+    /// A `307` redirect to `location`; set `status` for `301`, `302`, `303`, or `308`.
+    pub fn redirect(location: impl Into<String>) -> Self {
+        Self { status: 307, message: String::new(), location: Some(location.into()) }
     }
 
     /// `404 Not Found`.
