@@ -1,10 +1,12 @@
 //! Loader data that crosses from a Rust loader to the page: `#[derive(reze::Data)]`, and the JSON
 //! it encodes to, byte for byte what `JSON.stringify` writes for the same value.
 
+pub mod input;
 pub mod js;
 
 use std::collections::BTreeSet;
 
+pub use input::{Input, Issue, Json, Key};
 pub use reze_derive::Data;
 
 /// A value a Rust loader returns: a struct with named fields, a unit enum, or one of the scalars
@@ -59,6 +61,12 @@ impl Data for str {
 impl Data for String {
     fn write(&self, out: &mut String) {
         js::push_json_string(out, self);
+    }
+}
+
+impl Data for () {
+    fn write(&self, out: &mut String) {
+        out.push_str("null");
     }
 }
 

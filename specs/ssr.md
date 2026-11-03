@@ -1001,12 +1001,25 @@ The current implementation differs from this design in these points:
   `<client outDir>/<path>/index.html` for the static host to serve.
 - `revalidate` takes the smallest value of the chain. The `ETag` is a SHA-1 of the document, sent
   on `200` responses to `GET` and `HEAD` that do not stream.
-- The Rust server renders loader data only: Rust has no mutations, deferred fields, or
-  streaming. A Rust loader stops a request with a `RouteError`, and redirects with
+- The Rust server has no deferred fields or streaming. A Rust loader stops a request with a `RouteError`, and redirects with
   `RouteError::redirect(location)`, a `307` whose `status` may be changed; the dev endpoint
-  answers the redirect with its status and `Location`, which the JS server answers with the same redirect. A `POST` answers
-  `404`, or `403` when it is cross-site. `handle` takes any request body and returns
-  `http::Response<Bytes>`; the `tower` service answers `Full<Bytes>`.
+  answers the redirect with its status and `Location`, which the JS server answers with the same redirect. `handle` takes
+  the request with its body as `Bytes` and returns `http::Response<Bytes>`; the `tower` service
+  collects the body up to the limit and answers `Full<Bytes>`.
+- A Rust mutation is `export const name = mutation.external<Input, Result>({ revalidate })`, set
+  with the generated setter of the export in snake case:
+  `async fn(Input, &http::request::Parts, &C) -> Result<Result>`. `#[derive(reze::Data)]` also
+  derives `reze::Input`, which validates JSON and coerces form fields with the same issues as the
+  JS validators. `App::body_limit` caps the body at 1 MB; a larger body answers `413` and a
+  multipart body `415`, since Rust mutations take no files. A redirect from a mutation or from a
+  guard of a `POST` answers `303`. `useSubmission` in the Rust render reads `input` and `issues`
+  by field, a repeated form field's values joined with `,`, and its `result` is `undefined`. The
+  JS dev server runs a Rust mutation through `/__reze/mutate?m=<id>`, which answers `{ result }`,
+  `422` with the issues, or the error's status and message.
+- A failed form mutation renders the page's `<Errored>` with the loaders of the layouts above it,
+  as for a failed guard, on both servers.
+- An integer type of the IR validates its range: `u8` input outside `0..=255` is an issue
+  "Expected an integer from 0 to 255".
 - A Rust guard is `export const guard = guardRoute.external()`, set with the generated
   `guard_<route>`: `async fn(Params, &http::request::Parts, &C) -> Result<()>`. It sees the
   request's URI and headers but not its body. The JS dev server asks the Rust `dev` server through

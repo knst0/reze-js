@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+use reze::Issue;
 
 use crate::html::{Html, escape_attr};
 use crate::{Chunk, Manifest, Params, RouteError, Table, Value};
@@ -158,6 +159,31 @@ pub struct Page<'p> {
     pub(crate) params: &'p Params,
     pub(crate) data: &'p [Option<Box<dyn Value>>],
     pub(crate) error: Option<(usize, RouteError)>,
+    pub(crate) submission: Option<&'p Submission>,
+}
+
+/// A form post whose input failed validation, which `useSubmission` reads.
+pub(crate) struct Submission {
+    pub(crate) id: &'static str,
+    /// The raw form values, a repeated name joined with `,`.
+    pub(crate) input: Vec<(String, String)>,
+    pub(crate) issues: Vec<Issue>,
+}
+
+impl Submission {
+    pub(crate) fn new(id: &'static str, form: &[(String, String)], issues: Vec<Issue>) -> Self {
+        let mut input: Vec<(String, String)> = Vec::new();
+        for (name, value) in form {
+            match input.iter_mut().find(|(key, _)| key == name) {
+                Some((_, joined)) => {
+                    joined.push(',');
+                    joined.push_str(value);
+                }
+                None => input.push((name.clone(), value.clone())),
+            }
+        }
+        Self { id, input, issues }
+    }
 }
 
 impl Page<'_> {
@@ -192,6 +218,29 @@ impl Page<'_> {
             return None;
         }
         self.query.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
+    }
+
+    /// The raw form value `name` of the failed submission of mutation `id`.
+    pub fn submission_input(&self, id: &str, name: &str) -> Option<&str> {
+        let submission = self.submission.filter(|submission| submission.id == id)?;
+        submission.input.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
+    }
+
+    /// The first issue at `key`, the path joined with `.`, of the failed submission of mutation
+    /// `id`.
+    pub fn submission_issue(&self, id: &str, key: &str) -> Option<&Issue> {
+        let submission = self.submission.filter(|submission| submission.id == id)?;
+        submission.issues.iter().find(|issue| issue.key() == key)
+    }
+
+    /// The `action` of a form bound to mutation `id`: the page URL with the id in `_m`.
+    pub fn form_action(&self, id: &str) -> String {
+        let mut search = form_urlencoded::Serializer::new(String::new());
+        search.extend_pairs(
+            self.query.iter().filter(|(key, _)| !matches!(key.as_str(), "_b" | "_s" | "_m")),
+        );
+        search.append_pair("_m", id);
+        format!("{}?{}", self.path, search.finish())
     }
 
     /// Whether an anchor's `href` points at the current path.

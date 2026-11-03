@@ -113,8 +113,11 @@ pub mod routes {
         Ok(())
     }
 
+    static MUTATIONS: &[::reze_server::MutationDef] = &[
+    ];
+
     static NODES: &[::reze_server::Node] = &[
-        ::reze_server::Node { file: "src/routes/index.tsx", render: level_0, loader: true, guard: false, revalidate: Some(60) },
+        ::reze_server::Node { file: "src/routes/index.tsx", pattern: "/", render: level_0, loader: true, guard: false, revalidate: Some(60) },
     ];
 
     static ROUTES: &[::reze_server::Route] = &[
@@ -122,9 +125,9 @@ pub mod routes {
     ];
 
     static TABLE: ::reze_server::Table =
-        ::reze_server::Table { nodes: NODES, routes: ROUTES, root: &[] };
+        ::reze_server::Table { nodes: NODES, routes: ROUTES, root: &[], mutations: MUTATIONS };
 
-    /// The application: the route table and the Rust loaders and guards.
+    /// The application: the route table and the Rust loaders, guards, and mutations.
     pub struct App<C>(::reze_server::App<C>);
 
     impl<C: Send + Sync + 'static> Default for App<C> {
@@ -147,6 +150,12 @@ pub mod routes {
         /// Writes loader and render durations into `Server-Timing`, which is on with the `dev` feature.
         pub fn server_timing(mut self, on: bool) -> Self {
             self.0.set_server_timing(on);
+            self
+        }
+
+        /// Sets the largest mutation body in bytes, 1 MB by default.
+        pub fn body_limit(mut self, bytes: usize) -> Self {
+            self.0.set_body_limit(bytes);
             self
         }
 

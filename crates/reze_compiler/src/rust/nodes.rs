@@ -8,8 +8,8 @@ use oxc_ast::ast::{BindingPattern, Expression, FormalParameters, LogicalOperator
 use oxc_span::{GetSpan, SourceType, Span};
 
 use super::lower::{Sink, set, truthy, view};
-use super::{Binding, Emitter, Frame, Ty, Val, literal};
-use crate::analyze::Api;
+use super::{Binding, Emitter, Frame, ISSUE, Ty, TypeDef, Val, literal};
+use crate::analyze::{Api, Endpoint};
 use crate::client::{self, base36};
 use crate::emit::head_key;
 use crate::html;
@@ -301,6 +301,19 @@ impl<'e, 'a> Emitter<'e, 'a> {
                         self.raw(&html);
                     }
                     Value::True => self.raw(&format!(" {}", attribute.name)),
+                    Value::Expr(expression)
+                        if element.tag == "form"
+                            && attribute.name == "action"
+                            && let Some(id) = self
+                                .mutation_of(frame.module, expression)
+                                .and_then(|endpoint| endpoint.id.as_deref()) =>
+                    {
+                        self.raw(" method=\"post\"");
+                        let action = Val::owned(format!("page.form_action({})", literal(id)));
+                        if let Err(reason) = self.output(&action, Sink::Attr("action")) {
+                            self.report(frame.module, expression.span(), reason);
+                        }
+                    }
                     Value::Expr(expression) => match &href {
                         Some(val) if attribute.name == "href" => {
                             if let Err(reason) = self.output(val, Sink::Attr("href")) {
@@ -810,8 +823,44 @@ impl<'e, 'a> Emitter<'e, 'a> {
                     Err(reason) => Binding::Invalid(reason),
                 }
             }
+            Api::UseSubmission => match argument.map(|m| self.mutation_of(frame.module, m)) {
+                Some(Some(endpoint)) => self.submission(endpoint),
+                _ => Binding::Invalid("`useSubmission` takes a mutation".into()),
+            },
             _ => Binding::Invalid(format!("`{api:?}` has no Rust lowering")),
         }
+    }
+
+    /// `useSubmission(mutation)`: the input and the issues of a form post that failed validation.
+    fn submission(&mut self, endpoint: &Endpoint) -> Binding<'e, 'a> {
+        let (Some(id), Some(path)) = (&endpoint.id, &endpoint.input_type) else {
+            return Binding::Invalid(
+                "`useSubmission` takes a mutation of the Rust server, `mutation.external<Input, Result>()`"
+                    .into(),
+            );
+        };
+        let Some(TypeDef::Struct { fields, .. }) = self.types.get(path).copied() else {
+            return Binding::Invalid(format!("`{path}` is not a struct of the Rust type IR"));
+        };
+        let id = literal(id);
+        let per_field = |read: &str, ty: Ty| {
+            let props = fields
+                .iter()
+                .map(|field| {
+                    let code = format!("page.{read}({id}, {})", literal(&field.name));
+                    (field.name.clone(), Binding::Val(Val::new(code, ty.clone())))
+                })
+                .collect();
+            Binding::Props(Rc::new(props))
+        };
+        Binding::Props(Rc::new(vec![
+            ("input".into(), per_field("submission_input", Ty::Opt(Box::new(Ty::Str)))),
+            (
+                "issues".into(),
+                per_field("submission_issue", Ty::Opt(Box::new(Ty::Struct(ISSUE.into())))),
+            ),
+            ("result".into(), Binding::Null),
+        ]))
     }
 
     /// The values of a client scope's captures, as JSON strings, positional when client code

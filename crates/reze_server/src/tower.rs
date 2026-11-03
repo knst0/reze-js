@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
-use http::{Request, Response};
-use http_body_util::Full;
+use http::{Request, Response, StatusCode};
+use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 
 use crate::App;
 
@@ -28,8 +28,11 @@ impl<C> Clone for Service<C> {
     }
 }
 
-impl<C: Send + Sync + 'static, B: Send + 'static> tower_service::Service<Request<B>>
-    for Service<C>
+impl<C, B> tower_service::Service<Request<B>> for Service<C>
+where
+    C: Send + Sync + 'static,
+    B: http_body::Body<Data = Bytes> + Send + 'static,
+    B::Error: std::error::Error + Send + Sync + 'static,
 {
     type Response = Response<Full<Bytes>>;
     type Error = Infallible;
@@ -41,6 +44,23 @@ impl<C: Send + Sync + 'static, B: Send + 'static> tower_service::Service<Request
 
     fn call(&mut self, request: Request<B>) -> Self::Future {
         let (app, context) = (self.app.clone(), self.context.clone());
-        Box::pin(async move { Ok(app.handle(request, &context).await.map(Full::new)) })
+        Box::pin(async move {
+            let (parts, body) = request.into_parts();
+            let body = match Limited::new(body, app.body_limit()).collect().await {
+                Ok(body) => body.to_bytes(),
+                Err(error) => {
+                    let too_large = error.downcast_ref::<LengthLimitError>().is_some();
+                    let mut response = Response::new(Full::new(Bytes::new()));
+                    *response.status_mut() = if too_large {
+                        StatusCode::PAYLOAD_TOO_LARGE
+                    } else {
+                        StatusCode::BAD_REQUEST
+                    };
+                    return Ok(response);
+                }
+            };
+            let request = Request::from_parts(parts, body);
+            Ok(app.handle(request, &context).await.map(Full::new))
+        })
     }
 }

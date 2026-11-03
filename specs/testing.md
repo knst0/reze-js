@@ -83,8 +83,8 @@ through the JS render and the Rust render and compares the bytes. Any difference
 
 The render diff is an end-to-end test, not a `reze check` command: on the Rust server, the
 `blog` application compares the status and body of each route from the Rust server with the JS
-server over the same Rust loaders. Only `blog` runs on the Rust server, since Rust has no mutations
-or streaming yet.
+server over the same Rust loaders. Only `blog` runs on the Rust server, since Rust has no streaming
+yet.
 
 ### Size
 

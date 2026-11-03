@@ -6,8 +6,8 @@ use oxc_ast::ast::{
     BinaryOperator, ChainElement, Expression, LogicalOperator, ObjectPropertyKind, UnaryOperator,
 };
 
-use super::{Binding, Emitter, Frame, Lowered, Ty, TypeDef, Val, float, literal};
-use crate::analyze::Api;
+use super::{Binding, Emitter, Frame, ISSUE, Lowered, Ty, TypeDef, Val, float, literal};
+use crate::analyze::{Api, Endpoint, EndpointKind, ImportSource};
 
 const JS: &str = "::reze_server::reze::js";
 const VARIANT: &str = "::reze_server::reze::Variant::name";
@@ -179,6 +179,39 @@ impl<'e, 'a> Emitter<'e, 'a> {
             .get_reference(reference.reference_id.get()?)
             .symbol_id()?;
         self.analysis.facts[module].apis.get(&symbol).copied()
+    }
+
+    /// The mutation an expression names, following imports between project modules.
+    pub(super) fn mutation_of(
+        &self,
+        module: usize,
+        expression: &Expression<'_>,
+    ) -> Option<&'e Endpoint> {
+        let Expression::Identifier(reference) = expression.without_parentheses() else {
+            return None;
+        };
+        let symbol = self.modules[module]
+            .semantic
+            .scoping()
+            .get_reference(reference.reference_id.get()?)
+            .symbol_id()?;
+        let facts = &self.analysis.facts;
+        let mutation = |endpoint: &&Endpoint| endpoint.kind == EndpointKind::Mutation;
+        match facts[module].imports.get(&symbol) {
+            Some(import) => match import.source {
+                ImportSource::Module(target) => facts[target]
+                    .endpoints
+                    .iter()
+                    .filter(mutation)
+                    .find(|endpoint| endpoint.export == import.name),
+                ImportSource::Package(_) => None,
+            },
+            None => facts[module]
+                .endpoints
+                .iter()
+                .filter(mutation)
+                .find(|endpoint| endpoint.symbol == Some(symbol)),
+        }
     }
 
     pub(super) fn lower<'x>(
@@ -493,6 +526,12 @@ impl<'e, 'a> Emitter<'e, 'a> {
         let Ty::Struct(path) = &object.ty else {
             return Err(format!("`{name}` is read from a value that is not a struct"));
         };
+        if path == ISSUE {
+            return match name {
+                "message" => Ok(Val::new(format!("({}).message.as_str()", object.code), Ty::Str)),
+                _ => Err(format!("`{name}` of an issue has no Rust lowering")),
+            };
+        }
         let Some(TypeDef::Struct { fields, .. }) = self.types.get(path).copied() else {
             return Err(format!("`{path}` is not a struct of the Rust type IR"));
         };

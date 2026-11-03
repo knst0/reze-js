@@ -5,16 +5,16 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/reze_routes.rs"));
 }
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use actix_web::{HttpServer, web};
-use blog_types::{Home, Post, Status, Summary};
+use blog_types::{Added, Comment, Home, NewComment, Post, Status, Summary};
 use generated::routes;
 use reze_server::http::request::Parts;
 use reze_server::{Manifest, Result, RouteError};
 
 struct Db {
-    posts: Vec<Post>,
+    posts: Mutex<Vec<Post>>,
 }
 
 impl Db {
@@ -30,9 +30,10 @@ impl Db {
                 likes: id * 2,
                 views,
                 rating,
+                comments: Vec::new(),
             };
         Self {
-            posts: vec![
+            posts: Mutex::new(vec![
                 post(
                     1,
                     "Hello, world",
@@ -43,7 +44,7 @@ impl Db {
                     4.5,
                 ),
                 post(2, "Drafts \"quoted\"", None, Status::Draft, &[], 0, 0.1 + 0.2),
-            ],
+            ]),
         }
     }
 }
@@ -51,6 +52,8 @@ impl Db {
 async fn home(_: routes::index::Params, db: &Db) -> Result<Home> {
     let posts = db
         .posts
+        .lock()
+        .unwrap()
         .iter()
         .map(|post| Summary { id: post.id, title: post.title.clone(), status: post.status })
         .collect();
@@ -62,7 +65,8 @@ async fn post(params: routes::posts_id::Params, db: &Db) -> Result<Post> {
         return Err(RouteError::redirect("/posts/1"));
     }
     let id: u32 = params.id.parse().map_err(|_| RouteError::not_found())?;
-    db.posts.iter().find(|post| post.id == id).cloned().ok_or_else(RouteError::not_found)
+    let posts = db.posts.lock().unwrap();
+    posts.iter().find(|post| post.id == id).cloned().ok_or_else(RouteError::not_found)
 }
 
 async fn members(params: routes::posts_id::Params, request: &Parts, _: &Db) -> Result<()> {
@@ -78,11 +82,30 @@ async fn members(params: routes::posts_id::Params, request: &Parts, _: &Db) -> R
     }
 }
 
+async fn add_comment(input: NewComment, _: &Parts, db: &Db) -> Result<Added> {
+    if input.body == "home" {
+        return Err(RouteError::redirect("/"));
+    }
+    if input.author.is_empty() {
+        return Err(RouteError::new(400, "Comments need an author"));
+    }
+    let mut posts = db.posts.lock().unwrap();
+    let post = posts.iter_mut().find(|post| post.id == input.post).ok_or_else(RouteError::not_found)?;
+    let stars = "*".repeat(input.stars.unwrap_or(0).into());
+    post.comments.push(Comment { author: input.author, body: format!("{}{stars}", input.body) });
+    Ok(Added { count: post.comments.len() as u32 })
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().expect("usage: blog_server <reze.json> [tower|actix]");
     let manifest = Manifest::load(&path).expect("reze.json is readable");
-    let app = routes::App::new().index(home).posts_id(post).guard_posts_id(members).manifest(manifest);
+    let app = routes::App::new()
+        .index(home)
+        .posts_id(post)
+        .guard_posts_id(members)
+        .add_comment(add_comment)
+        .manifest(manifest);
     match args.next().as_deref() {
         Some("actix") => actix(app.into()),
         _ => tower(app),

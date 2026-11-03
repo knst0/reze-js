@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, Route, web};
+use bytes::Bytes;
 use http::Request;
 
 use crate::App;
@@ -11,15 +12,22 @@ use crate::App;
 /// A route for `default_service` that answers every request with `app`, given the application's
 /// context from its `web::Data<C>`.
 pub fn service<C: Send + Sync + 'static>(app: Arc<App<C>>) -> Route {
-    web::to(move |request: HttpRequest, context: web::Data<C>| {
+    web::to(move |request: HttpRequest, body: web::Payload, context: web::Data<C>| {
         let app = app.clone();
-        async move { respond(&app, &request, &context).await }
+        async move {
+            match body.to_bytes_limited(app.body_limit()).await {
+                Ok(Ok(body)) => respond(&app, &request, body, &context).await,
+                Ok(Err(_)) => HttpResponse::BadRequest().finish(),
+                Err(_) => HttpResponse::PayloadTooLarge().finish(),
+            }
+        }
     })
 }
 
 async fn respond<C: Send + Sync + 'static>(
     app: &App<C>,
     request: &HttpRequest,
+    body: Bytes,
     context: &C,
 ) -> HttpResponse {
     let mut builder =
@@ -27,7 +35,7 @@ async fn respond<C: Send + Sync + 'static>(
     for (name, value) in request.headers() {
         builder = builder.header(name.as_str(), value.as_bytes());
     }
-    let Ok(request) = builder.body(()) else {
+    let Ok(request) = builder.body(body) else {
         return HttpResponse::BadRequest().finish();
     };
     let (parts, body) = app.handle(request, context).await.into_parts();

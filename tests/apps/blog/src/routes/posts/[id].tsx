@@ -1,10 +1,12 @@
 import { Errored, For, Show, signal } from "reze-js";
-import { guardRoute, loader } from "reze-js/server";
-import type { Post } from "virtual:reze-types/blog_types";
+import { guardRoute, loader, mutation, useSubmission } from "reze-js/server";
+import type { Added, NewComment, Post } from "virtual:reze-types/blog_types";
 
 export const guard = guardRoute.external();
 
 export const load = loader.external<Post>();
+
+export const addComment = mutation.external<NewComment, Added>({ revalidate: ["/posts/:id"] });
 
 function Rating(props: { value: number; views: bigint }) {
   return (
@@ -41,6 +43,37 @@ function Report() {
       </button>
       <button onClick={() => Promise.reject(new Error("Late report"))}>Break later</button>
     </p>
+  );
+}
+
+function Comments(props: { post: Post }) {
+  const submission = useSubmission(addComment);
+  return (
+    <section aria-label="Comments">
+      <ul>
+        <For each={props.post.comments} fallback={<li>No comments</li>}>
+          {(comment) => (
+            <li>
+              {comment.author}: {comment.body}
+            </li>
+          )}
+        </For>
+      </ul>
+      <form action={addComment}>
+        <input type="hidden" name="post" value={props.post.id} />
+        <label>
+          Author <input name="author" value={submission.input?.author ?? ""} />
+        </label>
+        <label>
+          Comment <input name="body" value={submission.input?.body ?? ""} />
+        </label>
+        <label>
+          Stars <input name="stars" value={submission.input?.stars ?? ""} />
+        </label>
+        <Show when={submission.issues?.stars}>{(issue) => <p role="alert">Stars: {issue.message}</p>}</Show>
+        <button type="submit">Comment</button>
+      </form>
+    </section>
   );
 }
 
@@ -87,6 +120,7 @@ export default function PostPage(props: { data: Post }) {
         <For each={notes}>{(note) => note}</For>
       </p>
       <button onClick={() => (notes = [...notes, `note ${notes.length + 1}`])}>Note</button>
+      <Comments post={props.data} />
     </main>
   );
 }

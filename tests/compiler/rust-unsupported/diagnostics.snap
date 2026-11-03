@@ -5,7 +5,7 @@
     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   5 |
 
-[SERVER_HOLE_UNSUPPORTED] Mutations run only in the JS server, the Rust server has no mutations yet. Compute the value in the loader, or make the element interactive on the client.
+[SERVER_HOLE_UNSUPPORTED] A mutation of the Rust server is `mutation.external<Input, Result>()`. Compute the value in the loader, or make the element interactive on the client.
   at src/routes/index.tsx:8:21
   7 | 
 > 8 | export const like = mutation(async (input: { id: string }) => input.id);

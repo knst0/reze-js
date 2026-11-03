@@ -1,3 +1,5 @@
+import type { APIRequestContext } from "@playwright/test";
+
 import { expect, test } from "../fixtures";
 
 const paths = ["/", "/?ref=mail&_s=x", "/posts/1?ref=feed", "/posts/1", "/posts/2", "/posts/9", "/posts/abc", "/posts/members", "/missing"];
@@ -30,6 +32,82 @@ test("runs a Rust guard before the loaders", async ({ request, server }) => {
   }
 });
 
+/** The URL a page's comment form posts to. */
+async function action(request: APIRequestContext, url: string) {
+  const html = await (await request.get(url)).text();
+  return new URL(/<form method="post" action="([^"]+)"/.exec(html)![1]!.replaceAll("&amp;", "&"), url).href;
+}
+
+const servers = (server: { url: (path: string) => string; js?: (path: string) => string }) => [
+  (path: string) => server.url(path),
+  (path: string) => server.js!(path),
+];
+
+test("runs a Rust mutation from a form post", async ({ request, server }) => {
+  for (const url of servers(server)) {
+    const target = await action(request, url("/posts/2?ref=feed"));
+    const author = `Reader ${Math.random()}`;
+    const posted = await request.post(target, { form: { post: "2", author, body: "Nice", stars: "2" }, maxRedirects: 0 });
+    expect(posted.status()).toBe(303);
+    expect(posted.headers().location).toBe("/posts/2?ref=feed");
+    expect(await (await request.get(url("/posts/2"))).text()).toContain(`${author}: Nice**`);
+  }
+});
+
+test("renders the same submission and mutation errors on the Rust and the JS server", async ({ request, server }) => {
+  const forms = [
+    { post: "1", author: "Ann", body: "Hi", stars: "lots" },
+    { post: "1", author: "Ann", body: "Hi", stars: "300" },
+    { post: "1", author: "", body: "Hi", stars: "" },
+  ];
+  for (const form of forms) {
+    const [rust, js] = await Promise.all(
+      servers(server).map(async (url) => request.post(await action(request, url("/posts/1")), { form })),
+    );
+    expect(rust!.status(), JSON.stringify(form)).toBe(js!.status());
+    expect(await rust!.text(), JSON.stringify(form)).toBe(await js!.text());
+  }
+});
+
+test("redirects from a Rust mutation with 303", async ({ request, server }) => {
+  for (const url of servers(server)) {
+    const target = await action(request, url("/posts/1"));
+    const posted = await request.post(target, { form: { post: "1", author: "Ann", body: "home" }, maxRedirects: 0 });
+    expect(posted.status()).toBe(303);
+    expect(posted.headers().location).toBe("/");
+  }
+});
+
+test("answers a Rust mutation's call as JSON", async ({ request, server }) => {
+  for (const url of servers(server)) {
+    const target = await action(request, url("/posts/1"));
+    const called = await request.post(target, { data: { post: 1, author: "Bot", body: "Called", stars: null } });
+    expect(called.status()).toBe(200);
+    expect(((await called.json()) as { result: { count: number } }).result.count).toBeGreaterThan(0);
+    const invalid = await request.post(target, { data: { post: "1", author: "Bot" } });
+    expect(invalid.status()).toBe(422);
+    expect(await invalid.json()).toEqual({
+      issues: [
+        { message: "Expected an integer from 0 to 4294967295", path: ["post"] },
+        { message: "Expected a string", path: ["body"] },
+        { message: "Expected an integer from 0 to 255 or null", path: ["stars"] },
+      ],
+    });
+    const failed = await request.post(target, { data: { post: 1, author: "", body: "Called", stars: null } });
+    expect(failed.status()).toBe(400);
+    expect(await failed.json()).toEqual({ message: "Comments need an author" });
+  }
+});
+
+test("rejects a cross-site post to a Rust mutation", async ({ request, server }) => {
+  const target = await action(request, server.url("/posts/1"));
+  const posted = await request.post(target, {
+    form: { post: "1", author: "Eve", body: "Hi" },
+    headers: { "sec-fetch-site": "cross-site" },
+  });
+  expect(posted.status()).toBe(403);
+});
+
 test("writes Server-Timing with the dev feature", async ({ request, server }) => {
   const timing = (await request.get(server.url("/posts/1"))).headers()["server-timing"];
   expect(timing).toMatch(/^loader-1;dur=\d+\.\d, render;dur=\d+\.\d$/);
@@ -37,6 +115,21 @@ test("writes Server-Timing with the dev feature", async ({ request, server }) =>
 
 test.describe("without JS", () => {
   test.use({ javaScriptEnabled: false });
+
+  test("posts a comment and shows the issues of invalid input", async ({ page, server }) => {
+    await page.goto(server.url("/posts/1"));
+    const author = `Reader ${Math.random()}`;
+    await page.getByLabel("Author").fill(author);
+    await page.getByRole("textbox", { name: "Comment" }).fill("Plain");
+    await page.getByLabel("Stars").fill("many");
+    await page.getByRole("button", { name: "Comment" }).click();
+    await expect(page.getByRole("alert")).toHaveText("Stars: Expected an integer from 0 to 255");
+    await expect(page.getByLabel("Author")).toHaveValue(author);
+    await page.getByLabel("Stars").fill("1");
+    await page.getByRole("button", { name: "Comment" }).click();
+    await expect(page).toHaveURL(server.url("/posts/1"));
+    await expect(page.getByRole("region", { name: "Comments" })).toContainText(`${author}: Plain*`);
+  });
 
   test("renders Rust loader data", async ({ page, server }) => {
     await page.goto(server.url("/"));
@@ -70,6 +163,18 @@ test.describe("without JS", () => {
     expect((await page.goto(server.url("/posts/9")))?.status()).toBe(404);
     expect((await page.goto(server.url("/missing")))?.status()).toBe(404);
   });
+});
+
+test("posts a comment through the client and revalidates the page", async ({ page, server }) => {
+  await page.goto(server.url("/posts/1"));
+  const author = `Reader ${Math.random()}`;
+  await page.getByLabel("Author").fill(author);
+  await page.getByRole("textbox", { name: "Comment" }).fill("Live");
+  await page.getByRole("button", { name: "Comment" }).click();
+  await expect(page.getByRole("region", { name: "Comments" })).toContainText(`${author}: Live`);
+  await page.getByLabel("Stars").fill("x");
+  await page.getByRole("button", { name: "Comment" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Stars: Expected an integer from 0 to 255");
 });
 
 test("runs a handler over Rust data", async ({ page, server }) => {

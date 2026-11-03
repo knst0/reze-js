@@ -168,8 +168,12 @@ fn rust_ref(ir: &CrateIr, ty: &TypeRef, depth: u32) -> Option<Ty> {
         TypeRef::List { of } => Some(Ty::Array(Box::new(rust_ref(ir, of, depth)?))),
         TypeRef::String => Some(Ty::String),
         TypeRef::Boolean => Some(Ty::Boolean),
-        TypeRef::Number { .. } => Some(Ty::Number),
-        TypeRef::Bigint { .. } => Some(Ty::BigInt),
+        TypeRef::Number { rust } => {
+            Some(Int::from_name(&rust.to_uppercase()).map_or(Ty::Number, Ty::Int))
+        }
+        TypeRef::Bigint { rust } => {
+            Some(Int::from_name(&rust.to_uppercase()).map_or(Ty::BigInt, Ty::Int))
+        }
     }
 }
 
@@ -803,11 +807,15 @@ pub struct Endpoint {
     pub route: Option<String>,
     /// The loader arguments the function reads, `None` when it may read any of them.
     pub reads: Option<Vec<String>>,
-    /// `loader.external<T>()`: the Rust server loads the data.
+    /// `loader.external<T>()` or `mutation.external<I, R>()`: the Rust server runs it.
     pub external: bool,
-    /// The Rust path of an external loader's type, `crate::Name`, when it comes from
-    /// `virtual:reze-types/<crate>`.
+    /// The Rust path of an external loader's type or an external mutation's result,
+    /// `crate::Name`, when it comes from `virtual:reze-types/<crate>`.
     pub data_type: Option<String>,
+    /// The Rust path of an external mutation's input type.
+    pub input_type: Option<String>,
+    /// The route patterns of an external mutation's `revalidate`, when they are string literals.
+    pub revalidate: Option<Vec<String>>,
 }
 
 fn report_unlowered(reports: &mut Vec<Report>, unlowered: Unlowered, span: Span) {
@@ -845,18 +853,24 @@ pub fn endpoints<'a>(
                 continue;
             };
             let external = match call.callee.without_parentheses() {
-                Expression::StaticMemberExpression(member) => {
-                    member.property.name == "external"
-                        && cx.api(module, &member.object) == Some(Api::Loader)
+                Expression::StaticMemberExpression(member)
+                    if member.property.name == "external" =>
+                {
+                    match cx.api(module, &member.object) {
+                        Some(Api::Loader) => Some(EndpointKind::Loader),
+                        Some(Api::Mutation) => Some(EndpointKind::Mutation),
+                        _ => None,
+                    }
                 }
-                _ => false,
+                _ => None,
             };
             let kind = match cx.api(module, &call.callee) {
-                _ if external => EndpointKind::Loader,
+                _ if let Some(kind) = external => kind,
                 Some(Api::Loader) => EndpointKind::Loader,
                 Some(Api::Mutation) => EndpointKind::Mutation,
                 _ => continue,
             };
+            let external = external.is_some();
             let (data, unsupported) =
                 match loader_result(call).map(|ty| Resolver::new(cx).resolve(module, ty)) {
                     Some(Ok(ty)) => (Some(ty), None),
@@ -878,6 +892,8 @@ pub fn endpoints<'a>(
                 reads: loader_reads(call),
                 external,
                 data_type: None,
+                input_type: None,
+                revalidate: None,
             };
             match kind {
                 EndpointKind::Loader if external => {
@@ -885,7 +901,16 @@ pub fn endpoints<'a>(
                     endpoint.typed = true;
                     endpoint.reads = None;
                     endpoint.unsupported = None;
-                    endpoint.data_type = external_type(cx, module, call);
+                    endpoint.data_type = external_type(cx, module, call, 0);
+                }
+                EndpointKind::Mutation if external => {
+                    endpoint.id = Some(mutation_id(&cx.modules[module].path, &id.name));
+                    let (meta, input) = external_mutation_meta(cx, module, call, reports);
+                    endpoint.meta = meta;
+                    endpoint.input = input;
+                    endpoint.input_type = external_type(cx, module, call, 0);
+                    endpoint.data_type = external_type(cx, module, call, 1);
+                    endpoint.revalidate = revalidate_patterns(call);
                 }
                 EndpointKind::Loader => {
                     endpoint.meta = loader_meta(cx, module, call, pattern.as_ref(), reports);
@@ -1212,10 +1237,15 @@ pub fn external_guard(cx: &Context<'_, '_>, module: usize) -> Option<Span> {
     })
 }
 
-/// `crate::Name` of the type argument of `loader.external<Name>()`, imported from
-/// `virtual:reze-types/<crate>`.
-fn external_type(cx: &Context<'_, '_>, module: usize, call: &CallExpression<'_>) -> Option<String> {
-    let argument = call.type_arguments.as_ref()?.params.first()?;
+/// `crate::Name` of the type argument `index` of `loader.external<Name>()` or
+/// `mutation.external<Input, Result>()`, imported from `virtual:reze-types/<crate>`.
+fn external_type(
+    cx: &Context<'_, '_>,
+    module: usize,
+    call: &CallExpression<'_>,
+    index: usize,
+) -> Option<String> {
+    let argument = call.type_arguments.as_ref()?.params.get(index)?;
     let TSType::TSTypeReference(reference) = argument else { return None };
     let TSTypeName::IdentifierReference(id) = &reference.type_name else { return None };
     let symbol = cx.symbol(module, id)?;
@@ -1309,6 +1339,64 @@ fn mutation_meta<'a>(
             ("{}".into(), None)
         }
     }
+}
+
+/// The validators of `mutation.external<Input, Result>()`, from its input type.
+fn external_mutation_meta<'a>(
+    cx: &Context<'_, 'a>,
+    module: usize,
+    call: &'a CallExpression<'a>,
+    reports: &mut Vec<Report>,
+) -> (String, Option<Ty>) {
+    let Some(argument) = call.type_arguments.as_ref().and_then(|t| t.params.first()) else {
+        reports.push(Report::new(Code::MutationInputUntyped, call.span));
+        return ("{ external: true }".into(), None);
+    };
+    match Resolver::new(cx).resolve(module, argument) {
+        Ok(ty) => {
+            let mut meta =
+                vec!["external: true".to_string(), format!("json: {}", json_parser(&ty))];
+            if let Some(coercer) = fields_coercer(&ty) {
+                meta.push(format!("form: {coercer}"));
+            }
+            (format!("{{ {} }}", meta.join(", ")), Some(ty))
+        }
+        Err(unlowered) => {
+            report_unlowered(reports, unlowered, argument.span());
+            ("{ external: true }".into(), None)
+        }
+    }
+}
+
+/// The string literals of `revalidate` in the options of `mutation.external(options)`.
+fn revalidate_patterns(call: &CallExpression<'_>) -> Option<Vec<String>> {
+    let Some(Expression::ObjectExpression(options)) = call
+        .arguments
+        .first()
+        .and_then(Argument::as_expression)
+        .map(Expression::without_parentheses)
+    else {
+        return None;
+    };
+    options.properties.iter().find_map(|property| {
+        let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(property) = property else {
+            return None;
+        };
+        if property.key.static_name().as_deref() != Some("revalidate") {
+            return None;
+        }
+        let Expression::ArrayExpression(array) = property.value.without_parentheses() else {
+            return None;
+        };
+        array
+            .elements
+            .iter()
+            .map(|element| match element.as_expression()?.without_parentheses() {
+                Expression::StringLiteral(text) => Some(text.value.to_string()),
+                _ => None,
+            })
+            .collect()
+    })
 }
 
 /// The mutation an expression names, following imports between project modules.

@@ -10,8 +10,10 @@ use sha1::{Digest, Sha1};
 use tracing::{Instrument, field, info_span};
 
 use crate::html::escape_text;
-use crate::render::{Page, render};
-use crate::{Chunk, Guard, Loader, Manifest, Params, Route, RouteError, Segment, Table, Value};
+use crate::render::{Page, Submission, render};
+use crate::{
+    Chunk, Guard, Loader, Manifest, Mutation, Params, Route, RouteError, Segment, Table, Value,
+};
 
 type Erased<C> = Box<
     dyn for<'a> Fn(&Params, &'a C) -> BoxFuture<'a, crate::Result<Box<dyn Value>>> + Send + Sync,
@@ -23,13 +25,32 @@ type ErasedGuard<C> = Box<
         + Sync,
 >;
 
-/// The application: the generated route table, the Rust loaders and guards, and the client build.
+/// The body of a mutation post: JSON from `.call`, or the fields of a form.
+enum Body {
+    Json(reze::Json),
+    Form(Vec<(String, String)>),
+}
+
+/// A mutation's input checked against its type: the mutation to run, or why it cannot.
+enum Decoded<'a> {
+    Run(BoxFuture<'a, crate::Result<Box<dyn Value>>>),
+    Invalid(Vec<reze::Issue>),
+    JsonOnly,
+}
+
+type ErasedMutation<C> =
+    Box<dyn for<'a> Fn(&Body, &'a http::request::Parts, &'a C) -> Decoded<'a> + Send + Sync>;
+
+/// The application: the generated route table, the Rust loaders, guards, and mutations, and the
+/// client build.
 pub struct App<C> {
     table: &'static Table,
     /// Routes in match order.
     ordered: Vec<&'static Route>,
     loaders: Vec<Option<Erased<C>>>,
     guards: Vec<Option<ErasedGuard<C>>>,
+    mutations: Vec<Option<ErasedMutation<C>>>,
+    body_limit: usize,
     manifest: Option<Manifest>,
     server_timing: bool,
 }
@@ -113,6 +134,51 @@ fn plain(status: u16, body: &'static str) -> Response<Bytes> {
     response(status, HeaderMap::new(), body)
 }
 
+/// The query of `query` without the names in `skip`, with its `?`.
+fn without(query: &[(String, String)], skip: &[&str]) -> String {
+    let search = form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(query.iter().filter(|(key, _)| !skip.contains(&key.as_str())))
+        .finish();
+    if search.is_empty() { search } else { format!("?{search}") }
+}
+
+fn json(status: u16, body: String) -> Response<Bytes> {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    response(status, headers, body)
+}
+
+fn convert(value: serde_json::Value) -> reze::Json {
+    use serde_json::Value as V;
+    match value {
+        V::Null => reze::Json::Null,
+        V::Bool(value) => reze::Json::Bool(value),
+        V::Number(n) => reze::Json::Number(n.as_f64().unwrap_or(f64::NAN)),
+        V::String(text) => reze::Json::String(text),
+        V::Array(items) => reze::Json::Array(items.into_iter().map(convert).collect()),
+        V::Object(fields) => reze::Json::Object(
+            fields.into_iter().map(|(key, value)| (key, convert(value))).collect(),
+        ),
+    }
+}
+
+/// Reads a mutation body: JSON for `.call`, urlencoded form fields otherwise.
+fn read_body(headers: &HeaderMap, body: &Bytes, limit: usize) -> Result<Body, (u16, &'static str)> {
+    if body.len() > limit {
+        return Err((413, "Content Too Large"));
+    }
+    let kind =
+        headers.get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).unwrap_or("");
+    if kind.contains("application/json") {
+        let value = serde_json::from_slice(body).map_err(|_| (400, "Invalid JSON"))?;
+        return Ok(Body::Json(convert(value)));
+    }
+    if kind.starts_with("multipart/") {
+        return Err((415, "Unsupported Media Type"));
+    }
+    Ok(Body::Form(form_urlencoded::parse(body).into_owned().collect()))
+}
+
 /// Whether a post comes from another site, by `Sec-Fetch-Site`, then `Origin`.
 fn cross_site(headers: &HeaderMap) -> bool {
     let get = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
@@ -166,6 +232,11 @@ fn redirect(target: &RouteError) -> Response<Bytes> {
     response(target.status, headers, Bytes::new())
 }
 
+/// A redirect from a post: `303` unless it sets another status than the default `307`.
+fn posted(target: RouteError) -> RouteError {
+    if target.status == 307 { RouteError { status: 303, ..target } } else { target }
+}
+
 /// Appends a `Server-Timing` metric of `seconds`.
 fn timing(timings: &mut String, name: &str, seconds: f64) {
     if !timings.is_empty() {
@@ -183,6 +254,8 @@ impl<C: Send + Sync + 'static> App<C> {
             ordered,
             loaders: table.nodes.iter().map(|_| None).collect(),
             guards: table.nodes.iter().map(|_| None).collect(),
+            mutations: table.mutations.iter().map(|_| None).collect(),
+            body_limit: 1 << 20,
             manifest: None,
             server_timing: cfg!(feature = "dev"),
         }
@@ -211,6 +284,41 @@ impl<C: Send + Sync + 'static> App<C> {
             Some(Box::new(move |raw, request, context| guard.check(params(raw), request, context)));
     }
 
+    /// Sets the mutation `index` of the table, which the generated setters call.
+    pub fn set_mutation<I, T, F>(&mut self, index: usize, mutation: F)
+    where
+        I: reze::Input + Send + 'static,
+        T: Value,
+        F: for<'a> Mutation<'a, C, I, T> + 'static,
+    {
+        self.mutations[index] = Some(Box::new(move |body, request, context| {
+            let mut issues = Vec::new();
+            let input = match body {
+                Body::Json(json) => I::json(Some(json), &[], &mut issues),
+                Body::Form(_) if !I::FORM => return Decoded::JsonOnly,
+                Body::Form(form) => I::form(form, &mut issues),
+            };
+            match input {
+                Some(input) if issues.is_empty() => {
+                    let future = mutation.run(input, request, context);
+                    Decoded::Run(Box::pin(async move {
+                        future.await.map(|value| Box::new(value) as Box<dyn Value>)
+                    }))
+                }
+                _ => Decoded::Invalid(issues),
+            }
+        }));
+    }
+
+    /// The largest mutation body in bytes, 1 MB by default: the adapters answer `413` above it.
+    pub fn body_limit(&self) -> usize {
+        self.body_limit
+    }
+
+    pub fn set_body_limit(&mut self, bytes: usize) {
+        self.body_limit = bytes;
+    }
+
     pub fn set_manifest(&mut self, manifest: Manifest) {
         self.manifest = Some(manifest);
     }
@@ -221,21 +329,26 @@ impl<C: Send + Sync + 'static> App<C> {
         self.server_timing = on;
     }
 
-    /// Answers one request. The body is unread: the Rust server has no mutations.
-    pub async fn handle<B>(&self, request: Request<B>, context: &C) -> Response<Bytes> {
-        let (parts, _) = request.into_parts();
+    /// Answers one request, whose body a mutation reads.
+    pub async fn handle(&self, request: Request<Bytes>, context: &C) -> Response<Bytes> {
+        let (parts, body) = request.into_parts();
         let span = info_span!(
             "request",
             method = %parts.method,
             path = parts.uri.path(),
             status = field::Empty
         );
-        let response = self.respond(&parts, context).instrument(span.clone()).await;
+        let response = self.respond(&parts, &body, context).instrument(span.clone()).await;
         span.record("status", response.status().as_u16());
         response
     }
 
-    async fn respond(&self, request: &http::request::Parts, context: &C) -> Response<Bytes> {
+    async fn respond(
+        &self,
+        request: &http::request::Parts,
+        body: &Bytes,
+        context: &C,
+    ) -> Response<Bytes> {
         let path = request.uri.path();
         let query: Vec<(String, String)> =
             form_urlencoded::parse(request.uri.query().unwrap_or("").as_bytes())
@@ -249,6 +362,10 @@ impl<C: Send + Sync + 'static> App<C> {
         if path == "/__reze/guard" {
             return self.guard_check(request, &query, context).await;
         }
+        #[cfg(feature = "dev")]
+        if path == "/__reze/mutate" {
+            return self.mutate_json(request, body, &query, context).await;
+        }
         let get = |name: &str| query.iter().find(|(key, _)| key == name).map(|(_, v)| v.as_str());
         let build = get("_b");
         let segment = match get("_s").map(str::trim) {
@@ -260,10 +377,7 @@ impl<C: Send + Sync + 'static> App<C> {
         {
             return plain(409, "Conflict");
         }
-        let search: String = form_urlencoded::Serializer::new(String::new())
-            .extend_pairs(query.iter().filter(|(key, _)| key != "_b" && key != "_s"))
-            .finish();
-        let search = if search.is_empty() { search } else { format!("?{search}") };
+        let mut search = without(&query, &["_b", "_s"]);
         let method = &request.method;
 
         let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
@@ -296,6 +410,7 @@ impl<C: Send + Sync + 'static> App<C> {
                 params: &Params::new(),
                 data: &[],
                 error: Some((self.table.root.len(), RouteError::not_found())),
+                submission: None,
             };
             let rendered = self.render(&page, None, 0, &mut timings);
             return self.finish(rendered, HeaderMap::new(), &timings, head, request);
@@ -312,13 +427,11 @@ impl<C: Send + Sync + 'static> App<C> {
             headers.insert(header::ALLOW, HeaderValue::from_static("GET, HEAD, POST"));
             return response(405, headers, "Method Not Allowed");
         }
-        if method == Method::POST {
-            return if cross_site(&request.headers) {
-                plain(403, "Forbidden")
-            } else {
-                plain(404, "Not Found")
-            };
+        if method == Method::POST && cross_site(&request.headers) {
+            return plain(403, "Forbidden");
         }
+        let post = method == Method::POST;
+        let to = |failure: RouteError| if post { posted(failure) } else { failure };
 
         let mut guarded = None;
         for (depth, &node) in chain.iter().enumerate() {
@@ -335,7 +448,7 @@ impl<C: Send + Sync + 'static> App<C> {
             };
             match result {
                 Ok(()) => {}
-                Err(failure) if failure.location.is_some() => return redirect(&failure),
+                Err(failure) if failure.location.is_some() => return redirect(&to(failure)),
                 Err(failure) => {
                     guarded = Some((depth, failure));
                     from = 0;
@@ -343,7 +456,89 @@ impl<C: Send + Sync + 'static> App<C> {
                 }
             }
         }
+
+        let mut submission = None;
+        let mut called = None;
+        let mut status = 200;
+        if post && guarded.is_none() {
+            let id = get("_m").unwrap_or_default();
+            let Some(index) = self.table.mutations.iter().position(|m| m.id == id) else {
+                return plain(404, "Not Found");
+            };
+            let def = &self.table.mutations[index];
+            search = without(&query, &["_b", "_s", "_m"]);
+            let input = match read_body(&request.headers, body, self.body_limit) {
+                Ok(input) => input,
+                Err((status, message)) => return plain(status, message),
+            };
+            let Some(mutation) = self.mutations[index].as_ref() else {
+                tracing::error!(export = def.export, file = def.file, "no Rust mutation is set");
+                return plain(500, "Internal Server Error");
+            };
+            let span = info_span!("mutation", export = def.export, file = def.file);
+            match (mutation(&input, request, context), input) {
+                (Decoded::JsonOnly, _) => return plain(415, "This mutation takes JSON input"),
+                (Decoded::Invalid(issues), Body::Json(_)) => {
+                    return json(422, format!("{{\"issues\":{}}}", reze::to_json(&issues)));
+                }
+                (Decoded::Invalid(issues), Body::Form(form)) => {
+                    submission = Some(Submission::new(def.id, &form, issues));
+                    status = 422;
+                }
+                (Decoded::Run(future), input) => match future.instrument(span).await {
+                    Err(failure) if failure.location.is_some() => {
+                        return redirect(&posted(failure));
+                    }
+                    Err(failure) if matches!(input, Body::Json(_)) => {
+                        let mut message = String::from("{\"message\":");
+                        reze::js::push_json_string(&mut message, &failure.message);
+                        message.push('}');
+                        return json(failure.status, message);
+                    }
+                    Err(failure) => guarded = Some((chain.len() - 1, failure)),
+                    Ok(value) if build.is_none() => {
+                        if matches!(input, Body::Json(_)) {
+                            return json(200, format!("{{\"result\":{}}}", value.json()));
+                        }
+                        let mut headers = HeaderMap::new();
+                        if let Ok(location) = HeaderValue::from_str(&format!("{path}{search}")) {
+                            headers.insert(header::LOCATION, location);
+                        }
+                        return response(303, headers, Bytes::new());
+                    }
+                    Ok(value) => {
+                        if matches!(input, Body::Json(_)) {
+                            called = Some(value.json());
+                        }
+                        if let Some(patterns) = def.revalidate {
+                            from = chain
+                                .iter()
+                                .position(|&node| {
+                                    patterns.contains(&self.table.nodes[node].pattern)
+                                })
+                                .unwrap_or(chain.len());
+                        }
+                    }
+                },
+            }
+        }
         let until = guarded.as_ref().map_or(chain.len(), |(depth, _)| *depth);
+        let answer = |response: Response<Bytes>| {
+            let Some(result) = &called else { return response };
+            let segment = response
+                .headers()
+                .get("rz-segment")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("0")
+                .to_string();
+            let mut body = format!(
+                "{{\"result\":{result},\"status\":{},\"segment\":{segment},\"html\":",
+                response.status().as_u16()
+            );
+            reze::js::push_json_string(&mut body, &String::from_utf8_lossy(response.body()));
+            body.push('}');
+            json(200, body)
+        };
 
         let mut data: Vec<Option<Box<dyn Value>>> = chain.iter().map(|_| None).collect();
         let (mut error, mut stop) = (guarded, None);
@@ -354,12 +549,19 @@ impl<C: Send + Sync + 'static> App<C> {
             return redirect(target);
         }
         let mut headers = HeaderMap::new();
-        if let Some(seconds) =
-            chain.iter().filter_map(|&node| self.table.nodes[node].revalidate).min()
+        if !post
+            && let Some(seconds) =
+                chain.iter().filter_map(|&node| self.table.nodes[node].revalidate).min()
             && let Ok(value) =
                 HeaderValue::from_str(&format!("s-maxage={seconds}, stale-while-revalidate"))
         {
             headers.insert(header::CACHE_CONTROL, value);
+        }
+        if from == chain.len() {
+            headers
+                .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+            headers.insert("rz-segment", HeaderValue::from_static("-1"));
+            return answer(response(200, headers, Bytes::new()));
         }
         if from > 0 {
             let page = Page {
@@ -371,11 +573,12 @@ impl<C: Send + Sync + 'static> App<C> {
                 params: &params,
                 data: &data,
                 error: error.clone(),
+                submission: submission.as_ref(),
             };
             let rendered = self.render(&page, route.chunk, from, &mut timings);
             if rendered.is_ok() {
                 headers.insert("rz-segment", HeaderValue::from(from));
-                return self.finish(rendered, headers, &timings, head, request);
+                return answer(self.finish(rendered, headers, &timings, head, request));
             }
             let mut state = Run {
                 data: &mut data,
@@ -397,9 +600,12 @@ impl<C: Send + Sync + 'static> App<C> {
             params: &params,
             data: &data,
             error,
+            submission: submission.as_ref(),
         };
-        let rendered = self.render(&page, route.chunk, 0, &mut timings);
-        self.finish(rendered, headers, &timings, head, request)
+        let rendered = self
+            .render(&page, route.chunk, 0, &mut timings)
+            .map(|(document, code)| (document, if code == 200 { status } else { code }));
+        answer(self.finish(rendered, headers, &timings, head, request))
     }
 
     /// Runs the loaders of `depths` together, and keeps the error of the shallowest that fails.
@@ -488,7 +694,7 @@ impl<C: Send + Sync + 'static> App<C> {
             Ok(rendered) => rendered,
             Err(error) => (built_in(&error), error.status),
         };
-        if status == 200 {
+        if status == 200 && request.method != Method::POST {
             let tag = etag(&document);
             let matched = request
                 .headers
@@ -535,6 +741,38 @@ impl<C: Send + Sync + 'static> App<C> {
             Ok(()) => response(204, HeaderMap::new(), Bytes::new()),
             Err(error) if error.location.is_some() => redirect(&error),
             Err(error) => response(error.status, HeaderMap::new(), error.message),
+        }
+    }
+
+    /// The `dev` endpoint `POST /__reze/mutate?m=<id>`: runs one mutation over the request's
+    /// headers and the input the JS dev server checked, and answers its result as JSON.
+    #[cfg(feature = "dev")]
+    async fn mutate_json(
+        &self,
+        request: &http::request::Parts,
+        body: &Bytes,
+        query: &[(String, String)],
+        context: &C,
+    ) -> Response<Bytes> {
+        let id = query.iter().find(|(name, _)| name == "m").map(|(_, value)| value.as_str());
+        let index = self.table.mutations.iter().position(|m| Some(m.id) == id);
+        let Some(mutation) = index.and_then(|index| self.mutations[index].as_ref()) else {
+            return plain(404, "Not Found");
+        };
+        let input = match read_body(&request.headers, body, self.body_limit) {
+            Ok(input) => input,
+            Err((status, message)) => return plain(status, message),
+        };
+        match mutation(&input, request, context) {
+            Decoded::JsonOnly => plain(415, "This mutation takes JSON input"),
+            Decoded::Invalid(issues) => {
+                json(422, format!("{{\"issues\":{}}}", reze::to_json(&issues)))
+            }
+            Decoded::Run(future) => match future.await {
+                Ok(value) => json(200, format!("{{\"result\":{}}}", value.json())),
+                Err(error) if error.location.is_some() => redirect(&posted(error)),
+                Err(error) => response(error.status, HeaderMap::new(), error.message),
+            },
         }
     }
 

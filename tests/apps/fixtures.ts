@@ -216,11 +216,12 @@ async function startRust(app: string, adapter: "tower" | "actix"): Promise<Runni
     child.stdout.once("data", (chunk: Buffer) => done(chunk.toString().trim()));
     child.on("exit", (code) => fail(new Error(`${name} exited with ${code}`)));
   });
-  const proxy: Handler = (request) => {
+  const proxy: Handler = async (request) => {
     const url = new URL(request.url);
     const headers = new Headers(request.headers);
     for (const name of ["host", "connection", "keep-alive", "content-length", "transfer-encoding"]) headers.delete(name);
-    return fetch(new URL(url.pathname + url.search, rust), { method: request.method, headers, redirect: "manual" });
+    const body = request.method === "POST" ? await request.arrayBuffer() : undefined;
+    return fetch(new URL(url.pathname + url.search, rust), { method: request.method, headers, body, redirect: "manual" });
   };
   const js = await serveBuild(client, handler({ loaders: rust }), async () => {});
   const running = await serveBuild(client, proxy, async () => {

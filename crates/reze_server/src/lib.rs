@@ -24,6 +24,7 @@ pub use {http, reze};
 pub use app::App;
 pub use html::Html;
 pub use render::{Mark, Page, Render, children, push_segment};
+pub use reze::Issue;
 
 /// A route error: its status and message reach the nearest `<Errored>`, or the built-in error page.
 /// A redirect stops the request instead.
@@ -110,6 +111,8 @@ pub type RenderFn = fn(&mut Html, &mut Render, &Page<'_>) -> Result<()>;
 /// A route file: a layout or a page.
 pub struct Node {
     pub file: &'static str,
+    /// The URL pattern of the file, which `revalidate` of a mutation names.
+    pub pattern: &'static str,
     pub render: RenderFn,
     /// Whether the file has a `loader.external<T>()` the application sets.
     pub loader: bool,
@@ -143,6 +146,18 @@ pub struct Table {
     pub routes: &'static [Route],
     /// The root layout, which renders the `404` of an unmatched URL.
     pub root: &'static [usize],
+    pub mutations: &'static [MutationDef],
+}
+
+/// A `mutation.external<Input, Result>()` of the project.
+pub struct MutationDef {
+    /// The id forms post in `_m`.
+    pub id: &'static str,
+    /// The module and the export that declare it.
+    pub file: &'static str,
+    pub export: &'static str,
+    /// The patterns of the routes the mutation changes, or `None` for every loader of the page.
+    pub revalidate: Option<&'static [&'static str]>,
 }
 
 /// Loader data of any type, which the dev server also answers as JSON.
@@ -201,6 +216,33 @@ where
         context: &'a C,
     ) -> BoxFuture<'a, Result<()>> {
         Box::pin(self(params, request, context))
+    }
+}
+
+/// A Rust mutation: `async fn(Input, &http::request::Parts, &C) -> Result<T>`. The input arrives
+/// checked, and the result reaches `.call(input)` as JSON.
+pub trait Mutation<'a, C: 'a, I, T>: Send + Sync {
+    fn run(
+        &self,
+        input: I,
+        request: &'a http::request::Parts,
+        context: &'a C,
+    ) -> BoxFuture<'a, Result<T>>;
+}
+
+impl<'a, C, I, T, F, Fut> Mutation<'a, C, I, T> for F
+where
+    C: 'a,
+    F: Fn(I, &'a http::request::Parts, &'a C) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<T>> + Send + 'a,
+{
+    fn run(
+        &self,
+        input: I,
+        request: &'a http::request::Parts,
+        context: &'a C,
+    ) -> BoxFuture<'a, Result<T>> {
+        Box::pin(self(input, request, context))
     }
 }
 

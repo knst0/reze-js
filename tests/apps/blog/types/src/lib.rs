@@ -30,4 +30,24 @@ pub struct Post {
     pub likes: u32,
     pub views: u64,
     pub rating: f64,
+    pub comments: Vec<Comment>,
+}
+
+#[derive(Clone, Data)]
+pub struct Comment {
+    pub author: String,
+    pub body: String,
+}
+
+#[derive(Data)]
+pub struct NewComment {
+    pub post: u32,
+    pub author: String,
+    pub body: String,
+    pub stars: Option<u8>,
+}
+
+#[derive(Data)]
+pub struct Added {
+    pub count: u32,
 }

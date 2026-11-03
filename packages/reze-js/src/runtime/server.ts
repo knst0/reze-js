@@ -175,6 +175,8 @@ interface MutationRecord {
   revalidate?: string[];
   form?: Fields;
   json?: Parse;
+  /** `mutation.external()`: the Rust server runs it. */
+  external?: boolean;
   call(): Promise<never>;
 }
 
@@ -225,6 +227,18 @@ export function mutation(
   };
   return record as unknown as Mutation<never, unknown>;
 }
+
+/** Declares a mutation that runs in the Rust server, whose input the compiler validates from `I`. */
+mutation.external = <I, R = void>(options?: { revalidate?: RoutePattern[] }): Mutation<I, R> => {
+  const record: MutationRecord = {
+    id: "",
+    run: () => undefined,
+    revalidate: options?.revalidate,
+    external: true,
+    call: () => Promise.reject(new Error("`.call` runs in the browser")),
+  };
+  return record as unknown as Mutation<I, R>;
+};
 
 /** Declares the guard of a layout, which runs before every loader and mutation below it. */
 export function guardRoute(run: (args: GuardArgs) => void | Promise<void>): Guard {
@@ -323,7 +337,7 @@ export function $load<T>(target: Loader<T>, meta: Pick<Loader<T>, "params" | "se
 }
 
 /** Attaches the id and the generated input validators of a mutation, and registers it. */
-export function $mut<I, R>(target: Mutation<I, R>, id: string, meta: { form?: Fields; json?: Parse }): Mutation<I, R> {
+export function $mut<I, R>(target: Mutation<I, R>, id: string, meta: { form?: Fields; json?: Parse; external?: boolean }): Mutation<I, R> {
   const record = Object.assign(target as unknown as MutationRecord, meta, { id });
   mutations.set(id, record);
   return target;
@@ -755,19 +769,41 @@ function keyed(issues: Issue[]): Record<string, Issue> {
 }
 
 export function createApp(routes: Route[], root: RouteModule[], options: AppOptions = {}): Handler {
-  /** The data of an external loader, from the Rust server. */
-  const external = async (file: string, params: Record<string, unknown>, guard?: [URL, Request]) => {
+  /** Asks the Rust server's `dev` endpoint `kind`, with the headers of `request`. */
+  const rust = async (kind: string, query: URLSearchParams, request?: Request, body?: { json: unknown } | { form: FormData }) => {
     if (!options.loaders) throw new Error("`loader.external()` needs the `loaders` option: the origin of the Rust server");
+    const headers = new Headers(request?.headers);
+    for (const name of ["host", "connection", "content-length", "content-type", "transfer-encoding"]) headers.delete(name);
+    let payload: string | URLSearchParams | undefined;
+    if (body && "json" in body) {
+      payload = JSON.stringify(body.json);
+      headers.set("content-type", "application/json");
+    } else if (body) {
+      payload = new URLSearchParams([...body.form].filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+    }
+    const response = await fetch(`${options.loaders}/__reze/${kind}?${query}`, {
+      method: body ? "POST" : "GET",
+      redirect: "manual",
+      headers,
+      body: payload,
+    });
+    if (response.status >= 300 && response.status < 400) throw new Redirect(response.headers.get("location")!, response.status);
+    if (response.status >= 400 && response.status < 500) throw new RouteError(response.status, await response.text());
+    if (!response.ok) throw new Error(`The Rust ${kind} of ${query.get("m")} failed with ${response.status}`);
+    return response;
+  };
+  /** The data of an external loader, or the check of an external guard, from the Rust server. */
+  const external = async (file: string, params: Record<string, unknown>, guard?: [URL, Request]) => {
     const query = new URLSearchParams({ m: file });
     if (guard) query.set("u", guard[0].pathname + guard[0].search);
     for (const [name, value] of Object.entries(params)) if (value !== undefined) query.append(name, String(value as string));
-    const headers = new Headers(guard?.[1].headers);
-    for (const name of ["host", "connection", "content-length", "content-type", "transfer-encoding"]) headers.delete(name);
-    const response = await fetch(`${options.loaders}/__reze/${guard ? "guard" : "load"}?${query}`, { redirect: "manual", headers });
-    if (response.status >= 300 && response.status < 400) throw new Redirect(response.headers.get("location")!, response.status);
-    if (response.status >= 400 && response.status < 500) throw new RouteError(response.status, await response.text());
-    if (!response.ok) throw new Error(`The Rust ${guard ? "guard" : "loader"} of ${file} failed with ${response.status}`);
+    const response = await rust(guard ? "guard" : "load", query, guard?.[1]);
     return guard ? undefined : (response.json() as Promise<unknown>);
+  };
+  /** The result of an external mutation, from the Rust server. */
+  const mutate = async (record: MutationRecord, request: Request, input: { json: unknown } | { form: FormData }) => {
+    const response = await rust("mutate", new URLSearchParams({ m: record.id }), request, input);
+    return ((await response.json()) as { result: unknown }).result;
   };
   const ordered = [...routes].sort(compare);
   const limits = { body: options.limits?.body ?? 1 << 20, files: options.limits?.files ?? 10 << 20 };
@@ -920,19 +956,22 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
       } else {
         let result: unknown;
         try {
-          result = await record.run(value, { context: context as AppContext, request, response: writer });
+          result = record.external
+            ? await mutate(record, request, input)
+            : await record.run(value, { context: context as AppContext, request, response: writer });
         } catch (thrown) {
           if (thrown instanceof Redirect) return redirectTo(thrown, 303);
           const error = caught(request)(thrown);
           if ("json" in input) return Response.json({ message: error.message }, { status: error.status, headers: headersOf(writers) });
-          return respond({ route, params, url, data: [], error: [chain.length - 1, error] });
+          guarded = [chain.length - 1, error];
+          from = 0;
         }
-        if (build === null) {
+        if (!guarded && build === null) {
           if ("json" in input) return Response.json({ result: result ?? null }, { headers: headersOf(writers) });
           return new Response(null, { status: 303, headers: headersOf(writers, { location: url.pathname + url.search }) });
         }
-        if ("json" in input) called = { result: result ?? null };
-        if (record.revalidate) {
+        if (!guarded && "json" in input) called = { result: result ?? null };
+        if (!guarded && record.revalidate) {
           const depth = route.patterns.findIndex((pattern) => record.revalidate!.includes(pattern));
           from = depth < 0 ? chain.length : depth;
         }

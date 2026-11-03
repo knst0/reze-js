@@ -128,6 +128,9 @@ impl<'e, 'a> Frame<'e, 'a> {
     }
 }
 
+/// The type of `useSubmission().issues` fields, which reads as a struct with a `message`.
+const ISSUE: &str = "reze::Issue";
+
 type Lowered<'e, 'a> = Result<Binding<'e, 'a>, String>;
 
 /// Rust source of `text` as a string literal.
@@ -137,6 +140,22 @@ fn literal(text: &str) -> String {
 
 fn float(value: f64) -> String {
     format!("{value:?}_f64")
+}
+
+/// `addComment` as `add_comment`.
+fn snake(text: &str) -> String {
+    let mut out = String::new();
+    for c in text.chars() {
+        if c.is_ascii_uppercase() {
+            if !out.is_empty() {
+                out.push('_');
+            }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn rust_ident(text: &str) -> String {
@@ -471,11 +490,7 @@ pub fn emit(
             for endpoint in &analysis.facts[module].endpoints {
                 let span = endpoint.call;
                 match endpoint.kind {
-                    EndpointKind::Mutation => emitter.report(
-                        module,
-                        span,
-                        "Mutations run only in the JS server, the Rust server has no mutations yet",
-                    ),
+                    EndpointKind::Mutation => {}
                     EndpointKind::Loader if endpoint.export != "load" => {}
                     EndpointKind::Loader => match (endpoint.external, &endpoint.data_type) {
                         (true, Some(path)) => {
@@ -543,6 +558,63 @@ pub fn emit(
         emitter.indent = 0;
     }
 
+    let mut mutations: Vec<(String, &str, String, String)> = Vec::new();
+    out.push_str("    static MUTATIONS: &[::reze_server::MutationDef] = &[\n");
+    for (module, facts) in analysis.facts.iter().enumerate() {
+        for endpoint in facts.endpoints.iter().filter(|e| e.kind == EndpointKind::Mutation) {
+            let span = endpoint.call;
+            let (true, Some(id)) = (endpoint.external, &endpoint.id) else {
+                emitter.report(
+                    module,
+                    span,
+                    "A mutation of the Rust server is `mutation.external<Input, Result>()`",
+                );
+                continue;
+            };
+            let Some(input) = &endpoint.input_type else {
+                emitter.report(
+                    module,
+                    span,
+                    "`mutation.external<Input, Result>()` takes types imported from `virtual:reze-types/<crate>`",
+                );
+                continue;
+            };
+            let result = match &endpoint.data_type {
+                Some(path) => format!("::{path}"),
+                None => "()".into(),
+            };
+            let setter = rust_ident(&snake(&endpoint.export));
+            let taken = ["new", "manifest", "server_timing", "body_limit"]
+                .contains(&setter.as_str())
+                || loaders.iter().any(|(node, _)| names[*node] == setter)
+                || guards.iter().any(|node| format!("guard_{}", names[*node]) == setter)
+                || mutations.iter().any(|(name, ..)| *name == setter);
+            if taken {
+                emitter.report(
+                    module,
+                    span,
+                    format!("The Rust app already has a setter `{setter}`: rename the mutation"),
+                );
+                continue;
+            }
+            let revalidate = match &endpoint.revalidate {
+                Some(patterns) => {
+                    let patterns: Vec<String> = patterns.iter().map(|p| literal(p)).collect();
+                    format!("Some(&[{}])", patterns.join(", "))
+                }
+                None => "None".into(),
+            };
+            out.push_str(&format!(
+                "        ::reze_server::MutationDef {{ id: {}, file: {}, export: {}, revalidate: {revalidate} }},\n",
+                literal(id),
+                literal(&modules[module].path),
+                literal(&endpoint.export)
+            ));
+            mutations.push((setter, &endpoint.export, format!("::{input}"), result));
+        }
+    }
+    out.push_str("    ];\n\n");
+
     out.push_str("    static NODES: &[::reze_server::Node] = &[\n");
     for (index, node) in routes.nodes.iter().enumerate() {
         let module = module_of(&node.file);
@@ -556,8 +628,9 @@ pub fn emit(
         let loader = loaders.iter().any(|(node, _)| *node == index);
         let guard = guards.contains(&index);
         out.push_str(&format!(
-            "        ::reze_server::Node {{ file: {}, render: level_{index}, loader: {loader}, guard: {guard}, revalidate: {revalidate} }},\n",
-            literal(&node.file)
+            "        ::reze_server::Node {{ file: {}, pattern: {}, render: level_{index}, loader: {loader}, guard: {guard}, revalidate: {revalidate} }},\n",
+            literal(&node.file),
+            literal(&node.pattern)
         ));
     }
     out.push_str("    ];\n\n    static ROUTES: &[::reze_server::Route] = &[\n");
@@ -586,10 +659,10 @@ pub fn emit(
     }
     let root = routes.root.map(|node| node.to_string()).unwrap_or_default();
     out.push_str(&format!(
-        "    ];\n\n    static TABLE: ::reze_server::Table =\n        ::reze_server::Table {{ nodes: NODES, routes: ROUTES, root: &[{root}] }};\n\n"
+        "    ];\n\n    static TABLE: ::reze_server::Table =\n        ::reze_server::Table {{ nodes: NODES, routes: ROUTES, root: &[{root}], mutations: MUTATIONS }};\n\n"
     ));
 
-    out.push_str("    /// The application: the route table and the Rust loaders and guards.\n    pub struct App<C>(::reze_server::App<C>);\n\n    impl<C: Send + Sync + 'static> Default for App<C> {\n        fn default() -> Self {\n            Self::new()\n        }\n    }\n\n    impl<C: Send + Sync + 'static> App<C> {\n        pub fn new() -> Self {\n            Self(::reze_server::App::new(&TABLE))\n        }\n\n        /// Sets the URLs of the client build, from `reze.json`.\n        pub fn manifest(mut self, manifest: ::reze_server::Manifest) -> Self {\n            self.0.set_manifest(manifest);\n            self\n        }\n\n        /// Writes loader and render durations into `Server-Timing`, which is on with the `dev` feature.\n        pub fn server_timing(mut self, on: bool) -> Self {\n            self.0.set_server_timing(on);\n            self\n        }\n");
+    out.push_str("    /// The application: the route table and the Rust loaders, guards, and mutations.\n    pub struct App<C>(::reze_server::App<C>);\n\n    impl<C: Send + Sync + 'static> Default for App<C> {\n        fn default() -> Self {\n            Self::new()\n        }\n    }\n\n    impl<C: Send + Sync + 'static> App<C> {\n        pub fn new() -> Self {\n            Self(::reze_server::App::new(&TABLE))\n        }\n\n        /// Sets the URLs of the client build, from `reze.json`.\n        pub fn manifest(mut self, manifest: ::reze_server::Manifest) -> Self {\n            self.0.set_manifest(manifest);\n            self\n        }\n\n        /// Writes loader and render durations into `Server-Timing`, which is on with the `dev` feature.\n        pub fn server_timing(mut self, on: bool) -> Self {\n            self.0.set_server_timing(on);\n            self\n        }\n\n        /// Sets the largest mutation body in bytes, 1 MB by default.\n        pub fn body_limit(mut self, bytes: usize) -> Self {\n            self.0.set_body_limit(bytes);\n            self\n        }\n");
     for (index, path) in &loaders {
         let name = &names[*index];
         out.push_str(&format!(
@@ -602,6 +675,12 @@ pub fn emit(
         out.push_str(&format!(
             "\n        /// Sets the guard of `{}`.\n        pub fn guard_{name}<F>(mut self, guard: F) -> Self\n        where\n            F: for<'a> ::reze_server::Guard<'a, C, {name}::Params> + 'static,\n        {{\n            self.0.set_guard({index}, {name}::Params::from, guard);\n            self\n        }}\n",
             routes.nodes[*index].pattern
+        ));
+    }
+    for (index, (setter, export, input, result)) in mutations.iter().enumerate() {
+        out.push_str(&format!(
+            "\n        /// Sets the mutation `{}`.\n        pub fn {setter}<F>(mut self, mutation: F) -> Self\n        where\n            F: for<'a> ::reze_server::Mutation<'a, C, {input}, {result}> + 'static,\n        {{\n            self.0.set_mutation({index}, mutation);\n            self\n        }}\n",
+            export
         ));
     }
     out.push_str("    }\n\n    impl<C> From<App<C>> for ::reze_server::App<C> {\n        fn from(app: App<C>) -> Self {\n            app.0\n        }\n    }\n}\n");
