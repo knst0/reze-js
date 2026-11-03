@@ -80,9 +80,6 @@ impl Api {
 
     /// Lowered away on every target, so the import has no runtime value.
     pub fn is_syntax(self) -> bool {
-        !matches!(
-            self,
-            Api::CreateContext | Api::Loader | Api::Mutation | Api::Defer | Api::UseSubmission
-        )
+        !matches!(self, Api::CreateContext | Api::Loader | Api::Mutation | Api::Defer)
     }
 }

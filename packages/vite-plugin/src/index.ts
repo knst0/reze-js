@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
 
 import { type Chunks, compileProjectAsync, type ProjectResult } from "@rezejs/compiler";
 import { minify, type Plugin, transformWithOxc } from "vite";
@@ -34,7 +34,13 @@ export default function reze(options: RezeOptions = {}): Plugin {
   const refs = new Map<string, string>();
   let dispatcherRef = "";
 
-  const compile = () => (output ??= compileProjectAsync({ root }, { routesDir: options.routesDir, chunks: options.chunks, dev }));
+  const routesDir = options.routesDir ?? "src/routes";
+  const compile = () =>
+    (output ??= compileProjectAsync({ root }, { routesDir, chunks: options.chunks, dev }).then(async (result) => {
+      const file = join(root, dirname(routesDir), "routes.gen.d.ts");
+      if ((await readFile(file, "utf8").catch(() => "")) !== result.types) await writeFile(file, result.types);
+      return result;
+    }));
 
   return {
     name: "reze",
@@ -87,7 +93,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
     },
     configureServer(server) {
       server.watcher.on("all", (_, file) => {
-        if (relative(root, file).startsWith("..")) return;
+        if (relative(root, file).startsWith("..") || file.endsWith("routes.gen.d.ts")) return;
         output = undefined;
         for (const environment of Object.values(server.environments)) {
           environment.moduleGraph.invalidateAll();
@@ -109,7 +115,7 @@ export default function reze(options: RezeOptions = {}): Plugin {
       const assets = built
         ? `const chunks = ${JSON.stringify(built.chunks)};\nexport const assets = { dispatcher: ${JSON.stringify(built.dispatcher)}, chunk: (node) => chunks[node] };\n`
         : `export const assets = { dispatcher: ${JSON.stringify(devUrl(dispatcher))}, chunk: (node) => ${JSON.stringify(devUrl(route))} + node };\n`;
-      return result.app + assets;
+      return `${result.app}${assets}export const dev = ${dev};\n`;
     },
     async transform(_, id, transformOptions) {
       const file = relative(root, id.split("?")[0]!).replaceAll("\\", "/");

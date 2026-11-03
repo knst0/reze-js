@@ -132,7 +132,8 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
     }
     edges.resize_with(paths.len(), HashMap::new);
 
-    let mut output = ProjectOutput { routes: table, ..ProjectOutput::default() };
+    let types = emit::types(&table, parent);
+    let mut output = ProjectOutput { routes: table, types, ..ProjectOutput::default() };
     if parse_failed || reports.values().flatten().any(|r| r.code.severity().is_error()) {
         output.diagnostics = resolve_reports(reports, &paths, &sources);
         return output;

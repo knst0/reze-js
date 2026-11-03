@@ -138,6 +138,8 @@ pub struct ProjectResult {
     pub modules: HashMap<String, ModuleOutput>,
     /// The route table: `{ file, pattern, segments, parent, is_layout }` per route file.
     pub routes: serde_json::Value,
+    /// Source of `routes.gen.d.ts`, next to the routes directory.
+    pub types: String,
     /// Source of `virtual:rz-app`.
     pub app: String,
     /// Source of `virtual:rz-route/{node}`, by route node index.
@@ -187,6 +189,7 @@ fn result(output: reze_compiler::ProjectOutput) -> napi::Result<ProjectResult> {
             .map(|(path, m)| (path, ModuleOutput { server: m.server, client: m.client }))
             .collect(),
         routes,
+        types: output.types,
         app: output.app,
         chunks: output.chunks.into_iter().map(|(node, code)| (node.to_string(), code)).collect(),
         diagnostics: output.diagnostics.into_iter().map(diagnostic).collect(),

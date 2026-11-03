@@ -225,3 +225,20 @@ export const load = loader(async () => …);
 | Code            | Raised when                                     |
 | --------------- | ----------------------------------------------- |
 | `SERVER_IN_SPA` | A loader or mutation exists in a `"spa"` target |
+
+## Implementation status
+
+The current implementation differs from this design in these points:
+
+- Route props come from `reze-js`: `RoutePropsFor`, `LayoutPropsFor`, and `RouteData` augment its
+  `Register`. The generated file is `routes.gen.d.ts` next to the routes folder, `src/`.
+- Typed `paths` builders are not generated, so `redirect` takes a plain string.
+- `LayoutPropsFor` keys layouts by URL prefix, so a group layout such as `(app).tsx` shares the key
+  `/` with the root layout and cannot use it.
+- Segment keys and `_s` partial renders are not implemented; every request renders the whole chain.
+- `<Errored>` catches errors on the server only. A boundary rolls back the HTML, head entries, and
+  state rows its children produced before the error.
+- The compiled application exports `root`, the root layout chain, which renders the `404` of a URL
+  that matches no route.
+- A `POST` is checked for a cross-site origin before guards run, so a forged post answers `403`
+  even when a guard would redirect.

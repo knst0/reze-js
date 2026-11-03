@@ -1,0 +1,6 @@
+[LOADER_PARAMS_TYPE] The params annotation declares `id`, which the pattern `/` does not have.
+  at src/routes/index.tsx:3:57
+  2 | 
+> 3 | export const load = loader(async ({ params }: { params: { id: number } }) => params.id);
+    |                                                         ^^^^^^^^^^^^^^
+  4 |

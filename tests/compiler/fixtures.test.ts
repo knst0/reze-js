@@ -70,9 +70,9 @@ for (const fixture of fixtures) {
         .map(([node, code]) => `// virtual:rz-route/${node}\n${code}`),
     ];
     await snapshot(dir, "client.snap", client.length > 0 ? client.join("\n") : undefined);
-    const routes = (await import(pathToFileURL(join(target, "app.ts")).href)).default;
+    const app = await import(pathToFileURL(join(target, "app.ts")).href);
     const assets = { dispatcher: "/dispatcher.js", chunk: (node: number) => `/route-${node}.js` };
-    const response = await createApp(routes, { assets })(new Request("http://localhost/"));
+    const response = await createApp(app.default, app.root, { assets })(new Request("http://localhost/"));
     await snapshot(dir, "html.snap", `${await response.text()}\n`);
   });
 }

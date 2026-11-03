@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -104,6 +104,7 @@ const types: Record<string, string> = { ".js": "text/javascript", ".css": "text/
 
 async function startJsBuild(app: string): Promise<Running> {
   const out = await mkdtemp(join(tmpdir(), "rz-build-"));
+  await writeFile(join(out, "package.json"), '{ "type": "module" }');
   const client = join(out, "client");
   const builder = await createBuilder({
     root: app,

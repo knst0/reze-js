@@ -939,3 +939,24 @@ change.
 | `LOADER_PARAMS_TYPE`        | A params annotation names a key missing from the pattern            |
 | `DATA_TYPE_UNSUPPORTED`     | Loader data contains a type with no wire encoding                   |
 | `SERVER_HOLE_UNSUPPORTED`   | A server-path hole has no Rust lowering                             |
+
+## Implementation status
+
+The current implementation differs from this design in these points:
+
+- A mutation's id is base-36 of the 32-bit FNV-1a hash of `path#export`.
+- The client receives no `.call` stub yet, and a mutation does not revalidate: a form post answers
+  `303` back to the page, a JSON post answers `{ result }`.
+- A form posted to a mutation without a generated form coercer, a schema-first mutation, answers
+  `415`.
+- JSON input encodes `Date` as an ISO string or a timestamp, `Map` as `[key, value]` pairs, `Set`
+  as an array, `bigint` as a decimal string, and `Uint8Array` as base64.
+- `DATA_TYPE_UNSUPPORTED` is not raised: loader results are not lowered to the positional encoding
+  yet.
+- `LOADER_RESULT_UNTYPED` covers reads of `props.data` in the route component's client code only.
+- `useSubmission` returns `{}` when the request did not submit that mutation, and `issues` holds the
+  first issue for each path joined with `.`.
+- The body limits are 1 MB for JSON and form fields and 10 MB for files, set through
+  `createHandler({ limits })`.
+- In development, a `500` carries the error message. In production it carries
+  `Internal Server Error`.

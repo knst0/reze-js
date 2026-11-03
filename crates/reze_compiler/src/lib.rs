@@ -72,6 +72,8 @@ pub struct ProjectOutput {
     /// Project-relative path to compiled code, for every module the routes reach.
     pub modules: BTreeMap<String, ModuleOutput>,
     pub routes: RouteTable,
+    /// Source of `routes.gen.d.ts`, next to the routes directory.
+    pub types: String,
     /// Source of `virtual:rz-app`: the route modules and the route table for `createHandler`.
     pub app: String,
     /// Source of `virtual:rz-route/{node}`: the client factories of each page route that has any.

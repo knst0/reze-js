@@ -1,0 +1,13 @@
+[MUTATION_INPUT_UNRESOLVED] Mapped and utility types are not lowered. Write the type out, or pass a schema.
+  at src/routes/index.tsx:8:46
+  7 | 
+> 8 | export const rename = mutation(async (input: Pick<Todo, "title">) => input.title);
+    |                                              ^^^^^^^^^^^^^^^^^^^
+  9 |
+
+[MUTATION_INPUT_UNRESOLVED] `Temporal.Instant` has no lowering. Write the type out, or pass a schema.
+  at src/routes/index.tsx:10:48
+   9 | 
+> 10 | export const schedule = mutation(async (input: { when: Temporal.Instant }) => input.when);
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  11 |

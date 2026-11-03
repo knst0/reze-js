@@ -15,7 +15,7 @@ use oxc_semantic::SymbolId;
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
-use crate::analyze::{Analysis, Api, Export, ImportSource};
+use crate::analyze::{Analysis, Api, EndpointKind, Export, ImportSource};
 use crate::diagnostic::{Code, Edit, Report};
 use crate::html;
 use crate::project::Module;
@@ -767,7 +767,8 @@ fn event_condition<'e>(expression: &'e Expression<'e>, param: &str) -> Option<Ve
         }
     };
     let modifier = |name: &str, pressed: bool| {
-        matches!(name, "ctrlKey" | "altKey" | "metaKey" | "shiftKey").then(|| vec![format!("{name}={pressed}")])
+        matches!(name, "ctrlKey" | "altKey" | "metaKey" | "shiftKey")
+            .then(|| vec![format!("{name}={pressed}")])
     };
     match expression.without_parentheses() {
         Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
@@ -1042,11 +1043,45 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
         );
     }
 
+    /// Reports a read of `props.data` in a route component whose loader has no result type.
+    fn check_loader_read(&mut self, symbol: SymbolId, key: &str, span: Span) {
+        let Some(component) = self.component.as_ref().map(|c| c.component) else { return };
+        let facts = &self.index.analysis.facts[component.module];
+        let function = facts.components[component.index].function;
+        let props = match function.params().items.first().map(|p| &p.pattern) {
+            Some(BindingPattern::BindingIdentifier(id)) if id.symbol_id.get() == Some(symbol) => {
+                &id.name
+            }
+            _ => return,
+        };
+        let is_default = match facts.exports.get("default") {
+            Some(Export::Local(local)) => facts.components[component.index].symbol == Some(*local),
+            Some(Export::Component(index)) => *index == component.index,
+            _ => false,
+        };
+        let loader =
+            facts.endpoints.iter().find(|e| e.kind == EndpointKind::Loader && e.export == "load");
+        let Some(loader) = loader.filter(|loader| is_default && !loader.typed) else { return };
+        let Some(route) = &loader.route else { return };
+        let data = format!("{props}.data");
+        if key == data
+            || key.starts_with(&format!("{data}."))
+            || key.starts_with(&format!("{data}["))
+        {
+            self.reports.push(
+                Report::new(Code::LoaderResultUntyped, span)
+                    .arg("read", self.text(span).to_string())
+                    .arg("route", route.clone()),
+            );
+        }
+    }
+
     fn capture(&mut self, symbol: SymbolId, span: Span) -> String {
         let scope = self.capture_scope(symbol).unwrap_or(0);
         self.check_serializable(symbol, span);
         let text = self.text(span).to_string();
         let key: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+        self.check_loader_read(symbol, &key, span);
         let component = self.component.as_mut().expect("captures belong to a component");
         let slot = component.captures[scope].slot(key, text);
         let offset = if scope == 0 { 1 } else { 2 };

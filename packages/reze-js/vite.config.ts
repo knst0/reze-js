@@ -16,6 +16,7 @@ export default defineConfig({
       "src/runtime/dispatcher.ts",
       "src/runtime/server.ts",
       "src/server.ts",
+      "src/types.ts",
     ],
     platform: "neutral",
     unbundle: true,

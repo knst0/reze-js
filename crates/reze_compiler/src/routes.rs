@@ -35,6 +35,8 @@ pub struct RouteNode {
 #[derive(Default, Debug, Serialize)]
 pub struct RouteTable {
     pub nodes: Vec<RouteNode>,
+    /// The root layout, `src/routes.tsx`.
+    pub root: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -138,6 +140,7 @@ pub fn scan(dir: &str, files: &[String]) -> (RouteTable, Vec<RouteError>) {
             is_layout: true,
         });
         index_of.insert(String::new(), 0);
+        table.root = Some(0);
     }
     let ids: Vec<String> = by_id.keys().cloned().collect();
     for id in &ids {

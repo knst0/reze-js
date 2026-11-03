@@ -8,7 +8,7 @@ use oxc_ast_visit::{Visit, walk};
 use oxc_span::{GetSpan, Span};
 
 use crate::SERVER_RUNTIME;
-use crate::analyze::{Analysis, Api};
+use crate::analyze::{Analysis, Api, EndpointKind};
 use crate::client::{self, ModulePlan, base36, scope_var};
 use crate::html;
 use crate::project::Module;
@@ -246,8 +246,19 @@ impl<'e, 'a> Emitter<'e, 'a> {
                 };
                 self.interpolate(out, &code);
             }
-            Node::Loading(boundary) | Node::Errored(boundary) => {
+            Node::Loading(boundary) => {
                 self.nodes(&boundary.children.nodes, boundary.children.span.start, out);
+            }
+            Node::Errored(boundary) => {
+                let mut children = String::from("`");
+                self.nodes(&boundary.children.nodes, boundary.children.span.start, &mut children);
+                children.push('`');
+                let fallback = match &boundary.fallback {
+                    Some(Branch::Content(content)) => format!("() => {}", self.template(content)),
+                    Some(Branch::Callback(callback)) => self.callback(callback),
+                    None => "() => ''".into(),
+                };
+                self.interpolate(out, &format!("$r.boundary(() => {children}, {fallback})"));
             }
             Node::Portal(_) => {}
         }
@@ -282,6 +293,13 @@ impl<'e, 'a> Emitter<'e, 'a> {
                     Value::True => {
                         out.push(' ');
                         out.push_str(attribute.name);
+                    }
+                    Value::Expr(expression)
+                        if element.tag == "form" && attribute.name == "action" =>
+                    {
+                        let fa = self.helper("$fa");
+                        let code = format!("{fa}($r, {})", self.expression(expression));
+                        self.interpolate(out, &code);
                     }
                     Value::Expr(expression) => {
                         let a = self.helper("$a");
@@ -388,6 +406,9 @@ impl<'a> Visit<'a> for Lowering<'_, 'a> {
                 self.edits.push((it.span, "$r.params".into()));
                 return;
             }
+            Some(Api::UseSubmission) => {
+                self.edits.push((it.callee.span(), "$r.submission".into()));
+            }
             _ => {}
         }
         walk::walk_call_expression(self, it);
@@ -399,7 +420,13 @@ fn import_edit<'a>(
     keep: impl Fn(&ImportDeclarationSpecifier<'a>) -> bool,
 ) -> Option<String> {
     let specifiers = declaration.specifiers.as_ref()?;
-    let kept: Vec<_> = specifiers.iter().filter(|s| keep(s)).collect();
+    let kept: Vec<_> = specifiers
+        .iter()
+        .filter(|s| {
+            keep(s)
+                && !matches!(s, ImportDeclarationSpecifier::ImportSpecifier(s) if s.import_kind.is_type())
+        })
+        .collect();
     if kept.len() == specifiers.len() {
         return None;
     }
@@ -508,9 +535,28 @@ pub fn server(
         regions.push(Region { span: content.span, event: Event::Jsx(content, Wrap::Raw) });
         collect_callbacks(&content.nodes, &mut regions);
     }
+    let mut helpers = BTreeSet::new();
+    for endpoint in &facts.endpoints {
+        let open = match (endpoint.kind, &endpoint.id) {
+            (EndpointKind::Mutation, Some(id)) => {
+                helpers.insert("$mut");
+                format!(", {id:?}, {})", endpoint.meta)
+            }
+            (EndpointKind::Loader, _) if endpoint.meta != "{}" => {
+                helpers.insert("$load");
+                format!(", {})", endpoint.meta)
+            }
+            _ => continue,
+        };
+        let helper = if endpoint.kind == EndpointKind::Mutation { "$mut(" } else { "$load(" };
+        regions.push(Region {
+            span: Span::empty(endpoint.call.start),
+            event: Event::Edit(helper.into()),
+        });
+        regions.push(Region { span: Span::empty(endpoint.call.end), event: Event::Edit(open) });
+    }
     regions.sort_by_key(|r| (r.span.start, std::cmp::Reverse(r.span.end)));
 
-    let mut helpers = BTreeSet::new();
     if regions.iter().any(|r| matches!(&r.event, Event::Edit(text) if text == "`${$t(")) {
         helpers.insert("$t");
     }

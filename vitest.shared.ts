@@ -16,6 +16,7 @@ export const sourceAliases = [
     find: "reze-js/runtime/server",
     replacement: join(packages, "reze-js", "src", "runtime", "server.ts"),
   },
+  { find: "reze-js/types", replacement: join(packages, "reze-js", "src", "types.ts") },
   { find: "reze-js/server", replacement: join(packages, "reze-js", "src", "server.ts") },
   { find: "reze-js", replacement: join(packages, "reze-js", "src", "index.ts") },
 ];

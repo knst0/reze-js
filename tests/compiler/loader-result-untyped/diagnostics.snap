@@ -1,0 +1,6 @@
+[LOADER_RESULT_UNTYPED] The client reads `props.data.greeting`, but the loader of `/` has no result type.
+  at src/routes/index.tsx:10:39
+   9 |     <main>
+> 10 |       <button onClick={() => (shown = props.data.greeting)}>Greet</button>
+     |                                       ^^^^^^^^^^^^^^^^^^^
+  11 |       <output>{shown}</output>

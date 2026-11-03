@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -45,6 +45,7 @@ for (const app of (await readdir(apps, { withFileTypes: true }))
   .map((entry) => entry.name)
   .sort()) {
   const out = await mkdtemp(join(tmpdir(), "rz-size-"));
+  await writeFile(join(out, "package.json"), '{ "type": "module" }');
   try {
     const handler = await build(join(apps, app), out);
     const html = await (await handler(new Request("http://localhost/"))).text();

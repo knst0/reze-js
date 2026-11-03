@@ -1,0 +1,13 @@
+[MUTATION_INPUT_UNTYPED] A mutation is a public endpoint and needs a contract for its input. Annotate the input, or pass a schema.
+  at src/routes/index.tsx:3:39
+  2 | 
+> 3 | export const rename = mutation(async (input) => input);
+    |                                       ^^^^^
+  4 |
+
+[MUTATION_INPUT_UNTYPED] A mutation is a public endpoint and needs a contract for its input. Annotate the input, or pass a schema.
+  at src/routes/index.tsx:5:46
+  4 | 
+> 5 | export const remove = mutation(async (input: unknown) => input);
+    |                                              ^^^^^^^
+  6 |

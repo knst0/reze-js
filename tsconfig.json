@@ -10,7 +10,8 @@
       "reze-js/jsx-runtime": ["./packages/reze-js/src/jsx-runtime.ts"],
       "reze-js/jsx-dev-runtime": ["./packages/reze-js/src/jsx-dev-runtime.ts"],
       "reze-js/runtime/server": ["./packages/reze-js/src/runtime/server.ts"],
-      "reze-js/server": ["./packages/reze-js/src/server.ts"]
+      "reze-js/server": ["./packages/reze-js/src/server.ts"],
+      "reze-js/types": ["./packages/reze-js/src/types.ts"]
     },
     "strict": true,
     "forceConsistentCasingInFileNames": true,
@@ -24,5 +25,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "exclude": ["**/node_modules", "**/dist", "examples", "docs"]
+  "exclude": ["**/node_modules", "**/dist", "examples", "docs", "tests/apps/*/src/routes.gen.d.ts"]
 }

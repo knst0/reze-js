@@ -91,6 +91,8 @@ export interface ProjectResult {
   modules: Record<string, ModuleOutput>
   /** The route table: `{ file, pattern, segments, parent, is_layout }` per route file. */
   routes: any
+  /** Source of `routes.gen.d.ts`, next to the routes directory. */
+  types: string
   /** Source of `virtual:rz-app`. */
   app: string
   /** Source of `virtual:rz-route/{node}`, by route node index. */

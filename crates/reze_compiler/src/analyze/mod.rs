@@ -1,5 +1,6 @@
 mod api;
 mod build;
+mod data;
 mod holes;
 
 use std::collections::{HashMap, HashSet};
@@ -16,6 +17,7 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
 pub use api::Api;
+pub use data::{Endpoint, EndpointKind};
 
 use crate::Options;
 use crate::diagnostic::{Code, Report};
@@ -109,6 +111,8 @@ pub struct ModuleFacts<'a> {
     /// JSX in value positions outside templates, such as the return of a render prop, by span
     /// start.
     pub values: HashMap<u32, Content<'a>>,
+    /// Exported loaders and mutations.
+    pub endpoints: Vec<Endpoint>,
 }
 
 pub struct Analysis<'a> {
@@ -414,7 +418,37 @@ pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, _options: &Options) 
         }
     }
 
+    for module in 0..modules.len() {
+        let route = routes.nodes.iter().find(|node| node.file == modules[module].path);
+        let pattern = route.map(|node| {
+            (node.pattern.as_str(), node.segments.iter().filter_map(|s| s.name()).collect())
+        });
+        cx.facts[module].endpoints = data::endpoints(&cx, module, pattern, &mut reports[module]);
+    }
+    check_mutation_ids(&cx, &mut reports);
+    for (module, reports) in reports.iter_mut().enumerate() {
+        data::check_forms(&cx, module, reports);
+    }
+
     Analysis { facts: cx.facts, reports }
+}
+
+fn check_mutation_ids(cx: &Context<'_, '_>, reports: &mut [Vec<Report>]) {
+    let mut seen: HashMap<&str, String> = HashMap::new();
+    for (module, facts) in cx.facts.iter().enumerate() {
+        for endpoint in &facts.endpoints {
+            let Some(id) = &endpoint.id else { continue };
+            let name = format!("{}#{}", cx.modules[module].path, endpoint.export);
+            if let Some(other) = seen.insert(id, name.clone()) {
+                reports[module].push(
+                    Report::new(Code::MutationIdCollision, endpoint.call)
+                        .arg("name", name)
+                        .arg("other", other)
+                        .arg("id", id.clone()),
+                );
+            }
+        }
+    }
 }
 
 fn check_tag_values(cx: &Context<'_, '_>, module: usize, reports: &mut Vec<Report>) {

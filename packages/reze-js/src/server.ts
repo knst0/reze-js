@@ -1,9 +1,34 @@
-import routes, { assets } from "virtual:rz-app";
+import { createApp, type Handler, type HandlerOptions, type Mutation, type Submission } from "./runtime/server";
 
-import { createApp, type Handler, type HandlerOptions } from "./runtime/server";
+export {
+  fail,
+  guardRoute,
+  loader,
+  mutation,
+  MutationInputError,
+  notFound,
+  redirect,
+  RouteError,
+  type CookieOptions,
+  type GuardArgs,
+  type Handler,
+  type HandlerOptions,
+  type Issue,
+  type Loader,
+  type LoaderArgs,
+  type Mutation,
+  type MutationArgs,
+  type Register,
+  type ResponseWriter,
+  type StandardSchemaV1,
+  type Submission,
+} from "./runtime/server";
 
-export type { Handler, HandlerOptions };
+/** Compiler syntax: the current request's submission of `mutation`, `{ input, issues, result }`. */
+export declare function useSubmission<I, R>(mutation: Mutation<I, R>): Submission<I, R>;
 
+/** The request handler of the app, for any server that speaks `Request` and `Response`. */
 export function createHandler(options: HandlerOptions = {}): Handler {
-  return createApp(routes, { ...options, assets });
+  const app = import("virtual:rz-app").then((m) => createApp(m.default, m.root, { ...options, assets: m.assets, dev: m.dev }));
+  return async (request) => (await app)(request);
 }
