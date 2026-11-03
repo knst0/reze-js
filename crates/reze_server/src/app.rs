@@ -1,4 +1,6 @@
 use std::cmp::Ordering;
+use std::fmt::Write;
+use std::time::Instant;
 
 use bytes::Bytes;
 use futures_util::future::{BoxFuture, join_all};
@@ -22,6 +24,7 @@ pub struct App<C> {
     ordered: Vec<&'static Route>,
     loaders: Vec<Option<Erased<C>>>,
     manifest: Option<Manifest>,
+    server_timing: bool,
 }
 
 fn compare(a: &Route, b: &Route) -> Ordering {
@@ -139,11 +142,32 @@ mod base64_url {
     }
 }
 
+/// What the loaders of one request write: their data, the shallowest error, and their timings.
+struct Run<'r> {
+    data: &'r mut [Option<Box<dyn Value>>],
+    error: &'r mut Option<(usize, RouteError)>,
+    timings: &'r mut String,
+}
+
+/// Appends a `Server-Timing` metric of `seconds`.
+fn timing(timings: &mut String, name: &str, seconds: f64) {
+    if !timings.is_empty() {
+        timings.push_str(", ");
+    }
+    let _ = write!(timings, "{name};dur={:.1}", seconds * 1000.0);
+}
+
 impl<C: Send + Sync + 'static> App<C> {
     pub fn new(table: &'static Table) -> Self {
         let mut ordered: Vec<&'static Route> = table.routes.iter().collect();
         ordered.sort_by(|a, b| compare(a, b));
-        Self { table, ordered, loaders: table.nodes.iter().map(|_| None).collect(), manifest: None }
+        Self {
+            table,
+            ordered,
+            loaders: table.nodes.iter().map(|_| None).collect(),
+            manifest: None,
+            server_timing: cfg!(feature = "dev"),
+        }
     }
 
     /// Sets the loader of route node `index`, which the generated setters call.
@@ -161,6 +185,12 @@ impl<C: Send + Sync + 'static> App<C> {
 
     pub fn set_manifest(&mut self, manifest: Manifest) {
         self.manifest = Some(manifest);
+    }
+
+    /// Writes loader and render durations into `Server-Timing`: on with the `dev` feature, and
+    /// opt-in otherwise, because it reveals timing to every client.
+    pub fn set_server_timing(&mut self, on: bool) {
+        self.server_timing = on;
     }
 
     /// Answers one request. The body is unread: the Rust server has no mutations.
@@ -223,6 +253,7 @@ impl<C: Send + Sync + 'static> App<C> {
             }
         }
         let head = method == Method::HEAD;
+        let mut timings = String::new();
         let Some((route, params, _)) = found else {
             let page = Page {
                 table: self.table,
@@ -231,7 +262,8 @@ impl<C: Send + Sync + 'static> App<C> {
                 data: &[],
                 error: Some((self.table.root.len(), RouteError::not_found())),
             };
-            return self.finish(self.render(&page, None, 0), HeaderMap::new(), head, request);
+            let rendered = self.render(&page, None, 0, &mut timings);
+            return self.finish(rendered, HeaderMap::new(), &timings, head, request);
         };
         let chain = route.chain;
         let from =
@@ -255,8 +287,8 @@ impl<C: Send + Sync + 'static> App<C> {
 
         let mut data: Vec<Option<Box<dyn Value>>> = chain.iter().map(|_| None).collect();
         let mut error = None;
-        self.run(route, (from..chain.len()).collect(), &params, context, &mut data, &mut error)
-            .await;
+        let mut state = Run { data: &mut data, error: &mut error, timings: &mut timings };
+        self.run(route, (from..chain.len()).collect(), &params, context, &mut state).await;
         let mut headers = HeaderMap::new();
         if let Some(seconds) =
             chain.iter().filter_map(|&node| self.table.nodes[node].revalidate).min()
@@ -273,15 +305,17 @@ impl<C: Send + Sync + 'static> App<C> {
                 data: &data,
                 error: error.clone(),
             };
-            let rendered = self.render(&page, route.chunk, from);
+            let rendered = self.render(&page, route.chunk, from, &mut timings);
             if rendered.is_ok() {
                 headers.insert("rz-segment", HeaderValue::from(from));
-                return self.finish(rendered, headers, head, request);
+                return self.finish(rendered, headers, &timings, head, request);
             }
-            self.run(route, (0..from).collect(), &params, context, &mut data, &mut error).await;
+            let mut state = Run { data: &mut data, error: &mut error, timings: &mut timings };
+            self.run(route, (0..from).collect(), &params, context, &mut state).await;
         }
         let page = Page { table: self.table, chain, params: &params, data: &data, error };
-        self.finish(self.render(&page, route.chunk, 0), headers, head, request)
+        let rendered = self.render(&page, route.chunk, 0, &mut timings);
+        self.finish(rendered, headers, &timings, head, request)
     }
 
     /// Runs the loaders of `depths` together, and keeps the error of the shallowest that fails.
@@ -291,8 +325,7 @@ impl<C: Send + Sync + 'static> App<C> {
         depths: Vec<usize>,
         params: &Params,
         context: &C,
-        data: &mut [Option<Box<dyn Value>>],
-        error: &mut Option<(usize, RouteError)>,
+        state: &mut Run<'_>,
     ) {
         let loads = depths.iter().map(|&depth| {
             let node = route.chain[depth];
@@ -300,7 +333,8 @@ impl<C: Send + Sync + 'static> App<C> {
             let wanted = self.table.nodes[node].loader;
             let span = info_span!("loader", route = route.pattern, depth);
             async move {
-                match (wanted, loader) {
+                let start = Instant::now();
+                let result = match (wanted, loader) {
                     (false, _) => None,
                     (true, Some(loader)) => Some(loader(params, context).await),
                     (true, None) => {
@@ -310,16 +344,20 @@ impl<C: Send + Sync + 'static> App<C> {
                         );
                         Some(Err(RouteError::internal()))
                     }
-                }
+                };
+                (result, start.elapsed())
             }
             .instrument(span)
         });
-        for (depth, result) in depths.iter().zip(join_all(loads).await) {
+        for (depth, (result, elapsed)) in depths.iter().zip(join_all(loads).await) {
+            if result.is_some() && self.server_timing {
+                timing(state.timings, &format!("loader-{depth}"), elapsed.as_secs_f64());
+            }
             match result {
                 None => {}
-                Some(Ok(value)) => data[*depth] = Some(value),
-                Some(Err(failure)) if error.as_ref().is_none_or(|(at, _)| at > depth) => {
-                    *error = Some((*depth, failure));
+                Some(Ok(value)) => state.data[*depth] = Some(value),
+                Some(Err(failure)) if state.error.as_ref().is_none_or(|(at, _)| at > depth) => {
+                    *state.error = Some((*depth, failure));
                 }
                 Some(Err(_)) => {}
             }
@@ -331,9 +369,14 @@ impl<C: Send + Sync + 'static> App<C> {
         page: &Page<'_>,
         chunk: Option<usize>,
         from: usize,
+        timings: &mut String,
     ) -> crate::Result<(String, u16)> {
         let span = info_span!("render", bytes = field::Empty);
+        let start = Instant::now();
         let rendered = span.in_scope(|| render(page, chunk, self.manifest.as_ref(), from));
+        if self.server_timing {
+            timing(timings, "render", start.elapsed().as_secs_f64());
+        }
         if let Ok((document, _)) = &rendered {
             span.record("bytes", document.len());
         }
@@ -344,10 +387,16 @@ impl<C: Send + Sync + 'static> App<C> {
         &self,
         rendered: crate::Result<(String, u16)>,
         mut headers: HeaderMap,
+        timings: &str,
         head: bool,
         request: &http::request::Parts,
     ) -> Response<Bytes> {
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+        if !timings.is_empty()
+            && let Ok(value) = HeaderValue::from_str(timings)
+        {
+            headers.insert("server-timing", value);
+        }
         let (document, status) = match rendered {
             Ok(rendered) => rendered,
             Err(error) => (built_in(&error), error.status),

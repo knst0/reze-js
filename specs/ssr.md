@@ -996,4 +996,5 @@ The current implementation differs from this design in these points:
   from `dist/server/reze.json` at startup, through `App::manifest`.
 - Development has no Vite proxy: the JS handler fetches external loaders from the Rust `dev` server
   at `/__reze/load`, through `createHandler({ loaders })`.
-- `Server-Timing` is not written.
+- `Server-Timing` holds one `loader-<depth>` metric for each loader that ran and one `render`
+  metric. `createHandler({ serverTiming })` and `App::server_timing` turn it on in production.

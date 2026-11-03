@@ -558,7 +558,7 @@ pub fn emit(
         "    ];\n\n    static TABLE: ::reze_server::Table =\n        ::reze_server::Table {{ nodes: NODES, routes: ROUTES, root: &[{root}] }};\n\n"
     ));
 
-    out.push_str("    /// The application: the route table and the Rust loaders.\n    pub struct App<C>(::reze_server::App<C>);\n\n    impl<C: Send + Sync + 'static> Default for App<C> {\n        fn default() -> Self {\n            Self::new()\n        }\n    }\n\n    impl<C: Send + Sync + 'static> App<C> {\n        pub fn new() -> Self {\n            Self(::reze_server::App::new(&TABLE))\n        }\n\n        /// Sets the URLs of the client build, from `reze.json`.\n        pub fn manifest(mut self, manifest: ::reze_server::Manifest) -> Self {\n            self.0.set_manifest(manifest);\n            self\n        }\n");
+    out.push_str("    /// The application: the route table and the Rust loaders.\n    pub struct App<C>(::reze_server::App<C>);\n\n    impl<C: Send + Sync + 'static> Default for App<C> {\n        fn default() -> Self {\n            Self::new()\n        }\n    }\n\n    impl<C: Send + Sync + 'static> App<C> {\n        pub fn new() -> Self {\n            Self(::reze_server::App::new(&TABLE))\n        }\n\n        /// Sets the URLs of the client build, from `reze.json`.\n        pub fn manifest(mut self, manifest: ::reze_server::Manifest) -> Self {\n            self.0.set_manifest(manifest);\n            self\n        }\n\n        /// Writes loader and render durations into `Server-Timing`, which is on with the `dev` feature.\n        pub fn server_timing(mut self, on: bool) -> Self {\n            self.0.set_server_timing(on);\n            self\n        }\n");
     for (index, path) in &loaders {
         let name = &names[*index];
         out.push_str(&format!(

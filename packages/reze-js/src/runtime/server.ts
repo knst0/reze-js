@@ -635,6 +635,8 @@ export interface HandlerOptions {
   limits?: { body?: number; files?: number };
   /** The origin of the Rust server whose `dev` feature runs the external loaders. */
   loaders?: string;
+  /** Writes loader and render durations into `Server-Timing`. On in development, opt-in in production, because it reveals timing to every client. */
+  serverTiming?: boolean;
 }
 
 export interface AppOptions extends HandlerOptions {
@@ -736,8 +738,22 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     return new RouteError(500, options.dev && error instanceof Error ? error.message : "Internal Server Error");
   };
 
+  const timing = options.serverTiming ?? options.dev ?? false;
+
   return async (request) => {
     options.onRequest?.(request);
+    const timings: string[] = [];
+    const time = (name: string, start: number) => {
+      if (timing) timings.push(`${name};dur=${(performance.now() - start).toFixed(1)}`);
+    };
+    const timed = <T>(name: string, run: () => T): T => {
+      const start = performance.now();
+      try {
+        return run();
+      } finally {
+        time(name, start);
+      }
+    };
     const url = new URL(request.url);
     const build = url.searchParams.get("_b");
     const segment = Number(url.searchParams.get("_s"));
@@ -760,6 +776,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     const writers: Writer[] = [];
     const finish = async ([document, status, rest]: [string, number, AsyncGenerator<string> | undefined], headers: Headers) => {
       const head = request.method === "HEAD";
+      if (timings.length > 0) headers.set("server-timing", timings.join(", "));
       if (rest) {
         if (head) void rest.return(undefined);
         return new Response(head ? null : streamed(document, rest), { status, headers });
@@ -779,7 +796,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     };
     const respond = (page: Page, status = 200) => {
       try {
-        const rendered = render(page, options.assets, caught(request));
+        const rendered = timed("render", () => render(page, options.assets, caught(request)));
         if (rendered[1] === 200) rendered[1] = status;
         return finish(rendered, headersOf(writers, html));
       } catch (thrown) {
@@ -873,32 +890,41 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     const typed: Record<string, unknown> = { ...params };
     const deferred: Promise<unknown>[] = [];
     let error: Page["error"];
+    const runLoader = async (load: NonNullable<RouteModule["load"]>) => {
+      if (load.external !== undefined) return external(load.external, params);
+      if (!load.run) return;
+      const writer = new Writer();
+      writers.push(writer);
+      let own: Record<string, unknown> = params;
+      if (load.params) {
+        const issues: Issue[] = [];
+        own = load.params((name) => (params[name] === undefined ? [] : [params[name]!]), issues, false);
+        if (issues.length > 0) throw new RouteError(404, "Not Found");
+        Object.assign(typed, own);
+      }
+      let search: Record<string, unknown> = Object.fromEntries(url.searchParams);
+      if (load.search) {
+        const issues: Issue[] = [];
+        search = load.search((name) => url.searchParams.getAll(name), issues, true);
+        if (issues.length > 0) throw new RouteError(400, "Bad Request");
+      }
+      const value = await load.run({ params: own, search, context: context as AppContext, request, response: writer });
+      if (!load.schema) return value;
+      const result = await load.schema["~standard"].validate(value);
+      if (result.issues) throw new Error(`The loader result is invalid: ${result.issues.map((issue) => issue.message).join(", ")}`);
+      return result.value;
+    };
     const run = async (depths: number[]): Promise<Response | undefined> => {
       const results = await Promise.allSettled(
         depths.map(async (depth) => {
           const load = chain[depth]!.load;
-          if (load?.external !== undefined) return external(load.external, params);
-          if (!load?.run) return;
-          const writer = new Writer();
-          writers.push(writer);
-          let own: Record<string, unknown> = params;
-          if (load.params) {
-            const issues: Issue[] = [];
-            own = load.params((name) => (params[name] === undefined ? [] : [params[name]!]), issues, false);
-            if (issues.length > 0) throw new RouteError(404, "Not Found");
-            Object.assign(typed, own);
+          if (!load) return;
+          const start = performance.now();
+          try {
+            return await runLoader(load);
+          } finally {
+            time(`loader-${depth}`, start);
           }
-          let search: Record<string, unknown> = Object.fromEntries(url.searchParams);
-          if (load.search) {
-            const issues: Issue[] = [];
-            search = load.search((name) => url.searchParams.getAll(name), issues, true);
-            if (issues.length > 0) throw new RouteError(400, "Bad Request");
-          }
-          const value = await load.run({ params: own, search, context: context as AppContext, request, response: writer });
-          if (!load.schema) return value;
-          const result = await load.schema["~standard"].validate(value);
-          if (result.issues) throw new Error(`The loader result is invalid: ${result.issues.map((issue) => issue.message).join(", ")}`);
-          return result.value;
         }),
       );
       for (const [index, result] of results.entries()) {
@@ -926,7 +952,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     if (from > 0) {
       let rendered: ReturnType<typeof render> | undefined;
       try {
-        rendered = render(page(), options.assets, caught(request), from);
+        rendered = timed("render", () => render(page(), options.assets, caught(request), from));
       } catch {
         const again = await run(depths.slice(0, from));
         if (again) return again;

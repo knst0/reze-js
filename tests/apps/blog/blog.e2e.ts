@@ -10,6 +10,11 @@ test("renders the same HTML on the Rust and the JS server", async ({ request, se
   }
 });
 
+test("writes Server-Timing with the dev feature", async ({ request, server }) => {
+  const timing = (await request.get(server.url("/posts/1"))).headers()["server-timing"];
+  expect(timing).toMatch(/^loader-1;dur=\d+\.\d, render;dur=\d+\.\d$/);
+});
+
 test.describe("without JS", () => {
   test.use({ javaScriptEnabled: false });
 

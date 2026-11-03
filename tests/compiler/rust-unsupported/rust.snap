@@ -57,6 +57,12 @@ pub mod routes {
             self
         }
 
+        /// Writes loader and render durations into `Server-Timing`, which is on with the `dev` feature.
+        pub fn server_timing(mut self, on: bool) -> Self {
+            self.0.set_server_timing(on);
+            self
+        }
+
         /// Sets the loader of `/`.
         pub fn index<F>(mut self, loader: F) -> Self
         where

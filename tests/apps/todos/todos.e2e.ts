@@ -81,6 +81,12 @@ test("answers with typed params, headers, and cookies", async ({ page, server })
   expect(await response!.headerValue("set-cookie")).toContain("last=1");
 });
 
+test("writes Server-Timing in development only", async ({ request, server, serverKind }) => {
+  const timing = (await request.get(server.url("/about"))).headers()["server-timing"];
+  if (serverKind === "js") expect(timing).toMatch(/^loader-1;dur=\d+\.\d, render;dur=\d+\.\d$/);
+  else expect(timing).toBeUndefined();
+});
+
 test("redirects to the canonical URL", async ({ request, server }) => {
   const response = await request.get(server.url("/Login/"), { maxRedirects: 0 });
   expect(response.status()).toBe(308);
