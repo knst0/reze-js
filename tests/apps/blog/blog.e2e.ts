@@ -16,6 +16,13 @@ test("renders every static route the same without listed paths", async ({ server
   expect(code).toBe(0);
 });
 
+test("links the dispatcher for early hints from the Rust server", async ({ request, server }) => {
+  const document = await request.get(server.url("/posts/1"));
+  expect(document.headers().link).toMatch(/^<\/.*dispatcher.*>; rel=modulepreload$/);
+  const partial = await request.get(server.url("/posts/2?_b=stale"));
+  expect(partial.headers().link).toBeUndefined();
+});
+
 test("redirects from a Rust loader", async ({ request, server }) => {
   for (const url of [server.url("/posts/first"), server.js!("/posts/first")]) {
     const response = await request.get(url, { maxRedirects: 0 });

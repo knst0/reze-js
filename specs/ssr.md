@@ -995,7 +995,10 @@ The current implementation differs from this design in these points:
   `103 Early Hints` for a document request before guards and loaders run. The Node middleware of
   `vite dev` and `vite preview` sends them with `writeEarlyHints`. The app has no stylesheets or
   fonts of its own, so the hints hold only the dispatcher as `modulepreload`; route chunks load on
-  intent and are not hinted. The Rust server sends no hints: hyper has no `103` response.
+  intent and are not hinted. Neither hyper nor actix-web writes a `103`, so the Rust server
+  exposes the same links through `App::hints(&request)` for a stack that can write one, and its
+  document responses carry them in a `Link` header, which a CDN can turn into a `103` for later
+  requests.
 - A route is static when every loader of its chain destructures only `params` and no layout has a
   guard. A page opts out with `prerender = false`. The build renders each static URL with the
   request header `rz-prerender`, which awaits deferred fields, and writes a `200` page to

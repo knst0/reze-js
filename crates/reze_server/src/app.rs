@@ -434,6 +434,26 @@ impl<C: Send + Sync + 'static> App<C> {
         self.server_timing = on;
     }
 
+    /// The `Link` values of `103 Early Hints` for `request`: the dispatcher as `modulepreload`,
+    /// for a document request. A server that can write a `103` writes them before it calls
+    /// [`App::handle`]. The document response carries them in `Link`, which a CDN can turn into
+    /// a `103` for later requests.
+    pub fn hints<B>(&self, request: &Request<B>) -> Vec<String> {
+        self.links(request.method(), request.uri())
+    }
+
+    fn links(&self, method: &Method, uri: &http::Uri) -> Vec<String> {
+        let document = (method == Method::GET || method == Method::HEAD)
+            && !form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+                .any(|(key, _)| key == "_b");
+        match &self.manifest {
+            Some(manifest) if document => {
+                vec![format!("<{}>; rel=modulepreload", manifest.dispatcher)]
+            }
+            _ => Vec::new(),
+        }
+    }
+
     /// Answers one request, whose body a mutation reads.
     pub async fn handle(&self, request: Request<Bytes>, context: &C) -> Response<Body> {
         let (parts, body) = request.into_parts();
@@ -787,6 +807,11 @@ impl<C: Send + Sync + 'static> App<C> {
         deferred: Deferred,
     ) -> Response<Body> {
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+        for link in self.links(&request.method, &request.uri) {
+            if let Ok(value) = HeaderValue::from_str(&link) {
+                headers.append(header::LINK, value);
+            }
+        }
         if !timings.is_empty()
             && let Ok(value) = HeaderValue::from_str(timings)
         {
