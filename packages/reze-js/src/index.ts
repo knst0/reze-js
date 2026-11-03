@@ -108,3 +108,6 @@ export function createContext<T>(defaultValue: T): Context<T> {
 }
 
 export declare function useContext<T>(context: Context<T>): T;
+
+/** Mounts a client-only app (`target: "spa"`): renders the current URL in the browser and answers every navigation. */
+export const render = (): Promise<void> => import("./runtime/render").then((module) => module.render());

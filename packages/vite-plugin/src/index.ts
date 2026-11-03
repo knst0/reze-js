@@ -350,7 +350,8 @@ export default function reze(options: RezeOptions = {}): Plugin {
         return `import routes from "${app}";\nimport { prerendered } from "reze-js/runtime/server";\nexport default () => prerendered(routes);\n`;
       }
       if (id === `\0${spaEntry}`) {
-        return `import routes, { root, assets, build } from "${app}";\nimport { createApp } from "reze-js/runtime/server";\nimport { mount } from "reze-js/runtime/navigate";\nexport { navigate, prefetch, submit } from "reze-js/runtime/navigate";\nmount(createApp(routes, root, { assets, build }));\n`;
+        const client = existsSync(join(root, "src/client.ts"));
+        return `import { render } from "reze-js/runtime/render";\nexport { navigate, prefetch, submit } from "reze-js/runtime/navigate";\n${client ? 'export { render };\nimport "/src/client.ts";\n' : "render();\n"}`;
       }
       if (id === `\0${nav}`) return 'export { navigate, prefetch, submit } from "reze-js/runtime/navigate";';
       if (id === `\0${routes}`) return `${(await compile()).navigation}export const build = ${JSON.stringify(await buildId())};\n`;

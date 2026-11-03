@@ -440,5 +440,7 @@ The current implementation differs from this design in these points:
 - `Href` is the union of the route shapes in `routes.gen.d.ts`, plus query, hash,
   protocol-relative, and absolute URLs. `<a href>` and `redirect` take it, so a link to a path
   that matches no route fails the type check of a project that includes the generated file.
-- `render` is not exported. `render: "client"` routes and `target: "spa"` mount through the
-  navigation runtime instead.
+- `render()` takes no arguments: it mounts the compiled app of a `target: "spa"` build, renders
+  the current URL, and answers every navigation. The generated entry calls it, or imports
+  `src/client.ts` instead when the project has one, which then calls `render` itself. A
+  `render: "client"` route mounts through the navigation runtime, not through `render`.

@@ -15,6 +15,7 @@ export default defineConfig({
       "src/runtime/client.ts",
       "src/runtime/dispatcher.ts",
       "src/runtime/navigate.ts",
+      "src/runtime/render.ts",
       "src/runtime/stream.ts",
       "src/runtime/server.ts",
       "src/server.ts",

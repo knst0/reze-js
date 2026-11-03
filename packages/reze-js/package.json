@@ -42,6 +42,10 @@
       "types": "./dist/runtime/navigate.d.ts",
       "import": "./dist/runtime/navigate.js"
     },
+    "./runtime/render": {
+      "types": "./dist/runtime/render.d.ts",
+      "import": "./dist/runtime/render.js"
+    },
     "./runtime/stream": {
       "types": "./dist/runtime/stream.d.ts",
       "import": "./dist/runtime/stream.js"

@@ -41,3 +41,9 @@ test("reads the location in a handler", async ({ page, server }) => {
   await page.getByRole("button", { name: "Share" }).click();
   await expect(page.locator("output")).toHaveText("/notes/first#intro");
 });
+
+test("mounts through the app's client entry", async ({ page, server }) => {
+  await page.goto(server.url("/notes/first"));
+  await expect(page.getByRole("heading", { name: "Note first" })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-mounted", "/notes/first");
+});
