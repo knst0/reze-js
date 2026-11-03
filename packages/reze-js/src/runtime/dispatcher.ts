@@ -1,5 +1,5 @@
 type Entry = unknown[];
-type Block = [string, string | Record<number, string>, number, ...Entry[]];
+type Block = [string, string | Record<number, string>, number[], ...Entry[]];
 type Handlers = Record<number, Record<string, (row: Entry) => (event: Event) => void>>;
 type Factory = (entry: Entry, index: number, entries: Entry[]) => Handlers;
 interface Chunk {
@@ -12,7 +12,8 @@ const urls: string[] = [];
 const instances: Handlers[] = [];
 const chunks: Record<string, Chunk> = {};
 const loading: Record<string, Promise<void> | undefined> = {};
-const eager: Record<string, number> = {};
+const eager = new Set<number>();
+const preloaded = new Set<string>();
 const types = new Set<string>();
 const queue: [Element[], Event][] = [];
 const site = (node: EventTarget | null | undefined) => (node as Element | null | undefined)?.closest?.("[data-rz]");
@@ -20,7 +21,9 @@ const owner = (scope: number) => {
   while ((entries[scope]![0] as number) < 0) scope = ~(entries[scope]![0] as number);
   return scope;
 };
+const scopeOf = (node: Element) => owner(parseInt(node.getAttribute("data-rz")!, 36));
 const connection = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+const idle = (callback: () => void) => (window.requestIdleCallback ?? setTimeout)(callback);
 let dead: number | undefined;
 let client: Promise<typeof import("virtual:rz-nav")> | undefined;
 let bypass: HTMLFormElement | undefined;
@@ -32,8 +35,7 @@ const instance = (index: number) =>
 const start = (from = 0) =>
   entries.forEach((entry, index) => {
     const chunk = chunks[urls[index]!];
-    if (index >= from && chunk && (entry[0] as number) >= 0 && (eager[urls[index]!] || chunk.g.includes(entry[0] as number)))
-      instance(index);
+    if (index >= from && chunk && (eager.has(entry[0] as number) || chunk.g.includes(entry[0] as number))) instance(index);
   });
 
 const run = (sites: Element[], event: Event) => {
@@ -88,7 +90,27 @@ const load = (url: string) =>
       },
     ));
 
-const urlsOf = (sites: Element[]) => [...new Set(sites.map((node) => urls[owner(parseInt(node.getAttribute("data-rz")!, 36))]!))];
+const urlsOf = (sites: Element[]) => [...new Set(sites.map((node) => urls[scopeOf(node)]!))];
+
+/**
+ * Loads the chunk of a component that starts without an event once one of its sites enters the
+ * viewport, and preloads the chunk of any other site there when the browser is idle.
+ */
+const seen = new IntersectionObserver((records) => {
+  for (const { target, isIntersecting } of records) {
+    const scope = scopeOf(target);
+    const url = urls[scope]!;
+    if (!isIntersecting || chunks[url]) continue;
+    seen.unobserve(target);
+    if (eager.has(entries[scope]![0] as number)) load(url).catch(fail);
+    else if (!preloaded.has(url) && !connection?.saveData && !/2g/.test(connection?.effectiveType ?? "")) {
+      preloaded.add(url);
+      idle(() =>
+        document.head.append(Object.assign(document.createElement("link"), { rel: "modulepreload", href: url, fetchPriority: "low" })),
+      );
+    }
+  }
+});
 
 const handle = (event: Event) => {
   if (dead) return;
@@ -117,10 +139,12 @@ const handle = (event: Event) => {
 
 /**
  * Adds a state block, `[events, chunks, eager, ...entries]`, whose entries follow the current ones.
- * `chunks` is the URL of the page's chunk, or the URL of each factory's chunk by factory id.
+ * `chunks` is the URL of the page's chunk, or the URL of each factory's chunk by factory id, and
+ * `eager` lists the factories that start without an event.
  */
-const add = ([events, chunk, isEager, ...block]: Block) => {
+const add = ([events, chunk, starting, ...block]: Block) => {
   const base = entries.length;
+  for (const id of starting) eager.add(id);
   for (const entry of block) {
     if ((entry[0] as number) < 0) entry[0] = ~(~(entry[0] as number) + base);
     urls[entries.push(entry) - 1] = typeof chunk === "string" ? chunk : chunk[entry[0] as number]!;
@@ -131,21 +155,15 @@ const add = ([events, chunk, isEager, ...block]: Block) => {
       document.addEventListener(type, handle, true);
     }
   }
-  for (const url of new Set(urls.slice(base))) {
-    if (!url) continue;
-    if (isEager) eager[url] = 1;
-    if (chunks[url]) start(base);
-    else if (isEager) load(url).catch(fail);
-    else if (!connection?.saveData && !/2g/.test(connection?.effectiveType ?? "")) {
-      (window.requestIdleCallback ?? setTimeout)(
-        () =>
-          [...document.querySelectorAll("[data-rz]")].some(
-            (node) => urlsOf([node])[0] === url && node.getBoundingClientRect().top < innerHeight,
-          ) &&
-          document.head.append(Object.assign(document.createElement("link"), { rel: "modulepreload", href: url, fetchPriority: "low" })),
-      );
-    }
-  }
+  start(base);
+  const sites = [...document.querySelectorAll("[data-rz]")];
+  seen.disconnect();
+  for (const node of sites) seen.observe(node);
+  block.forEach((entry, offset) => {
+    const url = urls[base + offset]!;
+    if (eager.has(entry[0] as number) && !chunks[url] && !sites.some((node) => scopeOf(node) === base + offset))
+      idle(() => load(url).catch(fail));
+  });
 };
 
 const nav = () => (client ??= import("virtual:rz-nav"));

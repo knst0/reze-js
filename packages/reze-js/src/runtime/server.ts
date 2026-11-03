@@ -506,7 +506,7 @@ function render(
   let status = 200;
   const entries: unknown[][] = [];
   const events = new Set<string>();
-  let eager = false;
+  const eager = new Set<number>();
   const parts: { children: Thunk; depth: number; promise: Promise<unknown> }[] = [];
   const $r: RenderContext = {
     depth: 0,
@@ -524,7 +524,7 @@ function render(
     link: (href) => ({ active: active($r, href) }),
     scope(component, names, captures, isEager) {
       for (const name of names.split(" ")) if (name) events.add(name);
-      eager ||= isEager;
+      if (isEager) eager.add(component);
       return (entries.push([component, ...captures]) - 1).toString(36);
     },
     row(parent, kind, captures) {
@@ -570,10 +570,10 @@ function render(
       typeof chunk === "string"
         ? assets.chunk(chunk)
         : Object.fromEntries(Object.entries(chunk).map(([id, key]) => [id, assets.chunk(key)]));
-    const block = [[...events].join(" "), urls, eager ? 1 : 0, ...entries];
+    const block = [[...events].join(" "), urls, [...eager], ...entries];
     entries.length = 0;
     events.clear();
-    eager = false;
+    eager.clear();
     return `<script type="rz">${JSON.stringify(block, encode).replaceAll("<", "\\u003c")}</script>`;
   };
   async function* stream(): AsyncGenerator<string> {

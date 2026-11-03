@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recordedAt": "2026-11-03T14:38:50.347Z",
+  "recordedAt": "2026-11-03T14:41:48.178Z",
   "sizes": {
     "menu: client.js": {
       "raw": 4342,
@@ -8,29 +8,34 @@
       "brotli": 1758
     },
     "menu: dispatcher.js": {
-      "raw": 3964,
-      "gzip": 1857,
-      "brotli": 1636
+      "raw": 4197,
+      "gzip": 1955,
+      "brotli": 1731
     },
     "menu: html": {
-      "raw": 788,
-      "gzip": 442,
-      "brotli": 297
+      "raw": 789,
+      "gzip": 443,
+      "brotli": 299
     },
     "menu: navigate.js": {
-      "raw": 7969,
-      "gzip": 3481,
-      "brotli": 3089
+      "raw": 8035,
+      "gzip": 3495,
+      "brotli": 3095
     },
     "menu: route-1.js": {
       "raw": 699,
-      "gzip": 396,
-      "brotli": 348
+      "gzip": 398,
+      "brotli": 349
     },
     "menu: route-2.js": {
       "raw": 1679,
       "gzip": 784,
       "brotli": 692
+    },
+    "menu: route-3.js": {
+      "raw": 305,
+      "gzip": 231,
+      "brotli": 206
     },
     "menu: stream.js": {
       "raw": 1298,
@@ -38,14 +43,14 @@
       "brotli": 581
     },
     "static: dispatcher.js": {
-      "raw": 3964,
-      "gzip": 1855,
-      "brotli": 1632
+      "raw": 4197,
+      "gzip": 1955,
+      "brotli": 1730
     },
     "static: html": {
       "raw": 505,
-      "gzip": 330,
-      "brotli": 218
+      "gzip": 327,
+      "brotli": 219
     },
     "static: navigate.js": {
       "raw": 7946,
@@ -63,9 +68,9 @@
       "brotli": 762
     },
     "todos: dispatcher.js": {
-      "raw": 3964,
-      "gzip": 1857,
-      "brotli": 1637
+      "raw": 4197,
+      "gzip": 1957,
+      "brotli": 1733
     },
     "todos: errors.js": {
       "raw": 111,
@@ -74,8 +79,8 @@
     },
     "todos: html": {
       "raw": 341,
-      "gzip": 246,
-      "brotli": 157
+      "gzip": 245,
+      "brotli": 156
     },
     "todos: navigate.js": {
       "raw": 8378,

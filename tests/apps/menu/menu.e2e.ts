@@ -86,6 +86,20 @@ test("reloads once when a chunk fails without a native action", async ({ page, s
   expect(await page.evaluate(() => sessionStorage.getItem("rz:reload"))).toBe("1");
 });
 
+test("starts an effect when its element enters the viewport", async ({ page, server }) => {
+  const requested: string[] = [];
+  page.on("request", (request) => {
+    if (chunk.test(request.url())) requested.push(request.url());
+  });
+  await page.goto(server.url("/ticker"));
+  await page.evaluate(() => new Promise((resolve) => (window.requestIdleCallback ?? setTimeout)(resolve)));
+  expect(requested).toEqual([]);
+  await expect(page.getByText("Waiting")).toBeAttached();
+  await page.getByText("Waiting").scrollIntoViewIfNeeded();
+  await expect(page.getByText("Started")).toBeVisible();
+  expect(requested).toHaveLength(1);
+});
+
 test.describe("lists", () => {
   const todos = (page: import("@playwright/test").Page) => page.getByRole("list", { name: "Todos" }).getByRole("listitem");
 

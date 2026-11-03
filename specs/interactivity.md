@@ -476,10 +476,10 @@ The current implementation differs from this design in these points:
   Every handler of a component shares that component's chunk.
 - The Rust server takes the chunk mode from `reze_build::Config::chunks`, which must match the
   plugin option.
-- A component with an effect or a `ref` loads its chunk at page start, not when it enters the
-  viewport.
-- The idle preload checks once, at idle time, whether any handler site is above the fold. It does
-  not observe scrolling.
+- The state block lists the factories that start without an event: components with an effect, a
+  `ref`, or an `eager` element. Their chunk loads when one of their marked elements enters the
+  viewport, or when the browser is idle if they have none. An `eager` element waits for the
+  viewport like an effect.
 - A store notifies on any write to the object it wraps, with no per-field tracking.
 - Every client range (a `Show`, `Switch`, `For`, or `Repeat` whose condition or source reads
   client state, or that sits inside one) is marked, even when its content is always one element.
@@ -507,7 +507,7 @@ The current implementation differs from this design in these points:
   `EVENT_DECISION_DEFERRED`.
 - After a chunk fails to load, the dispatcher goes inert for the rest of the page. The native
   fallback, `rz:chunkerror` on `window`, or the single reload takes over.
-- The dispatcher is about 1.8 KB gzip, above the 1 KB target: it also intercepts links,
+- The dispatcher is about 1.9 KB gzip, above the 1 KB target: it also intercepts links,
   server-tier forms, and history navigation, and accepts the state blocks of navigations and
   streamed parts.
 - `scripts/bench/size.mts` measures only the test applications, which are too small to judge the

@@ -16,7 +16,7 @@ pub struct Render {
     status: u16,
     entries: Vec<String>,
     events: Vec<String>,
-    eager: bool,
+    eager: Vec<usize>,
 }
 
 /// What `<Errored>` restores when its children fail.
@@ -47,7 +47,7 @@ impl Render {
             status: 200,
             entries: Vec::new(),
             events: Vec::new(),
-            eager: false,
+            eager: Vec::new(),
         }
     }
 
@@ -91,7 +91,9 @@ impl Render {
                 self.events.push(name.to_string());
             }
         }
-        self.eager |= eager;
+        if eager && !self.eager.contains(&component) {
+            self.eager.push(component);
+        }
         self.entry(component.to_string(), captures)
     }
 
@@ -285,7 +287,8 @@ pub(crate) fn render(
                 block.push('}');
             }
         }
-        block.push_str(if cx.eager { ",1" } else { ",0" });
+        let eager: Vec<String> = cx.eager.iter().map(ToString::to_string).collect();
+        block.push_str(&format!(",[{}]", eager.join(",")));
         for entry in &cx.entries {
             block.push(',');
             block.push_str(entry);
