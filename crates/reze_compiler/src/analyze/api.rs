@@ -22,6 +22,7 @@ pub enum Api {
     CreateUniqueId,
     Loader,
     Mutation,
+    GuardRoute,
     Defer,
     UseSubmission,
     UseParams,
@@ -56,6 +57,7 @@ impl Api {
             ("reze-js", "createUniqueId") => CreateUniqueId,
             ("reze-js/server", "loader") => Loader,
             ("reze-js/server", "mutation") => Mutation,
+            ("reze-js/server", "guardRoute") => GuardRoute,
             ("reze-js/server", "defer") => Defer,
             ("reze-js/server", "useSubmission") => UseSubmission,
             ("reze-js" | "@rezejs/router", "useParams") => UseParams,
@@ -86,7 +88,12 @@ impl Api {
     pub fn is_syntax(self) -> bool {
         !matches!(
             self,
-            Api::CreateContext | Api::Loader | Api::Mutation | Api::Defer | Api::BuildPaths
+            Api::CreateContext
+                | Api::Loader
+                | Api::Mutation
+                | Api::GuardRoute
+                | Api::Defer
+                | Api::BuildPaths
         )
     }
 }

@@ -249,6 +249,8 @@ The current implementation differs from this design in these points:
   the error goes to `reportError`. Errors of effects are not caught.
 - The compiled application exports `root`, the root layout chain, which renders the `404` of a URL
   that matches no route.
+- When a guard throws a route error, the loaders above it run and the page renders the error at
+  the guard's segment, so the layouts above keep their data; a redirect stops the request at once.
 - A `POST` is checked for a cross-site origin before guards run, so a forged post answers `403`
   even when a guard would redirect.
 - `target: "spa"` runs the compiled JS render in the browser: the navigation runtime answers each

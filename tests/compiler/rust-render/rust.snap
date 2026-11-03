@@ -114,7 +114,7 @@ pub mod routes {
     }
 
     static NODES: &[::reze_server::Node] = &[
-        ::reze_server::Node { file: "src/routes/index.tsx", render: level_0, loader: true, revalidate: Some(60) },
+        ::reze_server::Node { file: "src/routes/index.tsx", render: level_0, loader: true, guard: false, revalidate: Some(60) },
     ];
 
     static ROUTES: &[::reze_server::Route] = &[
@@ -124,7 +124,7 @@ pub mod routes {
     static TABLE: ::reze_server::Table =
         ::reze_server::Table { nodes: NODES, routes: ROUTES, root: &[] };
 
-    /// The application: the route table and the Rust loaders.
+    /// The application: the route table and the Rust loaders and guards.
     pub struct App<C>(::reze_server::App<C>);
 
     impl<C: Send + Sync + 'static> Default for App<C> {

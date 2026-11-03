@@ -1184,6 +1184,34 @@ pub fn props_type(cx: &Context<'_, '_>, module: usize, index: usize) -> Option<T
     Some(Ty::Object(fields))
 }
 
+/// The call of `export const guard = guardRoute.external()`.
+pub fn external_guard(cx: &Context<'_, '_>, module: usize) -> Option<Span> {
+    cx.modules[module].program.body.iter().find_map(|statement| {
+        let Statement::ExportDeclaration(export) = statement else { return None };
+        let Declaration::VariableDeclaration(declaration) = &export.declaration else {
+            return None;
+        };
+        declaration.declarations.iter().find_map(|declarator| {
+            let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = &declarator.id else {
+                return None;
+            };
+            let Some(Expression::CallExpression(call)) =
+                declarator.init.as_ref().map(Expression::without_parentheses)
+            else {
+                return None;
+            };
+            let Expression::StaticMemberExpression(member) = call.callee.without_parentheses()
+            else {
+                return None;
+            };
+            (id.name == "guard"
+                && member.property.name == "external"
+                && cx.api(module, &member.object) == Some(Api::GuardRoute))
+            .then_some(call.span)
+        })
+    })
+}
+
 /// `crate::Name` of the type argument of `loader.external<Name>()`, imported from
 /// `virtual:reze-types/<crate>`.
 fn external_type(cx: &Context<'_, '_>, module: usize, call: &CallExpression<'_>) -> Option<String> {

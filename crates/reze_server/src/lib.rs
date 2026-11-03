@@ -19,7 +19,7 @@ use std::path::Path;
 use futures_util::future::BoxFuture;
 use serde::Deserialize;
 
-pub use reze;
+pub use {http, reze};
 
 pub use app::App;
 pub use html::Html;
@@ -113,6 +113,8 @@ pub struct Node {
     pub render: RenderFn,
     /// Whether the file has a `loader.external<T>()` the application sets.
     pub loader: bool,
+    /// Whether the file has a `guardRoute.external()` the application sets.
+    pub guard: bool,
     pub revalidate: Option<u32>,
 }
 
@@ -172,6 +174,33 @@ where
 {
     fn load(&self, params: P, context: &'a C) -> BoxFuture<'a, Result<T>> {
         Box::pin(self(params, context))
+    }
+}
+
+/// A Rust guard: `async fn(Params, &http::request::Parts, &C) -> Result<()>`. It sees the
+/// request's URL and headers, and stops the request with a `RouteError` or a redirect.
+pub trait Guard<'a, C: 'a, P>: Send + Sync {
+    fn check(
+        &self,
+        params: P,
+        request: &'a http::request::Parts,
+        context: &'a C,
+    ) -> BoxFuture<'a, Result<()>>;
+}
+
+impl<'a, C, P, F, Fut> Guard<'a, C, P> for F
+where
+    C: 'a,
+    F: Fn(P, &'a http::request::Parts, &'a C) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<()>> + Send + 'a,
+{
+    fn check(
+        &self,
+        params: P,
+        request: &'a http::request::Parts,
+        context: &'a C,
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(self(params, request, context))
     }
 }
 

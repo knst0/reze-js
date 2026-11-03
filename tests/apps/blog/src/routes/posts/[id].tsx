@@ -1,6 +1,8 @@
 import { Errored, For, Show, signal } from "reze-js";
-import { loader } from "reze-js/server";
+import { guardRoute, loader } from "reze-js/server";
 import type { Post } from "virtual:reze-types/blog_types";
+
+export const guard = guardRoute.external();
 
 export const load = loader.external<Post>();
 

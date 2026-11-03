@@ -1001,12 +1001,16 @@ The current implementation differs from this design in these points:
   `<client outDir>/<path>/index.html` for the static host to serve.
 - `revalidate` takes the smallest value of the chain. The `ETag` is a SHA-1 of the document, sent
   on `200` responses to `GET` and `HEAD` that do not stream.
-- The Rust server renders loader data only: Rust has no mutations, guards, deferred fields, or
+- The Rust server renders loader data only: Rust has no mutations, deferred fields, or
   streaming. A Rust loader stops a request with a `RouteError`, and redirects with
   `RouteError::redirect(location)`, a `307` whose `status` may be changed; the dev endpoint
   answers the redirect with its status and `Location`, which the JS server answers with the same redirect. A `POST` answers
   `404`, or `403` when it is cross-site. `handle` takes any request body and returns
   `http::Response<Bytes>`; the `tower` service answers `Full<Bytes>`.
+- A Rust guard is `export const guard = guardRoute.external()`, set with the generated
+  `guard_<route>`: `async fn(Params, &http::request::Parts, &C) -> Result<()>`. It sees the
+  request's URI and headers but not its body. The JS dev server asks the Rust `dev` server through
+  `/__reze/guard` with the page URL and the request headers, which answers `204` when it passes.
 - `reze_server::tower::service(app, context)` takes the context as an argument instead of
   extracting it from the framework's state. `reze_server::actix::service(Arc<App<C>>)` returns a
   `Route` for `default_service`, which reads the context from the app's `web::Data<C>`; each

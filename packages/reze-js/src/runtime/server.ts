@@ -179,7 +179,9 @@ interface MutationRecord {
 }
 
 export interface Guard {
-  readonly run: (args: GuardArgs) => void | Promise<void>;
+  readonly run?: (args: GuardArgs) => void | Promise<void>;
+  /** The route file of `guardRoute.external()`, whose guard the Rust server runs. */
+  readonly external?: string;
 }
 
 const isSchema = (value: unknown): value is StandardSchemaV1 => typeof value === "object" && value !== null && "~standard" in value;
@@ -228,6 +230,9 @@ export function mutation(
 export function guardRoute(run: (args: GuardArgs) => void | Promise<void>): Guard {
   return { run };
 }
+
+/** Declares a guard that runs in the Rust server. */
+guardRoute.external = (file = ""): Guard => ({ external: file });
 
 /** A route error: `notFound`, `fail`, or a `500` for anything else thrown. */
 export class RouteError extends Error {
@@ -751,15 +756,18 @@ function keyed(issues: Issue[]): Record<string, Issue> {
 
 export function createApp(routes: Route[], root: RouteModule[], options: AppOptions = {}): Handler {
   /** The data of an external loader, from the Rust server. */
-  const external = async (file: string, params: Record<string, unknown>) => {
+  const external = async (file: string, params: Record<string, unknown>, guard?: [URL, Request]) => {
     if (!options.loaders) throw new Error("`loader.external()` needs the `loaders` option: the origin of the Rust server");
     const query = new URLSearchParams({ m: file });
+    if (guard) query.set("u", guard[0].pathname + guard[0].search);
     for (const [name, value] of Object.entries(params)) if (value !== undefined) query.append(name, String(value as string));
-    const response = await fetch(`${options.loaders}/__reze/load?${query}`, { redirect: "manual" });
+    const headers = new Headers(guard?.[1].headers);
+    for (const name of ["host", "connection", "content-length", "content-type", "transfer-encoding"]) headers.delete(name);
+    const response = await fetch(`${options.loaders}/__reze/${guard ? "guard" : "load"}?${query}`, { redirect: "manual", headers });
     if (response.status >= 300 && response.status < 400) throw new Redirect(response.headers.get("location")!, response.status);
     if (response.status >= 400 && response.status < 500) throw new RouteError(response.status, await response.text());
-    if (!response.ok) throw new Error(`The Rust loader of ${file} failed with ${response.status}`);
-    return response.json() as Promise<unknown>;
+    if (!response.ok) throw new Error(`The Rust ${guard ? "guard" : "loader"} of ${file} failed with ${response.status}`);
+    return guard ? undefined : (response.json() as Promise<unknown>);
   };
   const ordered = [...routes].sort(compare);
   const limits = { body: options.limits?.body ?? 1 << 20, files: options.limits?.files ?? 10 << 20 };
@@ -866,20 +874,25 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
       return new Response(builtIn(error.status, error.message), { status: error.status, headers: html });
     }
 
+    let guarded: [number, unknown] | undefined;
     for (const [depth, module] of chain.entries()) {
-      if (!module.guard) continue;
+      const guard = module.guard;
+      if (!guard) continue;
       try {
-        await module.guard.run({ params, url, context: context as AppContext, request });
+        if (guard.external !== undefined) await external(guard.external, params, [url, request]);
+        else await guard.run?.({ params, url, context: context as AppContext, request });
       } catch (thrown) {
         if (thrown instanceof Redirect) return redirectTo(thrown, request.method === "POST" ? 303 : 307);
-        return respond({ route, params, url, data: [], error: [depth, thrown] });
+        guarded = [depth, thrown];
+        from = 0;
+        break;
       }
     }
 
     let submission: Page["submission"];
     let called: { result: unknown } | undefined;
     let status = 200;
-    if (request.method === "POST") {
+    if (request.method === "POST" && !guarded) {
       const record = mutations.get(url.searchParams.get("_m") ?? "");
       if (!record) return new Response("Not Found", { status: 404 });
       url.searchParams.delete("_m");
@@ -929,7 +942,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     const data: unknown[] = [];
     const typed: Record<string, unknown> = { ...params };
     const deferred: Promise<unknown>[] = [];
-    let error: Page["error"];
+    let error: Page["error"] = guarded;
     const runLoader = async (load: NonNullable<RouteModule["load"]>) => {
       if (load.external !== undefined) return external(load.external, params);
       if (!load.run) return;
@@ -979,7 +992,7 @@ export function createApp(routes: Route[], root: RouteModule[], options: AppOpti
     };
     const client = submission || build !== null || chain.at(-1)!.render !== "client" ? undefined : chain.length - 1;
     const depths = chain.map((_, depth) => depth);
-    const redirected = await run(depths.slice(from).filter((depth) => depth !== client));
+    const redirected = await run(depths.slice(from, guarded?.[0]).filter((depth) => depth !== client));
     if (redirected) return redirected;
     if (request.headers.has("rz-prerender")) await Promise.all(deferred);
     for (const writer of writers) writer.sealed = true;

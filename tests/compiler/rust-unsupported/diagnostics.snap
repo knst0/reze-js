@@ -1,13 +1,20 @@
+[SERVER_HOLE_UNSUPPORTED] A route of the Rust server guards with `guardRoute.external()`. Compute the value in the loader, or make the element interactive on the client.
+  at src/routes/index.tsx:4:14
+  3 | 
+> 4 | export const guard = guardRoute(() => {});
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 |
+
 [SERVER_HOLE_UNSUPPORTED] Mutations run only in the JS server, the Rust server has no mutations yet. Compute the value in the loader, or make the element interactive on the client.
-  at src/routes/index.tsx:6:21
-  5 | 
-> 6 | export const like = mutation(async (input: { id: string }) => input.id);
+  at src/routes/index.tsx:8:21
+  7 | 
+> 8 | export const like = mutation(async (input: { id: string }) => input.id);
     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  7 |
+  9 |
 
 [SERVER_HOLE_UNSUPPORTED] `app_types::Page` has no field `missing`. Compute the value in the loader, or make the element interactive on the client.
-  at src/routes/index.tsx:12:11
-  11 |       <h1>{props.data.title}</h1>
-> 12 |       <p>{props.data.missing}</p>
+  at src/routes/index.tsx:14:11
+  13 |       <h1>{props.data.title}</h1>
+> 14 |       <p>{props.data.missing}</p>
      |           ^^^^^^^^^^^^^^^^^^
-  13 |     </main>
+  15 |     </main>

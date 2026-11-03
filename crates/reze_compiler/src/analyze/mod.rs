@@ -115,6 +115,8 @@ pub struct ModuleFacts<'a> {
     pub values: HashMap<u32, Content<'a>>,
     /// Exported loaders and mutations.
     pub endpoints: Vec<Endpoint>,
+    /// The call of `export const guard = guardRoute.external()`: the Rust server runs the guard.
+    pub external_guard: Option<Span>,
 }
 
 pub struct Analysis<'a> {
@@ -420,6 +422,7 @@ pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, options: &Options) -
             (node.pattern.as_str(), node.segments.iter().filter_map(|s| s.name()).collect())
         });
         cx.facts[module].endpoints = data::endpoints(&cx, module, pattern, &mut reports[module]);
+        cx.facts[module].external_guard = data::external_guard(&cx, module);
         if options.target == Target::Spa {
             for endpoint in &cx.facts[module].endpoints {
                 reports[module].push(

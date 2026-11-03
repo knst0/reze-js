@@ -1,6 +1,6 @@
 import { expect, test } from "../fixtures";
 
-const paths = ["/", "/?ref=mail&_s=x", "/posts/1?ref=feed", "/posts/1", "/posts/2", "/posts/9", "/posts/abc", "/missing"];
+const paths = ["/", "/?ref=mail&_s=x", "/posts/1?ref=feed", "/posts/1", "/posts/2", "/posts/9", "/posts/abc", "/posts/members", "/missing"];
 
 test("renders the same HTML on the Rust and the JS server", async ({ request, server }) => {
   for (const path of paths) {
@@ -15,6 +15,18 @@ test("redirects from a Rust loader", async ({ request, server }) => {
     const response = await request.get(url, { maxRedirects: 0 });
     expect(response.status()).toBe(307);
     expect(response.headers().location).toBe("/posts/1");
+  }
+});
+
+test("runs a Rust guard before the loaders", async ({ request, server }) => {
+  for (const url of [(path: string) => server.url(path), (path: string) => server.js!(path)]) {
+    const denied = await request.get(url("/posts/members"));
+    expect(denied.status()).toBe(403);
+    expect(await denied.text()).toContain("Members only");
+    expect((await request.get(url("/posts/members"), { headers: { "x-member": "1" } })).status()).toBe(404);
+    const login = await request.get(url("/posts/members?login"), { maxRedirects: 0 });
+    expect(login.status()).toBe(307);
+    expect(login.headers().location).toBe("/");
   }
 });
 

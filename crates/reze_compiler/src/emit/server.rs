@@ -605,6 +605,12 @@ pub fn server(
         });
         regions.push(Region { span: Span::empty(endpoint.call.end), event: Event::Edit(open) });
     }
+    if let Some(call) = facts.external_guard {
+        regions.push(Region {
+            span: Span::empty(call.end - 1),
+            event: Event::Edit(format!("{:?}", module.path)),
+        });
+    }
     regions.sort_by_key(|r| (r.span.start, std::cmp::Reverse(r.span.end)));
 
     if regions.iter().any(|r| matches!(&r.event, Event::Edit(text) if text == "`${$t(")) {

@@ -10,6 +10,7 @@ use std::sync::Arc;
 use actix_web::{HttpServer, web};
 use blog_types::{Home, Post, Status, Summary};
 use generated::routes;
+use reze_server::http::request::Parts;
 use reze_server::{Manifest, Result, RouteError};
 
 struct Db {
@@ -64,11 +65,24 @@ async fn post(params: routes::posts_id::Params, db: &Db) -> Result<Post> {
     db.posts.iter().find(|post| post.id == id).cloned().ok_or_else(RouteError::not_found)
 }
 
+async fn members(params: routes::posts_id::Params, request: &Parts, _: &Db) -> Result<()> {
+    if params.id != "members" {
+        return Ok(());
+    }
+    if request.uri.query().is_some_and(|query| query.contains("login")) {
+        return Err(RouteError::redirect("/"));
+    }
+    match request.headers.get("x-member") {
+        Some(_) => Err(RouteError::not_found()),
+        None => Err(RouteError::new(403, "Members only")),
+    }
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().expect("usage: blog_server <reze.json> [tower|actix]");
     let manifest = Manifest::load(&path).expect("reze.json is readable");
-    let app = routes::App::new().index(home).posts_id(post).manifest(manifest);
+    let app = routes::App::new().index(home).posts_id(post).guard_posts_id(members).manifest(manifest);
     match args.next().as_deref() {
         Some("actix") => actix(app.into()),
         _ => tower(app),

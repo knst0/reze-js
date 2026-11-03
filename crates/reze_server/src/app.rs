@@ -11,18 +11,25 @@ use tracing::{Instrument, field, info_span};
 
 use crate::html::escape_text;
 use crate::render::{Page, render};
-use crate::{Chunk, Loader, Manifest, Params, Route, RouteError, Segment, Table, Value};
+use crate::{Chunk, Guard, Loader, Manifest, Params, Route, RouteError, Segment, Table, Value};
 
 type Erased<C> = Box<
     dyn for<'a> Fn(&Params, &'a C) -> BoxFuture<'a, crate::Result<Box<dyn Value>>> + Send + Sync,
 >;
 
-/// The application: the generated route table, the Rust loaders, and the client build.
+type ErasedGuard<C> = Box<
+    dyn for<'a> Fn(&Params, &'a http::request::Parts, &'a C) -> BoxFuture<'a, crate::Result<()>>
+        + Send
+        + Sync,
+>;
+
+/// The application: the generated route table, the Rust loaders and guards, and the client build.
 pub struct App<C> {
     table: &'static Table,
     /// Routes in match order.
     ordered: Vec<&'static Route>,
     loaders: Vec<Option<Erased<C>>>,
+    guards: Vec<Option<ErasedGuard<C>>>,
     manifest: Option<Manifest>,
     server_timing: bool,
 }
@@ -175,6 +182,7 @@ impl<C: Send + Sync + 'static> App<C> {
             table,
             ordered,
             loaders: table.nodes.iter().map(|_| None).collect(),
+            guards: table.nodes.iter().map(|_| None).collect(),
             manifest: None,
             server_timing: cfg!(feature = "dev"),
         }
@@ -191,6 +199,16 @@ impl<C: Send + Sync + 'static> App<C> {
             let future = loader.load(params(raw), context);
             Box::pin(async move { future.await.map(|value| Box::new(value) as Box<dyn Value>) })
         }));
+    }
+
+    /// Sets the guard of route node `index`, which the generated setters call.
+    pub fn set_guard<P, F>(&mut self, index: usize, params: fn(&Params) -> P, guard: F)
+    where
+        P: Send + 'static,
+        F: for<'a> Guard<'a, C, P> + 'static,
+    {
+        self.guards[index] =
+            Some(Box::new(move |raw, request, context| guard.check(params(raw), request, context)));
     }
 
     pub fn set_manifest(&mut self, manifest: Manifest) {
@@ -226,6 +244,10 @@ impl<C: Send + Sync + 'static> App<C> {
         #[cfg(feature = "dev")]
         if path == "/__reze/load" {
             return self.load_json(&query, context).await;
+        }
+        #[cfg(feature = "dev")]
+        if path == "/__reze/guard" {
+            return self.guard_check(request, &query, context).await;
         }
         let get = |name: &str| query.iter().find(|(key, _)| key == name).map(|(_, v)| v.as_str());
         let build = get("_b");
@@ -279,7 +301,7 @@ impl<C: Send + Sync + 'static> App<C> {
             return self.finish(rendered, HeaderMap::new(), &timings, head, request);
         };
         let chain = route.chain;
-        let from =
+        let mut from =
             if method == Method::GET && segment.fract() == 0.0 && segment < chain.len() as f64 {
                 segment.max(0.0) as usize
             } else {
@@ -298,11 +320,36 @@ impl<C: Send + Sync + 'static> App<C> {
             };
         }
 
+        let mut guarded = None;
+        for (depth, &node) in chain.iter().enumerate() {
+            if !self.table.nodes[node].guard {
+                continue;
+            }
+            let span = info_span!("guard", route = route.pattern, depth);
+            let result = match self.guards[node].as_ref() {
+                Some(guard) => guard(&params, request, context).instrument(span).await,
+                None => {
+                    tracing::error!(file = self.table.nodes[node].file, "no Rust guard is set");
+                    Err(RouteError::internal())
+                }
+            };
+            match result {
+                Ok(()) => {}
+                Err(failure) if failure.location.is_some() => return redirect(&failure),
+                Err(failure) => {
+                    guarded = Some((depth, failure));
+                    from = 0;
+                    break;
+                }
+            }
+        }
+        let until = guarded.as_ref().map_or(chain.len(), |(depth, _)| *depth);
+
         let mut data: Vec<Option<Box<dyn Value>>> = chain.iter().map(|_| None).collect();
-        let (mut error, mut stop) = (None, None);
+        let (mut error, mut stop) = (guarded, None);
         let mut state =
             Run { data: &mut data, error: &mut error, redirect: &mut stop, timings: &mut timings };
-        self.run(route, (from..chain.len()).collect(), &params, context, &mut state).await;
+        self.run(route, (from..until).collect(), &params, context, &mut state).await;
         if let Some(target) = &stop {
             return redirect(target);
         }
@@ -456,6 +503,39 @@ impl<C: Send + Sync + 'static> App<C> {
             }
         }
         response(status, headers, if head { Bytes::new() } else { Bytes::from(document) })
+    }
+
+    /// The `dev` endpoint `GET /__reze/guard?m=<file>&u=<url>&<params>`: runs one guard over the
+    /// request's headers and the page's URL, for the JS dev server, and answers `204` when it
+    /// passes.
+    #[cfg(feature = "dev")]
+    async fn guard_check(
+        &self,
+        request: &http::request::Parts,
+        query: &[(String, String)],
+        context: &C,
+    ) -> Response<Bytes> {
+        let (mut file, mut url) = (None, "/");
+        let mut params = Params::new();
+        for (name, value) in query {
+            match name.as_str() {
+                "m" => file = Some(value.as_str()),
+                "u" => url = value,
+                _ => params.insert(name.clone(), value.clone()),
+            }
+        }
+        let node = self.table.nodes.iter().position(|node| Some(node.file) == file);
+        let Some(guard) = node.and_then(|node| self.guards[node].as_ref()) else {
+            return plain(404, "Not Found");
+        };
+        let Ok(page) = Request::get(url).body(()) else { return plain(400, "Bad Request") };
+        let (mut page, _) = page.into_parts();
+        page.headers = request.headers.clone();
+        match guard(&params, &page, context).await {
+            Ok(()) => response(204, HeaderMap::new(), Bytes::new()),
+            Err(error) if error.location.is_some() => redirect(&error),
+            Err(error) => response(error.status, HeaderMap::new(), error.message),
+        }
     }
 
     /// The `dev` endpoint `GET /__reze/load?m=<file>&<params>`: the data of one loader as JSON,
