@@ -11,7 +11,7 @@ use tracing::{Instrument, field, info_span};
 
 use crate::html::escape_text;
 use crate::render::{Page, render};
-use crate::{Loader, Manifest, Params, Route, RouteError, Segment, Table, Value};
+use crate::{Chunk, Loader, Manifest, Params, Route, RouteError, Segment, Table, Value};
 
 type Erased<C> = Box<
     dyn for<'a> Fn(&Params, &'a C) -> BoxFuture<'a, crate::Result<Box<dyn Value>>> + Send + Sync,
@@ -382,7 +382,7 @@ impl<C: Send + Sync + 'static> App<C> {
     fn render(
         &self,
         page: &Page<'_>,
-        chunk: Option<usize>,
+        chunk: Option<Chunk>,
         from: usize,
         timings: &mut String,
     ) -> crate::Result<(String, u16)> {

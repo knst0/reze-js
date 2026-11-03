@@ -6,6 +6,7 @@ pub(crate) use server::{head_key, template_escape};
 use std::collections::{BTreeMap, HashSet};
 
 use crate::analyze::{Analysis, Api, EndpointKind};
+use crate::client::RouteChunk;
 use crate::project::Module;
 use crate::routes::{RouteTable, Segment};
 
@@ -83,7 +84,7 @@ pub fn app(
     modules: &[Module<'_>],
     analysis: &Analysis<'_>,
     routes: &RouteTable,
-    chunks: &BTreeMap<usize, String>,
+    chunks: &BTreeMap<usize, RouteChunk>,
 ) -> String {
     let mut out = String::new();
     let module_of = |file: &str| modules.iter().position(|m| m.path == file);
@@ -102,7 +103,15 @@ pub fn app(
         }
         let chain: Vec<String> = routes.chain(index).iter().map(|i| format!("$m{i}")).collect();
         let segments = serde_json::to_string(&node.segments).unwrap();
-        let chunk = if chunks.contains_key(&index) { index.to_string() } else { "null".into() };
+        let chunk = match chunks.get(&index) {
+            Some(RouteChunk::Route(key)) => format!("{key:?}"),
+            Some(RouteChunk::Factories(keys)) => {
+                let keys: Vec<String> =
+                    keys.iter().map(|(id, key)| format!("{id}: {key:?}")).collect();
+                format!("{{ {} }}", keys.join(", "))
+            }
+            None => "null".into(),
+        };
         let fixed = routes
             .chain(index)
             .iter()

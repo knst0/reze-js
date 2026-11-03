@@ -148,7 +148,7 @@ pub struct ProjectResult {
     pub app: String,
     /// Source of `virtual:rz-routes`.
     pub navigation: String,
-    /// Source of `virtual:rz-route/{node}`, by route node index.
+    /// Source of `virtual:rz-route/{key}`, by the chunk key that the route table names.
     pub chunks: HashMap<String, String>,
     pub diagnostics: Vec<Diagnostic>,
     /// Source of `reze_routes.rs`, when the options name Rust crates.
@@ -206,7 +206,7 @@ fn result(output: reze_compiler::ProjectOutput) -> napi::Result<ProjectResult> {
         types: output.types,
         app: output.app,
         navigation: output.navigation,
-        chunks: output.chunks.into_iter().map(|(node, code)| (node.to_string(), code)).collect(),
+        chunks: output.chunks.into_iter().collect(),
         diagnostics: output.diagnostics.into_iter().map(diagnostic).collect(),
         rust: output.rust,
     })

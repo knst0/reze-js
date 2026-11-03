@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub use reze_compiler::Chunks;
 use reze_compiler::{CrateIr, DiskFs, FieldDef, Options, TypeDef, TypeRef, compile_project};
 use syn::{Fields, GenericArgument, Item, PathArguments, Type};
 
@@ -17,12 +18,18 @@ pub struct Config {
     root: PathBuf,
     routes_dir: String,
     types: Vec<PathBuf>,
+    chunks: Chunks,
 }
 
 impl Config {
     /// `root` is the Vite project, relative to the crate that builds.
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), routes_dir: "src/routes".into(), types: Vec::new() }
+        Self {
+            root: root.into(),
+            routes_dir: "src/routes".into(),
+            types: Vec::new(),
+            chunks: Chunks::default(),
+        }
     }
 
     /// The routes directory, relative to the Vite project.
@@ -34,6 +41,12 @@ impl Config {
     /// A crate of `#[derive(reze::Data)]` types that `virtual:reze-types/<crate>` imports from.
     pub fn types(mut self, dir: impl Into<PathBuf>) -> Self {
         self.types.push(dir.into());
+        self
+    }
+
+    /// The chunk mode, which must match the `chunks` option of the Vite plugin.
+    pub fn chunks(mut self, chunks: Chunks) -> Self {
+        self.chunks = chunks;
         self
     }
 }
@@ -49,8 +62,12 @@ pub fn compile(config: Config) {
         println!("cargo:rerun-if-changed={}", dir.join("src").display());
         crates.push(extract(&dir).unwrap_or_else(|error| panic!("{error}")));
     }
-    let options =
-        Options { routes_dir: config.routes_dir, rust: Some(crates), ..Options::default() };
+    let options = Options {
+        routes_dir: config.routes_dir,
+        rust: Some(crates),
+        chunks: config.chunks,
+        ..Options::default()
+    };
     let output = compile_project(&DiskFs::new(&root), &options);
     let rendered: Vec<&str> = output.diagnostics.iter().map(|d| d.rendered.as_str()).collect();
     if output.has_errors() {

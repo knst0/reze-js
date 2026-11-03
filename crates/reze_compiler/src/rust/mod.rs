@@ -14,7 +14,7 @@ use oxc_ast::ast::{BindingPattern, Declaration, Expression, Statement};
 use oxc_span::Span;
 
 use crate::analyze::{Analysis, EndpointKind, Export, ImportSource};
-use crate::client::Plan;
+use crate::client::{Plan, RouteChunk};
 use crate::diagnostic::{Code, Report};
 use crate::project::Module;
 use crate::routes::{RouteTable, Segment};
@@ -546,8 +546,17 @@ pub fn emit(
             continue;
         }
         let chain: Vec<String> = routes.chain(index).iter().map(usize::to_string).collect();
-        let chunk =
-            if plan.chunks.contains_key(&index) { format!("Some({index})") } else { "None".into() };
+        let chunk = match plan.routes.get(&index) {
+            Some(RouteChunk::Route(key)) => {
+                format!("Some(::reze_server::Chunk::Route({}))", literal(key))
+            }
+            Some(RouteChunk::Factories(keys)) => {
+                let keys: Vec<String> =
+                    keys.iter().map(|(id, key)| format!("({id}, {})", literal(key))).collect();
+                format!("Some(::reze_server::Chunk::Factories(&[{}]))", keys.join(", "))
+            }
+            None => "None".into(),
+        };
         out.push_str(&format!(
             "        ::reze_server::Route {{ pattern: {}, segments: {}, chain: &[{}], chunk: {chunk} }},\n",
             literal(&node.pattern),

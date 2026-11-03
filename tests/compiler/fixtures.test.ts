@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { compileProject, compileProjectAsync, type Diagnostic } from "@rezejs/compiler";
+import { type Chunks, compileProject, compileProjectAsync, type Diagnostic } from "@rezejs/compiler";
 import { createApp } from "reze-js/runtime/server";
 import { expect, test } from "vite-plus/test";
 
@@ -51,7 +51,8 @@ for (const fixture of fixtures) {
     const dir = join(root, fixture.name);
     const rust = existsSync(join(dir, "rust.json")) ? JSON.parse(readFileSync(join(dir, "rust.json"), "utf8")) : undefined;
     const spa = existsSync(join(dir, "spa"));
-    const result = compileProject({ files: sources(dir) }, { rust, target: spa ? "spa" : undefined });
+    const chunks = existsSync(join(dir, "chunks")) ? (readFileSync(join(dir, "chunks"), "utf8").trim() as Chunks) : undefined;
+    const result = compileProject({ files: sources(dir) }, { rust, target: spa ? "spa" : undefined, chunks });
     const diagnostics = result.diagnostics.map(format).join("\n\n");
     await snapshot(dir, "diagnostics.snap", diagnostics ? `${diagnostics}\n` : undefined);
     await snapshot(dir, "rust.snap", result.rust ?? undefined);
@@ -78,12 +79,12 @@ for (const fixture of fixtures) {
         .sort(([a], [b]) => a.localeCompare(b))
         .flatMap(([path, module]) => (module.client ? [`// ${path}\n${module.client}`] : [])),
       ...Object.entries(result.chunks)
-        .sort(([a], [b]) => Number(a) - Number(b))
-        .map(([node, code]) => `// virtual:rz-route/${node}\n${code}`),
+        .sort(([a], [b]) => a.localeCompare(b, "en", { numeric: true }))
+        .map(([key, code]) => `// virtual:rz-route/${key}\n${code}`),
     ];
     await snapshot(dir, "client.snap", client.length > 0 ? client.join("\n") : undefined);
     const app = await import(pathToFileURL(join(target, "app.ts")).href);
-    const assets = { dispatcher: "/dispatcher.js", stream: "/stream.js", chunk: (node: number) => `/route-${node}.js` };
+    const assets = { dispatcher: "/dispatcher.js", stream: "/stream.js", chunk: (key: string) => `/route-${key}.js` };
     const url = existsSync(join(dir, "url")) ? readFileSync(join(dir, "url"), "utf8").trim() : "/";
     const response = await createApp(app.default, app.root, { assets })(new Request(new URL(url, "http://localhost")));
     await snapshot(dir, "html.snap", `${await response.text()}\n`);

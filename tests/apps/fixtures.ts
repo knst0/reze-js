@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -65,13 +65,19 @@ async function send(response: Response, out: ServerResponse): Promise<void> {
   out.end();
 }
 
+/** The plugin options of `app`, from its `reze.json`. */
+function optionsOf(app: string): Parameters<typeof reze>[0] {
+  const file = join(app, "reze.json");
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+}
+
 async function startJs(app: string): Promise<Running> {
   const vite = await createVite({
     root: app,
     configFile: false,
     logLevel: "warn",
     appType: "custom",
-    plugins: [reze()],
+    plugins: [reze(optionsOf(app))],
     resolve: { alias: sourceAliases },
     server: { middlewareMode: true, ws: false, watch: null },
   });
@@ -114,7 +120,7 @@ async function build(app: string, rust?: string[]): Promise<{ out: string; clien
     root: app,
     configFile: false,
     logLevel: "warn",
-    plugins: [reze(rust ? { rust: { types: rust } } : {})],
+    plugins: [reze({ ...optionsOf(app), ...(rust ? { rust: { types: rust } } : {}) })],
     resolve: { alias: sourceAliases },
     environments: {
       client: { build: { outDir: client, emptyOutDir: true } },
@@ -161,7 +167,7 @@ async function startSpa(app: string): Promise<Running> {
     root: app,
     configFile: false,
     logLevel: "warn",
-    plugins: [reze({ target: "spa" })],
+    plugins: [reze({ ...optionsOf(app), target: "spa" })],
     resolve: { alias: sourceAliases },
     environments: { client: { build: { outDir: out, emptyOutDir: true } } },
   });

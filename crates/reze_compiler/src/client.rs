@@ -16,6 +16,7 @@ use oxc_semantic::SymbolId;
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
+use crate::Chunks;
 use crate::analyze::{Analysis, Api, EndpointKind, Export, ImportSource, field_type, restore};
 use crate::diagnostic::{Code, Edit, Report};
 use crate::emit::template_escape;
@@ -77,9 +78,18 @@ pub struct ModulePlan {
 
 pub struct Plan {
     pub modules: Vec<ModulePlan>,
-    /// Client chunk of each route node, by node index.
-    pub chunks: BTreeMap<usize, String>,
+    /// Source of each client chunk, by key: the route node in `route` mode, `c{id}` for the chunk
+    /// of factory `id` otherwise.
+    pub chunks: BTreeMap<String, String>,
+    /// The chunks of each page route that has client code, by node index.
+    pub routes: BTreeMap<usize, RouteChunk>,
     pub reports: Vec<Vec<Report>>,
+}
+
+/// The client code of a page route: one chunk, or a chunk for each factory.
+pub enum RouteChunk {
+    Route(String),
+    Factories(Vec<(usize, String)>),
 }
 
 pub fn scope_var(scope: usize) -> String {
@@ -1469,7 +1479,12 @@ struct Planner<'m, 'a> {
     needs: Vec<Needs>,
 }
 
-pub fn plan<'a>(modules: &[Module<'a>], analysis: &Analysis<'a>, routes: &RouteTable) -> Plan {
+pub fn plan<'a>(
+    modules: &[Module<'a>],
+    analysis: &Analysis<'a>,
+    routes: &RouteTable,
+    mode: Chunks,
+) -> Plan {
     let mut index = Index {
         modules,
         analysis,
@@ -1592,8 +1607,8 @@ pub fn plan<'a>(modules: &[Module<'a>], analysis: &Analysis<'a>, routes: &RouteT
         }
     }
     planner.modules();
-    let chunks = planner.chunks(routes);
-    Plan { modules: planner.plans, chunks, reports: planner.reports }
+    let (chunks, route_chunks) = planner.chunks(routes, mode);
+    Plan { modules: planner.plans, chunks, routes: route_chunks, reports: planner.reports }
 }
 
 /// `effect(…)` statements of a component body.
@@ -2967,8 +2982,14 @@ impl<'m, 'a> Planner<'m, 'a> {
         }
     }
 
-    /// The chunk of each page route: the factories of every client component it can render.
-    fn chunks(&self, routes: &RouteTable) -> BTreeMap<usize, String> {
+    /// The chunks of each page route: the factories of every client component it can render, in
+    /// one chunk for the route, or in a chunk for each factory.
+    fn chunks(
+        &self,
+        routes: &RouteTable,
+        mode: Chunks,
+    ) -> (BTreeMap<String, String>, BTreeMap<usize, RouteChunk>) {
+        let mut chunks = BTreeMap::new();
         let mut out = BTreeMap::new();
         for (node_index, node) in routes.nodes.iter().enumerate() {
             if node.is_layout {
@@ -2993,39 +3014,61 @@ impl<'m, 'a> Planner<'m, 'a> {
                     calls(&template.nodes, &mut stack);
                 }
             }
-            let mut imports: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-            let mut global = Vec::new();
-            for &(module, index) in &seen {
-                if let Some((id, _, reads)) = self.factories.get(&ComponentRef { module, index }) {
-                    imports.entry(module).or_default().push(*id);
-                    if *reads {
-                        global.push(*id);
-                    }
-                }
-            }
-            if imports.is_empty() {
+            let factories: Vec<(usize, usize, bool)> = seen
+                .iter()
+                .filter_map(|&(module, index)| {
+                    let (id, _, reads) = self.factories.get(&ComponentRef { module, index })?;
+                    Some((module, *id, *reads))
+                })
+                .collect();
+            if factories.is_empty() {
                 continue;
             }
-            let mut code = String::new();
-            let mut entries = Vec::new();
-            for (module, ids) in &imports {
-                let names: Vec<String> = ids.iter().map(|id| format!("$c{id}")).collect();
-                writeln!(
-                    code,
-                    "import {{ {} }} from {:?};",
-                    names.join(", "),
-                    format!("/{}", self.index.modules[*module].path)
-                )
-                .unwrap();
-                entries.extend(ids.iter().map(|id| format!("{id}: $c{id}")));
+            if mode == Chunks::Route {
+                let key = node_index.to_string();
+                chunks.insert(key.clone(), self.chunk_code(&factories));
+                out.insert(node_index, RouteChunk::Route(key));
+                continue;
             }
-            global.sort();
-            writeln!(code, "export default {{ {} }};", entries.join(", ")).unwrap();
-            let global: Vec<String> = global.iter().map(ToString::to_string).collect();
-            writeln!(code, "export const g = [{}];", global.join(", ")).unwrap();
-            out.insert(node_index, code);
+            let mut keys = Vec::new();
+            for &factory in &factories {
+                let key = format!("c{}", factory.1);
+                chunks.entry(key.clone()).or_insert_with(|| self.chunk_code(&[factory]));
+                keys.push((factory.1, key));
+            }
+            out.insert(node_index, RouteChunk::Factories(keys));
         }
-        out
+        (chunks, out)
+    }
+
+    /// Source of a chunk that holds `factories`: `(module, id, reads module state)`.
+    fn chunk_code(&self, factories: &[(usize, usize, bool)]) -> String {
+        let mut code = String::new();
+        let mut entries = Vec::new();
+        let mut global = Vec::new();
+        let mut modules: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for &(module, id, reads) in factories {
+            modules.entry(module).or_default().push(id);
+            if reads {
+                global.push(id);
+            }
+        }
+        for (module, ids) in modules {
+            let names: Vec<String> = ids.iter().map(|id| format!("$c{id}")).collect();
+            writeln!(
+                code,
+                "import {{ {} }} from {:?};",
+                names.join(", "),
+                format!("/{}", self.index.modules[module].path)
+            )
+            .unwrap();
+            entries.extend(ids.iter().map(|id| format!("{id}: $c{id}")));
+        }
+        global.sort_unstable();
+        writeln!(code, "export default {{ {} }};", entries.join(", ")).unwrap();
+        let global: Vec<String> = global.iter().map(ToString::to_string).collect();
+        writeln!(code, "export const g = [{}];", global.join(", ")).unwrap();
+        code
     }
 }
 

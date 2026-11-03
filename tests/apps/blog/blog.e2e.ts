@@ -59,6 +59,17 @@ test("runs a handler over Rust data", async ({ page, server }) => {
   await expect(page.locator("output")).toHaveText("3 likes");
 });
 
+test("loads each component from its own chunk", async ({ page, request, server }) => {
+  const html = await (await request.get(server.url("/posts/1"))).text();
+  const [, chunks] = JSON.parse(/<script type="rz">(.*?)<\/script>/.exec(html)![1]!) as [string, Record<number, string>];
+  expect(new Set(Object.values(chunks)).size).toBe(2);
+  await page.goto(server.url("/posts/1"));
+  await page.getByRole("button", { name: "Share" }).click();
+  await expect(page.getByText("Link copied")).toBeVisible();
+  await page.getByRole("button", { name: "Like" }).click();
+  await expect(page.locator("output")).toHaveText("3 likes");
+});
+
 test("navigates between Rust pages", async ({ page, server }) => {
   await page.goto(server.url("/"));
   await page.getByRole("link", { name: "Hello, world" }).click();

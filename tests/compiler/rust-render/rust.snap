@@ -118,7 +118,7 @@ pub mod routes {
     ];
 
     static ROUTES: &[::reze_server::Route] = &[
-        ::reze_server::Route { pattern: "/", segments: &[], chain: &[0], chunk: Some(0) },
+        ::reze_server::Route { pattern: "/", segments: &[], chain: &[0], chunk: Some(::reze_server::Chunk::Route("0")) },
     ];
 
     static TABLE: ::reze_server::Table =

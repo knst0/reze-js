@@ -469,7 +469,13 @@ each page's compressed HTML on realistic applications. The share SHOULD stay und
 
 The current implementation differs from this design in these points:
 
-- Chunks are per route only. Shared, `component`, and `handler` chunks are not built yet.
+- Under `chunks: "route"`, a route chunk imports the client code of each module it uses, and the
+  bundler splits modules that several routes share into its own common chunks, so there can be
+  more than one shared chunk.
+- `chunks: "handler"` builds the same chunks as `"component"`: one per component with handlers.
+  Every handler of a component shares that component's chunk.
+- The Rust server takes the chunk mode from `reze_build::Config::chunks`, which must match the
+  plugin option.
 - A component with an effect or a `ref` loads its chunk at page start, not when it enters the
   viewport.
 - The idle preload checks once, at idle time, whether any handler site is above the fold. It does

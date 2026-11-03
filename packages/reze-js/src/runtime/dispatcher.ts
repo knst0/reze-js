@@ -1,4 +1,5 @@
 type Entry = unknown[];
+type Block = [string, string | Record<number, string>, number, ...Entry[]];
 type Handlers = Record<number, Record<string, (row: Entry) => (event: Event) => void>>;
 type Factory = (entry: Entry, index: number, entries: Entry[]) => Handlers;
 interface Chunk {
@@ -114,35 +115,43 @@ const handle = (event: Event) => {
     .finally(() => sites[0]!.removeAttribute("aria-busy"));
 };
 
-/** Adds a state block, `[events, chunk, eager, ...entries]`, whose entries follow the current ones. */
-const add = ([events, url, isEager, ...block]: [string, string, number, ...Entry[]]) => {
+/**
+ * Adds a state block, `[events, chunks, eager, ...entries]`, whose entries follow the current ones.
+ * `chunks` is the URL of the page's chunk, or the URL of each factory's chunk by factory id.
+ */
+const add = ([events, chunk, isEager, ...block]: Block) => {
   const base = entries.length;
   for (const entry of block) {
     if ((entry[0] as number) < 0) entry[0] = ~(~(entry[0] as number) + base);
-    urls[entries.push(entry) - 1] = url;
+    urls[entries.push(entry) - 1] = typeof chunk === "string" ? chunk : chunk[entry[0] as number]!;
   }
-  if (isEager) eager[url] = 1;
   for (const type of events.split(" ")) {
     if (type && !types.has(type)) {
       types.add(type);
       document.addEventListener(type, handle, true);
     }
   }
-  if (chunks[url]) start(base);
-  else if (isEager) load(url).catch(fail);
-  else if (!connection?.saveData && !/2g/.test(connection?.effectiveType ?? "")) {
-    (window.requestIdleCallback ?? setTimeout)(
-      () =>
-        [...document.querySelectorAll("[data-rz]")].some((node) => node.getBoundingClientRect().top < innerHeight) &&
-        document.head.append(Object.assign(document.createElement("link"), { rel: "modulepreload", href: url, fetchPriority: "low" })),
-    );
+  for (const url of new Set(urls.slice(base))) {
+    if (!url) continue;
+    if (isEager) eager[url] = 1;
+    if (chunks[url]) start(base);
+    else if (isEager) load(url).catch(fail);
+    else if (!connection?.saveData && !/2g/.test(connection?.effectiveType ?? "")) {
+      (window.requestIdleCallback ?? setTimeout)(
+        () =>
+          [...document.querySelectorAll("[data-rz]")].some(
+            (node) => urlsOf([node])[0] === url && node.getBoundingClientRect().top < innerHeight,
+          ) &&
+          document.head.append(Object.assign(document.createElement("link"), { rel: "modulepreload", href: url, fetchPriority: "low" })),
+      );
+    }
   }
 };
 
-(window as unknown as { rz: unknown }).rz = { n: () => entries.length, add };
-dispatchEvent(new Event("rz:ready"));
-
 const nav = () => (client ??= import("virtual:rz-nav"));
+
+(window as unknown as { rz: unknown }).rz = { n: () => entries.length, add, nav };
+dispatchEvent(new Event("rz:ready"));
 
 /** The same-origin link a navigation event targets, when the client may handle it. */
 const link = (event: Event) => {
@@ -215,7 +224,7 @@ if (document.querySelector("template[data-rz-client]"))
 const block = document.querySelector("script[type=rz]");
 if (block) {
   block.remove();
-  add(JSON.parse(block.textContent!) as [string, string, number, ...Entry[]]);
+  add(JSON.parse(block.textContent!) as Block);
 }
 
 /** A condition of `data-rz-prevent`: `Enter` for a key, or `field=value`, as in `ctrlKey=true`. */

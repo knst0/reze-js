@@ -102,7 +102,7 @@ export interface ProjectResult {
   app: string
   /** Source of `virtual:rz-routes`. */
   navigation: string
-  /** Source of `virtual:rz-route/{node}`, by route node index. */
+  /** Source of `virtual:rz-route/{key}`, by the chunk key that the route table names. */
   chunks: Record<string, string>
   diagnostics: Array<Diagnostic>
   /** Source of `reze_routes.rs`, when the options name Rust crates. */

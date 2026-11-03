@@ -12,6 +12,15 @@ function Rating(props: { value: number; views: bigint }) {
   );
 }
 
+function Share() {
+  let copied = signal(false);
+  return (
+    <p>
+      <button onClick={() => (copied = true)}>Share</button> {copied ? "Link copied" : "Not shared"}
+    </p>
+  );
+}
+
 export default function PostPage(props: { data: Post }) {
   let likes = signal(props.data.likes);
   let notes = signal(props.data.tags);
@@ -31,6 +40,7 @@ export default function PostPage(props: { data: Post }) {
       <Rating value={props.data.rating} views={props.data.views} />
       <p>{props.data.status === "Draft" ? "Draft" : "Published"}</p>
       <p>{props.data.tags.length > 0 && "Tagged"}</p>
+      <Share />
       <button onClick={() => likes++}>Like</button>
       <output>{likes} likes</output>
       <Show when={likes > 2} fallback={<p>Few likes</p>}>

@@ -112,8 +112,17 @@ pub struct Route {
     pub segments: &'static [Segment],
     /// The nodes from the root layout down to the page.
     pub chain: &'static [usize],
-    /// The node of the client chunk, when the page has client code.
-    pub chunk: Option<usize>,
+    /// The client chunks, when the page has client code.
+    pub chunk: Option<Chunk>,
+}
+
+/// The client code of a page, by the keys of [`Manifest::chunks`].
+#[derive(Clone, Copy)]
+pub enum Chunk {
+    /// One chunk with every factory of the route.
+    Route(&'static str),
+    /// A chunk for each factory id.
+    Factories(&'static [(u32, &'static str)]),
 }
 
 /// The generated route table.
@@ -163,7 +172,7 @@ pub struct Manifest {
     pub build: String,
     pub dispatcher: String,
     pub stream: String,
-    /// The URL of each route node's chunk.
+    /// The URL of each client chunk, by its key.
     pub chunks: HashMap<String, String>,
 }
 

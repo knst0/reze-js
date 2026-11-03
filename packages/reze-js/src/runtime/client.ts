@@ -147,7 +147,8 @@ export { MutationInputError } from "./errors";
 
 /** The browser side of a mutation: a call, or `.call`, posts through the navigation module. */
 export function $call(id: string): ((input?: unknown) => Promise<unknown>) & { id: string; call(input?: unknown): Promise<unknown> } {
-  const call = (input?: unknown) => import("virtual:rz-nav").then((nav) => nav.call(id, input));
+  const call = (input?: unknown) =>
+    (window as unknown as { rz: { nav(): Promise<typeof import("virtual:rz-nav")> } }).rz.nav().then((nav) => nav.call(id, input));
   return Object.assign(call, { id, call });
 }
 

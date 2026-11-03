@@ -3,7 +3,7 @@ use std::any::Any;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
 use crate::html::{Html, escape_attr};
-use crate::{Manifest, Params, RouteError, Table, Value};
+use crate::{Chunk, Manifest, Params, RouteError, Table, Value};
 
 /// The state of one render: the head, ids, the client state entries, and the status.
 #[derive(Debug)]
@@ -241,7 +241,7 @@ pub fn children(out: &mut Html, cx: &mut Render, page: &Page<'_>) -> Result<(), 
 /// navigation the document whose body is that segment alone. Returns the document and its status.
 pub(crate) fn render(
     page: &Page<'_>,
-    chunk: Option<usize>,
+    chunk: Option<Chunk>,
     manifest: Option<&Manifest>,
     from: usize,
 ) -> Result<(String, u16), RouteError> {
@@ -267,9 +267,23 @@ pub(crate) fn render(
         let mut block = String::from("[");
         reze::js::push_json_string(&mut block, &cx.events.join(" "));
         block.push(',');
-        match manifest.chunks.get(&chunk.to_string()) {
-            Some(url) => reze::js::push_json_string(&mut block, url),
+        let url = |block: &mut String, key: &str| match manifest.chunks.get(key) {
+            Some(url) => reze::js::push_json_string(block, url),
             None => block.push_str("null"),
+        };
+        match chunk {
+            Chunk::Route(key) => url(&mut block, key),
+            Chunk::Factories(keys) => {
+                block.push('{');
+                for (index, (id, key)) in keys.iter().enumerate() {
+                    if index > 0 {
+                        block.push(',');
+                    }
+                    block.push_str(&format!("\"{id}\":"));
+                    url(&mut block, key);
+                }
+                block.push('}');
+            }
         }
         block.push_str(if cx.eager { ",1" } else { ",0" });
         for entry in &cx.entries {

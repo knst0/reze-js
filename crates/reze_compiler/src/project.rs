@@ -192,7 +192,7 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
     let analysis_failed = reports.values().flatten().any(|r| r.code.severity().is_error());
     let mut plan = None;
     if !analysis_failed {
-        let mut client = client::plan(&modules, &analysis, &output.routes);
+        let mut client = client::plan(&modules, &analysis, &output.routes, options.chunks);
         for (module, mut module_reports) in
             std::mem::take(&mut client.reports).into_iter().enumerate()
         {
@@ -220,7 +220,7 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
         let client = plan.modules[i].client.take();
         output.modules.insert(module.path.clone(), ModuleOutput { server: Some(server), client });
     }
-    output.app = emit::app(&modules, &analysis, &output.routes, &plan.chunks);
+    output.app = emit::app(&modules, &analysis, &output.routes, &plan.routes);
     output.navigation = emit::navigation(&modules, &analysis, &output.routes);
     output.chunks = std::mem::take(&mut plan.chunks);
     output

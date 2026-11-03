@@ -59,8 +59,8 @@ export interface Route {
   pattern: string;
   segments: Segment[];
   chain: RouteModule[];
-  /** Route node of the client chunk, when the page has client code. */
-  chunk: number | null;
+  /** The key of the client chunk, or of each factory's chunk by factory id, when the page has client code. */
+  chunk: string | Record<number, string> | null;
   /** Whether no loader of the route reads more than its params. */
   static: boolean;
 }
@@ -70,7 +70,7 @@ export interface Assets {
   dispatcher: string;
   /** The module that moves streamed parts into their `<Loading>` boundaries. */
   stream: string;
-  chunk(node: number): string;
+  chunk(key: string): string;
 }
 
 /** Declares the application's types: `interface Register { context: AppContext }`. */
@@ -475,7 +475,7 @@ const builtIn = (status: number, message: string) =>
 
 /** What one render needs beyond the route: loader data, failed segments, and the submission. */
 interface Page {
-  route: { chain: RouteModule[]; chunk: number | null };
+  route: { chain: RouteModule[]; chunk: Route["chunk"] };
   params: Record<string, unknown>;
   url: URL;
   data: unknown[];
@@ -565,7 +565,12 @@ function render(
   };
   const block = () => {
     if (entries.length === 0 || !assets || route.chunk === null) return "";
-    const block = [[...events].join(" "), assets.chunk(route.chunk), eager ? 1 : 0, ...entries];
+    const chunk = route.chunk;
+    const urls =
+      typeof chunk === "string"
+        ? assets.chunk(chunk)
+        : Object.fromEntries(Object.entries(chunk).map(([id, key]) => [id, assets.chunk(key)]));
+    const block = [[...events].join(" "), urls, eager ? 1 : 0, ...entries];
     entries.length = 0;
     events.clear();
     eager = false;

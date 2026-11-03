@@ -84,8 +84,8 @@ pub struct ProjectOutput {
     pub app: String,
     /// Source of `virtual:rz-routes`: the route table of client navigation.
     pub navigation: String,
-    /// Source of `virtual:rz-route/{node}`: the client factories of each page route that has any.
-    pub chunks: BTreeMap<usize, String>,
+    /// Source of `virtual:rz-route/{key}`: the client chunks, by the key that the route table names.
+    pub chunks: BTreeMap<String, String>,
     pub diagnostics: Vec<Diagnostic>,
     /// Source of `reze_routes.rs`, when the options name Rust crates.
     #[serde(skip_serializing_if = "Option::is_none")]
