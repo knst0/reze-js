@@ -103,7 +103,8 @@ async fn add_comment(input: NewComment, _: &Parts, db: &Db) -> Result<Added> {
         return Err(RouteError::new(400, "Comments need an author"));
     }
     let mut posts = db.posts.lock().unwrap();
-    let post = posts.iter_mut().find(|post| post.id == input.post).ok_or_else(RouteError::not_found)?;
+    let post =
+        posts.iter_mut().find(|post| post.id == input.post).ok_or_else(RouteError::not_found)?;
     let stars = "*".repeat(input.stars.unwrap_or(0).into());
     post.comments.push(Comment { author: input.author, body: format!("{}{stars}", input.body) });
     Ok(Added { count: post.comments.len() as u32 })
