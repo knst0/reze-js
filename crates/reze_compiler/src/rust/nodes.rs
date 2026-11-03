@@ -814,10 +814,12 @@ impl<'e, 'a> Emitter<'e, 'a> {
         }
     }
 
-    /// The values of a client scope's captures, as JSON strings.
-    fn captures(&mut self, captures: &[String], frame: &Rc<Frame<'e, 'a>>) -> String {
+    /// The values of a client scope's captures, as JSON strings, positional when client code
+    /// restores their type.
+    fn captures(&mut self, captures: &[client::Capture], frame: &Rc<Frame<'e, 'a>>) -> String {
         let mut out = Vec::new();
-        for capture in captures {
+        for client::Capture { server: capture, ty } in captures {
+            let write = if ty.is_some() { "to_wire" } else { "to_json" };
             let allocator = Allocator::default();
             let parsed =
                 oxc_parser::Parser::new(&allocator, capture, SourceType::tsx()).parse_expression();
@@ -827,7 +829,7 @@ impl<'e, 'a> Emitter<'e, 'a> {
             };
             match result {
                 Ok(Val { ty: Ty::Null, .. }) => out.push("\"null\".to_string()".to_string()),
-                Ok(val) => out.push(format!("::reze_server::reze::to_json(&{})", val.code)),
+                Ok(val) => out.push(format!("::reze_server::reze::{write}(&{})", val.code)),
                 Err(reason) => {
                     self.report(
                         frame.module,

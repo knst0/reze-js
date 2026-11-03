@@ -9,7 +9,7 @@ use oxc_span::{GetSpan, Span};
 
 use crate::SERVER_RUNTIME;
 use crate::analyze::{Analysis, Api, EndpointKind};
-use crate::client::{self, ModulePlan, base36, scope_var};
+use crate::client::{self, Capture, ModulePlan, base36, scope_var};
 use crate::html;
 use crate::project::Module;
 use crate::view::{
@@ -136,7 +136,8 @@ impl<'e, 'a> Emitter<'e, 'a> {
         out.push('`');
         let key = content.span.start;
         if let Some(scope) = self.plan.components.get(&key) {
-            let mut captures = scope.captures.join(", ");
+            let mut captures =
+                scope.captures.iter().map(Capture::encoded).collect::<Vec<_>>().join(", ");
             if scope.linked {
                 captures.push_str(if scope.captures.is_empty() {
                     "$r.parent()"
@@ -150,7 +151,7 @@ impl<'e, 'a> Emitter<'e, 'a> {
             );
         }
         if let Some(row) = self.plan.rows.get(&key) {
-            let captures = row.captures.join(", ");
+            let captures = row.captures.iter().map(Capture::encoded).collect::<Vec<_>>().join(", ");
             return format!(
                 "(({}) => {out})($r.row({}, {}, [{captures}]))",
                 scope_var(row.scope),

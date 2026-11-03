@@ -1,0 +1,6 @@
+[DATA_TYPE_UNSUPPORTED] Client code reads `props.data.file.size`, whose type has no wire encoding: `File` stays on the server.
+  at src/routes/index.tsx:13:52
+  12 |   let shown = signal(false);
+> 13 |   return <button onClick={() => (shown = !shown && props.data.file.size > 0)}>{props.data.name}</button>;
+     |                                                    ^^^^^^^^^^^^^^^^^^^^
+  14 | }

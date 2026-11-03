@@ -69,6 +69,14 @@ test("runs a handler over Rust data", async ({ page, server }) => {
   await expect(page.getByLabel("Hearts")).toHaveText("Loved");
 });
 
+test("sends Rust data to the client in the positional encoding", async ({ page, request, server }) => {
+  const html = await (await request.get(server.url("/"))).text();
+  expect(/<script type="rz">(.*?)<\/script>/.exec(html)![1]).toContain('[[1,"Hello, world",1],[2,"Drafts \\"quoted\\"",0]]');
+  await page.goto(server.url("/"));
+  await page.getByRole("button", { name: "Count drafts" }).click();
+  await expect(page.locator("output")).toHaveText("1 drafts");
+});
+
 test("loads each component from its own chunk", async ({ page, request, server }) => {
   const html = await (await request.get(server.url("/posts/1"))).text();
   const [, chunks] = JSON.parse(/<script type="rz">(.*?)<\/script>/.exec(html)![1]!) as [string, Record<number, string>];

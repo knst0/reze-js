@@ -24,12 +24,26 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     ::reze::Data::write(&self.#ident, out);
                 }
             });
+            let wires = fields.named.iter().enumerate().map(|(index, field)| {
+                let ident = field.ident.as_ref().unwrap();
+                let comma = (index > 0).then(|| quote! { out.push(','); });
+                quote! {
+                    #comma
+                    ::reze::Data::wire(&self.#ident, out);
+                }
+            });
             quote! {
                 impl #impl_generics ::reze::Data for #name #type_generics #where_clause {
                     fn write(&self, out: &mut ::std::string::String) {
                         out.push('{');
                         #(#writes)*
                         out.push('}');
+                    }
+
+                    fn wire(&self, out: &mut ::std::string::String) {
+                        out.push('[');
+                        #(#wires)*
+                        out.push(']');
                     }
                 }
             }
@@ -43,6 +57,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 let text = ident.to_string();
                 quote! { Self::#ident => #text }
             });
+            let indexes = data.variants.iter().enumerate().map(|(index, variant)| {
+                let ident = &variant.ident;
+                let text = index.to_string();
+                quote! { Self::#ident => #text }
+            });
             quote! {
                 impl #impl_generics ::reze::Variant for #name #type_generics #where_clause {
                     fn name(&self) -> &'static str {
@@ -52,6 +71,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 impl #impl_generics ::reze::Data for #name #type_generics #where_clause {
                     fn write(&self, out: &mut ::std::string::String) {
                         ::reze::js::push_json_string(out, ::reze::Variant::name(self));
+                    }
+
+                    fn wire(&self, out: &mut ::std::string::String) {
+                        out.push_str(match self { #(#indexes,)* });
                     }
                 }
             }

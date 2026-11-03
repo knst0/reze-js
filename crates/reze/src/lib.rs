@@ -12,6 +12,12 @@ pub use reze_derive::Data;
 pub trait Data {
     /// Appends the value as JSON, as `JSON.stringify` writes it.
     fn write(&self, out: &mut String);
+
+    /// Appends the value in the positional encoding of the state block: a struct as the array of
+    /// its fields, a unit enum as the index of its variant.
+    fn wire(&self, out: &mut String) {
+        self.write(out);
+    }
 }
 
 /// A unit enum, which crosses as the name of its variant.
@@ -24,6 +30,24 @@ pub fn to_json<T: Data + ?Sized>(value: &T) -> String {
     let mut out = String::new();
     value.write(&mut out);
     out
+}
+
+/// The positional JSON of `value`.
+pub fn to_wire<T: Data + ?Sized>(value: &T) -> String {
+    let mut out = String::new();
+    value.wire(&mut out);
+    out
+}
+
+fn list<'a, T: Data + 'a>(items: impl Iterator<Item = &'a T>, out: &mut String, wire: bool) {
+    out.push('[');
+    for (index, item) in items.enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        if wire { item.wire(out) } else { item.write(out) }
+    }
+    out.push(']');
 }
 
 impl Data for str {
@@ -89,6 +113,13 @@ impl<T: Data> Data for Option<T> {
             None => out.push_str("null"),
         }
     }
+
+    fn wire(&self, out: &mut String) {
+        match self {
+            Some(value) => value.wire(out),
+            None => out.push_str("null"),
+        }
+    }
 }
 
 impl<T: Variant + ?Sized> Variant for &T {
@@ -101,24 +132,29 @@ impl<T: Data + ?Sized> Data for &T {
     fn write(&self, out: &mut String) {
         (**self).write(out);
     }
+
+    fn wire(&self, out: &mut String) {
+        (**self).wire(out);
+    }
 }
 
 impl<T: Data + ?Sized> Data for Box<T> {
     fn write(&self, out: &mut String) {
         (**self).write(out);
     }
+
+    fn wire(&self, out: &mut String) {
+        (**self).wire(out);
+    }
 }
 
 impl<T: Data> Data for [T] {
     fn write(&self, out: &mut String) {
-        out.push('[');
-        for (index, item) in self.iter().enumerate() {
-            if index > 0 {
-                out.push(',');
-            }
-            item.write(out);
-        }
-        out.push(']');
+        list(self.iter(), out, false);
+    }
+
+    fn wire(&self, out: &mut String) {
+        list(self.iter(), out, true);
     }
 }
 
@@ -126,17 +162,18 @@ impl<T: Data> Data for Vec<T> {
     fn write(&self, out: &mut String) {
         self.as_slice().write(out);
     }
+
+    fn wire(&self, out: &mut String) {
+        self.as_slice().wire(out);
+    }
 }
 
 impl<T: Data> Data for BTreeSet<T> {
     fn write(&self, out: &mut String) {
-        out.push('[');
-        for (index, item) in self.iter().enumerate() {
-            if index > 0 {
-                out.push(',');
-            }
-            item.write(out);
-        }
-        out.push(']');
+        list(self.iter(), out, false);
+    }
+
+    fn wire(&self, out: &mut String) {
+        list(self.iter(), out, true);
     }
 }

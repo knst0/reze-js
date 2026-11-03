@@ -14,6 +14,7 @@ use oxc_span::{GetSpan, Span};
 use super::{Api, Context, Export, ImportSource};
 use crate::diagnostic::{Code, Report};
 use crate::view::{Attribute, AttributeItem, Branch, ComponentRef, Node, PropValue, Value};
+use crate::{CrateIr, TypeDef, TypeRef};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Int {
@@ -136,6 +137,42 @@ impl Ty {
     }
 }
 
+/// The type of `name` in a Rust crate's IR, as its generated TS type declares it.
+fn rust_type(ir: &CrateIr, name: &str, depth: u32) -> Option<Ty> {
+    if depth > 32 {
+        return None;
+    }
+    Some(match ir.types.iter().find(|def| def.name() == name)? {
+        TypeDef::Struct { fields, .. } => Ty::Object(
+            fields
+                .iter()
+                .map(|field| {
+                    Some(Field {
+                        name: field.name.clone(),
+                        ty: rust_ref(ir, &field.ty, depth)?,
+                        optional: false,
+                    })
+                })
+                .collect::<Option<_>>()?,
+        ),
+        TypeDef::Enum { variants, .. } => {
+            Ty::union(variants.iter().map(|v| Ty::Literal(Literal::String(v.clone()))).collect())
+        }
+    })
+}
+
+fn rust_ref(ir: &CrateIr, ty: &TypeRef, depth: u32) -> Option<Ty> {
+    match ty {
+        TypeRef::Named { name } => rust_type(ir, name, depth + 1),
+        TypeRef::Option { of } => Some(Ty::union(vec![rust_ref(ir, of, depth)?, Ty::Null])),
+        TypeRef::List { of } => Some(Ty::Array(Box::new(rust_ref(ir, of, depth)?))),
+        TypeRef::String => Some(Ty::String),
+        TypeRef::Boolean => Some(Ty::Boolean),
+        TypeRef::Number { .. } => Some(Ty::Number),
+        TypeRef::Bigint { .. } => Some(Ty::BigInt),
+    }
+}
+
 /// Why an annotation does not lower.
 pub enum Unlowered {
     /// `unknown`, `any`, or no annotation: no contract at all.
@@ -169,6 +206,7 @@ enum Named<'a> {
     Interface(&'a oxc_ast::ast::TSInterfaceDeclaration<'a>),
     Alias(&'a oxc_ast::ast::TSTypeAliasDeclaration<'a>),
     Int(Int),
+    Rust(Ty),
 }
 
 pub struct Resolver<'c, 'm, 'a> {
@@ -334,6 +372,7 @@ impl<'c, 'm, 'a> Resolver<'c, 'm, 'a> {
                     self.resolve(target, &alias.type_annotation)
                 }
                 Some((_, Named::Int(int))) => Ok(Ty::Int(int)),
+                Some((_, Named::Rust(ty))) => Ok(ty),
                 None => Err(self.foreign(module, symbol, text)),
             };
         }
@@ -387,7 +426,11 @@ impl<'c, 'm, 'a> Resolver<'c, 'm, 'a> {
                 ImportSource::Package(package) if package == "reze-js/types" => {
                     Int::from_name(&import.name).map(|int| (module, Named::Int(int)))
                 }
-                ImportSource::Package(_) => None,
+                ImportSource::Package(package) => {
+                    let krate = package.strip_prefix("virtual:reze-types/")?.replace('-', "_");
+                    let ir = self.cx.rust.iter().find(|ir| ir.name.replace('-', "_") == krate)?;
+                    rust_type(ir, &import.name, 0).map(|ty| (module, Named::Rust(ty)))
+                }
                 ImportSource::Module(target) => self.exported(*target, &import.name, depth + 1),
             };
         }
@@ -754,6 +797,8 @@ pub struct Endpoint {
     pub typed: bool,
     /// The result type of a loader, when it lowers.
     pub data: Option<Ty>,
+    /// Why the annotated result of a loader does not lower to a wire encoding.
+    pub unsupported: Option<String>,
     /// The pattern of the route that exports the endpoint.
     pub route: Option<String>,
     /// The loader arguments the function reads, `None` when it may read any of them.
@@ -812,6 +857,12 @@ pub fn endpoints<'a>(
                 Some(Api::Mutation) => EndpointKind::Mutation,
                 _ => continue,
             };
+            let (data, unsupported) =
+                match loader_result(call).map(|ty| Resolver::new(cx).resolve(module, ty)) {
+                    Some(Ok(ty)) => (Some(ty), None),
+                    Some(Err(Unlowered::Unresolved(reason))) => (None, Some(reason)),
+                    _ => (None, None),
+                };
             let mut endpoint = Endpoint {
                 kind,
                 export: id.name.to_string(),
@@ -821,7 +872,8 @@ pub fn endpoints<'a>(
                 meta: "{}".into(),
                 input: None,
                 typed: loader_result(call).is_some(),
-                data: loader_result(call).and_then(|ty| Resolver::new(cx).resolve(module, ty).ok()),
+                data,
+                unsupported,
                 route: pattern.as_ref().map(|(route, _)| route.to_string()),
                 reads: loader_reads(call),
                 external,
@@ -832,6 +884,7 @@ pub fn endpoints<'a>(
                     endpoint.meta = format!("{{ external: {:?} }}", cx.modules[module].path);
                     endpoint.typed = true;
                     endpoint.reads = None;
+                    endpoint.unsupported = None;
                     endpoint.data_type = external_type(cx, module, call);
                 }
                 EndpointKind::Loader => {
@@ -862,7 +915,8 @@ pub fn field_type(ty: &Ty, path: &[&str]) -> Option<Ty> {
 }
 
 /// The JS expression that converts `code`, a value of `ty` read from the state block, into its
-/// native form: a `Date`, a `bigint`, a `Map`, or a `Set`. `None` when the value reads as it is.
+/// native form: a `Date`, a `bigint`, a `Map`, a `Set`, a `Uint8Array`, or an object from its
+/// fields. `None` when the value reads as it is.
 pub fn restore(ty: &Ty, code: &str, depth: usize) -> Option<String> {
     let v = format!("$v{depth}");
     let (base, undefined, null) = ty.strip();
@@ -872,6 +926,7 @@ pub fn restore(ty: &Ty, code: &str, depth: usize) -> Option<String> {
     }
     Some(match &base {
         Ty::Date => format!("new Date({code})"),
+        Ty::Bytes => format!("Uint8Array.from(atob({code}), ($c) => $c.charCodeAt(0))"),
         Ty::BigInt => format!("BigInt({code})"),
         Ty::Int(int) if int.is_big() => format!("BigInt({code})"),
         Ty::Set(inner) => match restore(inner, &v, depth + 1) {
@@ -906,25 +961,204 @@ pub fn restore(ty: &Ty, code: &str, depth: usize) -> Option<String> {
             format!("[{}]", items.join(", "))
         }
         Ty::Object(fields) => {
-            let restored: Vec<String> = fields
-                .iter()
-                .filter_map(|field| {
-                    let ty = if field.optional {
-                        Ty::union(vec![field.ty.clone(), Ty::Undefined])
-                    } else {
-                        field.ty.clone()
-                    };
-                    let name = serde_json::to_string(&field.name).unwrap();
-                    restore(&ty, &format!("{v}[{name}]"), depth + 1).map(|r| format!("{name}: {r}"))
-                })
-                .collect();
-            if restored.is_empty() {
-                return None;
-            }
-            format!("(({v}) => ({{ ...{v}, {} }}))({code})", restored.join(", "))
+            let restored = restore_fields(fields, &v, depth, 0, None);
+            format!("(({v}) => ({{ {} }}))({code})", restored.join(", "))
         }
+        Ty::Union(members) => match tagged(members) {
+            Tagged::Literals(literals) => format!("[{}][{code}]", literals.join(", ")),
+            Tagged::Variants(tag, variants) => {
+                let mut out = String::from("undefined");
+                for (index, (literal, fields)) in variants.iter().enumerate().rev() {
+                    let mut restored = vec![format!("{}: {literal}", js_key(tag))];
+                    restored.extend(restore_fields(fields, &v, depth, 1, Some(tag)));
+                    out = format!("{v}[0] === {index} ? {{ {} }} : {out}", restored.join(", "));
+                }
+                format!("(({v}) => {out})({code})")
+            }
+            Tagged::None => return None,
+        },
         _ => return None,
     })
+}
+
+/// The JS expression that writes `code`, a value of `ty`, in the positional encoding of the state
+/// block: an object as the array of its fields, a literal union member as its index, a variant of
+/// a discriminated union as its index and fields. `None` when the value is written as it is.
+pub fn encode(ty: &Ty, code: &str, depth: usize) -> Option<String> {
+    let v = format!("$v{depth}");
+    let (base, undefined, null) = ty.strip();
+    if undefined || null {
+        let inner = encode(&base, code, depth)?;
+        return Some(format!("({code} == null ? null : {inner})"));
+    }
+    Some(match &base {
+        Ty::Bytes => format!("btoa(String.fromCharCode(...{code}))"),
+        Ty::Set(inner) => format!("[...{code}].map(({v}) => {})", encode(inner, &v, depth + 1)?),
+        Ty::Map(inner) => format!(
+            "[...{code}].map(([$k{depth}, {v}]) => [$k{depth}, {}])",
+            encode(inner, &v, depth + 1)?
+        ),
+        Ty::Array(inner) => format!("{code}.map(({v}) => {})", encode(inner, &v, depth + 1)?),
+        Ty::Record(inner) => format!(
+            "Object.fromEntries(Object.entries({code}).map(([$k{depth}, {v}]) => [$k{depth}, {}]))",
+            encode(inner, &v, depth + 1)?
+        ),
+        Ty::Tuple(elements) => {
+            let encoded: Vec<Option<String>> = elements
+                .iter()
+                .enumerate()
+                .map(|(i, element)| encode(element, &format!("{code}[{i}]"), depth))
+                .collect();
+            if encoded.iter().all(Option::is_none) {
+                return None;
+            }
+            let items: Vec<String> = encoded
+                .into_iter()
+                .enumerate()
+                .map(|(i, e)| e.unwrap_or_else(|| format!("{code}[{i}]")))
+                .collect();
+            format!("[{}]", items.join(", "))
+        }
+        Ty::Object(fields) => {
+            format!("(({v}) => [{}])({code})", encode_fields(fields, &v, depth, None).join(", "))
+        }
+        Ty::Union(members) => match tagged(members) {
+            Tagged::Literals(literals) => format!("[{}].indexOf({code})", literals.join(", ")),
+            Tagged::Variants(tag, variants) => {
+                let mut out = String::new();
+                for (index, (literal, fields)) in variants.iter().enumerate() {
+                    let mut items = vec![index.to_string()];
+                    items.extend(encode_fields(fields, &v, depth, Some(tag)));
+                    let item = format!("[{}]", items.join(", "));
+                    if index + 1 == variants.len() {
+                        out.push_str(&item);
+                    } else {
+                        write!(out, "{v}[{}] === {literal} ? {item} : ", js_key(tag)).unwrap();
+                    }
+                }
+                format!("(({v}) => {out})({code})")
+            }
+            Tagged::None => return None,
+        },
+        _ => return None,
+    })
+}
+
+/// The positional items of an object's fields, without the tag of a variant.
+fn encode_fields(fields: &[Field], v: &str, depth: usize, tag: Option<&str>) -> Vec<String> {
+    fields
+        .iter()
+        .filter(|field| Some(field.name.as_str()) != tag)
+        .map(|field| {
+            let read = format!("{v}[{}]", js_key(&field.name));
+            let value = encode(&field.ty, &read, depth + 1).unwrap_or_else(|| read.clone());
+            if field.optional && field.ty.strip().2 {
+                format!("({read} === undefined ? [] : [{value}])")
+            } else if field.optional {
+                format!("({read} === undefined ? null : {value})")
+            } else {
+                value
+            }
+        })
+        .collect()
+}
+
+/// The `name: value` entries that read an object's fields back from positional items, which start
+/// at `offset`.
+fn restore_fields(
+    fields: &[Field],
+    v: &str,
+    depth: usize,
+    offset: usize,
+    tag: Option<&str>,
+) -> Vec<String> {
+    fields
+        .iter()
+        .filter(|field| Some(field.name.as_str()) != tag)
+        .enumerate()
+        .map(|(index, field)| {
+            let read = format!("{v}[{}]", index + offset);
+            let value = if field.optional && field.ty.strip().2 {
+                let inner = format!("{read}[0]");
+                let value = restore(&field.ty, &inner, depth + 1).unwrap_or(inner);
+                format!("({read}?.length ? {value} : undefined)")
+            } else if field.optional {
+                let value = restore(&field.ty, &read, depth + 1).unwrap_or_else(|| read.clone());
+                format!("({read} == null ? undefined : {value})")
+            } else {
+                restore(&field.ty, &read, depth + 1).unwrap_or(read)
+            };
+            format!("{}: {value}", js_key(&field.name))
+        })
+        .collect()
+}
+
+fn js_key(name: &str) -> String {
+    serde_json::to_string(name).unwrap()
+}
+
+enum Tagged<'t> {
+    /// A union of literals, written as the JS literal of each member.
+    Literals(Vec<String>),
+    /// A discriminated union: the tag field, and each variant's tag literal and fields.
+    Variants(&'t str, Vec<(String, &'t [Field])>),
+    None,
+}
+
+/// How a union other than `null` and `undefined` crosses the wire.
+fn tagged(members: &[Ty]) -> Tagged<'_> {
+    let literals: Option<Vec<String>> = members
+        .iter()
+        .map(|member| match member {
+            Ty::Literal(literal) => Some(literal.js()),
+            _ => None,
+        })
+        .collect();
+    if let Some(literals) = literals {
+        return Tagged::Literals(literals);
+    }
+    let objects: Option<Vec<&[Field]>> = members
+        .iter()
+        .map(|member| match member {
+            Ty::Object(fields) => Some(fields.as_slice()),
+            _ => None,
+        })
+        .collect();
+    let Some(objects) = objects else { return Tagged::None };
+    let tag_of = |fields: &[Field], name: &str| {
+        fields.iter().find(|f| f.name == name && !f.optional).and_then(|f| match &f.ty {
+            Ty::Literal(literal) => Some(literal.js()),
+            _ => None,
+        })
+    };
+    for field in objects[0] {
+        let variants: Option<Vec<(String, &[Field])>> = objects
+            .iter()
+            .map(|fields| tag_of(fields, &field.name).map(|literal| (literal, *fields)))
+            .collect();
+        if let Some(variants) = variants {
+            let mut seen: Vec<&String> = variants.iter().map(|(literal, _)| literal).collect();
+            seen.sort();
+            seen.dedup();
+            if seen.len() == variants.len() {
+                return Tagged::Variants(&field.name, variants);
+            }
+        }
+    }
+    Tagged::None
+}
+
+/// Why a value of `ty` cannot cross to the browser.
+pub fn unencodable(ty: &Ty) -> Option<String> {
+    match ty {
+        Ty::File => Some("`File` stays on the server".into()),
+        Ty::Union(members) | Ty::Tuple(members) => members.iter().find_map(unencodable),
+        Ty::Object(fields) => fields.iter().find_map(|field| unencodable(&field.ty)),
+        Ty::Array(inner) | Ty::Record(inner) | Ty::Map(inner) | Ty::Set(inner) => {
+            unencodable(inner)
+        }
+        _ => None,
+    }
 }
 
 /// The props type of a component, from the annotation of its first parameter. The default export

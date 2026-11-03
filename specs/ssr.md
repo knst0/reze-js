@@ -964,8 +964,14 @@ The current implementation differs from this design in these points:
   `415`.
 - JSON input encodes `Date` as an ISO string or a timestamp, `Map` as `[key, value]` pairs, `Set`
   as an array, `bigint` as a decimal string, and `Uint8Array` as base64.
-- `DATA_TYPE_UNSUPPORTED` is not raised: loader results are not lowered to the positional encoding
-  yet.
+- `DATA_TYPE_UNSUPPORTED` covers reads of `props.data` in the route component's client code: a
+  read of a `File`, or of a result annotation that does not lower.
+- Positional encoding applies to the values of a state entry whose type client code knows, from
+  a props annotation or the loader result. A whole object read encodes all its fields, not only
+  those the chunk reads, and trailing absent optional fields are written as `null`, not dropped.
+  The server wraps the value in an inline encoder, and client code rebuilds a named object at the
+  read site instead of rewriting each later read into an index access. A value whose type no
+  annotation gives crosses as named JSON.
 - `LOADER_RESULT_UNTYPED` covers reads of `props.data` in the route component's client code only.
 - `useSubmission` returns `{}` when the request did not submit that mutation, and `issues` holds the
   first issue for each path joined with `.`.
@@ -1005,7 +1011,9 @@ The current implementation differs from this design in these points:
   extracting it from the framework's state. `reze_server::actix::service(Arc<App<C>>)` returns a
   `Route` for `default_service`, which reads the context from the app's `web::Data<C>`; each
   worker of `HttpServer` calls it with a clone of the `Arc`. Both answer with the whole body.
-- The Rust loader data and the dev JSON use named fields, not the positional encoding. Params reach
+- The dev JSON of a Rust loader uses named fields. The Rust state block writes a typed value
+  with `reze::Data::wire`, positionally, and the compiler reads the types of
+  `virtual:reze-types/<crate>` from the IR. Params reach
   a Rust loader as strings, in the generated `Params` of the route.
 - The IR has no `Map` or `Date`: a field of another type fails the build with "has no wire
   encoding". The `reze-ir` binary of `reze_build` writes the IR in place of `cargo xtask reze-ir`,

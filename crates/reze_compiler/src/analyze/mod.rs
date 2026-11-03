@@ -17,7 +17,7 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
 pub use api::Api;
-pub use data::{Endpoint, EndpointKind, field_type, restore};
+pub use data::{Endpoint, EndpointKind, Ty, encode, field_type, restore, unencodable};
 
 use crate::diagnostic::{Code, Report};
 use crate::project::Module;
@@ -125,6 +125,8 @@ pub struct Analysis<'a> {
 pub struct Context<'m, 'a> {
     pub modules: &'m [Module<'a>],
     pub facts: Vec<ModuleFacts<'a>>,
+    /// The type IR of the Rust crates behind `virtual:reze-types/<crate>`.
+    pub rust: &'m [crate::CrateIr],
 }
 
 impl<'a> Context<'_, 'a> {
@@ -409,7 +411,7 @@ fn collect_declaration<'a>(
 
 pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, options: &Options) -> Analysis<'a> {
     let facts = (0..modules.len()).map(|m| collect_facts(modules, m)).collect();
-    let mut cx = Context { modules, facts };
+    let mut cx = Context { modules, facts, rust: options.rust.as_deref().unwrap_or_default() };
     let mut reports: Vec<Vec<Report>> = modules.iter().map(|_| Vec::new()).collect();
 
     for module in 0..modules.len() {

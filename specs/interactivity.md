@@ -503,8 +503,8 @@ The current implementation differs from this design in these points:
   Calls inside a callback, `<Loading>`, `<Portal>`, or `dynamic(…)` do not link: the child reads
   the server values of its live props from its entry, and a function prop is `undefined` there.
   Spread props never become live.
-- The state block writes a `Date` as milliseconds, a `Set` as an array, a `Map` as pairs, and a
-  `bigint` as a decimal string; a `Record` stays an object. Client code converts a read back when
+- The state block writes a `Date` as milliseconds, a `Set` as an array, a `Map` as pairs, a
+  `bigint` as a decimal string, and a typed object positionally; a `Record` stays an object. Client code converts a read back when
   the component's props annotation gives its type, or the loader result types `props.data` in a
   route component. A value whose type no annotation gives, such as a signal initialized from a
   call, reaches client code in its encoded form.

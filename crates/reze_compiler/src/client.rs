@@ -17,7 +17,9 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 
 use crate::Chunks;
-use crate::analyze::{Analysis, Api, EndpointKind, Export, ImportSource, field_type, restore};
+use crate::analyze::{
+    Analysis, Api, EndpointKind, Export, ImportSource, Ty, encode, field_type, restore, unencodable,
+};
 use crate::diagnostic::{Code, Edit, Report};
 use crate::emit::template_escape;
 use crate::html;
@@ -44,8 +46,8 @@ pub struct Mark {
 pub struct ComponentScope {
     pub id: usize,
     pub events: String,
-    /// Server expressions whose values the state entry carries, in entry order.
-    pub captures: Vec<String>,
+    /// The values the state entry carries, in entry order.
+    pub captures: Vec<Capture>,
     pub eager: bool,
     /// The entry ends with the link to the parent instance that gives its live props.
     pub linked: bool,
@@ -55,7 +57,21 @@ pub struct ComponentScope {
 pub struct RowScope {
     pub scope: usize,
     pub parent: usize,
-    pub captures: Vec<String>,
+    pub captures: Vec<Capture>,
+}
+
+/// A value of a state entry: the server expression, and its type when client code restores it.
+#[derive(Clone)]
+pub struct Capture {
+    pub server: String,
+    pub ty: Option<Ty>,
+}
+
+impl Capture {
+    /// The server expression in the positional encoding of its type.
+    pub fn encoded(&self) -> String {
+        self.ty.as_ref().and_then(|ty| encode(ty, &self.server, 0)).unwrap_or(self.server.clone())
+    }
 }
 
 /// What the server render of one module adds for client code.
@@ -1207,15 +1223,15 @@ struct Needs {
 /// Captures of one scope, by key, with the server expression of each.
 #[derive(Default)]
 struct Captures {
-    keys: Vec<(String, String)>,
+    keys: Vec<(String, Capture)>,
 }
 
 impl Captures {
-    fn slot(&mut self, key: String, server: String) -> usize {
+    fn slot(&mut self, key: String, server: String, ty: Option<Ty>) -> usize {
         if let Some(index) = self.keys.iter().position(|(k, _)| *k == key) {
             return index;
         }
-        self.keys.push((key, server));
+        self.keys.push((key, Capture { server, ty }));
         self.keys.len() - 1
     }
 }
@@ -1257,19 +1273,18 @@ fn root_symbol(
     }
 }
 
-/// `code`, the state slot of the read `key` from the symbol `symbol`, converted to its native
-/// form when the props type of `component` gives it a `Date`, `bigint`, `Map`, or `Set`.
-fn restore_read(
+/// The type of the read `key` from the symbol `symbol`, when the props type of `component` gives
+/// it.
+fn read_type(
     analysis: &Analysis<'_>,
     component: ComponentRef,
     symbol: SymbolId,
     key: &str,
-    code: String,
-) -> String {
+) -> Option<Ty> {
     let facts = &analysis.facts[component.module].components[component.index];
-    let Some(props) = &facts.props else { return code };
+    let props = facts.props.as_ref()?;
     if key.contains(['[', '(']) {
-        return code;
+        return None;
     }
     let mut segments: Vec<String> =
         key.split('.').map(|s| s.trim_end_matches('?').to_string()).collect();
@@ -1284,13 +1299,17 @@ fn restore_read(
                 }
                 _ => None,
             });
-            let Some(name) = name else { return code };
-            segments[0] = name.to_string();
+            segments[0] = name?.to_string();
         }
-        _ => return code,
+        _ => return None,
     }
     let segments: Vec<&str> = segments.iter().map(String::as_str).collect();
-    field_type(props, &segments).and_then(|ty| restore(&ty, &code, 0)).unwrap_or(code)
+    field_type(props, &segments)
+}
+
+/// `code`, a state slot of type `ty`, converted to its native form.
+fn restored(ty: Option<&Ty>, code: String) -> String {
+    ty.and_then(|ty| restore(ty, &code, 0)).unwrap_or(code)
 }
 
 const UNSERIALIZABLE_OK: [&str; 7] = ["Date", "Map", "Set", "URL", "Array", "Object", "RegExp"];
@@ -1365,7 +1384,8 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
         );
     }
 
-    /// Reports a read of `props.data` in a route component whose loader has no result type.
+    /// Reports a read of `props.data` in a route component whose loader has no result type, or
+    /// one with no wire encoding.
     fn check_loader_read(&mut self, symbol: SymbolId, key: &str, span: Span) {
         let Some(component) = self.component.as_ref().map(|c| c.component) else { return };
         let facts = &self.index.analysis.facts[component.module];
@@ -1383,13 +1403,27 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
         };
         let loader =
             facts.endpoints.iter().find(|e| e.kind == EndpointKind::Loader && e.export == "load");
-        let Some(loader) = loader.filter(|loader| is_default && !loader.typed) else { return };
+        let Some(loader) = loader.filter(|_| is_default) else { return };
         let Some(route) = &loader.route else { return };
         let data = format!("{props}.data");
-        if key == data
-            || key.starts_with(&format!("{data}."))
-            || key.starts_with(&format!("{data}["))
+        if key != data
+            && !key.starts_with(&format!("{data}."))
+            && !key.starts_with(&format!("{data}["))
         {
+            return;
+        }
+        let reason = loader.unsupported.clone().or_else(|| {
+            let ends = key.match_indices('.').map(|(at, _)| at).chain([key.len()]);
+            ends.filter_map(|end| read_type(self.index.analysis, component, symbol, &key[..end]))
+                .find_map(|ty| unencodable(&ty))
+        });
+        if let Some(reason) = reason {
+            self.reports.push(
+                Report::new(Code::DataTypeUnsupported, span)
+                    .arg("read", self.text(span).to_string())
+                    .arg("reason", reason),
+            );
+        } else if !loader.typed {
             self.reports.push(
                 Report::new(Code::LoaderResultUntyped, span)
                     .arg("read", self.text(span).to_string())
@@ -1406,10 +1440,11 @@ impl<'a> Rewrite<'_, '_, '_, 'a> {
         self.check_loader_read(symbol, &key, span);
         let component = self.component.as_mut().expect("captures belong to a component");
         let target = component.component;
-        let slot = component.captures[scope].slot(key.clone(), text);
+        let ty = read_type(self.index.analysis, target, symbol, &key);
+        let slot = component.captures[scope].slot(key.clone(), text, ty.clone());
         let offset = if scope == 0 { 1 } else { 2 };
         let code = format!("{}[{}]", (component.access)(scope), slot + offset);
-        restore_read(self.index.analysis, target, symbol, &key, code)
+        restored(ty.as_ref(), code)
     }
 
     fn live(&self, expression: &Expression<'a>) -> Option<String> {
@@ -3078,16 +3113,14 @@ impl<'m, 'a> Planner<'m, 'a> {
                             scoping.symbol_name(*symbol).to_string()
                         }),
                 };
-                let slot = captures[0].slot(format!("$P.{name}"), server.clone());
-                let code = format!("$s[{}]", slot + 1);
-                let code = match param.symbol.or_else(|| {
-                    param.fields.iter().find(|(_, f)| *f == name).map(|(symbol, _)| *symbol)
-                }) {
-                    Some(symbol) => {
-                        restore_read(self.index.analysis, component, symbol, &server, code)
-                    }
-                    None => code,
-                };
+                let ty = param
+                    .symbol
+                    .or_else(|| {
+                        param.fields.iter().find(|(_, f)| *f == name).map(|(symbol, _)| *symbol)
+                    })
+                    .and_then(|symbol| read_type(self.index.analysis, component, symbol, &server));
+                let slot = captures[0].slot(format!("$P.{name}"), server.clone(), ty.clone());
+                let code = restored(ty.as_ref(), format!("$s[{}]", slot + 1));
                 fallback.push(format!("{name}: {code}"));
             }
             let link = captures[0].keys.len() + 1;
@@ -3145,7 +3178,7 @@ impl<'m, 'a> Planner<'m, 'a> {
             ComponentScope {
                 id,
                 events: events.into_iter().collect::<Vec<_>>().join(" "),
-                captures: captures[0].keys.iter().map(|(_, server)| server.clone()).collect(),
+                captures: captures[0].keys.iter().map(|(_, capture)| capture.clone()).collect(),
                 eager,
                 linked,
             },
@@ -3159,7 +3192,7 @@ impl<'m, 'a> Planner<'m, 'a> {
                     captures: captures[scope]
                         .keys
                         .iter()
-                        .map(|(_, server)| server.clone())
+                        .map(|(_, capture)| capture.clone())
                         .collect(),
                 },
             );
@@ -3227,18 +3260,15 @@ impl<'m, 'a> Planner<'m, 'a> {
                     ),
                     (None, _) => String::new(),
                     (Some(init), Some(cx)) => {
-                        let slot = cx.captures[0].slot(format!("${name}"), name.to_string());
-                        let code = format!("$s[{}]", slot + 1);
-                        match root_symbol(&self.index, module, init) {
-                            Some(symbol) => {
-                                let text = &self.index.modules[module].source
-                                    [init.span().start as usize..init.span().end as usize];
-                                let key: String =
-                                    text.chars().filter(|c| !c.is_whitespace()).collect();
-                                restore_read(self.index.analysis, cx.component, symbol, &key, code)
-                            }
-                            None => code,
-                        }
+                        let ty = root_symbol(&self.index, module, init).and_then(|symbol| {
+                            let text = &self.index.modules[module].source
+                                [init.span().start as usize..init.span().end as usize];
+                            let key: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+                            read_type(self.index.analysis, cx.component, symbol, &key)
+                        });
+                        let slot =
+                            cx.captures[0].slot(format!("${name}"), name.to_string(), ty.clone());
+                        restored(ty.as_ref(), format!("$s[{}]", slot + 1))
                     }
                     (Some(init), None) => self.rewrite(
                         module,
