@@ -1,9 +1,13 @@
-//! The blog on the Rust server: `blog_server <reze.json>` prints its origin and serves the pages.
+//! The blog on the Rust server: `blog_server <reze.json> [tower|actix]` prints its origin and serves
+//! the pages through the adapter.
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/reze_routes.rs"));
 }
 
+use std::sync::Arc;
+
+use actix_web::{HttpServer, web};
 use blog_types::{Home, Post, Status, Summary};
 use generated::routes;
 use reze_server::{Manifest, Result, RouteError};
@@ -57,13 +61,33 @@ async fn post(params: routes::posts_id::Params, db: &Db) -> Result<Post> {
     db.posts.iter().find(|post| post.id == id).cloned().ok_or_else(RouteError::not_found)
 }
 
-#[tokio::main]
-async fn main() {
-    let path = std::env::args().nth(1).expect("usage: blog_server <reze.json>");
+fn main() {
+    let mut args = std::env::args().skip(1);
+    let path = args.next().expect("usage: blog_server <reze.json> [tower|actix]");
     let manifest = Manifest::load(&path).expect("reze.json is readable");
     let app = routes::App::new().index(home).posts_id(post).manifest(manifest);
+    match args.next().as_deref() {
+        Some("actix") => actix(app.into()),
+        _ => tower(app),
+    }
+}
+
+#[tokio::main]
+async fn tower(app: routes::App<Db>) {
     let router = axum::Router::new().fallback_service(reze_server::tower::service(app, Db::new()));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     println!("http://{}", listener.local_addr().unwrap());
     axum::serve(listener, router).await.unwrap();
+}
+
+fn actix(app: reze_server::App<Db>) {
+    let (app, db) = (Arc::new(app), web::Data::new(Db::new()));
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    println!("http://{}", listener.local_addr().unwrap());
+    let server = HttpServer::new(move || {
+        actix_web::App::new()
+            .app_data(db.clone())
+            .default_service(reze_server::actix::service(app.clone()))
+    });
+    actix_web::rt::System::new().block_on(server.listen(listener).unwrap().run()).unwrap();
 }

@@ -2,6 +2,8 @@
 //! loaders. The core is sans-io: [`App::handle`] takes a parsed request and a context and returns a
 //! response, on any executor and behind any HTTP framework.
 
+#[cfg(feature = "actix")]
+pub mod actix;
 mod app;
 mod html;
 mod render;

@@ -999,8 +999,10 @@ The current implementation differs from this design in these points:
   fields, or streaming. A Rust loader stops a request with a `RouteError`, and a `POST` answers
   `404`, or `403` when it is cross-site. `handle` takes any request body and returns
   `http::Response<Bytes>`; the `tower` service answers `Full<Bytes>`.
-- The `actix` adapter is not built. `reze_server::tower::service(app, context)` takes the context
-  as an argument instead of extracting it from the framework's state.
+- `reze_server::tower::service(app, context)` takes the context as an argument instead of
+  extracting it from the framework's state. `reze_server::actix::service(Arc<App<C>>)` returns a
+  `Route` for `default_service`, which reads the context from the app's `web::Data<C>`; each
+  worker of `HttpServer` calls it with a clone of the `Arc`. Both answer with the whole body.
 - The Rust loader data and the dev JSON use named fields, not the positional encoding. Params reach
   a Rust loader as strings, in the generated `Params` of the route.
 - The IR has no `Map` or `Date`: a field of another type fails the build with "has no wire

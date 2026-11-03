@@ -7,9 +7,9 @@ const browsers = {
   firefox: devices["Desktop Firefox"],
   webkit: devices["Desktop Safari"],
 };
-const servers: ServerKind[] = ["js", "js-build", "rust", "spa"];
-/** The apps that only one server runs: the app with a Rust server crate, and the client-only app. */
-const only: Partial<Record<ServerKind, string>> = { rust: "blog/**/*.e2e.ts", spa: "spa/**/*.e2e.ts" };
+const servers: ServerKind[] = ["js", "js-build", "rust", "rust-actix", "spa"];
+/** The apps that only some servers run: the app with a Rust server crate, and the client-only app. */
+const only: Partial<Record<ServerKind, string>> = { rust: "blog/**/*.e2e.ts", "rust-actix": "blog/**/*.e2e.ts", spa: "spa/**/*.e2e.ts" };
 
 export default defineConfig<object, { serverKind: ServerKind }>({
   testDir: "tests/apps",

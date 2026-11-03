@@ -6,10 +6,12 @@ publish.workspace = true
 license.workspace = true
 
 [features]
+actix = ["dep:actix-web"]
 tower = ["dep:tower-service", "dep:http-body-util"]
 dev = []
 
 [dependencies]
+actix-web = { version = "4.18.1", default-features = false, optional = true }
 bytes = "1.12.1"
 form_urlencoded = "1.2.2"
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }

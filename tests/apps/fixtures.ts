@@ -20,7 +20,7 @@ export { expect } from "@playwright/test";
  * `js` runs the Vite dev server; `js-build` serves a production build; `rust` serves it from the Rust server; `spa` serves
  * the static build of `target: "spa"`.
  */
-export type ServerKind = "js" | "js-build" | "rust" | "spa";
+export type ServerKind = "js" | "js-build" | "rust" | "rust-actix" | "spa";
 
 export interface Server {
   url(path: string): string;
@@ -204,14 +204,14 @@ function run(command: string, args: string[], env: Record<string, string> = {}):
 }
 
 /** Builds the app's `server` crate, whose `types` crate holds the loader data types, and serves the build with it. */
-async function startRust(app: string): Promise<Running> {
+async function startRust(app: string, adapter: "tower" | "actix"): Promise<Running> {
   const name = `${app.split("/").at(-1)}_server`;
   const target = join(repo, "target/e2e");
   const ir = join(await mkdtemp(join(tmpdir(), "rz-ir-")), "types.json");
   await run("cargo", ["run", "-q", "-p", "reze_build", "--bin", "reze-ir", "--", join(app, "types"), ir]);
   const { out, client, handler } = await build(app, [ir]);
   await run("cargo", ["build", "-q", "--manifest-path", join(app, "Cargo.toml"), "-p", name], { CARGO_TARGET_DIR: target });
-  const child = spawn(join(target, "debug", name), [join(out, "server/reze.json")], { stdio: ["ignore", "pipe", "inherit"] });
+  const child = spawn(join(target, "debug", name), [join(out, "server/reze.json"), adapter], { stdio: ["ignore", "pipe", "inherit"] });
   const rust = await new Promise<string>((done, fail) => {
     child.stdout.once("data", (chunk: Buffer) => done(chunk.toString().trim()));
     child.on("exit", (code) => fail(new Error(`${name} exited with ${code}`)));
@@ -233,7 +233,7 @@ async function startRust(app: string): Promise<Running> {
 }
 
 function start(kind: ServerKind, app: string): Promise<Running> {
-  if (kind === "rust") return startRust(app);
+  if (kind === "rust" || kind === "rust-actix") return startRust(app, kind === "rust" ? "tower" : "actix");
   if (kind === "spa") return startSpa(app);
   return kind === "js-build" ? startJsBuild(app) : startJs(app);
 }
@@ -254,7 +254,7 @@ export const test = base.extend<{ server: Server }, { serverKind: ServerKind; se
     const app = dirname(testInfo.file);
     let running = servers.get(app);
     if (!running) {
-      if (serverKind === "rust") testInfo.setTimeout(testInfo.timeout + 600_000);
+      if (serverKind.startsWith("rust")) testInfo.setTimeout(testInfo.timeout + 600_000);
       servers.set(app, (running = start(serverKind, app)));
     }
     const { origin, js } = await running;
