@@ -7,6 +7,11 @@ use syn::{Data, DeriveInput, Fields, parse_macro_input};
 /// Implements `reze::Data` and `reze::Input` for a struct with named fields, and for an enum, and
 /// also `Variant` for an enum. An enum of unit variants crosses as a union of string literals, and
 /// an enum with fields as a union of objects tagged with `kind`.
+#[proc_macro_attribute]
+pub fn mutation(_: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
 #[proc_macro_derive(Data)]
 pub fn derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

@@ -12,7 +12,7 @@ use std::time::SystemTime;
 
 pub use defer::Defer;
 pub use input::{Input, Issue, Json, Key};
-pub use reze_derive::Data;
+pub use reze_derive::{Data, mutation};
 
 /// A value a Rust loader returns: a struct with named fields, a unit enum, or one of the scalars
 /// and containers this crate implements it for. A `SystemTime` is a JS `Date`, a set a `Set`, and
