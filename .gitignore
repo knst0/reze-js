@@ -1,5 +1,5 @@
 node_modules
-/target
+target
 *.node
 /packages/compiler/npm
 dist
