@@ -42,7 +42,7 @@ form the pair read and write, and `action` never collides.
 A route module exports `load`:
 
 ```tsx file=src/routes/blog/[id].tsx
-import type { RoutePropsFor } from "@rezejs/router";
+import type { RoutePropsFor } from "reze-js";
 import { loader } from "reze-js/server";
 
 export const load = loader(async ({ params, context, request }) => {
@@ -80,7 +80,7 @@ The compiler generates route declarations that bind each pattern to its module's
 
 ```ts
 // generated: routes.gen.d.ts
-declare module "@rezejs/router" {
+declare module "reze-js" {
   interface Register {
     routes: {
       "/blog/:id": {
@@ -660,7 +660,7 @@ HTML, both as positional JSON. No binary encoding exists: inline it would need b
 A route whose loader lives in Rust declares only the data type in its module:
 
 ```tsx file=src/routes/blog/[id].tsx
-import type { RoutePropsFor } from "@rezejs/router";
+import type { RoutePropsFor } from "reze-js";
 import { loader } from "reze-js/server";
 import type { Post } from "virtual:reze-types/app_types";
 
