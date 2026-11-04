@@ -1,5 +1,5 @@
-//! The Rust server of reze-js: renders the routes `reze_build` generates, with the data of Rust
-//! loaders. The core is sans-io: [`App::handle`] takes a parsed request and a context and returns a
+//! The Rust server of reze-js: renders the routes that the Vite plugin generates in
+//! `.reze/main.rs`, with the data of the route `.rs` loaders. The core is sans-io: [`App::handle`] takes a parsed request and a context and returns a
 //! response whose body streams, on any executor and behind any HTTP framework.
 
 #[cfg(feature = "actix")]
@@ -7,6 +7,8 @@ pub mod actix;
 mod app;
 mod body;
 mod html;
+#[cfg(feature = "ntex")]
+pub mod ntex;
 mod render;
 #[cfg(feature = "tower")]
 pub mod tower;
@@ -269,5 +271,10 @@ impl Manifest {
 
     pub fn load(path: impl AsRef<Path>) -> std::io::Result<Self> {
         Ok(Self::parse(&std::fs::read_to_string(path)?)?)
+    }
+
+    /// The manifest that the build embeds, which is `null` in dev.
+    pub fn embedded(json: &str) -> Option<Self> {
+        serde_json::from_str::<Option<Self>>(json).ok().flatten()
     }
 }
