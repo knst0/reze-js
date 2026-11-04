@@ -721,7 +721,10 @@ also sees a prelude: `Context`, `Result`, `RouteError`, `Parts`, `Data`, and `De
 inner attributes; shared code lives in `src/server.rs` and its modules. Private helpers stay
 private: only `pub async fn` is an endpoint.
 
-A route module whose route has an `.rs` file exports no `load` and no `guard` of its own.
+A route module whose route has an `.rs` file exports no `load` and no `guard` of its own. A
+project with a `Cargo.toml` has one server, in Rust, which runs no JS: a JS `loader`, `guardRoute`,
+or `mutation` anywhere in it is `SERVER_JS_IN_RUST`, which names the `pub async fn` and the `.rs`
+file it belongs in. Client code and routes without server code stay JS.
 
 ### Type the view from the signature
 
@@ -1054,6 +1057,8 @@ change.
 | `LOADER_PARAMS_TYPE`        | A params annotation names a key missing from the pattern            |
 | `DATA_TYPE_UNSUPPORTED`     | Loader data contains a type with no wire encoding                   |
 | `SERVER_HOLE_UNSUPPORTED`   | A server-path hole has no Rust lowering                             |
+| `RUST_ROUTE_INVALID`        | A route's `.rs` file does not fit the contract                      |
+| `SERVER_JS_IN_RUST`         | A project with a `Cargo.toml` has a JS loader, guard, or mutation   |
 
 ## Implementation status
 
