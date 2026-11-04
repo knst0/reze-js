@@ -20,7 +20,7 @@ export { expect } from "@playwright/test";
  * `js` runs the Vite dev server; `js-build` serves a production build; `rust` serves it from the Rust server; `spa` serves
  * the static build of `target: "spa"`.
  */
-export type ServerKind = "js" | "js-build" | "rust" | "rust-actix" | "spa";
+export type ServerKind = "js" | "js-build" | "rust" | "spa";
 
 export interface Server {
   url(path: string): string;
@@ -114,8 +114,8 @@ function respond(handler: Handler, message: IncomingMessage, out: ServerResponse
 
 const types: Record<string, string> = { ".js": "text/javascript", ".css": "text/css" };
 
-/** Builds `app` into a temporary directory, with the Rust types of `rust`. */
-async function build(app: string, rust?: string[]): Promise<{ out: string; client: string; handler: (options?: object) => Handler }> {
+/** Builds `app` into a temporary directory, with the cargo `features` of its Rust server. */
+async function build(app: string, features?: string[]): Promise<{ out: string; client: string; handler: (options?: object) => Handler }> {
   const out = await mkdtemp(join(tmpdir(), "rz-build-"));
   await writeFile(join(out, "package.json"), '{ "type": "module" }');
   const client = join(out, "client");
@@ -123,7 +123,7 @@ async function build(app: string, rust?: string[]): Promise<{ out: string; clien
     root: app,
     configFile: false,
     logLevel: "warn",
-    plugins: [reze({ ...optionsOf(app), ...(rust ? { rust: { types: rust } } : {}) })],
+    plugins: [reze({ ...optionsOf(app), ...(features ? { rust: { features } } : {}) })],
     resolve: { alias: sourceAliases },
     environments: {
       client: { build: { outDir: client, emptyOutDir: true } },
@@ -196,44 +196,29 @@ async function startSpa(app: string): Promise<Running> {
 
 const repo = resolve(import.meta.dirname, "../..");
 
-function run(command: string, args: string[], env: Record<string, string> = {}): Promise<void> {
-  return new Promise((done, fail) => {
-    const child = spawn(command, args, { cwd: repo, env: { ...process.env, ...env }, stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
-    child.on("error", fail);
-    child.on("exit", (code) => (code === 0 ? done() : fail(new Error(`${command} ${args.join(" ")} failed:\n${stderr}`))));
-  });
-}
-
-/** Builds the app's `server` crate, whose `types` crate holds the loader data types, and serves the build with it. */
-async function startRust(app: string, adapter: "tower" | "actix"): Promise<Running> {
-  const name = `${app.split("/").at(-1)}_server`;
-  const target = join(repo, "target/e2e");
-  const ir = join(await mkdtemp(join(tmpdir(), "rz-ir-")), "types.json");
-  await run("cargo", ["run", "-q", "-p", "reze_build", "--bin", "reze-ir", "--", join(app, "types"), ir]);
-  const { out, client, handler } = await build(app, [ir]);
-  await run("cargo", ["build", "-q", "--manifest-path", join(app, "Cargo.toml"), "-p", name], { CARGO_TARGET_DIR: target });
-  const child = spawn(join(target, "debug", name), [join(out, "server/reze.json"), adapter], { stdio: ["ignore", "pipe", "inherit"] });
+/** Builds the app with its Rust server, whose `dev` feature also runs the loaders of the JS server for the render diff, and serves the build with it. */
+async function startRust(app: string): Promise<Running> {
+  const { out, client, handler } = await build(app, ["reze_server/dev"]);
+  const binary = join(out, "server", app.split("/").at(-1)!);
+  const child = spawn(binary, [], { env: { ...process.env, HOST: "127.0.0.1", PORT: "0" }, stdio: ["ignore", "pipe", "inherit"] });
   const rust = await new Promise<string>((done, fail) => {
-    child.stdout.once("data", (chunk: Buffer) => done(chunk.toString().trim()));
-    child.on("exit", (code) => fail(new Error(`${name} exited with ${code}`)));
+    child.stdout.on("data", (chunk: Buffer) => {
+      const ready = /reze: listening on (\S+)/.exec(chunk.toString());
+      if (ready) done(ready[1]!);
+    });
+    child.on("exit", (code) => fail(new Error(`${binary} exited with ${code}`)));
   });
-  const proxy: Handler = async (request) => {
-    const url = new URL(request.url);
-    const headers = new Headers(request.headers);
-    for (const name of ["host", "connection", "keep-alive", "content-length", "transfer-encoding"]) headers.delete(name);
-    const body = request.method === "POST" ? await request.arrayBuffer() : undefined;
-    return fetch(new URL(url.pathname + url.search, rust), { method: request.method, headers, body, redirect: "manual" });
-  };
   const js = await serveBuild(client, handler({ loaders: rust }), async () => {});
-  const running = await serveBuild(client, proxy, async () => {
-    child.kill();
-    await js.close();
-    await rm(out, { recursive: true, force: true });
-    await rm(dirname(ir), { recursive: true, force: true });
-  });
-  return { ...running, js: js.origin, rust: { origin: rust, build: out } };
+  return {
+    origin: rust,
+    js: js.origin,
+    rust: { origin: rust, build: out },
+    async close() {
+      child.kill();
+      await js.close();
+      await rm(out, { recursive: true, force: true });
+    },
+  };
 }
 
 function check(rust: string, build: string, paths: string[]): Promise<{ code: number; output: string }> {
@@ -251,7 +236,7 @@ function check(rust: string, build: string, paths: string[]): Promise<{ code: nu
 }
 
 function start(kind: ServerKind, app: string): Promise<Running> {
-  if (kind === "rust" || kind === "rust-actix") return startRust(app, kind === "rust" ? "tower" : "actix");
+  if (kind === "rust") return startRust(app);
   if (kind === "spa") return startSpa(app);
   return kind === "js-build" ? startJsBuild(app) : startJs(app);
 }

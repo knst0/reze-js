@@ -1,27 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::SystemTime;
 
-use reze::{Data, Defer};
+use reze::Data;
 
 #[derive(Clone, Copy, Data)]
 pub enum Status {
     Draft,
     Published,
-}
-
-#[derive(Clone, Data)]
-pub struct Summary {
-    pub id: u32,
-    pub title: String,
-    pub status: Status,
-}
-
-#[derive(Data)]
-pub struct Home {
-    pub title: String,
-    pub posts: Vec<Summary>,
-    pub views: Defer<u32>,
-    pub topics: Defer<Vec<String>>,
 }
 
 #[derive(Clone, Data)]
@@ -53,17 +38,4 @@ pub struct Post {
 pub struct Comment {
     pub author: String,
     pub body: String,
-}
-
-#[derive(Data)]
-pub struct NewComment {
-    pub post: u32,
-    pub author: String,
-    pub body: String,
-    pub stars: Option<u8>,
-}
-
-#[derive(Data)]
-pub struct Added {
-    pub count: u32,
 }

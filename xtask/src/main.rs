@@ -27,13 +27,10 @@ fn ci() -> Result<(), String> {
     run("pnpm", &["build"])?;
     run("pnpm", &["fmt", "--check"])?;
     run("cargo", &["fmt", "--all", "--check"])?;
-    run("cargo", &["fmt", "--all", "--check", "--manifest-path", BLOG])?;
-    run("pnpm", &["lint"])?;
     run(
         "cargo",
         &["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"],
     )?;
-    run("cargo", &["clippy", "--manifest-path", BLOG, "--", "-D", "warnings"])?;
     run("cargo", &["test", "--workspace"])?;
     check_skill()?;
     run("pnpm", &["--filter", "./examples/*", "build"])?;
@@ -42,6 +39,9 @@ fn ci() -> Result<(), String> {
     }
     run("pnpm", &["exec", "vp", "test", "run"])?;
     run("pnpm", &["exec", "playwright", "test"])?;
+    run("pnpm", &["lint"])?;
+    run("cargo", &["fmt", "--all", "--check", "--manifest-path", BLOG])?;
+    run("cargo", &["clippy", "--manifest-path", BLOG, "--", "-D", "warnings"])?;
     run("node", &["scripts/bench/size.mts", "--check"])
 }
 

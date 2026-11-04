@@ -1,12 +1,7 @@
 import { Errored, For, Show, signal } from "reze-js";
-import { guardRoute, loader, mutation, useSubmission } from "reze-js/server";
-import type { Added, Cover, NewComment, Post } from "virtual:reze-types/blog_types";
+import { useSubmission } from "reze-js/server";
 
-export const guard = guardRoute.external();
-
-export const load = loader.external<Post>();
-
-export const addComment = mutation.external<NewComment, Added>({ revalidate: ["/posts/:id"] });
+import { addComment, type Cover, type Post } from "./[id].rs";
 
 function Rating(props: { value: number; views: bigint }) {
   return (

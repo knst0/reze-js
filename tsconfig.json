@@ -13,6 +13,8 @@
       "reze-js/server": ["./packages/reze-js/src/server.ts"],
       "reze-js/types": ["./packages/reze-js/src/types.ts"]
     },
+    "rootDirs": ["tests/apps/blog", "tests/apps/blog/.reze/types"],
+    "allowArbitraryExtensions": true,
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,

@@ -1,8 +1,6 @@
 import { buildPaths, For, Loading, signal } from "reze-js";
-import { loader } from "reze-js/server";
-import type { Home, Summary } from "virtual:reze-types/blog_types";
 
-export const load = loader.external<Home>();
+import type { Home, Summary } from "./index.rs";
 
 function Drafts(props: { posts: Summary[] }) {
   let drafts = signal(0);
