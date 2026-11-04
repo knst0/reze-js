@@ -1,9 +1,7 @@
-import { guardRoute, loader, mutation } from "reze-js/server";
-import type { Page } from "virtual:reze-types/app_types";
+import { guardRoute, mutation } from "reze-js/server";
+import type { Page } from "./index.rs";
 
 export const guard = guardRoute(() => {});
-
-export const load = loader.external<Page>();
 
 export const like = mutation(async (input: { id: string }) => input.id);
 

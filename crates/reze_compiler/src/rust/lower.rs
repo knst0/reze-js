@@ -585,10 +585,10 @@ impl<'e, 'a> Emitter<'e, 'a> {
             Some(TypeDef::Union { variants, .. }) => {
                 return self.variant_field(object, path, variants, name);
             }
-            _ => return Err(format!("`{path}` is not a struct of the Rust type IR")),
+            _ => return Err(format!("`{}` is not a `#[derive(reze::Data)]` struct", short(path))),
         };
         let Some(field) = fields.iter().find(|f| f.name == name) else {
-            return Err(format!("`{path}` has no field `{name}`"));
+            return Err(format!("`{}` has no field `{name}`", short(path)));
         };
         let krate = path.split("::").next().unwrap_or_default();
         let ty = self.ty_of(&field.ty, krate);
@@ -671,17 +671,23 @@ impl<'e, 'a> Emitter<'e, 'a> {
             }
             let field_ty = self.ty_of(&field.ty, krate);
             if ty.as_ref().is_some_and(|ty| *ty != field_ty) {
-                return Err(format!("`{name}` has another type in each variant of `{path}`"));
+                return Err(format!(
+                    "`{name}` has another type in each variant of `{}`",
+                    short(path)
+                ));
             }
             let field = super::rust_ident(name);
             let value = view("(*x)", &field_ty)?;
             arms.push_str(&format!(
-                "::{path}::{} {{ {field}: x, .. }} => Some({value}), ",
+                "{}::{} {{ {field}: x, .. }} => Some({value}), ",
+                self.rust_path(path),
                 variant.name
             ));
             ty = Some(field_ty);
         }
-        let Some(ty) = ty else { return Err(format!("No variant of `{path}` has `{name}`")) };
+        let Some(ty) = ty else {
+            return Err(format!("No variant of `{}` has `{name}`", short(path)));
+        };
         if matches!(ty, Ty::Opt(_)) {
             return Err("Nested optional values have no Rust lowering".into());
         }
@@ -933,4 +939,8 @@ pub(super) fn set<'e, 'a>(
         Some(field) => field.1 = value,
         None => fields.push((key, value)),
     }
+}
+
+fn short(path: &str) -> &str {
+    path.rsplit("::").next().unwrap_or(path)
 }

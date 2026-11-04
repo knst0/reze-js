@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Program, Statement};
+use oxc_ast::ast::{BindingPattern, Declaration, Program, Statement};
 use oxc_parser::Parser;
 use oxc_semantic::{Semantic, SemanticBuilder};
 use oxc_span::{SourceType, Span};
@@ -90,18 +90,47 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
     let parent = routes_dir.rsplit_once('/').map_or("", |(parent, _)| parent);
     let files = fs.list(parent);
     let (table, route_errors) = routes::scan(routes_dir, &files);
+    let mut project = options.rust.then(|| {
+        let names = rust::node_names(&table, routes_dir);
+        let nodes: Vec<(usize, String, String)> = table
+            .nodes
+            .iter()
+            .zip(names)
+            .enumerate()
+            .map(|(index, (node, name))| (index, node.file.clone(), name))
+            .collect();
+        let server =
+            if parent.is_empty() { "server.rs".into() } else { format!("{parent}/server.rs") };
+        rust::source::extract(fs, &nodes, &files, routes_dir, &server)
+    });
 
     let mut paths: Vec<String> = Vec::new();
     let mut sources: Vec<String> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
     let mut reports: BTreeMap<usize, Vec<Report>> = BTreeMap::new();
     let mut queue = VecDeque::new();
+    let mut suffixes: HashMap<usize, (usize, bool, bool)> = HashMap::new();
     for node in &table.nodes {
-        if let Some(source) = fs.read(&node.file) {
+        if let Some(mut source) = fs.read(&node.file) {
+            if let Some(route) = project
+                .as_ref()
+                .and_then(|p| p.route_of_file(&rust::source::rust_sibling(&node.file)))
+            {
+                suffixes.insert(paths.len(), (source.len(), route.load.is_some(), route.has_guard));
+                source.push_str(&rust::typescript::route_suffix(route));
+            }
             index.insert(node.file.clone(), paths.len());
             queue.push_back(paths.len());
             paths.push(node.file.clone());
             sources.push(source);
+        }
+    }
+    if let Some(project) = &project {
+        for route in project.routes.values() {
+            index.insert(route.file.clone(), paths.len());
+            queue.push_back(paths.len());
+            paths.push(route.file.clone());
+            sources.push(rust::typescript::module(project, route));
         }
     }
     for error in route_errors {
@@ -118,18 +147,48 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
     while let Some(module) = queue.pop_front() {
         let source = std::mem::take(&mut sources[module]);
         let parsed = Parser::new(&scratch, &source, source_type(&paths[module])).parse();
-        if let Some(error) = parsed.diagnostics.first() {
+        let suffix = suffixes.get(&module).map(|&(suffix, _, _)| suffix);
+        if let Some(&(suffix, has_load, has_guard)) = suffixes.get(&module) {
+            for (name, span) in exported_names(&parsed.program) {
+                let is_taken = (name == "load" && has_load) || (name == "guard" && has_guard);
+                if is_taken && (span.start as usize) < suffix {
+                    reports.entry(module).or_default().push(
+                        Report::new(Code::RustRouteInvalid, span).arg(
+                            "reason",
+                            format!("The `.rs` file beside this route module runs its `{name}`: remove this `{name}`"),
+                        ),
+                    );
+                }
+            }
+        }
+        let user_error = parsed.diagnostics.iter().find(|error| {
+            let offset = error.labels.first().map_or(0, |label| label.offset());
+            suffix.is_none_or(|suffix| (offset as usize) < suffix)
+        });
+        if let Some(error) = user_error.or(parsed.diagnostics.first()) {
             parse_failed = true;
             let span = error.labels.first().map_or(Span::empty(0), |label| {
                 Span::new(label.offset(), label.offset() + label.len())
             });
-            reports
-                .entry(module)
-                .or_default()
-                .push(Report::new(Code::ParseError, span).arg("detail", error.message.to_string()));
+            if suffix.is_none_or(|suffix| (span.start as usize) < suffix) {
+                reports.entry(module).or_default().push(
+                    Report::new(Code::ParseError, span).arg("detail", error.message.to_string()),
+                );
+            }
         }
         let mut resolved = HashMap::new();
         for (specifier, span) in specifiers(&parsed.program) {
+            if is_relative(specifier) && specifier.ends_with(".rs") {
+                match index.get(&fs::join(&paths[module], specifier)) {
+                    Some(&target) if project.is_some() => {
+                        resolved.insert(specifier.to_string(), target);
+                    }
+                    _ => reports.entry(module).or_default().push(
+                        Report::new(Code::ImportUnresolved, span).arg("specifier", specifier),
+                    ),
+                }
+                continue;
+            }
             let found = if is_relative(specifier) {
                 resolve(fs, &paths[module], specifier)
             } else {
@@ -162,10 +221,46 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
     }
     edges.resize_with(paths.len(), HashMap::new);
 
-    let types = emit::types(&table, parent);
+    let rust_data: Vec<String> = match &project {
+        Some(project) => table
+            .nodes
+            .iter()
+            .filter(|node| {
+                project
+                    .route_of_file(&rust::source::rust_sibling(&node.file))
+                    .is_some_and(|route| route.load.is_some())
+            })
+            .map(|node| node.file.clone())
+            .collect(),
+        None => Vec::new(),
+    };
+    let types = emit::types(&table, parent, &rust_data);
     let mut output = ProjectOutput { routes: table, types, ..ProjectOutput::default() };
-    if parse_failed || reports.values().flatten().any(|r| r.code.severity().is_error()) {
+    let rust_failed = project.as_ref().is_some_and(rust::source::Project::has_errors);
+    let mut rust_diagnostics = Vec::new();
+    if let Some(project) = &mut project {
+        for file in &mut project.files {
+            let reports = std::mem::take(&mut file.reports);
+            rust_diagnostics.extend(diagnostic::resolve(reports, &file.source, &file.path));
+        }
+        if !rust_failed {
+            let types = project
+                .routes
+                .values()
+                .map(|route| {
+                    let stem = route.file.strip_suffix(".rs").unwrap_or(&route.file);
+                    (format!("{stem}.d.rs.ts"), rust::typescript::declarations(project, route))
+                })
+                .collect();
+            output.rust = Some(crate::RustOutput { main: None, types });
+        }
+    }
+    if parse_failed
+        || rust_failed
+        || reports.values().flatten().any(|r| r.code.severity().is_error())
+    {
         output.diagnostics = resolve_reports(reports, &paths, &sources);
+        output.diagnostics.append(&mut rust_diagnostics);
         return output;
     }
 
@@ -183,7 +278,8 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
         })
         .collect();
 
-    let mut analysis = analyze::run(&modules, &output.routes, options);
+    let crates: Vec<crate::CrateIr> = project.iter().map(|project| project.ir.clone()).collect();
+    let mut analysis = analyze::run(&modules, &output.routes, options, &crates);
     for (module, mut module_reports) in
         std::mem::take(&mut analysis.reports).into_iter().enumerate()
     {
@@ -201,15 +297,17 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
         plan = Some(client);
     }
     let failed = reports.values().flatten().any(|r| r.code.severity().is_error());
-    if let (Some(plan), Some(crates), false) = (&plan, &options.rust, failed) {
+    if let (Some(plan), Some(project), Some(rust_output), false) =
+        (&plan, &project, &mut output.rust, failed)
+    {
         let (code, rust_reports) =
-            rust::emit(&modules, &analysis, &output.routes, plan, crates, routes_dir);
+            rust::emit(&modules, &analysis, &output.routes, plan, project, options.dev);
         for (module, mut module_reports) in rust_reports.into_iter().enumerate() {
             if !module_reports.is_empty() {
                 reports.entry(module).or_default().append(&mut module_reports);
             }
         }
-        output.rust = Some(code);
+        rust_output.main = Some(code);
     }
     output.diagnostics = resolve_reports(reports, &paths, &sources);
     let Some(mut plan) = plan.filter(|_| !failed) else {
@@ -224,6 +322,36 @@ pub fn compile(fs: &dyn FileSystem, options: &Options) -> ProjectOutput {
     output.navigation = emit::navigation(&modules, &analysis, &output.routes);
     output.chunks = std::mem::take(&mut plan.chunks);
     output
+}
+
+fn exported_names<'a>(program: &Program<'a>) -> Vec<(&'a str, Span)> {
+    let mut out = Vec::new();
+    for statement in &program.body {
+        match statement {
+            Statement::ExportDeclaration(export) => match &export.declaration {
+                Declaration::VariableDeclaration(declaration) => {
+                    for declarator in &declaration.declarations {
+                        if let BindingPattern::BindingIdentifier(id) = &declarator.id {
+                            out.push((id.name.as_str(), id.span));
+                        }
+                    }
+                }
+                Declaration::FunctionDeclaration(function) => {
+                    if let Some(id) = &function.id {
+                        out.push((id.name.as_str(), id.span));
+                    }
+                }
+                _ => {}
+            },
+            Statement::ExportNamedDeclaration(export) => {
+                for specifier in &export.specifiers {
+                    out.push((specifier.exported.name().as_str(), specifier.span));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 fn resolve_reports(

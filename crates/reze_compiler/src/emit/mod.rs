@@ -138,7 +138,7 @@ pub fn app(
 }
 
 /// Source of `routes.gen.d.ts` in `dir`: the props of every page and layout by pattern.
-pub fn types(routes: &RouteTable, dir: &str) -> String {
+pub fn types(routes: &RouteTable, dir: &str, rust_data: &[String]) -> String {
     let mut pages = String::new();
     let mut layouts = String::new();
     let mut seen = Vec::new();
@@ -186,10 +186,12 @@ pub fn types(routes: &RouteTable, dir: &str) -> String {
         } else {
             format!("{{ {} }}", params.join("; "))
         };
-        let entry = format!(
-            "      {:?}: {{ params: {params}; data: RouteData<typeof import({specifier:?})> }};\n",
-            node.pattern
-        );
+        let data = if rust_data.contains(&node.file) {
+            format!("import({:?}).Data", format!("{specifier}.rs"))
+        } else {
+            format!("RouteData<typeof import({specifier:?})>")
+        };
+        let entry = format!("      {:?}: {{ params: {params}; data: {data} }};\n", node.pattern);
         if !node.is_layout {
             pages.push_str(&entry);
         } else if !seen.contains(&node.pattern) {

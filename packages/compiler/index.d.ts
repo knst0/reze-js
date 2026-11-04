@@ -20,11 +20,8 @@ export interface CompileOptions {
   target?: Target
   /** Default: `"route"`. */
   chunks?: Chunks
-  /**
-   * The type IR of each Rust crate, as `reze-ir` writes it; when set, the result has the Rust
-   * render.
-   */
-  rust?: Array<{ crate: string; types: unknown[] }>
+  /** Read the route `.rs` files and `server.rs` and emit the Rust server. Default: `false`. */
+  rust?: boolean
 }
 
 export declare function compileProject(input: ProjectInput, options?: CompileOptions | undefined | null): ProjectResult
@@ -105,8 +102,15 @@ export interface ProjectResult {
   /** Source of `virtual:rz-route/{key}`, by the chunk key that the route table names. */
   chunks: Record<string, string>
   diagnostics: Array<Diagnostic>
-  /** Source of `reze_routes.rs`, when the options name Rust crates. */
-  rust?: string
+  /** The Rust server, when `rust` is set and the `.rs` files have no errors. */
+  rust?: RustOutput
+}
+
+export interface RustOutput {
+  /** Source of `.reze/main.rs`; absent when the TSX has errors. */
+  main?: string
+  /** Source of each `.d.rs.ts` declaration, by its path beside the route `.rs` file. */
+  types: Record<string, string>
 }
 
 export type Target = 'server' | 'spa'

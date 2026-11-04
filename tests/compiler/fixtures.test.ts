@@ -12,6 +12,7 @@ const out = join(root, ".out");
 
 function project(name: string): string {
   if (name === "input.tsx") return "src/routes/index.tsx";
+  if (name === "input.rs") return "src/routes/index.rs";
   return name.startsWith("packages/") ? `node_modules/${name.slice("packages/".length)}` : `src/${name}`;
 }
 
@@ -20,7 +21,7 @@ function sources(dir: string, base = dir): Record<string, string> {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) Object.assign(files, sources(path, base));
-    else if (/\.tsx?$|^package\.json$/.test(entry.name)) files[project(relative(base, path))] = readFileSync(path, "utf8");
+    else if (/\.tsx?$|\.rs$|^package\.json$/.test(entry.name)) files[project(relative(base, path))] = readFileSync(path, "utf8");
   }
   return files;
 }
@@ -49,13 +50,13 @@ const fixtures = readdirSync(root, { withFileTypes: true }).filter(
 for (const fixture of fixtures) {
   test(fixture.name, async () => {
     const dir = join(root, fixture.name);
-    const rust = existsSync(join(dir, "rust.json")) ? JSON.parse(readFileSync(join(dir, "rust.json"), "utf8")) : undefined;
+    const rust = existsSync(join(dir, "input.rs"));
     const spa = existsSync(join(dir, "spa"));
     const chunks = existsSync(join(dir, "chunks")) ? (readFileSync(join(dir, "chunks"), "utf8").trim() as Chunks) : undefined;
     const result = compileProject({ files: sources(dir) }, { rust, target: spa ? "spa" : undefined, chunks });
     const diagnostics = result.diagnostics.map(format).join("\n\n");
     await snapshot(dir, "diagnostics.snap", diagnostics ? `${diagnostics}\n` : undefined);
-    await snapshot(dir, "rust.snap", result.rust ?? undefined);
+    await snapshot(dir, "rust.snap", result.rust?.main ?? undefined);
     if (existsSync(join(dir, "types.snap"))) await snapshot(dir, "types.snap", result.types);
     if (rust || result.diagnostics.some((d) => d.severity === "error")) {
       await snapshot(dir, "html.snap", undefined);

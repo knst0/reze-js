@@ -49,9 +49,7 @@ pub struct Options {
     pub dev: bool,
     pub target: Target,
     pub chunks: Chunks,
-    /// The type IR of the Rust crates that `loader.external<T>()` types come from; when set, the
-    /// output has the Rust render.
-    pub rust: Option<Vec<CrateIr>>,
+    pub rust: bool,
 }
 
 impl Default for Options {
@@ -61,7 +59,7 @@ impl Default for Options {
             dev: false,
             target: Target::Server,
             chunks: Chunks::Route,
-            rust: None,
+            rust: false,
         }
     }
 }
@@ -87,9 +85,14 @@ pub struct ProjectOutput {
     /// Source of `virtual:rz-route/{key}`: the client chunks, by the key that the route table names.
     pub chunks: BTreeMap<String, String>,
     pub diagnostics: Vec<Diagnostic>,
-    /// Source of `reze_routes.rs`, when the options name Rust crates.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub rust: Option<String>,
+    pub rust: Option<RustOutput>,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct RustOutput {
+    pub main: Option<String>,
+    pub types: BTreeMap<String, String>,
 }
 
 impl ProjectOutput {

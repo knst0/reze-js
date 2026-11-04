@@ -34,10 +34,8 @@ pub struct CompileOptions {
     pub target: Option<Target>,
     /// Default: `"route"`.
     pub chunks: Option<Chunks>,
-    /// The type IR of each Rust crate, as `reze-ir` writes it; when set, the result has the Rust
-    /// render.
-    #[napi(ts_type = "Array<{ crate: string; types: unknown[] }>")]
-    pub rust: Option<serde_json::Value>,
+    /// Read the route `.rs` files and `server.rs` and emit the Rust server. Default: `false`.
+    pub rust: Option<bool>,
 }
 
 #[napi(object)]
@@ -137,6 +135,14 @@ pub struct ModuleOutput {
 }
 
 #[napi(object)]
+pub struct RustOutput {
+    /// Source of `.reze/main.rs`; absent when the TSX has errors.
+    pub main: Option<String>,
+    /// Source of each `.d.rs.ts` declaration, by its path beside the route `.rs` file.
+    pub types: BTreeMap<String, String>,
+}
+
+#[napi(object)]
 pub struct ProjectResult {
     /// Compiled modules by project-relative source path; empty when `diagnostics` holds an error.
     pub modules: HashMap<String, ModuleOutput>,
@@ -151,8 +157,8 @@ pub struct ProjectResult {
     /// Source of `virtual:rz-route/{key}`, by the chunk key that the route table names.
     pub chunks: BTreeMap<String, String>,
     pub diagnostics: Vec<Diagnostic>,
-    /// Source of `reze_routes.rs`, when the options name Rust crates.
-    pub rust: Option<String>,
+    /// The Rust server, when `rust` is set and the `.rs` files have no errors.
+    pub rust: Option<RustOutput>,
 }
 
 fn options(options: Option<CompileOptions>) -> napi::Result<reze_compiler::Options> {
@@ -171,12 +177,7 @@ fn options(options: Option<CompileOptions>) -> napi::Result<reze_compiler::Optio
         Some(Chunks::Handler) => reze_compiler::Chunks::Handler,
         Some(Chunks::Route) | None => reze_compiler::Chunks::Route,
     };
-    if let Some(rust) = options.rust {
-        out.rust = Some(
-            serde_json::from_value(rust)
-                .map_err(|error| napi::Error::from_reason(error.to_string()))?,
-        );
-    }
+    out.rust = options.rust.unwrap_or(out.rust);
     Ok(out)
 }
 
@@ -208,7 +209,7 @@ fn result(output: reze_compiler::ProjectOutput) -> napi::Result<ProjectResult> {
         navigation: output.navigation,
         chunks: output.chunks.into_iter().collect(),
         diagnostics: output.diagnostics.into_iter().map(diagnostic).collect(),
-        rust: output.rust,
+        rust: output.rust.map(|rust| RustOutput { main: rust.main, types: rust.types }),
     })
 }
 

@@ -302,6 +302,16 @@ catalog! {
             good: "export default function Page(props: { at: string }) {\n  return <time>{props.at}</time>;\n}\n",
         },
     }
+    RustRouteInvalid {
+        name: "RUST_ROUTE_INVALID",
+        severity: Error,
+        title: "The Rust file of a route does not fit the contract",
+        message: "{reason}.",
+        explanation: "A `.rs` file beside a route module holds its server code: `pub async fn load(params: Params, cx: &Context) -> Result<T>`, `pub async fn guard(params: Params, request: &Parts, cx: &Context) -> Result<()>`, and mutations `pub async fn name(input: I, request: &Parts, cx: &Context) -> Result<T>`. Data types derive `reze::Data`, are `pub`, have names unique in the crate, and live in the route file or under `src/server.rs`. The file holds items only, since reze includes it into the generated crate. `data.reason` names the problem.",
+        repair: "Match the signature of the contract, or move the code into the module tree of `src/server.rs`.",
+        fix: None,
+        example: Prose("`pub async fn load(id: u32) -> Post` in `src/routes/posts/[id].rs`, which takes no `Params` and returns no `Result`."),
+    }
     HandlerCaptureUnserializable {
         name: "HANDLER_CAPTURE_UNSERIALIZABLE",
         severity: Error,

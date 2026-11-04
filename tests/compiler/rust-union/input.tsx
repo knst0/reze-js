@@ -1,8 +1,5 @@
 import { signal } from "reze-js";
-import { loader } from "reze-js/server";
-import type { Cover, Page } from "virtual:reze-types/app_types";
-
-export const load = loader.external<Page>();
+import type { Cover, Page } from "./index.rs";
 
 function Zoom(props: { cover: Cover; published: Date }) {
   let width = signal(0);

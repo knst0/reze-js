@@ -1,5 +1,5 @@
-//! The type IR of a Rust crate's `#[derive(reze::Data)]` types, which `reze-ir` writes and the
-//! Rust target and the TS types read.
+//! The type IR of the `#[derive(reze::Data)]` types that the route `.rs` signatures reach, which
+//! the Rust target and the TS types read.
 
 use serde::{Deserialize, Serialize};
 

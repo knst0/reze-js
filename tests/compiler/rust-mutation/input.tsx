@@ -1,8 +1,6 @@
 import { Show } from "reze-js";
-import { mutation, useSubmission } from "reze-js/server";
-import type { Note } from "virtual:reze-types/app_types";
-
-export const addNote = mutation.external<Note, void>({ revalidate: ["/"] });
+import { useSubmission } from "reze-js/server";
+import { addNote } from "./index.rs";
 
 export default function Home() {
   const submission = useSubmission(addNote);

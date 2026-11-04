@@ -1,8 +1,5 @@
 import { buildPaths, For, Show, signal, useLinkState, useLocation, useSearchParams } from "reze-js";
-import { loader } from "reze-js/server";
-import type { Shop } from "virtual:reze-types/app_types";
-
-export const load = loader.external<Shop>();
+import type { Shop } from "./index.rs";
 
 export const revalidate = 60;
 

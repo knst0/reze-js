@@ -1,1 +1,0 @@
-[{ "crate": "app_types", "types": [{ "kind": "struct", "name": "Page", "fields": [{ "name": "title", "type": { "kind": "string" } }] }] }]

@@ -568,6 +568,22 @@ export default function Page(props: { at: string }) {
 }
 ```
 
+## RUST_ROUTE_INVALID
+
+**The Rust file of a route does not fit the contract** · severity `error`
+
+> {reason}.
+
+`data` keys: `reason`
+
+Automatic fix: no
+
+A `.rs` file beside a route module holds its server code: `pub async fn load(params: Params, cx: &Context) -> Result<T>`, `pub async fn guard(params: Params, request: &Parts, cx: &Context) -> Result<()>`, and mutations `pub async fn name(input: I, request: &Parts, cx: &Context) -> Result<T>`. Data types derive `reze::Data`, are `pub`, have names unique in the crate, and live in the route file or under `src/server.rs`. The file holds items only, since reze includes it into the generated crate. `data.reason` names the problem.
+
+**Repair:** Match the signature of the contract, or move the code into the module tree of `src/server.rs`.
+
+Example: `pub async fn load(id: u32) -> Post` in `src/routes/posts/[id].rs`, which takes no `Params` and returns no `Result`.
+
 ## HANDLER_CAPTURE_UNSERIALIZABLE
 
 **A handler captures a value that cannot reach the browser** · severity `error`

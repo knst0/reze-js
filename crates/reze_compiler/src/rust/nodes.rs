@@ -874,8 +874,7 @@ impl<'e, 'a> Emitter<'e, 'a> {
     fn submission(&mut self, endpoint: &Endpoint) -> Binding<'e, 'a> {
         let (Some(id), Some(path)) = (&endpoint.id, &endpoint.input_type) else {
             return Binding::Invalid(
-                "`useSubmission` takes a mutation of the Rust server, `mutation.external<Input, Result>()`"
-                    .into(),
+                "`useSubmission` takes a mutation imported from a route `.rs` file".into(),
             );
         };
         let Some(TypeDef::Struct { fields, .. }) = self.types.get(path).copied() else {

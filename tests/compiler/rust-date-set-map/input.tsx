@@ -1,7 +1,4 @@
-import { loader } from "reze-js/server";
-import type { Page } from "virtual:reze-types/app_types";
-
-export const load = loader.external<Page>();
+import type { Page } from "./index.rs";
 
 export default function Home(props: { data: Page }) {
   return (

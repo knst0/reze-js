@@ -411,9 +411,14 @@ fn collect_declaration<'a>(
     }
 }
 
-pub fn run<'a>(modules: &[Module<'a>], routes: &RouteTable, options: &Options) -> Analysis<'a> {
+pub fn run<'a>(
+    modules: &[Module<'a>],
+    routes: &RouteTable,
+    options: &Options,
+    rust: &[crate::CrateIr],
+) -> Analysis<'a> {
     let facts = (0..modules.len()).map(|m| collect_facts(modules, m)).collect();
-    let mut cx = Context { modules, facts, rust: options.rust.as_deref().unwrap_or_default() };
+    let mut cx = Context { modules, facts, rust };
     let mut reports: Vec<Vec<Report>> = modules.iter().map(|_| Vec::new()).collect();
 
     for module in 0..modules.len() {

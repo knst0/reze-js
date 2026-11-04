@@ -1,20 +1,20 @@
-[SERVER_HOLE_UNSUPPORTED] A route of the Rust server guards with `guardRoute.external()`. Compute the value in the loader, or make the element interactive on the client.
+[SERVER_HOLE_UNSUPPORTED] A route of the Rust server guards in `pub async fn guard` of the `.rs` file beside it. Compute the value in the loader, or make the element interactive on the client.
   at src/routes/index.tsx:4:14
   3 | 
 > 4 | export const guard = guardRoute(() => {});
     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   5 |
 
-[SERVER_HOLE_UNSUPPORTED] A mutation of the Rust server is `mutation.external<Input, Result>()`. Compute the value in the loader, or make the element interactive on the client.
-  at src/routes/index.tsx:8:21
-  7 | 
-> 8 | export const like = mutation(async (input: { id: string }) => input.id);
+[SERVER_HOLE_UNSUPPORTED] A mutation of the Rust server is a `pub async fn` of a route's `.rs` file. Compute the value in the loader, or make the element interactive on the client.
+  at src/routes/index.tsx:6:21
+  5 | 
+> 6 | export const like = mutation(async (input: { id: string }) => input.id);
     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  9 |
+  7 |
 
-[SERVER_HOLE_UNSUPPORTED] `app_types::Page` has no field `missing`. Compute the value in the loader, or make the element interactive on the client.
-  at src/routes/index.tsx:14:11
-  13 |       <h1>{props.data.title}</h1>
-> 14 |       <p>{props.data.missing}</p>
+[SERVER_HOLE_UNSUPPORTED] `Page` has no field `missing`. Compute the value in the loader, or make the element interactive on the client.
+  at src/routes/index.tsx:12:11
+  11 |       <h1>{props.data.title}</h1>
+> 12 |       <p>{props.data.missing}</p>
      |           ^^^^^^^^^^^^^^^^^^
-  15 |     </main>
+  13 |     </main>
