@@ -23,7 +23,7 @@ component. Mutations are `mutation` functions. From these sources the compiler p
 
 ```
 route modules ──► reze compiler ─┬─► client chunks: handlers and the bindings they update
-                                 ├─► server render: Rust source (build.rs) or JS
+                                 ├─► server render: Rust source (.reze/main.rs) or JS
                                  ├─► server validators for `mutation` inputs
                                  └─► type IR and TS types for every loader and client state
 ```
@@ -140,7 +140,7 @@ export const load = loader(async ({ params }): Promise<Post> => db.post(params.i
 export const load = loader<Post>(async ({ params }) => db.post(params.id));
 ```
 
-The second form matches `loader.external<Post>()`. The compiler lowers the annotation with the
+The compiler lowers the annotation with the
 rules in [Annotated input](#annotated-input) and trusts it; `tsc` checks that the loader returns
 a `Post`.
 
@@ -403,9 +403,10 @@ declare module "reze-js/server" {
 }
 ```
 
-In Rust, `App<C>` is generic over the context, and the adapter builds `C` from the request parts.
+In Rust, `App<C>` is generic over the context, which `src/server.rs` builds once at start; per-request
+values come from the request's `Parts`. See [Build the context](#build-the-context).
 
-Reze has no middleware chain. Compose middleware in the host: tower layers in Rust, any
+Reze has no middleware chain. Compose middleware in the host: the framework of an own `main` in Rust, any
 fetch-handler framework in JS. Sessions and signed cookies belong to libraries.
 
 ### Set headers and cookies
@@ -655,45 +656,175 @@ The state block is inline in the HTML, and `fetch` responses carry their part of
 HTML, both as positional JSON. No binary encoding exists: inline it would need base64, which adds
 33%, and `fetch` responses are mostly HTML.
 
-### Rust loaders
+## Rust routes
 
-A route whose loader lives in Rust declares only the data type in its module:
+### Put the server code beside the view
 
-```tsx file=src/routes/blog/[id].tsx
+A route's server code MAY live in Rust, in a file beside the route module with the same name and
+the extension `.rs`. The Vite project is also the cargo package:
+
+```
+blog/
+  Cargo.toml
+  src/
+    server.rs            optional: the context, or the whole `main`
+    routes/
+      index.tsx
+      index.rs
+      posts/[id].tsx     the view
+      posts/[id].rs      the loader, the guard, and the mutations
+```
+
+```rust file=src/routes/posts/[id].rs
+#[derive(Data)]
+pub struct Post {
+    pub title: String,
+    pub comments: Vec<String>,
+}
+
+#[derive(Data)]
+pub struct NewComment {
+    pub body: String,
+}
+
+pub async fn guard(_params: Params, request: &Parts, _ctx: &Context) -> Result<()> {
+    match request.headers.contains_key("cookie") {
+        true => Ok(()),
+        false => Err(RouteError::redirect("/login")),
+    }
+}
+
+pub async fn load(params: Params, ctx: &Context) -> Result<Post> {
+    let id = params.id.parse().map_err(|_| RouteError::not_found())?;
+    ctx.db.post(id).await
+}
+
+#[reze::mutation(revalidate = ["/posts/:id"])]
+pub async fn add_comment(input: NewComment, _request: &Parts, ctx: &Context) -> Result<u32> {
+    ctx.db.add_comment(input.body).await
+}
+```
+
+The compiler reads the file's signatures with `syn` and never compiles it. The function names are
+the contract:
+
+| Item                                                            | Role                 |
+| --------------------------------------------------------------- | -------------------- |
+| `pub async fn load(Params, &Context) -> Result<T>`              | The route's loader   |
+| `pub async fn guard(Params, &Parts, &Context) -> Result<()>`    | The route's guard    |
+| Any other `pub async fn name(I, &Parts, &Context) -> Result<T>` | A mutation           |
+| `#[derive(Data)]` structs and enums                             | Data and input types |
+
+`Params` is generated for each route from its pattern: `/posts/:id` has `pub id: String`. The file
+also sees a prelude: `Context`, `Result`, `RouteError`, `Parts`, `Data`, and `Defer`. An explicit
+`use` shadows a prelude name. A route file holds items only, with no `mod` declarations and no
+inner attributes; shared code lives in `src/server.rs` and its modules. Private helpers stay
+private: only `pub async fn` is an endpoint.
+
+A route module whose route has an `.rs` file exports no `load` and no `guard` of its own.
+
+### Type the view from the signature
+
+The route module reads the loader's result as `props.data`, typed from `load`'s return type. A
+form binds a mutation imported from the `.rs` file, by its name in camel case:
+
+```tsx file=src/routes/posts/[id].tsx
 import type { RoutePropsFor } from "reze-js";
-import { loader } from "reze-js/server";
-import type { Post } from "virtual:reze-types/app_types";
 
-export const load = loader.external<Post>();
+import { addComment } from "./[id].rs";
 
-export default function PostPage(props: RoutePropsFor<"/blog/:id">) {
-  return <h2>{props.data.title}</h2>;
+export default function PostPage(props: RoutePropsFor<"/posts/:id">) {
+  return (
+    <article>
+      <h2>{props.data.title}</h2>
+      <form action={addComment}>
+        <textarea name="body" />
+        <button>Comment</button>
+      </form>
+    </article>
+  );
 }
 ```
 
-`virtual:reze-types/<crate>` exposes TS types generated from that crate's IR. The Rust side
-implements the loader:
+The compiler writes the TS types of each Rust route to `.reze/types/<path>.d.rs.ts`: its data
+types, `Data` for the loader's result, and its mutations. A route module MAY import its types:
+`import type { Post } from "./[id].rs"`. TypeScript finds them through two options:
 
-```rust
-// server/src/routes.rs
-use app_types::Post;
-use reze_server::{Ctx, Result};
-
-use crate::generated::routes::blog_id::Params;
-
-pub async fn blog_id(params: Params, ctx: &Ctx) -> Result<Post> {
-    ctx.db().post(params.id).await
+```json file=tsconfig.json
+{
+  "compilerOptions": {
+    "rootDirs": [".", ".reze/types"],
+    "allowArbitraryExtensions": true
+  }
 }
 ```
 
-```rust
-// server/src/main.rs
-let app = generated::routes::App::new().blog_id(routes::blog_id);
+A loader that returns another type than the template reads is a rustc error in the generated
+code, so the template, the TS types, and the Rust loader cannot disagree.
+
+### Build the context
+
+`src/server.rs` is optional. It defines the context that every loader, guard, and mutation
+receives, and `context`, which builds it once at start, sync or `async`:
+
+```rust file=src/server.rs
+pub struct Context {
+    pub db: Db,
+}
+
+pub async fn context() -> Context {
+    Context { db: Db::connect().await }
+}
 ```
 
-The generated `blog_id` setter takes `fn(Params, &Ctx) -> impl Future<Output = Result<Post>>`. A
-loader that returns another type is a rustc error, so the template, the TS types, and the Rust
-loader cannot disagree.
+Without `src/server.rs`, `Context` is `()`. A type of `src/server.rs` or its modules that a route
+reads MUST be reachable from the routes: `pub`, in `pub` modules.
+
+### Own the `main`
+
+When `src/server.rs` defines `pub fn main()`, it replaces the generated one. `crate::app()`
+returns the application, a `reze_server::App<Context>` with the client build, to mount in any
+framework through an adapter:
+
+```rust file=src/server.rs
+pub fn main() {
+    let app = std::sync::Arc::new(crate::app());
+    // axum: .fallback_service(reze_server::tower::service(app, context))
+}
+```
+
+### Build the server
+
+`Cargo.toml` names the generated `main`:
+
+```toml file=Cargo.toml
+[package]
+name = "blog"
+edition = "2024"
+
+[[bin]]
+name = "blog"
+path = ".reze/main.rs"
+
+[dependencies]
+reze = "0.4"
+reze_server = { version = "0.4", features = ["ntex"] }
+```
+
+`vite build` runs every step:
+
+1. The compiler reads the route modules and the Rust signatures, and writes the TS types and the
+   client bundles.
+2. It writes `.reze/main.rs`: each route file wrapped in a module with its `Params` and the
+   prelude, one render function per route level, the client build, `app()`, and `main`.
+3. It runs `cargo build --release` and copies the executable to `dist/server/<name>`.
+
+The executable serves the pages and `dist/client`, found beside it as `../client`, on `PORT`
+(3000 by default). `dist/` deploys without Node.js, the reze compiler, or cargo. `.reze/` is
+generated and belongs in `.gitignore`.
+
+The data types need no crate of their own: their IR comes from the source text, so no cycle
+exists between "IR comes from Rust types" and "Rust render code comes from templates".
 
 ## Render target: Rust codegen
 
@@ -703,31 +834,12 @@ The compiler emits the server render of each route as Rust source, compiled by `
 with the application server. A template that reads a field the Rust type does not have fails to
 compile. No template interpreter runs at request time.
 
-### Build pipeline
-
-Keep loader data types in their own crate, so their IR exists before the server crate builds:
-
-```
-app_types/        #[derive(reze::Data)] structs and enums
-server/
-  build.rs        reze_build::compile(…)
-  src/main.rs     include!(concat!(env!("OUT_DIR"), "/reze_routes.rs"))
-```
-
-1. `cargo xtask reze-ir app_types` writes the IR of `app_types` as JSON.
-2. The reze compiler reads the routes and the IR, then writes TS types and client bundles.
-3. `server/build.rs` calls `reze_build::compile`, which writes `reze_routes.rs`: params structs,
-   one render function per route level, and the `App` builder.
-
-The separate types crate breaks the cycle between "IR comes from Rust types" and "Rust render
-code comes from templates".
-
 ### Generated code
 
 For the `Post` component above, the compiler emits:
 
 ```rust
-pub fn render_blog_id(out: &mut Html, params: &Params, data: &app_types::Post) {
+pub fn render_posts_id(out: &mut Html, params: &Params, data: &crate::routes::posts_id::Post) {
     out.raw("<article><h2>");
     out.text(&data.title);
     out.raw("</h2><ul>");
@@ -818,17 +930,18 @@ let response = app.handle(request, &ctx).await; // http::Response<impl Stream<It
 
 Adapters sit behind cargo features, so an application pays only for the one it enables:
 
-| Feature | Frameworks                         |
-| ------- | ---------------------------------- |
-| `tower` | axum, hyper, poem, salvo           |
-| `actix` | actix-web, which has its own types |
+| Feature | Frameworks                            |
+| ------- | ------------------------------------- |
+| `ntex`  | ntex, which the generated `main` runs |
+| `tower` | axum, hyper, poem, salvo              |
+| `actix` | actix-web, which has its own types    |
+
+The generated `main` runs `reze_server::ntex::run(app(), context)`, which also serves the client
+build. A `main` of its own mounts the app in another framework:
 
 ```rust
-let app = generated::routes::App::new().blog_id(routes::blog_id);
-
 let router = axum::Router::new()
-    .fallback_service(reze_server::tower::service(app))
-    .with_state(state);
+    .fallback_service(reze_server::tower::service(crate::app(), context));
 ```
 
 ### JavaScript runtimes
@@ -918,9 +1031,10 @@ Rust render code needs a `cargo` build, which takes seconds. Development therefo
 
 - Vite renders every route in JS, also for routes whose production render is Rust. A template
   edit applies at once, without `cargo`.
-- Rust loaders and mutations run in a separate process built with the `dev` feature of
-  `reze_server`. It answers data as JSON, and Vite proxies loader and mutation requests to it.
-  `cargo watch` restarts it when Rust code changes.
+- Vite runs the Rust server as a worker: `cargo run --features reze_server/dev` on a free port,
+  which answers the loaders, guards, and mutations as JSON. Vite proxies their calls to it and
+  rebuilds and restarts it when an `.rs` file or `Cargo.toml` changes. Requests wait for the
+  restart, and a cargo error shows as the page's error.
 - A component edit rebuilds its chunk, and the page applies a fresh server render with the morph.
   Kept segments and module state survive.
 
@@ -1021,9 +1135,8 @@ The current implementation differs from this design in these points:
   part's markup and state entries. A read outside `<Loading>` answers `500`. The dev endpoint
   `/__reze/load` waits for every deferred field, so the JS dev server renders them in place, and
   `rz-prerender` makes the Rust server wait for them and render in place too.
-- A Rust mutation is `export const name = mutation.external<Input, Result>({ revalidate })`, set
-  with the generated setter of the export in snake case:
-  `async fn(Input, &http::request::Parts, &C) -> Result<Result>`. `#[derive(reze::Data)]` also
+- The `.rs` module of a route exports each Rust mutation to TS in camel case, and its id hashes
+  the `.rs` path and that export name. `#[derive(reze::Data)]` also
   derives `reze::Input`, which validates JSON and coerces form fields with the same issues as the
   JS validators. `App::body_limit` caps the body at 1 MB; a larger body answers `413` and a
   multipart body `415`, since Rust mutations take no files. A redirect from a mutation or from a
@@ -1035,9 +1148,7 @@ The current implementation differs from this design in these points:
   as for a failed guard, on both servers.
 - An integer type of the IR validates its range: `u8` input outside `0..=255` is an issue
   "Expected an integer from 0 to 255".
-- A Rust guard is `export const guard = guardRoute.external()`, set with the generated
-  `guard_<route>`: `async fn(Params, &http::request::Parts, &C) -> Result<()>`. It sees the
-  request's URI and headers but not its body. The JS dev server asks the Rust `dev` server through
+- A Rust guard sees the request's URI and headers but not its body. The JS dev server asks the Rust `dev` server through
   `/__reze/guard` with the page URL and the request headers, which answers `204` when it passes.
 - `reze_server::tower::service(app, context)` takes the context as an argument instead of
   extracting it from the framework's state. `reze_server::actix::service(Arc<App<C>>)` returns a
@@ -1045,8 +1156,8 @@ The current implementation differs from this design in these points:
   worker of `HttpServer` calls it with a clone of the `Arc`. Both stream a page with deferred
   parts.
 - The dev JSON of a Rust loader uses named fields. The Rust state block writes a typed value
-  with `reze::Data::wire`, positionally, and the compiler reads the types of
-  `virtual:reze-types/<crate>` from the IR. Params reach
+  with `reze::Data::wire`, positionally, and the compiler reads the types from the `syn` parse of
+  the route `.rs` files and `src/server.rs`. Params reach
   a Rust loader as strings, in the generated `Params` of the route.
 - A `SystemTime` field is a `Date`, a `BTreeSet` or `HashSet` a `Set`, a `BTreeMap` or
   `HashMap` with `String` keys a `Map<string, V>`, and a tuple of up to four items a TS tuple. An
@@ -1061,13 +1172,17 @@ The current implementation differs from this design in these points:
   narrowing. A date string of mutation input is read as UTC when it has no offset, and only in the ISO
   8601 formats of `toISOString`. The JS dev server checks the JSON of `/__reze/load` against the
   loader's type with the validators of mutation input, so its render reads the same `Date`, `Set`,
-  `Map`, and `bigint` values as with a JS loader. The `reze-ir` binary of `reze_build` writes the
-  IR in place of `cargo xtask reze-ir`, and the Vite plugin reads it through
-  `reze({ rust: { types } })`.
-- The generated code renders one function per route level into `Html` and a `Render` state, and
-  `reze_build::compile` runs the compiler itself in `build.rs`. The server reads the client URLs
-  from `dist/server/reze.json` at startup, through `App::manifest`.
-- Development has no Vite proxy: the JS handler fetches external loaders from the Rust `dev` server
-  at `/__reze/load`, through `createHandler({ loaders })`.
+  `Map`, and `bigint` values as with a JS loader.
+- The generated code renders one function per route level into `Html` and a `Render` state. The
+  Vite plugin writes `.reze/main.rs` on every compile and `.reze/manifest.json` with the client
+  URLs before `cargo build`, and `app()` embeds it with `Manifest::embedded`. The plugin builds
+  the executable whose `[[bin]]` the root `Cargo.toml` names, with the features of
+  `reze({ rust: { features } })`. A Rust build writes no prerendered pages.
+- Development has no Vite proxy: the JS handler fetches the Rust loaders, guards, and mutations
+  from the worker at `/__reze/load`, `/__reze/guard`, and `/__reze/mutate`, through
+  `createHandler({ loaders })`. In the worker, `.reze/main.rs` renders nothing, so a TSX edit does
+  not rebuild it; an `.rs` or `Cargo.toml` change restarts it on the next request.
+- The Rust server has e2e tests through the generated `main` only; the `tower` and `actix`
+  adapters have none.
 - `Server-Timing` holds one `loader-<depth>` metric for each loader that ran and one `render`
   metric. `createHandler({ serverTiming })` and `App::server_timing` turn it on in production.

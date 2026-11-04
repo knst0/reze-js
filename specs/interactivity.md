@@ -476,8 +476,6 @@ The current implementation differs from this design in these points:
   more than one shared chunk.
 - `chunks: "handler"` builds the same chunks as `"component"`: one per component with handlers.
   Every handler of a component shares that component's chunk.
-- The Rust server takes the chunk mode from `reze_build::Config::chunks`, which must match the
-  plugin option.
 - The state block lists the factories that start without an event: components with an effect, a
   `ref`, or an `eager` element. Their chunk loads when one of their marked elements enters the
   viewport, or when the browser is idle if they have none. An `eager` element waits for the
