@@ -7,8 +7,6 @@ export interface Size {
   brotli: number;
 }
 
-export const sizeFields = ["raw", "gzip", "brotli"] as const;
-
 export function measure(code: string | Uint8Array): Size {
   const content = Buffer.from(code);
   return {
@@ -16,18 +14,6 @@ export function measure(code: string | Uint8Array): Size {
     gzip: gzipSync(content, { level: 9 }).length,
     brotli: brotliCompressSync(content, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).length,
   };
-}
-
-export function sumSizes(sizes: Size[]): Size {
-  const total = { raw: 0, gzip: 0, brotli: 0 };
-  for (const size of sizes) {
-    for (const field of sizeFields) total[field] += size[field];
-  }
-  return total;
-}
-
-export function diffSizes(a: Size, b: Size): Size {
-  return { raw: a.raw - b.raw, gzip: a.gzip - b.gzip, brotli: a.brotli - b.brotli };
 }
 
 const gzipNoiseBytes = 16;
