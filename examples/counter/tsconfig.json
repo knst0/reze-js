@@ -5,5 +5,5 @@
     "types": ["node", "vite/client"]
   },
   "include": ["src", "vite.config.ts"],
-  "exclude": ["src/routes.gen.d.ts"]
+  "exclude": []
 }
