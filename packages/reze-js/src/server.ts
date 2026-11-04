@@ -31,7 +31,7 @@ export declare function useSubmission<I, R>(mutation: Mutation<I, R>): Submissio
 /** The request handler of the app, for any server that speaks `Request` and `Response`. */
 export function createHandler(options: HandlerOptions = {}): Handler {
   const app = import("virtual:rz-app").then((m) =>
-    createApp(m.default, m.root, { ...options, assets: m.assets, build: m.build, dev: m.dev }),
+    createApp(m.default, m.root, { loaders: m.loaders, ...options, assets: m.assets, build: m.build, dev: m.dev }),
   );
   return async (request, hints) => (await app)(request, hints);
 }

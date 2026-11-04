@@ -4,6 +4,8 @@ declare module "virtual:rz-app" {
   export const assets: import("./runtime/server").Assets;
   export const build: string;
   export const dev: boolean;
+  /** The origin of the Rust dev worker, which runs the route `.rs` loaders, guards, and mutations. */
+  export const loaders: string | undefined;
   export default routes;
 }
 

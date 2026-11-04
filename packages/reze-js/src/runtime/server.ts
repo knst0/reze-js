@@ -161,7 +161,7 @@ export interface Loader<T> {
   readonly schema?: StandardSchemaV1;
   params?: Fields;
   search?: Fields;
-  /** The route file of `loader.external()`, whose data the Rust server loads. */
+  /** The route file whose `.rs` `load` the Rust server runs. */
   external?: string;
   /** Restores the values of an external loader's JSON that JSON cannot carry: `Date`, `Set`, `Map`, `bigint`. */
   json?: Parse;
@@ -180,14 +180,14 @@ interface MutationRecord {
   revalidate?: string[];
   form?: Fields;
   json?: Parse;
-  /** `mutation.external()`: the Rust server runs it. */
+  /** A mutation of a route `.rs` file: the Rust server runs it. */
   external?: boolean;
   call(): Promise<never>;
 }
 
 export interface Guard {
   readonly run?: (args: GuardArgs) => void | Promise<void>;
-  /** The route file of `guardRoute.external()`, whose guard the Rust server runs. */
+  /** The route file whose `.rs` `guard` the Rust server runs. */
   readonly external?: string;
 }
 
@@ -200,8 +200,8 @@ export function loader(first: StandardSchemaV1 | ((args: LoaderArgs) => unknown)
   return isSchema(first) ? { run: second, schema: first } : { run: first };
 }
 
-/** Declares a loader that runs in the Rust server. */
-loader.external = <T>(): Loader<T> => ({});
+/** The loader of a route `.rs` file's `load`, which the compiler writes and the Rust server runs: outside the public types. */
+(loader as typeof loader & { external: unknown }).external = <T>(): Loader<T> => ({});
 
 const mutations = new Map<string, MutationRecord>();
 
@@ -233,8 +233,10 @@ export function mutation(
   return record as unknown as Mutation<never, unknown>;
 }
 
-/** Declares a mutation that runs in the Rust server, whose input the compiler validates from `I`. */
-mutation.external = <I, R = void>(options?: { revalidate?: RoutePattern[] }): Mutation<I, R> => {
+/** A mutation of a route `.rs` file, which the compiler writes and the Rust server runs: outside the public types. */
+(mutation as typeof mutation & { external: unknown }).external = <I, R = void>(options?: {
+  revalidate?: RoutePattern[];
+}): Mutation<I, R> => {
   const record: MutationRecord = {
     id: "",
     run: () => undefined,
@@ -250,8 +252,8 @@ export function guardRoute(run: (args: GuardArgs) => void | Promise<void>): Guar
   return { run };
 }
 
-/** Declares a guard that runs in the Rust server. */
-guardRoute.external = (file = ""): Guard => ({ external: file });
+/** The guard of a route `.rs` file's `guard`, which the compiler writes and the Rust server runs: outside the public types. */
+(guardRoute as typeof guardRoute & { external: unknown }).external = (file = ""): Guard => ({ external: file });
 
 /** A route error: `notFound`, `fail`, or a `500` for anything else thrown. */
 export class RouteError extends Error {
@@ -779,7 +781,7 @@ function keyed(issues: Issue[]): Record<string, Issue> {
 export function createApp(routes: Route[], root: RouteModule[], options: AppOptions = {}): Handler {
   /** Asks the Rust server's `dev` endpoint `kind`, with the headers of `request`. */
   const rust = async (kind: string, query: URLSearchParams, request?: Request, body?: { json: unknown } | { form: FormData }) => {
-    if (!options.loaders) throw new Error("`loader.external()` needs the `loaders` option: the origin of the Rust server");
+    if (!options.loaders) throw new Error("A route `.rs` file needs the `loaders` option: the origin of the Rust server");
     const headers = new Headers(request?.headers);
     for (const name of ["host", "connection", "content-length", "content-type", "transfer-encoding"]) headers.delete(name);
     let payload: string | URLSearchParams | undefined;
