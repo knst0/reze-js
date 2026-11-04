@@ -1,0 +1,27 @@
+[SERVER_JS_IN_RUST] The Rust server cannot run the JS `guard`: write it as `pub async fn guard` in `src/routes/about.rs`.
+  at src/routes/about.tsx:6:14
+  5 | 
+> 6 | export const guard = guardRoute(async () => {});
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 |
+
+[SERVER_JS_IN_RUST] The Rust server cannot run the JS `load`: write it as `pub async fn load` in `src/routes/about.rs`.
+  at src/routes/about.tsx:8:21
+  7 | 
+> 8 | export const load = loader(async (): Promise<{ team: string }> => ({ team: "reze" }));
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  9 |
+
+[SERVER_JS_IN_RUST] The Rust server cannot run the JS `addNote`: write it as `pub async fn add_note` in `src/routes/index.rs`.
+  at src/routes/index.tsx:4:24
+  3 | 
+> 4 | export const addNote = mutation(async (input: { title: string }) => input.title);
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 |
+
+[SERVER_JS_IN_RUST] The Rust server cannot run the JS `subscribe`: write it as `pub async fn subscribe` in the `.rs` file beside a route module.
+  at src/actions.ts:3:26
+  2 | 
+> 3 | export const subscribe = mutation(async (input: { email: string }) => input.email);
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4 |

@@ -584,6 +584,22 @@ A `.rs` file beside a route module holds its server code: `pub async fn load(par
 
 Example: `pub async fn load(id: u32) -> Post` in `src/routes/posts/[id].rs`, which takes no `Params` and returns no `Result`.
 
+## SERVER_JS_IN_RUST
+
+**JS server code in an application whose server is Rust** · severity `error`
+
+> The Rust server cannot run the JS `{name}`: write it as `pub async fn {function}` in {file}.
+
+`data` keys: `file`, `function`, `name`
+
+Automatic fix: no
+
+A project with a `Cargo.toml` at the Vite root builds one server, in Rust, and that server runs no JS. Every loader, guard, and mutation is a `pub async fn` of the `.rs` file beside its route module, and the route module imports its mutations from there. `data.name` is the JS export, `data.function` the Rust function, and `data.file` the file it belongs in.
+
+**Repair:** Move the function into the `.rs` file beside the route module, or remove `Cargo.toml` to build the JS server.
+
+Example: `export const load = loader(…)` in `src/routes/index.tsx` of a project with a `Cargo.toml`, instead of `pub async fn load` in `src/routes/index.rs`.
+
 ## HANDLER_CAPTURE_UNSERIALIZABLE
 
 **A handler captures a value that cannot reach the browser** · severity `error`

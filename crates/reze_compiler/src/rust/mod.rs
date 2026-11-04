@@ -399,7 +399,7 @@ impl<'e, 'a> Emitter<'e, 'a> {
 }
 
 /// The span of `export const <name>` in `module`, with its initializer.
-fn exported_const<'a>(
+pub(crate) fn exported_const<'a>(
     module: &Module<'a>,
     name: &str,
 ) -> Option<(Span, Option<&'a Expression<'a>>)> {
@@ -560,30 +560,6 @@ pub fn emit(
             preamble = format!("        let data: &{path} = page.data::<{path}>({depth});\n");
             data = Binding::Val(Val::new("data", emitter.named(&key)));
         }
-        if let Some(module) = module {
-            for endpoint in &analysis.facts[module].endpoints {
-                let span = endpoint.call;
-                match endpoint.kind {
-                    EndpointKind::Loader if endpoint.export == "load" && !endpoint.external => {
-                        emitter.report(
-                            module,
-                            span,
-                            "A route of the Rust server loads its data in `pub async fn load` of the `.rs` file beside it",
-                        );
-                    }
-                    EndpointKind::Loader | EndpointKind::Mutation => {}
-                }
-            }
-            if route.is_none_or(|route| !route.has_guard)
-                && let Some((span, _)) = exported_const(&modules[module], "guard")
-            {
-                emitter.report(
-                    module,
-                    span,
-                    "A route of the Rust server guards in `pub async fn guard` of the `.rs` file beside it",
-                );
-            }
-        }
         emitter.indent = 2;
         if let Some(module) = module
             && let Some(component) = emitter.default_export(module)
@@ -609,14 +585,8 @@ pub fn emit(
     render.push_str("    static MUTATIONS: &[::reze_server::MutationDef] = &[\n");
     for (module, facts) in analysis.facts.iter().enumerate() {
         for endpoint in facts.endpoints.iter().filter(|e| e.kind == EndpointKind::Mutation) {
-            let span = endpoint.call;
             let target = project.routes.values().find(|route| route.file == modules[module].path);
             let (true, Some(id), Some(route)) = (endpoint.external, &endpoint.id, target) else {
-                emitter.report(
-                    module,
-                    span,
-                    "A mutation of the Rust server is a `pub async fn` of a route's `.rs` file",
-                );
                 continue;
             };
             let Some(mutation) = route.mutations.iter().find(|m| m.export == endpoint.export)

@@ -411,6 +411,36 @@ fn collect_declaration<'a>(
     }
 }
 
+fn js_in_rust(cx: &Context<'_, '_>, module: usize, route: Option<&str>, reports: &mut Vec<Report>) {
+    let facts = &cx.facts[module];
+    let file = route.map_or_else(
+        || String::from("the `.rs` file beside a route module"),
+        |file| format!("`{}`", crate::rust::source::rust_sibling(file)),
+    );
+    let report = |name: &str, function: &str, span: Span| {
+        Report::new(Code::ServerJsInRust, span)
+            .arg("name", name)
+            .arg("function", function)
+            .arg("file", &file)
+    };
+    for endpoint in facts.endpoints.iter().filter(|endpoint| !endpoint.external) {
+        if facts.endpoints.iter().any(|other| other.external && other.export == endpoint.export) {
+            continue;
+        }
+        let function = match endpoint.kind {
+            data::EndpointKind::Loader => String::from("load"),
+            data::EndpointKind::Mutation => crate::rust::source::snake(&endpoint.export),
+        };
+        reports.push(report(&endpoint.export, &function, endpoint.call));
+    }
+    if route.is_some()
+        && facts.external_guard.is_none()
+        && let Some((span, _)) = crate::rust::exported_const(&cx.modules[module], "guard")
+    {
+        reports.push(report("guard", "guard", span));
+    }
+}
+
 pub fn run<'a>(
     modules: &[Module<'a>],
     routes: &RouteTable,
@@ -434,6 +464,9 @@ pub fn run<'a>(
                     Report::new(Code::ServerInSpa, endpoint.call).arg("name", &endpoint.export),
                 );
             }
+        }
+        if options.rust {
+            js_in_rust(&cx, module, route.map(|node| node.file.as_str()), &mut reports[module]);
         }
     }
     for module in 0..modules.len() {

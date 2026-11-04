@@ -312,6 +312,16 @@ catalog! {
         fix: None,
         example: Prose("`pub async fn load(id: u32) -> Post` in `src/routes/posts/[id].rs`, which takes no `Params` and returns no `Result`."),
     }
+    ServerJsInRust {
+        name: "SERVER_JS_IN_RUST",
+        severity: Error,
+        title: "JS server code in an application whose server is Rust",
+        message: "The Rust server cannot run the JS `{name}`: write it as `pub async fn {function}` in {file}.",
+        explanation: "A project with a `Cargo.toml` at the Vite root builds one server, in Rust, and that server runs no JS. Every loader, guard, and mutation is a `pub async fn` of the `.rs` file beside its route module, and the route module imports its mutations from there. `data.name` is the JS export, `data.function` the Rust function, and `data.file` the file it belongs in.",
+        repair: "Move the function into the `.rs` file beside the route module, or remove `Cargo.toml` to build the JS server.",
+        fix: None,
+        example: Prose("`export const load = loader(…)` in `src/routes/index.tsx` of a project with a `Cargo.toml`, instead of `pub async fn load` in `src/routes/index.rs`."),
+    }
     HandlerCaptureUnserializable {
         name: "HANDLER_CAPTURE_UNSERIALIZABLE",
         severity: Error,

@@ -118,6 +118,17 @@ pub fn rust_sibling(file: &str) -> String {
     format!("{stem}.rs")
 }
 
+pub fn snake(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('_');
+        }
+        out.push(c.to_ascii_lowercase());
+    }
+    out
+}
+
 pub fn camel(name: &str) -> String {
     let mut out = String::new();
     let mut is_upper = false;
