@@ -37,6 +37,8 @@ jobs:
           cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Rust tests
         run: cargo test --workspace
+      - name: Generated files
+        run: cargo xtask skill --check
       - name: Build the examples
         run: |
           pnpm --filter "./examples/*" build

@@ -10,7 +10,7 @@ description: Repair guide for reze-js compiler diagnostics. Use when a build, de
 
 # reze-js compiler diagnostics
 
-<!-- Generated from crates/reze_compiler/src/diagnostic/catalog.rs. Do not edit by hand: regenerate with `REZE_UPDATE_SKILL=1 cargo test -p reze_compiler --test skill`. -->
+<!-- Generated from crates/reze_compiler/src/diagnostic/catalog.rs. Do not edit by hand: regenerate with `cargo xtask skill`. -->
 
 Every diagnostic starts with its code in brackets, `[CODE]`, and says what was seen, why it is wrong and what to do.
 
