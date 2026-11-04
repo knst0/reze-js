@@ -1,6 +1,6 @@
 include!(concat!(env!("OUT_DIR"), "/html-data.rs"));
 
-/// The DOM event of `onFooBar`'s `FooBar`; `spread` in `@rezejs/dom` maps names the same way.
+/// The DOM event of `onFooBar`'s `FooBar`.
 pub fn event_name(camel: &str) -> String {
     let lower = camel.to_ascii_lowercase();
     if lower == "doubleclick" { String::from("dblclick") } else { lower }

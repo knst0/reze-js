@@ -254,8 +254,4 @@ impl RouteTable {
         chain.reverse();
         chain
     }
-
-    pub fn by_file(&self, file: &str) -> Option<usize> {
-        self.nodes.iter().position(|n| n.file == file)
-    }
 }
