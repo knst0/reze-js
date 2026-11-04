@@ -5,12 +5,12 @@ use super::render::placeholders;
 
 const HEADER: &str = "---
 name: reze-compiler-diagnostics
-description: Repair guide for reze-js compiler diagnostics. Use when a build, dev server or test prints a bracketed reze code such as [JSX_CONDITIONAL_EXPRESSION], or when diagnostics.jsonl contains reze diagnostics.
+description: Repair guide for reze-js compiler diagnostics. Use when a build, dev server or test prints a bracketed reze code such as [JSX_CONDITIONAL_EXPRESSION].
 ---
 
 # reze-js compiler diagnostics
 
-<!-- Generated from crates/reze_compiler/src/diagnostic/catalog.rs. Do not edit by hand: regenerate with `REZE_UPDATE_SKILL=1 cargo test -p reze_compiler --test catalog`. -->
+<!-- Generated from crates/reze_compiler/src/diagnostic/catalog.rs. Do not edit by hand: regenerate with `REZE_UPDATE_SKILL=1 cargo test -p reze_compiler --test skill`. -->
 
 Every diagnostic starts with its code in brackets, `[CODE]`, and says what was seen, why it is wrong and what to do.
 
@@ -24,10 +24,6 @@ Every diagnostic starts with its code in brackets, `[CODE]`, and says what was s
 ## Reading the `in` path
 
 The `in` line lists what encloses the reported code, outermost first: components as `<Name>` and native elements by tag, for example `in <App> › <TodoList> › li › button`. Start at the last entry.
-
-## JSONL channel
-
-With the Vite plugin option `reze({ diagnostics: { jsonl: \"path\" } })`, every diagnostic of every severity is appended to `path` as one JSON object per line, with `code`, `severity`, `message`, `file`, `start`/`end` (`offset`, 1-based `line`, 0-based UTF-16 `column`), `path`, `labels`, `fixes`, `data`, `docs` and `rendered`.
 
 ## Codes
 ";

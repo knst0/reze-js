@@ -1,11 +1,11 @@
 ---
 name: reze-compiler-diagnostics
-description: Repair guide for reze-js compiler diagnostics. Use when a build, dev server or test prints a bracketed reze code such as [UNKNOWN_ATTRIBUTE], or when diagnostics.jsonl contains reze diagnostics.
+description: Repair guide for reze-js compiler diagnostics. Use when a build, dev server or test prints a bracketed reze code such as [JSX_CONDITIONAL_EXPRESSION].
 ---
 
 # reze-js compiler diagnostics
 
-<!-- Generated from crates/reze_compiler/src/diagnostic/catalog.rs. Do not edit by hand: regenerate with `REZE_UPDATE_SKILL=1 cargo test -p reze_compiler --test catalog`. -->
+<!-- Generated from crates/reze_compiler/src/diagnostic/catalog.rs. Do not edit by hand: regenerate with `REZE_UPDATE_SKILL=1 cargo test -p reze_compiler --test skill`. -->
 
 Every diagnostic starts with its code in brackets, `[CODE]`, and says what was seen, why it is wrong and what to do.
 
@@ -20,77 +20,403 @@ Every diagnostic starts with its code in brackets, `[CODE]`, and says what was s
 
 The `in` line lists what encloses the reported code, outermost first: components as `<Name>` and native elements by tag, for example `in <App> › <TodoList> › li › button`. Start at the last entry.
 
-## JSONL channel
-
-With the Vite plugin option `reze({ diagnostics: { jsonl: "path" } })`, every diagnostic of every severity is appended to `path` as one JSON object per line, with `code`, `severity`, `message`, `file`, `start`/`end` (`offset`, 1-based `line`, 0-based UTF-16 `column`), `path`, `labels`, `fixes`, `data`, `docs` and `rendered`.
-
 ## Codes
 
 ## PARSE_ERROR
 
 **The file does not parse** · severity `error`
 
-> The parser rejected this file ({detail}), so nothing was compiled. Fix the syntax at this position.
+> The parser rejected this file ({detail}). Fix the syntax at this position.
 
 `data` keys: `detail`
 
 Automatic fix: no
 
-The parser reported a syntax error. `data.detail` is the parser's own message. Nothing of the file was compiled.
+The parser reported a syntax error. `data.detail` is the parser's own message. Nothing of the project was compiled.
 
-**Repair:** Fix the syntax at the reported position. JSX-specific causes: an unclosed tag, `{` without `}`, or JSX in a `.ts` file (rename it to `.tsx`).
+**Repair:** Fix the syntax at the reported position. JSX in a `.ts` file needs the `.tsx` extension.
 
 Before:
 
 ```tsx
-export const view = <div>;
+export default function Page() {
+  return <main>;
+}
 ```
 
 After:
 
 ```tsx
-export const view = <div />;
+export default function Page() {
+  return <main />;
+}
 ```
 
-## PARSER_RELOCATION
+## ROUTE_INVALID
 
-**Markup the HTML parser moves or rewrites** · severity `error`
+**The route file does not map to a URL** · severity `error`
 
-> The browser parses this markup differently ({detail}), so the template would not match the rendered DOM. {hint}.
+> This route file cannot be served: {detail}.
 
-`data` keys: `detail`, `hint`
+`data` keys: `detail`
 
 Automatic fix: no
 
-Templates pass through the HTML parser before bindings run. Table rows and columns may acquire implied containers; stray table text is foster-parented out; raw text ends at its matching end tag; foreign elements retain their parser-selected namespace. `data.detail` identifies the mismatch and `data.hint` describes a representable structure.
+Route files map to URL patterns by their names: `index`, `[id]`, `[[opt]]`, `[...rest]`, and `(group)` folders. Two files that match the same URL, a catch-all that is not last, or a param name that is not an identifier make the route table ambiguous. `data.detail` names the problem.
 
-**Repair:** {hint}.
+**Repair:** Rename or move the file so every URL has exactly one route.
+
+Example: `src/routes/blog/index.tsx` and `src/routes/blog.tsx` without children both match `/blog`.
+
+## IMPORT_UNRESOLVED
+
+**A relative import names no file** · severity `error`
+
+> `{specifier}` does not resolve to a file of the project.
+
+`data` keys: `specifier`
+
+Automatic fix: no
+
+The compiler follows every relative import from the route modules to analyze the whole application. It tries the path as written, with `.tsx`, `.ts`, `.jsx`, and `.js`, and as a folder with an `index` file. `data.specifier` is the import as written.
+
+**Repair:** Fix the path, or create the module.
+
+Example:
+
+```tsx
+import { Card } from "./missing";
+
+export default function Page() {
+  return <Card />;
+}
+```
+
+## ROUTE_DEFAULT_EXPORT
+
+**A route module exports no component** · severity `error`
+
+> This route module has no default export component, so the route renders nothing. Export the page component as `default`.
+
+`data` keys: none
+
+Automatic fix: no
+
+Every file under the routes directory is a route module. The server renders its default export: the page, or the layout for files with nested routes.
+
+**Repair:** Add `export default function Page() { … }`, or move the file out of the routes directory, or prefix its name with `_`.
 
 Before:
 
 ```tsx
-export const view = <table>oops<tr><td>cell</td></tr></table>;
+export function Page() {
+  return <main />;
+}
 ```
 
 After:
 
 ```tsx
-export const view = <table><tbody><tr><td>cell</td></tr></tbody></table>;
+export default function Page() {
+  return <main />;
+}
+```
+
+## JSX_CONDITIONAL_EXPRESSION
+
+**A condition renders JSX** · severity `error`
+
+> A condition that renders JSX uses `<Show>` or `<Switch>`, not `{operator}`.
+
+`data` keys: `operator`
+
+Automatic fix: yes
+
+Conditions that produce JSX are written with the control-flow components, so every target lowers them the same way, the callback narrows the value, and `&&` cannot render a stray `0`. `data.operator` is the operator found.
+
+**Repair:** Apply the fix, or rewrite the expression as `<Show when={…} fallback={…}>…</Show>`.
+
+Before:
+
+```tsx
+export default function Page(props: { user?: string }) {
+  return <main>{props.user ? <p>{props.user}</p> : <p>Guest</p>}</main>;
+}
+```
+
+After:
+
+```tsx
+import { Show } from "reze-js";
+
+export default function Page(props: { user?: string }) {
+  return (
+    <main>
+      <Show when={props.user} fallback={<p>Guest</p>}>
+        {(user) => <p>{user}</p>}
+      </Show>
+    </main>
+  );
+}
+```
+
+## JSX_LIST_EXPRESSION
+
+**An array method renders JSX** · severity `error`
+
+> A list that renders JSX uses `<For>` or `<Repeat>`, not `.{method}`.
+
+`data` keys: `method`
+
+Automatic fix: yes
+
+Lists that produce JSX are written with `<For>` or `<Repeat>`, which state how rows are keyed. `data.method` is the array method found.
+
+**Repair:** Apply the fix, or rewrite the expression as `<For each={…}>{(item) => …}</For>`.
+
+Before:
+
+```tsx
+export default function Page(props: { tags: string[] }) {
+  return <ul>{props.tags.map((tag) => <li>{tag}</li>)}</ul>;
+}
+```
+
+After:
+
+```tsx
+import { For } from "reze-js";
+
+export default function Page(props: { tags: string[] }) {
+  return (
+    <ul>
+      <For each={props.tags}>{(tag) => <li>{tag}</li>}</For>
+    </ul>
+  );
+}
+```
+
+## JSX_ARRAY_METHOD
+
+**A template calls an array method** · severity `error`
+
+> Array methods are not called in templates: `.{method}` here. Compute the value in the loader, or in a `computed` for client state.
+
+`data` keys: `method`
+
+Automatic fix: no
+
+The template stays a projection of data, so every target, the Rust server included, can lower it. `.length` is a property and stays allowed. `data.method` is the method called.
+
+**Repair:** Move the computation into the loader and read the prepared field, or declare a `computed` for values derived from client state.
+
+Before:
+
+```tsx
+export default function Page(props: { tags: string[] }) {
+  return <p>{props.tags.join(", ")}</p>;
+}
+```
+
+After:
+
+```tsx
+export default function Page(props: { tagList: string }) {
+  return <p>{props.tagList}</p>;
+}
+```
+
+## JSX_OUTSIDE_TEMPLATE
+
+**JSX outside a component's returned template** · severity `error`
+
+> JSX is written only in the template a component returns, in props of components, and in control-flow callbacks.
+
+`data` keys: none
+
+Automatic fix: no
+
+A component runs on the server only, and its template is compiled into server render code and client bindings. JSX stored in a variable or returned from a helper function has no fixed place in that template.
+
+**Repair:** Move the markup into the returned template, or extract it into a component.
+
+Before:
+
+```tsx
+export default function Page() {
+  const title = <h1>Hi</h1>;
+  return <main>{title}</main>;
+}
+```
+
+After:
+
+```tsx
+function Title() {
+  return <h1>Hi</h1>;
+}
+
+export default function Page() {
+  return (
+    <main>
+      <Title />
+    </main>
+  );
+}
+```
+
+## COMPONENT_RETURN
+
+**A component returns more than one template** · severity `error`
+
+> A component returns one template, at the end of its body. Write conditions with `<Show>` or `<Switch>` inside it.
+
+`data` keys: none
+
+Automatic fix: no
+
+The compiler gives every component one fixed template, so client bindings can locate their nodes by path. An early `return` makes the structure depend on runtime values.
+
+**Repair:** Remove the early return and wrap the alternatives in `<Show>` or `<Switch>`.
+
+Before:
+
+```tsx
+export default function Page(props: { ok: boolean }) {
+  if (!props.ok) return <p>No</p>;
+  return <p>Yes</p>;
+}
+```
+
+After:
+
+```tsx
+import { Show } from "reze-js";
+
+export default function Page(props: { ok: boolean }) {
+  return (
+    <Show when={props.ok} fallback={<p>No</p>}>
+      <p>Yes</p>
+    </Show>
+  );
+}
+```
+
+## CONTROL_FLOW_ATTRIBUTE
+
+**Attribute a control-flow component does not accept** · severity `error`
+
+> `<{tag}>` does not accept `{attribute}`. Remove it.
+
+`data` keys: `attribute`, `tag`
+
+Automatic fix: no
+
+Control-flow components accept a fixed set of attributes: `<Show when fallback>`, `<Switch fallback>`, `<Match when>`, `<For each key fallback>`, `<Repeat count fallback>`, `<Loading fallback>`, `<Errored fallback>`, `<Portal mount>`. `data.tag` is the component and `data.attribute` the attribute.
+
+**Repair:** Remove the attribute.
+
+Before:
+
+```tsx
+import { Show } from "reze-js";
+
+export default function Page(props: { ok: boolean }) {
+  return <Show when={props.ok} each={1}><p>ok</p></Show>;
+}
+```
+
+After:
+
+```tsx
+import { Show } from "reze-js";
+
+export default function Page(props: { ok: boolean }) {
+  return <Show when={props.ok}><p>ok</p></Show>;
+}
+```
+
+## CONTROL_FLOW_MISSING
+
+**A control-flow component lacks a required attribute** · severity `error`
+
+> `<{tag}>` needs `{attribute}`.
+
+`data` keys: `attribute`, `tag`
+
+Automatic fix: no
+
+`<Show>` and `<Match>` need `when`, `<For>` needs `each`, `<Repeat>` needs `count`. `data.tag` is the component and `data.attribute` the missing attribute.
+
+**Repair:** Add the attribute.
+
+Before:
+
+```tsx
+import { Show } from "reze-js";
+
+export default function Page() {
+  return <Show><p>ok</p></Show>;
+}
+```
+
+After:
+
+```tsx
+import { Show } from "reze-js";
+
+export default function Page(props: { ok: boolean }) {
+  return <Show when={props.ok}><p>ok</p></Show>;
+}
+```
+
+## CONTROL_FLOW_CHILDREN
+
+**Children a control-flow component cannot render** · severity `error`
+
+> `<{tag}>` takes {expected} as children.
+
+`data` keys: `expected`, `tag`
+
+Automatic fix: no
+
+`<For>` and `<Repeat>` take one callback that renders a row. `<Show>` takes markup or one callback that receives the narrowed value. `<Switch>` takes only `<Match>` elements. `data.tag` is the component and `data.expected` what it accepts.
+
+**Repair:** Write the children in the expected form.
+
+Before:
+
+```tsx
+import { For } from "reze-js";
+
+export default function Page(props: { tags: string[] }) {
+  return <ul><For each={props.tags}><li /></For></ul>;
+}
+```
+
+After:
+
+```tsx
+import { For } from "reze-js";
+
+export default function Page(props: { tags: string[] }) {
+  return <ul><For each={props.tags}>{(tag) => <li>{tag}</li>}</For></ul>;
+}
 ```
 
 ## CONTROL_FLOW_AS_VALUE
 
-**Control-flow tag used as a value** · severity `error`
+**A compiler component used as a value** · severity `error`
 
-> `{name}` is compiled away and has no runtime value, so this reference would throw. Use `{name}` only as a JSX tag.
+> `{name}` exists only as a JSX tag. Use it as `<{name}>`.
 
 `data` keys: `name`
 
 Automatic fix: no
 
-`Show`, `For`, `Repeat`, `Switch`, `Match`, `Portal`, `Head`, `Loading` and `Errored` are compiler intrinsics: every `<Show>` tag compiles to direct runtime calls, and the imported function only throws. Passing the import around, calling it, or re-exporting it would reach that function at runtime. `data.name` is the intrinsic.
+`Show`, `Switch`, `Match`, `For`, `Repeat`, `Loading`, `Errored`, and `Portal` are compiled away and have no runtime value. `data.name` is the component.
 
-**Repair:** Render it as a tag, `<Show when={…}>…</Show>`. To pick a component at runtime, wrap the tag in a component of your own and select that with `dynamic(() => …)`.
+**Repair:** Render it as a tag.
 
 Before:
 
@@ -105,831 +431,198 @@ After:
 ```tsx
 import { Show } from "reze-js";
 
-export const view = <Show when={open()}><p>open</p></Show>;
-```
-
-## CONTROL_FLOW_ATTRIBUTE
-
-**Attribute a control-flow tag does not accept** · severity `error`
-
-> `<{tag}>` does not accept `{attribute}`, so it would be silently dropped. Remove it.
-
-`data` keys: `attribute`, `tag`
-
-Automatic fix: yes
-
-A control-flow tag accepts a fixed set of attributes: `<Show when fallback>`, `<For each fallback keyed>`, `<Repeat count fallback>`, `<Switch fallback>`, `<Match when>`, `<Portal mount>`, `<Loading fallback>`, `<Errored fallback>`, and `<Head>` takes none. Anything else, spreads included, has no meaning. `data.tag` is the tag and `data.attribute` the attribute (`{...}` for a spread).
-
-**Repair:** Apply the fix to remove the attribute. To key `<For>` rows by a field, use `keyed={(item) => item.id}`.
-
-Before:
-
-```tsx
-import { Show } from "reze-js";
-
-export const view = <Show when={open()} keyed><p>open</p></Show>;
-```
-
-After:
-
-```tsx
-import { Show } from "reze-js";
-
-export const view = <Show when={open()}><p>open</p></Show>;
-```
-
-## CONTROL_FLOW_MISSING
-
-**Control-flow tag without its required attribute** · severity `error`
-
-> `<{tag}>` needs `{attribute}` to decide what to render. Add `{attribute}={…}`.
-
-`data` keys: `attribute`, `tag`
-
-Automatic fix: no
-
-`<Show>` and `<Match>` render by `when`, `<For>` by `each`, `<Repeat>` by `count`, and `<Errored>` needs `fallback` to show on failure. Without it there is nothing to decide on. `data.tag` is the tag and `data.attribute` the missing attribute.
-
-**Repair:** Add the attribute with the condition (`when`), the list (`each`), the number of rows (`count`) or the failure view (`fallback={(error, reset) => …}`).
-
-Before:
-
-```tsx
-import { Show } from "reze-js";
-
-export const view = <Show fallback={<p>closed</p>}><p>open</p></Show>;
-```
-
-After:
-
-```tsx
-import { Show } from "reze-js";
-
-export const view = <Show when={open()} fallback={<p>closed</p>}><p>open</p></Show>;
-```
-
-## CONTROL_FLOW_CHILDREN
-
-**Control-flow tag with children it cannot render** · severity `error`
-
-> `<{tag}>` expects {expected} as children, so this cannot be compiled.
-
-`data` keys: `expected`, `tag`
-
-Automatic fix: no
-
-`<Show>`, `<Match>`, `<Portal>`, `<Loading>` and `<Errored>` need at least one child. `<For>` needs exactly one row function `(item, index) => …` and `<Repeat>` one `(index) => …`, as its child or its `children` attribute. `<Switch>` only takes `<Match>` elements, and `<Head>` only the head elements `<title>`, `<base>`, `<meta>`, `<link>`, `<script>` and `<style>`; a `<noscript>` in the head parses as text while scripts run, so it belongs in `document.tsx`. `data.tag` is the tag and `data.expected` what it takes.
-
-**Repair:** Give the tag the children it expects: wrap `<For>` rows in `{(item) => …}`, move non-`<Match>` children of `<Switch>` into a `<Match>` or its `fallback`, and keep only head elements in `<Head>`.
-
-Before:
-
-```tsx
-import { For } from "reze-js";
-
-export const view = <ul><For each={items()}><li>item</li></For></ul>;
-```
-
-After:
-
-```tsx
-import { For } from "reze-js";
-
-export const view = <ul><For each={items()}>{(item) => <li>{item}</li>}</For></ul>;
-```
-
-## MATCH_OUTSIDE_SWITCH
-
-**`<Match>` outside `<Switch>`** · severity `error`
-
-> `<Match>` only works as a direct child of `<Switch>`. Move it into a `<Switch>`.
-
-`data` keys: none
-
-Automatic fix: no
-
-`<Match>` is a case of the `<Switch>` around it; on its own, or nested deeper, there is no switch to choose it.
-
-**Repair:** Make the `<Match>` a direct child of a `<Switch>`, or use `<Show when={…}>` for a single condition.
-
-Before:
-
-```tsx
-import { Match } from "reze-js";
-
-export const view = <div><Match when={ready()}><b>ready</b></Match></div>;
-```
-
-After:
-
-```tsx
-import { Match, Switch } from "reze-js";
-
-export const view = <div><Switch><Match when={ready()}><b>ready</b></Match></Switch></div>;
-```
-
-## HEAD_ATTR
-
-**Invalid `<Head>` tag** · severity `error`
-
-> `<{tag}>` in `<Head>` {detail}.
-
-`data` keys: `detail`, `tag`
-
-Automatic fix: no
-
-A keyed `<Head>` tag replaces the tag of the same key from `document.tsx` or an outer component while it is mounted, so its key must be static. `<title>` and `<base>` are their own keys, `meta` is keyed by exactly one of `name`, `property` and `http-equiv`, `link rel="canonical"` by its `rel` and any other `link` by `rel` and `href`, and `script` by `src`; those attributes must be known at compile time: a string literal, or a `const` declared earlier in the same module whose value is a string literal or a template of such constants. Imported bindings are not resolved. A `script` without `src` needs a non-executable `type` such as `application/ld+json`. Spreads, event handlers and `island` attributes never run for a head tag, `meta`, `link` and `base` take no children, and `script`, `style` and `title` take only text. `data.tag` is the tag and `data.detail` what is wrong.
-
-**Repair:** Write the identity attributes as string literals or `const` strings declared in this module, or move the tag out of `<Head>`.
-
-Before:
-
-```tsx
-import { Head } from "reze-js";
-
-export const view = <Head><script src={url} /></Head>;
-```
-
-After:
-
-```tsx
-import { Head } from "reze-js";
-
-const url = "/sdk.js";
-
-export const view = <Head><script src={url} /></Head>;
-```
-
-## DOCUMENT_SHAPE
-
-**Document is not an `<html>` page** · severity `error`
-
-> The document {detail}.
-
-`data` keys: `detail`
-
-Automatic fix: no
-
-A document module default-exports a function that returns one `<html>` element holding a `<head>` and then a `<body>`. Raw-text elements such as `<script>` and `<style>` take only text, void elements take no children, and a component cannot render itself. These hold however the document renders. `data.detail` is what is wrong.
-
-**Repair:** Default-export `function Document(props) { return <html><head>…</head><body>…</body></html>; }`.
-
-Before:
-
-```tsx
-export default function Document(props) {
-  return <div>{props.children}</div>;
+export default function Page(props: { ok: boolean }) {
+  return <Show when={props.ok}><p>ok</p></Show>;
 }
 ```
 
-After:
+## UNKNOWN_COMPONENT
 
-```tsx
-export default function Document(props) {
-  return <html><head /><body><div>{props.children}</div></body></html>;
-}
-```
+**A component the compiler cannot find** · severity `error`
 
-## DOCUMENT_DYNAMIC
-
-**Document renders at build time** · severity `info`
-
-> The document holds {detail}, which is not static, so it renders by running its code instead of compiling to HTML.
-
-`data` keys: `detail`
-
-Automatic fix: no
-
-The compiler turns a static document into HTML without running it: literals, template literals without substitutions, literal `const`s, the bundler's `define` values, the `children` slot, and components whose props are static, from the document module, other source files, or packages that export their source under the `reze` condition. When anything else is in the page, the document module runs once on the server at build time and when the dev server renders its first page, and its output becomes the page. Both produce the same page. `data.detail` names the first part that is not static.
-
-**Repair:** No action is needed. To compile the document without running it, make that part static.
-
-Before:
-
-```tsx
-export default function Document(props) {
-  return <html lang={navigator.language}><head /><body><div>{props.children}</div></body></html>;
-}
-```
-
-After:
-
-```tsx
-export default function Document(props) {
-  return <html lang="en"><head /><body><div>{props.children}</div></body></html>;
-}
-```
-
-## DOCUMENT_ROOT
-
-**Missing or misplaced document root** · severity `error`
-
-> The document {detail}.
-
-`data` keys: `detail`
-
-Automatic fix: no
-
-The app renders into the element that holds the document's `children`: the server streams into it and client navigation replaces its content. That element exists exactly once, holds nothing else, sits inside `<body>`, and is an ordinary element, not `<body>` itself, a raw-text, void, `<template>` or SVG element. Its literal `id` names the root, `app` when it has none, and no other element may reuse that `id`. `data.detail` is what is wrong.
-
-**Repair:** Render `{props.children}` once, alone, in an element inside `<body>`, for example `<body><div id="app">{props.children}</div></body>`.
-
-Before:
-
-```tsx
-export default function Document(props) {
-  return <html><head /><body>{props.children}</body></html>;
-}
-```
-
-After:
-
-```tsx
-export default function Document(props) {
-  return <html><head /><body><div>{props.children}</div></body></html>;
-}
-```
-
-## FLOW_PARAM_CALLED
-
-**Flow parameter called as a function** · severity `error`
-
-> `{param}` reads as a signal here, so `{param}()` calls the getter instead of reading the value. Remove the call.
-
-`data` keys: `param`
-
-Automatic fix: yes
-
-The value parameter of a `<Show>` or `<Match>` child, and the `<For>` row parameters the `keyed` mode makes reactive, read as signals: the compiler turns each read into a getter call. An explicit call would call the getter itself, so it is refused. `data.param` is the parameter.
-
-**Repair:** Apply the fix to remove `()`. Read the parameter where the value is used, like a `signal`.
-
-Before:
-
-```tsx
-import { Show } from "reze-js";
-
-export const view = <Show when={user()}>{(u) => <b>{u().name}</b>}</Show>;
-```
-
-After:
-
-```tsx
-import { Show } from "reze-js";
-
-export const view = <Show when={user()}>{(u) => <b>{u.name}</b>}</Show>;
-```
-
-## FOR_KEYED_DYNAMIC
-
-**Non-static `<For keyed>`** · severity `error`
-
-> `keyed` must be `true`, `false`, or a key function written here, so the compiler knows which row parameters read as signals. The value here cannot be decided.
-
-`data` keys: none
-
-Automatic fix: no
-
-`<For>` passes its row parameters as getters or plain values depending on `keyed`: without it the index is a getter, with `keyed={false}` the item is, and with a key function both are. A variable, a member, or a call leaves the parameters unknown, so it is refused. `keyed` is read once when the list is built.
-
-**Repair:** Write `keyed`, `keyed={true}`, `keyed={false}`, or `keyed={(item) => item.id}`. To share one key function, write it in each `<For>`.
-
-Before:
-
-```tsx
-import { For } from "reze-js";
-
-export const view = <ul><For each={items()} keyed={mode}>{(item) => <li>{item}</li>}</For></ul>;
-```
-
-After:
-
-```tsx
-import { For } from "reze-js";
-
-export const view = <ul><For each={items()} keyed={(item) => item.id}>{(item) => <li>{item.id}</li>}</For></ul>;
-```
-
-## SIGNAL_NOT_DECLARED
-
-**`signal` or `computed` outside a variable declaration** · severity `error`
-
-> `{primitive}` is only valid as the initializer of `let name = {primitive}(…)` or `const name = {primitive}(…)`. The compiler rewrites every use of that name, so it needs the declaration to see it.
-
-`data` keys: `primitive`
-
-Automatic fix: no
-
-`signal(…)` and `computed(…)` are compiler syntax, not functions: the declared variable becomes a getter (and, for a written `signal`, a setter), and each read and write of it is rewritten. A call anywhere else, a `var` declaration, the syntax passed around as a value or re-exported has no variable to rewrite. `data.primitive` is the syntax used.
-
-**Repair:** Declare the variable with `let name = signal(…)` or `const name = computed(…)` and use `name` where the value is needed. To pass the current value around, read `name` where it is needed or wrap the read in a function: `() => name`.
-
-Before:
-
-```tsx
-import { signal } from "reze-js";
-
-export const view = <p>{signal(0)}</p>;
-```
-
-After:
-
-```tsx
-import { signal } from "reze-js";
-
-let count = signal(0);
-export const view = <button onClick={() => (count += 1)}>{count}</button>;
-```
-
-## SIGNAL_PATTERN
-
-**`signal` or `computed` destructured** · severity `error`
-
-> `{primitive}(…)` initializes a destructuring pattern. A reactive variable is one name: declare `const name = {primitive}(…)`.
-
-`data` keys: `name`, `primitive`
-
-Automatic fix: yes
-
-The declared name is rewritten into a getter (and, for a written `signal`, a setter), which needs exactly one identifier to rename. `data.primitive` is the syntax used.
-
-**Repair:** Apply the fix for the `[get, set]` tuple of other libraries: it declares one name, turns `name()` reads into `name` and `setName(value)` statements into `name = value`. Without a fix, declare one name per `signal` or `computed`, for example `let count = signal(0)`, and assign to it to write it.
-
-Before:
-
-```tsx
-import { signal } from "reze-js";
-
-const [count, setCount] = signal(0);
-export const view = <button onClick={() => setCount(count() + 1)}>{count()}</button>;
-```
-
-After:
-
-```tsx
-import { signal } from "reze-js";
-
-let count = signal(0);
-export const view = <button onClick={() => (count += 1)}>{count}</button>;
-```
-
-## SIGNAL_DEFAULT_EXPORT
-
-**`signal` or `computed` as the default export** · severity `error`
-
-> `{signal}` is a `{primitive}` and cannot be the default export: a default import carries no reactive facts, so it would read a getter function or a value that never updates.
-
-`data` keys: `primitive`, `signal`
-
-Automatic fix: yes
-
-Named exports of `signal` and `computed` variables are reactive: importers read them as values. The default export is not analyzed across modules, so it is refused. `data.signal` is the exported variable and `data.primitive` the syntax it was declared with.
-
-**Repair:** Export it by name: `export let count = signal(0)`, or export a function that reads it.
-
-Before:
-
-```tsx
-import { signal } from "reze-js";
-
-let count = signal(0);
-export default count;
-```
-
-After:
-
-```tsx
-import { signal } from "reze-js";
-
-export let count = signal(0);
-```
-
-## SIGNAL_ASSIGN_PATTERN
-
-**`signal` written through a pattern** · severity `error`
-
-> `{signal}` is written through a destructuring pattern or a `for` loop head, which the compiler cannot turn into a setter call. Assign with `{signal} = value`.
-
-`data` keys: `signal`
-
-Automatic fix: no
-
-A write to a `signal` becomes a setter call. In `[a] = list`, `({ a } = obj)` and `for (a of list)` the assignment is done by the language, not by an expression the compiler can replace. `data.signal` is the written variable.
-
-**Repair:** Read the value into a temporary and assign it with `name = value` in a statement.
-
-Before:
-
-```tsx
-import { signal } from "reze-js";
-
-let count = signal(0);
-export function pick(list) {
-  [count] = list;
-}
-export const view = <p>{count}</p>;
-```
-
-After:
-
-```tsx
-import { signal } from "reze-js";
-
-let count = signal(0);
-export function pick(list) {
-  count = list[0];
-}
-export const view = <p>{count}</p>;
-```
-
-## SIGNAL_UPDATE_IN_EXPRESSION
-
-**`++`/`--` on a `signal` inside an expression** · severity `error`
-
-> `{signal}` is incremented or decremented as part of an expression. Use it as a statement, or write `{signal} += 1`, which is an expression with the new value.
-
-`data` keys: `signal`
-
-Automatic fix: yes
-
-`count++` as a statement becomes `setCount(count() + 1)`. Inside a larger expression, for example `() => count++` or `use(count++)`, the value of the old `++` would change meaning, so it is not accepted. `data.signal` is the updated variable.
-
-**Repair:** Put the update in its own statement, or use `count += 1` (value: the new count) or `count -= 1`.
-
-Before:
-
-```tsx
-import { signal } from "reze-js";
-
-let count = signal(0);
-export const view = <button onClick={() => count++}>{count}</button>;
-```
-
-After:
-
-```tsx
-import { signal } from "reze-js";
-
-let count = signal(0);
-export const view = <button onClick={() => { count++; }}>{count}</button>;
-```
-
-## COMPUTED_WRITTEN
-
-**`computed` written** · severity `error`
-
-> `{computed}` is a `computed` and cannot be written: its value is derived from what its expression reads. Write to those signals instead.
-
-`data` keys: `computed`
-
-Automatic fix: no
-
-A `computed` variable is a derived getter with no setter. Assignments, compound assignments, `++`/`--` and writes through a pattern or a `for` loop head are refused. `data.computed` is the written variable.
-
-**Repair:** Write the `signal` the expression reads, or declare the variable with `signal` when it is meant to be set directly.
-
-Before:
-
-```tsx
-import { computed, signal } from "reze-js";
-
-let count = signal(0);
-const doubled = computed(count * 2);
-export const view = <button onClick={() => (doubled = 0)}>{doubled}</button>;
-```
-
-After:
-
-```tsx
-import { computed, signal } from "reze-js";
-
-let count = signal(0);
-const doubled = computed(count * 2);
-export const view = <button onClick={() => (count = 0)}>{doubled}</button>;
-```
-
-## COMPUTED_FUNCTION
-
-**Function literal passed to `computed`** · severity `error`
-
-> `computed` takes the expression itself and wraps it in a function, so a function literal here would make the derived value that function. Write `computed(expression)` without `() =>`.
-
-`data` keys: none
-
-Automatic fix: yes
-
-`const doubled = computed(count * 2)` derives `doubled` from `count * 2`. A function literal as the argument is refused rather than quietly deriving a function. A derived value that is a function comes from another expression: a call, a conditional or an identifier.
-
-**Repair:** Apply the fix to remove `() =>`. For several statements, move them into a function and derive its call: `computed(compute())`.
-
-Before:
-
-```tsx
-import { computed, signal } from "reze-js";
-
-let count = signal(0);
-const doubled = computed(() => count * 2);
-export const view = <button onClick={() => (count += 1)}>{doubled}</button>;
-```
-
-After:
-
-```tsx
-import { computed, signal } from "reze-js";
-
-let count = signal(0);
-const doubled = computed(count * 2);
-export const view = <button onClick={() => (count += 1)}>{doubled}</button>;
-```
-
-## ACTION_ARGUMENT
-
-**`action` without a function literal** · severity `error`
-
-> `action` needs its body written at the call, as an arrow function or function expression, so the compiler can keep the action current across each `await`. Write `action(async (…) => { … })`.
-
-`data` keys: none
-
-Automatic fix: no
-
-`action(fn)` rewrites `fn`: every `await` in its body resumes the action and the body ends it. An identifier, a call or a missing argument hides the body from the compiler.
-
-**Repair:** Write the body in the call and call the existing function from it: `action(async (todo) => { await save(todo); })`.
-
-Before:
-
-```tsx
-import { action } from "reze-js";
-
-export const save = action(saveTodo);
-```
-
-After:
-
-```tsx
-import { action } from "reze-js";
-
-export const save = action(async (todo) => {
-  await saveTodo(todo);
-});
-```
-
-## ACTION_UNSUPPORTED
-
-**`for await`, `await using` or a generator in `action`** · severity `error`
-
-> `{construct}` suspends the `action` body where the compiler cannot resume the action, so writes after it would escape the action. Use a plain `await` instead.
-
-`data` keys: `construct`
-
-Automatic fix: no
-
-The compiler resumes the action after each `await` expression. `for await` and `await using` suspend without one, and a generator suspends at every `yield`. `data.construct` is what was found: `for await`, `await using` or `generator`.
-
-**Repair:** Loop with `for (…) { const item = await next(); … }`, dispose with `try { … } finally { await resource[Symbol.asyncDispose](); }`, and pass an `async` function instead of a generator.
-
-Before:
-
-```tsx
-import { action } from "reze-js";
-
-export const load = action(async (list) => {
-  for await (const item of stream()) list.push(item);
-});
-```
-
-After:
-
-```tsx
-import { action } from "reze-js";
-
-export const load = action(async (list) => {
-  for (const item of await fetchAll()) list.push(item);
-});
-```
-
-## ACTION_NOT_CALLED
-
-**`action` used as a value** · severity `error`
-
-> `action` is compiler syntax and has no runtime value, so this reference would fail. Call it with the body: `action(async (…) => { … })`.
-
-`data` keys: none
-
-Automatic fix: no
-
-Only a call `action(fn)` is rewritten. Passing `action` around, storing it or re-exporting it leaves a reference to a function that does not exist at runtime.
-
-**Repair:** Call `action` where the action is defined.
-
-Before:
-
-```tsx
-import { action } from "reze-js";
-
-export const make = action;
-```
-
-After:
-
-```tsx
-import { action } from "reze-js";
-
-export const save = action(async (todo) => {
-  await saveTodo(todo);
-});
-```
-
-## PROPS_AS_VALUE
-
-**`mergeProps`, `splitProps` or `omitProps` used as a value** · severity `error`
-
-> `{name}` is compiler syntax and has no runtime value, so this reference would fail. Call it: `mergeProps(…)`, `splitProps(…)` or `omitProps(…)`.
+> `<{name}>` does not resolve to a component declared in the project.
 
 `data` keys: `name`
 
 Automatic fix: no
 
-Only calls of the three props helpers are rewritten: dissolvable calls become object literals, the rest compiles to direct runtime calls. Passing a helper around, storing it or re-exporting it leaves a reference to a function that does not exist at runtime. `data.name` is the helper.
+The compiler analyzes every component it renders: their templates become server render code and client bindings. A tag must name a component declared in the project or imported from a module with source. `data.name` is the tag.
 
-**Repair:** Call the helper where the props are handled.
+**Repair:** Import the component from a project module, or declare it.
 
 Before:
 
 ```tsx
-import { omitProps } from "reze-js";
-
-export const view = omitProps;
+export default function Page() {
+  return <Missing />;
+}
 ```
 
 After:
 
 ```tsx
-import { omitProps } from "reze-js";
+function Present() {
+  return <p />;
+}
 
-export const view = omitProps(props, "id");
+export default function Page() {
+  return <Present />;
+}
 ```
 
-## ISLAND_TRIGGER
+## PACKAGE_SOURCE_MISSING
 
-**`island` with an unknown trigger** · severity `error`
+**A component from a package without source** · severity `error`
 
-> `{value}` is not an island trigger: `island` takes `eager`, `idle`, `visible`, `media` or `interaction`. Write `island` for the default, which is `eager`, or `island="visible"`.
+> `{package}` exposes no `reze` source, so `{name}` cannot be compiled.
 
-`data` keys: `value`
+`data` keys: `name`, `package`
 
 Automatic fix: no
 
-`island` marks a component as an island: it renders its fallback and loads the component when the trigger fires. The trigger is read at compile time, so it must be a bare attribute or a string literal. `data.value` is what was written.
+The compiler analyzes a library component like project code, so a package publishes its source through the `reze` export condition. `data.package` is the package and `data.name` the component.
 
-**Repair:** Write `island` or one of the five triggers as a string literal. A trigger chosen at runtime is not supported.
+**Repair:** Use a package with a `reze` export, or write the component in the project.
 
 Before:
 
 ```tsx
-import { Counter } from "./Counter";
+import { Dialog } from "some-ui";
 
-export const view = <Counter island="sometimes" />;
+export default function Page() {
+  return <Dialog />;
+}
 ```
 
 After:
 
 ```tsx
-import { Counter } from "./Counter";
+function Dialog() {
+  return <dialog />;
+}
 
-export const view = <Counter island="visible" />;
+export default function Page() {
+  return <Dialog />;
+}
 ```
 
-## ISLAND_MEDIA_MISSING
+## SPREAD_CHILD
 
-**`island="media"` without `islandMedia`** · severity `error`
+**A spread child in JSX** · severity `error`
 
-> `island="media"` loads when a media query matches, so it needs `islandMedia="(…)"` with the query. Add it.
+> `{...}` as a JSX child has no fixed place in the template. Render lists with `<For>`.
 
 `data` keys: none
 
 Automatic fix: no
 
-A `media` island never observes an element: it loads when the query matches, immediately when it already does. Without the query there is nothing to match.
+A spread child inserts an unknown number of nodes, which no target can locate.
 
-**Repair:** Add `islandMedia="(max-width: 40rem)"` next to `island="media"`.
+**Repair:** Use `<For each={…}>`.
 
 Before:
 
 ```tsx
-import { Counter } from "./Counter";
-
-export const view = <Counter island="media" />;
+export default function Page(props: { items: string[] }) {
+  return <p>{...props.items}</p>;
+}
 ```
 
 After:
 
 ```tsx
-import { Counter } from "./Counter";
+import { For } from "reze-js";
 
-export const view = <Counter island="media" islandMedia="(max-width: 40rem)" />;
+export default function Page(props: { items: string[] }) {
+  return <p><For each={props.items}>{(item) => item}</For></p>;
+}
 ```
 
-## ISLAND_ON_ELEMENT
+## SERVER_HOLE_UNSUPPORTED
 
-**`island` on a native element** · severity `error`
+**A template hole the server cannot lower** · severity `error`
 
-> `island` marks a component, but this is a native element, so there is no component to defer. Move `island` to a component.
+> {reason}. Compute the value in the loader, or make the element interactive on the client.
 
-`data` keys: none
+`data` keys: `reason`
 
 Automatic fix: no
 
-Only a component tag takes `island` and its companions `islandMedia`, `islandRootMargin` and `islandFallback`. On a native element they would render as useless attributes.
+A hole rendered on the server is a projection of params, data, context, and loop variables: field access, literals, template literals, logical and comparison operators, arithmetic, and `.length`. Calls to unanalyzed functions have no Rust lowering, and the JS server and the Rust server must render the same bytes. `data.reason` names the expression.
 
-**Repair:** Move the attributes to the component that should load later.
+**Repair:** Compute the value in the loader and read the prepared field.
 
 Before:
 
 ```tsx
-export const view = <section island="visible" />;
+export default function Page(props: { at: Date }) {
+  return <time>{props.at.toISOString()}</time>;
+}
 ```
 
 After:
 
 ```tsx
-import { Counter } from "./Counter";
-
-export const view = <Counter island="visible" />;
+export default function Page(props: { at: string }) {
+  return <time>{props.at}</time>;
+}
 ```
 
-## ISLAND_ORPHAN
+## HANDLER_CAPTURE_UNSERIALIZABLE
 
-**Island companion without `island`** · severity `error`
+**A handler captures a value that cannot reach the browser** · severity `error`
 
-> `{attribute}` only means something next to `island`, but this component has none, so it would reach the component as a stray prop. Add `island` or remove it.
+> `{name}` is {what}, which cannot cross from server to browser.
 
-`data` keys: `attribute`
-
-Automatic fix: yes
-
-`islandMedia`, `islandRootMargin` and `islandFallback` are consumed by the compiler and never reach the component. Without `island` there is no island to consume them. `data.attribute` is the name.
-
-**Repair:** Add `island="…"` to the component, or remove the companion.
-
-Before:
-
-```tsx
-import { Counter } from "./Counter";
-
-export const view = <Counter islandMedia="(max-width: 40rem)" />;
-```
-
-After:
-
-```tsx
-import { Counter } from "./Counter";
-
-export const view = <Counter island="media" islandMedia="(max-width: 40rem)" />;
-```
-
-## MISSING_MODULE_ID
-
-**Build target without a module id** · severity `error`
-
-> The `{target}` target keys its output by module, but no `moduleId` was passed, so this file was not compiled. Pass the canonical module id for this file.
-
-`data` keys: `target`
+`data` keys: `name`, `what`
 
 Automatic fix: no
 
-`island` and `html` outputs are keyed by module: compiler sites, island descriptors and component registrations reference the canonical module id the build driver passes. An absent or empty `moduleId` would make those keys unstable, so compilation stops before parsing. The `client` target needs no `moduleId`. `data.target` is the requested target.
+A handler runs in the browser without its component, so every value it captures reaches the browser in the client state: signals and stores as references, data as positional JSON, project functions as code. Anything else, such as class instances or values from unanalyzed calls, cannot be encoded. `data.name` is the captured variable and `data.what` what it holds.
 
-**Repair:** Pass `moduleId` alongside `target`, for example `compile(source, filename, { target: "island", moduleId: "src/view.tsx" })`. The id itself is opaque to the compiler: the build driver owns its canonical form.
+**Repair:** Create the value inside the handler or inside an `effect`.
 
-Example:
+Before:
 
 ```tsx
-export const view = <div />;
+export default function Page() {
+  const socket = new WebSocket("/live");
+  return <button onClick={() => socket.send("ping")}>Ping</button>;
+}
 ```
 
-## MODULE_STATE_SHARED
+After:
 
-**Module state written during a request** · severity `error`
+```tsx
+export default function Page() {
+  return <button onClick={() => new WebSocket("/live").send("ping")}>Ping</button>;
+}
+```
 
-> `{name}` is a module-level mutable binding, and a component or route callback writes it. The module is loaded once per process, so every request shares the value and sees writes from other users.
+## MODULE_STATE_SERVER_WRITE
+
+**The server render writes module state** · severity `error`
+
+> `{name}` is module state, and the server render writes it here. Write it from a handler or an `effect`.
 
 `data` keys: `name`
 
 Automatic fix: no
 
-Server rendering keeps one module instance for every request. The compiler moves module-level `signal`, `computed`, `action`, `selector`, `store`, `createContext`, `effect` and `provideContext` declarations into per-request state, but a plain `let` or `var` stays where it is and is shared. A component body, `preload`, `beforeLoad`, `redirect`, `loader` or `action` that writes such a binding leaks data between requests. `data.name` is the binding.
+A server process serves many users, so a write during the server render would leak between requests. Module state is read-only on the server, and its initializer is a constant. `data.name` is the state.
 
-**Repair:** Declare the value with `signal`, `store`, `selector` or `createContext` so the compiler recreates it per request, or move it into the route `context` from `beforeLoad`. Keep plain module variables for build-time constants only.
+**Repair:** Move the write into a handler or an `effect`, or keep the value in loader data.
 
 Before:
 
 ```tsx
-let cart: string[] = [];
+import { signal } from "reze-js";
 
-export function Cart() {
-  cart = [...cart, "item"];
-  return <ul>{cart}</ul>;
+let count = signal(0);
+
+export default function Page() {
+  count = 1;
+  return <p>{count}</p>;
 }
 ```
 
@@ -938,688 +631,403 @@ After:
 ```tsx
 import { signal } from "reze-js";
 
-let cart = signal<string[]>([]);
+let count = signal(0);
 
-export function Cart() {
-  cart = [...cart, "item"];
-  return <ul>{cart}</ul>;
+export default function Page() {
+  return <button onClick={() => count++}>{count}</button>;
 }
 ```
 
-## SERVER_INPUT_SCHEMA
+## MODULE_STATE_INITIALIZER
 
-**Server function without an input schema** · severity `error`
+**Module state starts from a non-constant value** · severity `error`
 
-> A server action is a public POST endpoint, and this call has no input schema, so its body would accept any JSON shape. Pass a schema from `reze-js/schema` as the first argument.
-
-`data` keys: none
-
-Automatic fix: no
-
-The compiler rewrites `server` to a typed RPC endpoint. Every request reaches the handler with whatever body a client sends, so the value must be parsed by a schema before the handler runs. The first argument must be a `reze-js/schema` builder such as `s.object`, or a module-level constant initialized with one.
-
-**Repair:** Write `server(s.object({ … }), async (input) => …)`. The schema validates the body and gives the handler a typed input; authorize the caller inside the handler.
-
-Before:
-
-```tsx
-import { server } from "reze-js";
-
-export const save = server(async (input: { title: string }) => input.title);
-```
-
-After:
-
-```tsx
-import { server } from "reze-js";
-import * as s from "reze-js/schema";
-
-export const save = server(s.object({ title: s.string() }), async (input) => input.title);
-```
-
-## CHILDREN_PROP_IGNORED
-
-**`children` attribute next to nested children** · severity `warn`
-
-> `children` is set both as an attribute and as nested children, and nested children win, so the attribute is never rendered. Remove the attribute.
-
-`data` keys: none
-
-Automatic fix: yes
-
-An element or component has both a `children` attribute and nested children. The nested children are rendered; the attribute is dead code.
-
-**Repair:** Apply the fix to remove the attribute, or move its value between the tags.
-
-Before:
-
-```tsx
-export const view = <div children={label()}><b /></div>;
-```
-
-After:
-
-```tsx
-export const view = <div>{label()}<b /></div>;
-```
-
-## KEY_ON_ELEMENT
-
-**`key` on a native element** · severity `warn`
-
-> `key` does nothing on a native element and renders as a useless attribute, since list rows are keyed by `<For>`. Remove it.
-
-`data` keys: none
-
-Automatic fix: yes
-
-Reze has no virtual DOM to reconcile by `key`: `<For>` keys its rows by item identity, or by its own `keyed` function. On a native element `key` is an ordinary attribute.
-
-**Repair:** Apply the fix to remove the attribute. To key rows, render the list with `<For each={items()} keyed={(item) => item.id}>`.
-
-Before:
-
-```tsx
-export const view = <li key="a">a</li>;
-```
-
-After:
-
-```tsx
-export const view = <li>a</li>;
-```
-
-## DUPLICATE_ATTRIBUTE
-
-**The same attribute twice on one element** · severity `warn`
-
-> `{attribute}` is set twice on this element and the last one wins, so the earlier one is dead code. Remove it or merge the values.
-
-`data` keys: `attribute`
-
-Automatic fix: yes
-
-An element sets the same attribute more than once. Only the last value is used; the label marks the overridden one. `data.attribute` is the name.
-
-**Repair:** Apply the fix to remove the earlier attribute, or merge both values into one.
-
-Before:
-
-```tsx
-export const view = <a href="/a" href={url()} />;
-```
-
-After:
-
-```tsx
-export const view = <a href={url()} />;
-```
-
-## UNKNOWN_ATTRIBUTE
-
-**Probable attribute typo** · severity `warn`
-
-> `{attribute}` is not a known attribute and renders as written, so the browser ignores it. Did you mean `{suggestion}`?
-
-`data` keys: `attribute`, `suggestion`
-
-Automatic fix: yes
-
-The attribute is not a known HTML or SVG attribute but is one or two edits away from one, or it is React's `className`/`classList`. It renders exactly as written. `data.attribute` is the name and `data.suggestion` the known one.
-
-**Repair:** Apply the fix to rename it to the suggestion. Custom attributes take a `data-` prefix, which is never checked.
-
-Before:
-
-```tsx
-export const view = <div clas="box" />;
-```
-
-After:
-
-```tsx
-export const view = <div class="box" />;
-```
-
-## EVENT_NAME_LOWERCASE
-
-**Lower-case event attribute with a function** · severity `warn`
-
-> `{attribute}` passes a function to a lower-case attribute, which never attaches a listener. Rename it to `{suggestion}`, which is how it was compiled.
-
-`data` keys: `attribute`, `suggestion`
-
-Automatic fix: yes
-
-Only camel-case `onClick` (or `on:click`) attaches a listener; a lower-case `onclick` is an HTML attribute that takes code as a string. The compiler compiled it as the camel-case name. `data.attribute` is the name and `data.suggestion` the camel-case one.
-
-**Repair:** Apply the fix to rename the attribute to camel case, or use `on:click` for a listener that is not delegated.
-
-Before:
-
-```tsx
-export const view = <button onclick={() => save()} />;
-```
-
-After:
-
-```tsx
-export const view = <button onClick={() => save()} />;
-```
-
-## PROPS_DESTRUCTURED
-
-**Props destructured in a form that cannot be rewritten** · severity `warn`
-
-> `{component}` destructures its props in a form the compiler cannot rewrite ({detail}), so each value is read once and never updates. Take `props` and read `props.x` where it is used.
-
-`data` keys: `component`, `detail`
-
-Automatic fix: no
-
-Destructured props are rewritten into lazy reads of one props object, unless the pattern uses a computed key (`computed-key`), a default that cannot run once at the start (`default`), a default on a nested pattern (`nested-default`), a nested rest (`nested-rest`), an array pattern (`array-pattern`), a name that is assigned (`written`), `arguments` (`arguments`), a generator (`generator`), more than one parameter (`params`), or a type-position read of a non-identifier key (`type`), which no qualified type name can spell. `data.component` is the component and `data.reason` the rule.
-
-**Repair:** Take `props` as the one parameter and read `props.name` where the value is used. Use `splitProps` to forward a subset.
-
-Before:
-
-```tsx
-export function Greeting({ name = fallback() }) {
-  return <p>Hello {name}</p>;
-}
-```
-
-After:
-
-```tsx
-export function Greeting(props) {
-  return <p>Hello {props.name ?? fallback()}</p>;
-}
-```
-
-## INLINE_EACH
-
-**Inline array literal in `<For each>`** · severity `warn`
-
-> `<For each={[…]}>` builds a new array on every evaluation, so every row is rebuilt each time. Hoist the array to a constant or keep it in a signal.
-
-`data` keys: none
-
-Automatic fix: no
-
-An array literal has new identity, and new items, each time `each` is evaluated, so `<For>` cannot reuse any row.
-
-**Repair:** Hoist the array to a module constant, or hold it in a signal or computed.
-
-Before:
-
-```tsx
-import { For } from "reze-js";
-
-export const view = <ul><For each={[1, 2, 3]}>{(n) => <li>{n}</li>}</For></ul>;
-```
-
-After:
-
-```tsx
-import { For } from "reze-js";
-
-const numbers = [1, 2, 3];
-export const view = <ul><For each={numbers}>{(n) => <li>{n}</li>}</For></ul>;
-```
-
-## ASYNC_COMPONENT_SHAPE
-
-**Async component in a form that cannot be compiled** · severity `error`
-
-> `{component}` is an async component the compiler cannot rewrite ({detail}). Reshape the awaits so each one is a whole statement.
-
-`data` keys: `component`, `detail`
-
-Automatic fix: no
-
-An `async` component compiles to a load step, re-run when a source it reads changes, and a body that runs once after the first load and reads each awaited value through a getter, so later loads update it in place. That needs each top-level `await` to be a whole statement, `const x = await …;` or `await …;` (`await-position`, and `nested-await` when its operand awaits again); between the first and last await only `const`/`let`/`var` declarations may appear (`statement-between-awaits`); nothing up to the last await may `return` (`return-before-await`) or contain JSX (`jsx-before-await`); no value an await produces may be assigned after the last await (`value-reassigned`). `data.component` is the component and `data.reason` the rule.
-
-**Repair:** Give every await its own `const x = await …;` statement, keep other statements before the first await or after the last one, and start the JSX after the last await.
-
-Before:
-
-```tsx
-export async function Card(props) {
-  const id = props.id;
-  const user = await fetchUser(id);
-  log(user);
-  const posts = await fetchPosts(user.id);
-  return <p>{posts.length}</p>;
-}
-```
-
-After:
-
-```tsx
-export async function Card(props) {
-  const id = props.id;
-  const user = await fetchUser(id);
-  const posts = await fetchPosts(user.id);
-  log(user);
-  return <p>{posts.length}</p>;
-}
-```
-
-## ASYNC_VIEW_PROPERTY
-
-**Loading or error view attached as a component property** · severity `error`
-
-> `{name}.{view}` is not read by anything. Wrap the use site in `<{boundary}>` instead.
-
-`data` keys: `boundary`, `name`, `view`
-
-Automatic fix: no
-
-Loading and error views belong to the place a component is used, not to the component: `<Loading fallback>` shows one fallback until everything below it has loaded once, and `<Errored fallback={(error, reset) => …}>` catches failures below it. A `pending` or `failure` property would be a plain write that no runtime reads. `data.name` is the component and `data.view` the property.
-
-**Repair:** Delete the assignment and wrap the use site: `<Loading fallback={…}><{name} /></Loading>` for `pending`, `<Errored fallback={(error, reset) => …}><{name} /></Errored>` for `failure`.
-
-Before:
-
-```tsx
-export async function Card(props) {
-  const user = await fetchUser(props.id);
-  return <p>{user.name}</p>;
-}
-Card.failure = (error) => <p>{error.message}</p>;
-```
-
-After:
-
-```tsx
-import { Errored } from "reze-js";
-
-async function Card(props) {
-  const user = await fetchUser(props.id);
-  return <p>{user.name}</p>;
-}
-export const view = <Errored fallback={(error) => <p>{error.message}</p>}><Card id={1} /></Errored>;
-```
-
-## INTERNAL_REACTIVITY_IMPORT
-
-**Reactive primitive imported from the private compiler module** · severity `error`
-
-> `{name}` is imported from `reze-js/internal/reactivity`, which is private compiler output. Import `{name}` from `reze-js` instead.
+> The initializer of module state `{name}` must be a constant, because the server renders it and the state block carries nothing for it.
 
 `data` keys: `name`
 
-Automatic fix: yes
+Automatic fix: no
 
-`reze-js/internal/reactivity` is the module compiler output calls. Only `reze-js` is a public import, and importing a reactive primitive from the private module would skip the public surface and its diagnostics.
+Module state has one instance in the browser and is read-only on the server. Its initial value must be the same in every request and every build, so the compiler requires a literal. `data.name` is the state.
 
-**Repair:** Import `{name}` from `reze-js` and let the compiler lower it.
+**Repair:** Initialize it with a literal, and write the real value from a handler, or use loader data.
 
 Before:
 
 ```tsx
-import { signal } from "reze-js/internal/reactivity";
-let count = signal(0);
-export const view = <p>{count}</p>;
+import { signal } from "reze-js";
+
+export let now = signal(Date.now());
 ```
 
 After:
 
 ```tsx
 import { signal } from "reze-js";
-let count = signal(0);
-export const view = <p>{count}</p>;
+
+export let now = signal(0);
 ```
 
-## ASYNC_PROPS_READ_IN_AWAIT
+## EVENT_DECISION_DEFERRED
 
-**Props read inside an await** · severity `error`
+**An event decision that cannot wait for the chunk** · severity `error`
 
-> `{component}` reads its props inside an `await` operand, which the load does not track, so it can keep a stale value. Hoist the read into a `const` before the first `await`.
+> `{method}` depends on {condition}, which the dispatcher cannot evaluate before the chunk loads.
 
-`data` keys: `component`
+`data` keys: `condition`, `method`
 
 Automatic fix: no
 
-An async component re-runs its load when a tracked read changes. A props read inside an `await` operand is not tracked, so the load would keep a stale value. The compiler refuses the shape instead of guessing. `data.component` is the component.
+The handler's chunk loads when the user starts the interaction, so the dispatcher decides `preventDefault`, `stopPropagation`, and `stopImmediatePropagation` from markup. Unconditional calls and conditions on `key`, `code`, `button`, and the modifier flags are extracted into the markup; any other condition is not. `data.method` is the call; `data.condition` is the test it depends on, or `control flow`.
 
-**Repair:** Read the prop into a `const` before the first `await`, then pass that constant to the awaited call.
+**Repair:** Move the check to a native mechanism, such as `required` or a `beforeunload` guard, or set `eager` on the element so its chunk loads before the first interaction.
 
 Before:
 
 ```tsx
-export async function Card(props) {
-  const user = await fetchUser(props.id);
-  return <p>{user.name}</p>;
+import { signal } from "reze-js";
+
+export default function Page() {
+  let dirty = signal(false);
+  return <a href="/next" onClick={(event) => { if (dirty) event.preventDefault(); }}>Next</a>;
 }
 ```
 
 After:
 
 ```tsx
-export async function Card(props) {
-  const id = props.id;
-  const user = await fetchUser(id);
-  return <p>{user.name}</p>;
+export default function Page() {
+  return <a href="/next" onClick={(event) => event.preventDefault()}>Next</a>;
 }
 ```
 
-## ASYNC_TRY_AROUND_AWAIT
+## DYNAMIC_COMPONENT_UNBOUNDED
 
-**`try` around an await in an async component** · severity `error`
+**The candidates of `dynamic` are not known** · severity `error`
 
-> `{component}` wraps an `await` in `try`, which the compiler cannot lower into the load step. Handle the failure with an `<Errored>` boundary around the use site or catch the promise in the awaited expression.
-
-`data` keys: `component`
-
-Automatic fix: no
-
-Each `await` in an async component is a step of one lowering path, which has no place for a `try` around it. A rejected await throws to the nearest `<Errored>` boundary. Handle a specific error by inspecting the value in that boundary's `fallback`, or by catching the promise in the load expression. `data.component` is the component.
-
-**Repair:** Remove the `try`, and wrap the use site in `<Errored fallback={(error, reset) => …}>` to show the error.
-
-Before:
-
-```tsx
-export async function Card(props) {
-  const id = props.id;
-  try {
-    const user = await fetchUser(id);
-    return <p>{user.name}</p>;
-  } catch (error) {
-    return <p>Failed</p>;
-  }
-}
-```
-
-After:
-
-```tsx
-export async function Card(props) {
-  const id = props.id;
-  const user = await fetchUser(id);
-  return <p>{user.name}</p>;
-}
-```
-
-## ABORT_SIGNAL_OUTSIDE_LOAD
-
-**`abortSignal()` outside the load of an async component** · severity `error`
-
-> `abortSignal()` must be called directly in the load of an async component, before its view. Call it where the awaited work starts.
+> The candidates of `dynamic` are not known at build time. Choose from an object literal of components.
 
 `data` keys: none
 
 Automatic fix: no
 
-Each run of an async component's load owns one AbortSignal. The signal aborts when a newer run supersedes that run, and when the component is disposed, even after the load has settled, so cleanup registered after an `await` still sees the abort. A call in the view or outside the component has no run to own, so the compiler refuses it instead of returning a signal that nothing aborts.
+Every target renders each candidate of a dynamic component and switches between them, so the set must be finite and visible to the compiler: an object literal whose values are project components.
 
-**Repair:** Call `abortSignal()` before the first `await` of the component, and pass the signal to the awaited call.
+**Repair:** Choose from an object, `dynamic(icons[props.kind])` with `const icons = { star: Star }`.
 
 Before:
 
 ```tsx
-import { abortSignal } from "reze-js";
+import { dynamic } from "reze-js";
 
-export async function Card(props) {
-  const id = props.id;
-  const user = await fetchUser(id);
-  const signal = abortSignal();
-  return <p>{user.name}</p>;
+export default function Page(props: { c: any }) {
+  const Widget = dynamic(props.c);
+  return <Widget />;
 }
 ```
 
 After:
 
 ```tsx
-import { abortSignal } from "reze-js";
+import { dynamic } from "reze-js";
 
-export async function Card(props) {
-  const id = props.id;
-  const signal = abortSignal();
-  const user = await fetchUser(id, signal);
-  return <p>{user.name}</p>;
+function A() {
+  return <p>a</p>;
+}
+
+const parts = { a: A };
+
+export default function Page(props: { c: "a" }) {
+  const Widget = dynamic(parts[props.c]);
+  return <Widget />;
 }
 ```
 
-## IS_PENDING_OUTSIDE_VIEW
+## MUTATION_INPUT_UNTYPED
 
-**`isPending()` outside the view of an async component** · severity `error`
+**A mutation without an input contract** · severity `error`
 
-> `isPending()` must be called in the view of an async component, after its last `await`. It reports whether a reload is in progress.
+> A mutation is a public endpoint and needs a contract for its input. Annotate the input, or pass a schema.
 
 `data` keys: none
 
 Automatic fix: no
 
-The view renders once the load has settled. `isPending()` is true while a reload is in progress and the previous value is still shown, and false during the first load. Reading it in the load would make the load depend on its own pending state, so the compiler refuses that call instead.
+Every `mutation` is a public POST endpoint, so its input is validated at runtime. The compiler generates the validator from the input annotation; a Standard Schema passed as the first argument replaces it. `unknown`, `any`, and a missing annotation describe nothing.
 
-**Repair:** Move the call into the view, after the last `await`, into the JSX that renders it.
+**Repair:** Annotate the first parameter with the input type, or pass a schema.
 
 Before:
 
 ```tsx
-import { isPending } from "reze-js";
+import { mutation } from "reze-js/server";
 
-export async function Card(props) {
-  const id = props.id;
-  const busy = isPending();
-  const user = await fetchUser(id);
-  return <p>{busy ? "Refreshing" : user.name}</p>;
+export const save = mutation(async (input) => input);
+```
+
+After:
+
+```tsx
+import { mutation } from "reze-js/server";
+
+export const save = mutation(async (input: { title: string }) => input.title);
+```
+
+## MUTATION_INPUT_UNRESOLVED
+
+**A data type the compiler does not lower** · severity `error`
+
+> {reason}. Write the type out, or pass a schema.
+
+`data` keys: `reason`
+
+Automatic fix: no
+
+The compiler lowers annotations syntactically: primitives, literals and their unions, object types, interfaces and aliases from project files, arrays, tuples, `Record`, `Map`, `Set`, `Date`, `Uint8Array`, `File`, discriminated unions, and the integer aliases of `reze-js/types`. `data.reason` names what it could not lower.
+
+**Repair:** Write the object type out, use a supported type, or pass a schema.
+
+Before:
+
+```tsx
+import { mutation } from "reze-js/server";
+
+interface Todo { title: string; done: boolean }
+
+export const save = mutation(async (input: Pick<Todo, "title">) => input.title);
+```
+
+After:
+
+```tsx
+import { mutation } from "reze-js/server";
+
+export const save = mutation(async (input: { title: string }) => input.title);
+```
+
+## MUTATION_ID_COLLISION
+
+**Two mutations share an endpoint id** · severity `error`
+
+> `{name}` and `{other}` hash to the same mutation id `{id}`. Rename one of them.
+
+`data` keys: `id`, `name`, `other`
+
+Automatic fix: no
+
+A mutation id is base-36 of a hash of its module path and export name, so it stays the same across builds. Two mutations with the same id would share an endpoint. `data.name` and `data.other` are the mutations and `data.id` the id.
+
+**Repair:** Rename the export or the file of one mutation.
+
+Example: Two mutations in different files whose path and export name hash to the same id.
+
+## MUTATION_FORM_FIELD
+
+**A form field the mutation input does not declare** · severity `error`
+
+> The form posts `{field}`, which the input type of `{mutation}` does not declare.
+
+`data` keys: `field`, `mutation`
+
+Automatic fix: no
+
+A `<form action={mutation}>` posts its named fields as the mutation input. A field the input type does not declare would be rejected or ignored. `data.field` is the field and `data.mutation` the mutation.
+
+**Repair:** Add the field to the input type, or rename the field.
+
+Before:
+
+```tsx
+import { mutation } from "reze-js/server";
+
+export const save = mutation(async (input: { title: string }) => input.title);
+
+export default function Page() {
+  return <form action={save}><input name="name" /></form>;
 }
 ```
 
 After:
 
 ```tsx
-import { isPending } from "reze-js";
+import { mutation } from "reze-js/server";
 
-export async function Card(props) {
-  const id = props.id;
-  const user = await fetchUser(id);
-  return <p>{isPending() ? "Refreshing" : user.name}</p>;
+export const save = mutation(async (input: { title: string }) => input.title);
+
+export default function Page() {
+  return <form action={save}><input name="title" /></form>;
 }
 ```
 
-## SIGNAL_READ_ONCE
+## LOADER_RESULT_UNTYPED
 
-**`signal` or `computed` copied once in a component body** · severity `warn`
+**Client code reads loader data without a result type** · severity `error`
 
-> `{variable}` copies `{signal}` once, when the component runs, and never updates. Read `{signal}` where the value is used, or derive it with `computed(…)`.
+> The client reads `{read}`, but the loader of `{route}` has no result type.
 
-`data` keys: `signal`, `variable`
+`data` keys: `read`, `route`
+
+Automatic fix: no
+
+Client state crosses the wire as positional JSON, which needs a type the compiler can lower. The compiler never asks the TypeScript checker for an inferred type. `data.read` is the read and `data.route` the route pattern.
+
+**Repair:** Annotate the result, `loader<Post>(…)` or `async (): Promise<Post> => …`.
+
+Before:
+
+```tsx
+import { signal } from "reze-js";
+import { loader } from "reze-js/server";
+
+export const load = loader(async () => ({ likes: 1 }));
+
+export default function Page(props: { data: { likes: number } }) {
+  let likes = signal(props.data.likes);
+  return <button onClick={() => likes++}>{likes}</button>;
+}
+```
+
+After:
+
+```tsx
+import { signal } from "reze-js";
+import { loader } from "reze-js/server";
+
+interface Post { likes: number }
+
+export const load = loader<Post>(async () => ({ likes: 1 }));
+
+export default function Page(props: { data: Post }) {
+  let likes = signal(props.data.likes);
+  return <button onClick={() => likes++}>{likes}</button>;
+}
+```
+
+## LOADER_PARAMS_TYPE
+
+**A params annotation names a key the pattern lacks** · severity `error`
+
+> The params annotation declares `{name}`, which the pattern `{route}` does not have.
+
+`data` keys: `name`, `route`
+
+Automatic fix: no
+
+Params come from the URL pattern of the route. An annotation can change their type but not add keys. `data.name` is the key and `data.route` the pattern.
+
+**Repair:** Remove the key, or rename the route file to add the param.
+
+Example: `loader(async ({ params }: { params: { slug: string } }) => …)` in `src/routes/blog/[id].tsx`.
+
+## DATA_TYPE_UNSUPPORTED
+
+**Data with no wire encoding** · severity `error`
+
+> Client code reads `{read}`, whose type has no wire encoding: {reason}.
+
+`data` keys: `read`, `reason`
+
+Automatic fix: no
+
+Values that reach the browser are encoded as positional JSON, which carries primitives, literals, objects, arrays, maps, sets, dates, and bytes. `data.read` is the read, and `data.reason` names the type.
+
+**Repair:** Convert the value in the loader to a supported type.
+
+Example: A loader annotated `loader<{ at: Temporal.Instant }>` whose field a handler reads.
+
+## SERVER_IN_SPA
+
+**Server code in a client-only application** · severity `error`
+
+> `target: "spa"` has no server to run `{name}`.
+
+`data` keys: `name`
+
+Automatic fix: no
+
+A client-only application is a static `index.html` and one chunk per route. Loaders and mutations need a server. `data.name` is the export.
+
+**Repair:** Build with a server target, or fetch the data in an `effect`.
+
+Example: `export const load = loader(…)` in an application built with `reze({ target: "spa" })`.
+
+## CLIENT_RANGE_UNSUPPORTED
+
+**Content client code cannot create** · severity `error`
+
+> Client code cannot create {what} inside a range it updates.
+
+`data` keys: `what`
+
+Automatic fix: no
+
+A `<Show>`, `<Switch>`, `<For>`, or `<Repeat>` whose condition or source reads client state is rendered again in the browser. Client code creates its content from the template: elements, text, bindings, handlers, and nested ranges. Components, boundaries, `<head>`, `<Portal>`, `children`, spread attributes, computed form actions, and callback bodies with statements are rendered only on the server. `data.what` names the construct.
+
+**Repair:** Move the construct outside the range, or inline the component's markup into the range.
+
+Before:
+
+```tsx
+import { signal, For } from "reze-js";
+import { Item } from "./item";
+
+export default function Page() {
+  let items = signal(["a"]);
+  return (
+    <ul onClick={() => (items = [...items, "b"])}>
+      <For each={items}>{(item) => <Item name={item} />}</For>
+    </ul>
+  );
+}
+```
+
+After:
+
+```tsx
+import { signal, For } from "reze-js";
+
+export default function Page() {
+  let items = signal(["a"]);
+  return (
+    <ul onClick={() => (items = [...items, "b"])}>
+      <For each={items}>{(item) => <li>{item}</li>}</For>
+    </ul>
+  );
+}
+```
+
+## UNTRACK_REDUNDANT
+
+**An `untrack` the compiler does not need** · severity `warn`
+
+> This read is already untracked here; remove `untrack`.
+
+`data` keys: none
 
 Automatic fix: yes
 
-A component function runs once, so a `signal` or `computed` read directly in the initializer of one of its top-level variables is read once and the variable keeps that value. Reads inside functions, `computed` and JSX are reactive and are not reported. `data.signal` is the variable read and `data.variable` the declared variable.
+The compiler decides which reads subscribe: reads inside handlers and reads that only initialize state never do. `untrack` is an escape hatch for the reads a rule does not cover.
 
-**Repair:** Move the read to where the value is used, or declare `const name = computed(expression)` and read `name`. Mark an intended one-time read with `untrack(() => …)`.
+**Repair:** Replace `untrack(() => x)` with `x`.
 
 Before:
 
 ```tsx
-import { computed, signal } from "reze-js";
+import { signal, untrack } from "reze-js";
 
-export function Counter() {
+export default function Page() {
   let count = signal(0);
-  const doubled = count * 2;
-  return <button onClick={() => (count += 1)}>{doubled}</button>;
+  return <button onClick={() => console.log(untrack(() => count))}>Log</button>;
 }
 ```
 
 After:
-
-```tsx
-import { computed, signal } from "reze-js";
-
-export function Counter() {
-  let count = signal(0);
-  const doubled = computed(count * 2);
-  return <button onClick={() => (count += 1)}>{doubled}</button>;
-}
-```
-
-## ACTION_NESTED_WRITE
-
-**Write in a function of `action` that runs later** · severity `warn`
-
-> This write is in {via} inside an `action` body, which runs after the action moved on, so it is not undone when the action fails. Await the value and write it in the body.
-
-`data` keys: `via`
-
-Automatic fix: no
-
-Only the `action` body is kept inside the action across its `await`s; nested functions are not rewritten. A write to a member in an async function, or in a callback of `.then`, `.catch`, `.finally`, `setTimeout`, `setInterval`, `queueMicrotask`, `requestAnimationFrame` or `requestIdleCallback`, likely runs outside the action and is a real write. The compiler cannot tell a store from a plain object, so this is a heuristic. `data.via` is the enclosing function.
-
-**Repair:** Replace `.then((saved) => { todo.at = saved.at; })` with `const saved = await …; todo.at = saved.at;` in the body. A write outside the action on purpose can stay; move it out of the body to silence the warning.
-
-Before:
-
-```tsx
-import { action } from "reze-js";
-
-export const save = action(async (todo) => {
-  todo.done = true;
-  api.save(todo).then((saved) => {
-    todo.at = saved.at;
-  });
-});
-```
-
-After:
-
-```tsx
-import { action } from "reze-js";
-
-export const save = action(async (todo) => {
-  todo.done = true;
-  const saved = await api.save(todo);
-  todo.at = saved.at;
-});
-```
-
-## ISLAND_NOT_SPLIT
-
-**Island component that stays in the main chunk** · severity `warn`
-
-> `{component}` is an island, but it is also {reason}, so it loads from the main chunk instead of its own. Only its execution waits for the trigger.
-
-`data` keys: `component`, `reason`
-
-Automatic fix: no
-
-An island splits into its own chunk when the component is imported and every use of the import is an island: the static import is then replaced by a dynamic one. Otherwise the component stays where it is and the island only defers its execution. `data.component` is the tag and `data.reason` is `used outside islands` or `exported`.
-
-**Repair:** Move the component to its own module, import it where the island is, and use the import only as an island.
-
-Before:
-
-```tsx
-import { Counter } from "./Counter";
-
-export const first = <Counter island="visible" />;
-export const second = <Counter step={1} />;
-```
-
-After:
-
-```tsx
-import { Counter } from "./Counter";
-
-export const view = <Counter island="visible" />;
-```
-
-## SIGNAL_FOLDED
-
-**Constant signal folded** · severity `info`
-
-> `{signal}` is never written, so it compiled to a plain constant.
-
-`data` keys: `signal`
-
-Automatic fix: no
-
-The signal is never written and is not exported, so it became a constant: reads cost nothing and literal values render straight into the template. `data.signal` is the variable.
-
-**Repair:** Nothing to repair. Write the variable somewhere and the fold disappears.
-
-Example:
 
 ```tsx
 import { signal } from "reze-js";
 
-const title = signal("Reze");
-export const view = <h1>{title}</h1>;
-```
-
-## DEAD_BRANCH_REMOVED
-
-**Dead JSX branch removed** · severity `info`
-
-> The condition is a literal, so this branch can never render; it was removed.
-
-`data` keys: none
-
-Automatic fix: no
-
-A child's condition is a literal, so one branch never renders. It was dropped with its templates and runtime imports.
-
-**Repair:** Nothing to repair. Delete the dead branch to make the intent explicit.
-
-Example:
-
-```tsx
-export const view = <div>{false && <b>debug</b>}</div>;
-```
-
-## PROPS_REWRITTEN
-
-**Destructured props rewritten to lazy reads** · severity `info`
-
-> `{component}` destructures its props, so the pattern became one props object and each destructured name a lazy read of it.
-
-`data` keys: `component`
-
-Automatic fix: no
-
-Each destructured name reads the props object where it is used, so it stays reactive. Defaults apply when the prop is `undefined`; a rest element becomes `splitProps`. `data.component` is the component.
-
-**Repair:** Nothing to repair.
-
-Example:
-
-```tsx
-export function Greeting({ name }) {
-  return <p>Hello {name}</p>;
+export default function Page() {
+  let count = signal(0);
+  return <button onClick={() => console.log(count)}>Log</button>;
 }
-```
-
-## AUTO_SELECTOR
-
-**Row comparison compiled to a selector** · severity `info`
-
-> Each row compares `{signal}` with its own key, so a change would re-run every row; the comparison now reads a selector created once for this `<For>`.
-
-`data` keys: `signal`
-
-Automatic fix: no
-
-A `<For>` row compares a `signal`/`computed` declared outside the row with a key built from the row's parameters. One `selector` per `<For>` replaces the comparison, so a change re-runs only the rows whose result flips. `data.signal` is the variable.
-
-**Repair:** Nothing to repair. Compare inside a nested function, or with something that is not the row's key, and it stays a plain comparison.
-
-Example:
-
-```tsx
-import { For, signal } from "reze-js";
-
-let selected = signal(0);
-export const view = (
-  <ul>
-    <For each={rows()}>
-      {(row) => <li class={selected === row.id ? "on" : ""} onClick={() => (selected = row.id)} />}
-    </For>
-  </ul>
-);
 ```
