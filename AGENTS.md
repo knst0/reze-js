@@ -1,53 +1,40 @@
 # AGENTS.md
 
-## Priority
+## Build
 
-Ship the smallest correct bundle. Correctness is the constraint: behavior is identical
-across the client, island, and HTML targets and between development and production — a
-missed optimization is safe, an optimization that changes behavior is a bug. Subject to
-that, minimize shipped bytes, then runtime CPU and memory. Move any logic the compiler
-can decide into the compiler, even when it costs compile time or compiler complexity.
+- Use `cargo blaze build|check|test` when installed; otherwise plain `cargo`. Same flags, output and `target/`.
+- `cargo blaze status` explains what the daemon holds and why a build fell back to cargo.
+- blaze misses some borrow errors: plain `cargo check` is the final word.
+- Keep rustup's `cargo`/`rustc` first in `PATH`; blaze needs `rust-src`.
 
-## Compiler
+## CI
 
-- Decide statically everything decidable: analysis, specialization, constant folding,
-  dead-code pruning.
-- Prefer deleting runtime code to adding runtime fast paths.
-- Never guess unknown code: an unanalyzed call, import, or package takes the general path.
-- Every refused shape gets a diagnostic with a fix. Prefer a compiler rule over a runtime
-  API the user has to call.
+- CI is local: `cargo xtask ci`. Run it before every commit.
+- Never add `.github/workflows/*` or any hosted CI.
 
-## Runtime
+## Commits
 
-- The runtime is a private compiler target, not a public API: reshape it freely whenever
-  the emitted code gets smaller. No compatibility promise.
-- Pay only for what you use: a feature adds zero bytes to code that doesn't use it — keep
-  it tree-shakable, behind a compile-time flag, or in a module only its users import.
-- Hot paths: no per-call allocations or closures. Prefer flat data, reused structures,
-  monomorphic shapes, and early returns.
-- Dev-only code sits behind a compile-time dev check so production eliminates it fully.
-- Use the platform: native elements and APIs over wrappers.
+- One logical change per commit.
+- Imperative subject, optional scope prefix (`router: …`), no body.
+- Commit to `main`; feature branches only for WIP.
+- Always commit `Cargo.lock`.
 
-## Working in this repo
+## Tests
 
-- `crates/reze_compiler` is the compiler core; `packages/compiler` its JS facade.
-  `packages/{dom,signals,router,vite-plugin,testing-library}` build on it.
-- Loop: `pnpm test:fast`; browser matrix: `pnpm test`; Rust: `pnpm test:rust`.
-- Measure internal performance before and after with `pnpm bench` (CodSpeed history:
-  `pnpm bench:codspeed`); don't accept a regression without a repeat A/B run. Fix compile-time
-  regressions in the compiler, never by giving up emitted-code quality.
+- Write and run tests to verify changes, then delete them before committing.
+- Commit tests only when the user explicitly asks. No answer means no tests.
 
-## Conventions
+## Code
 
-- No `//` comments explaining what/why — rename, extract, or tighten the signature.
-  Exceptions: `// SAFETY:` on `unsafe`, license headers, lint-disable with inline reason.
-- Doc comments only on public items whose signature can't express the contract. Never
-  restate the name.
-- Names carry meaning: units in names (`timeout_ms`), predicates for booleans (`isPending`).
-- No dead code, commented-out code, or `TODO` markers. Delete, don't comment.
+- No `//` comments or doc comments. Rename, extract or tighten the signature instead.
+  Exceptions: `// SAFETY:` on `unsafe`, license headers of ported code.
+- Put units in names (`timeout_ms`); name booleans as predicates (`is_pending`).
+- Suppress lints only with `#[expect(lint, reason = "...")]`. `#[allow]` is banned.
+- No dead code, commented-out code, `todo!` or `TODO`.
+- No `unwrap`/`expect`/`panic!` outside tests.
+- No `static`/`OnceLock` state, `Rc`/`RefCell`, `async-trait`, `lazy_static`/`once_cell`, or locks held across `.await`.
 
-## Process
+## External changes
 
-- Review snapshot updates by hand, never accept blindly.
-- One logical change per commit, with the tests and docs it needs. Imperative subject,
-  optional scope prefix (`router: …`); body says why. Never commit build output or scratch.
+- Worktree changes you didn't make belong to the user. Never edit, revert, reformat or absorb them.
+- If they overlap your task, stop and ask.
